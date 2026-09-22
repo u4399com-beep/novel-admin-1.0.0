@@ -1,0 +1,139 @@
+{{/* x2552 首页（移植 Home.tsx）：排行榜封面横条 → 左 760 最近更新长列表 + 右 190 双榜 → 友情链接。
+HomeBlocks 契约位：首页无独立分类板块，置于首个主体内容区（排行榜 Board）之前，包 div.mt-2。
+React board=hot??rankings.clicks → Go 以 .RankClicks 承载；最近更新 .Latest[14] 全量渲染（<35）。 */}}
+{{define "content"}}
+<div class="pb-1">
+
+  {{/* 后台自定义图文区块（小编精选等）—— theme-extras 中性样式 */}}
+  {{if .HomeBlocks}}<div class="mt-2">
+    <div class="mx-auto w-full max-w-6xl px-4">
+      {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
+        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+          <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+          <h2 class="text-base font-bold tracking-wide text-neutral-900">{{.title}}</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {{range .novels}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+            {{if isLocalCover .cover}}<span class="relative block w-full overflow-hidden rounded-lg" style="aspect-ratio:3/4"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative block w-full overflow-hidden rounded-lg {{gcls .cover}}" style="aspect-ratio:3/4"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+            <span class="mt-2 block truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+            <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+          </a>{{else}}<p class="py-6 text-center text-xs text-neutral-400">暂无数据</p>{{end}}
+        </div>
+      </section>{{end}}
+    </div>
+  </div>{{end}}
+
+  {{/* 排行榜封面横条（263px，横向滚动，每格 135px） */}}
+  <div class="mt-2">
+    <div class="border border-[#E4E4E4] bg-white">
+      <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+      <div class="flex h-[30px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+        <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+          <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>排行榜
+        </div>
+        <span class="flex items-center gap-1 pr-2" aria-hidden="true">
+          <span class="size-[10px] border border-[#FF3300] bg-[#FFC993]"></span>
+          <span class="size-[10px] border border-[#CCC] bg-[#EEE]"></span>
+          <span class="size-[10px] border border-[#CCC] bg-[#EEE]"></span>
+        </span>
+      </div>
+      <div class="no-scrollbar flex h-[231px] overflow-x-auto px-1 pt-2">
+        {{range $i, $n := .RankClicks}}
+        <div class="w-[135px] shrink-0 text-center">
+          <a href="{{bookURL $n.id}}" class="mx-auto block w-[132px] border border-[#E4E4E4] p-[5px]">
+            {{if isLocalCover $n.cover}}<span class="relative block h-[150px] w-[120px] overflow-hidden"><img src="{{$n.cover}}" alt="{{$n.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative flex h-[150px] w-[120px] items-center justify-center overflow-hidden {{gcls $n.cover}}"><span class="select-none font-bold text-white/90 text-3xl" aria-hidden="true">{{title0 $n.title}}</span></span>{{end}}
+          </a>
+          <div class="mx-auto mt-1 w-[120px] truncate px-0">
+            <a href="{{bookURL $n.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$n.title}}</a>
+          </div>
+        </div>
+        {{else}}<p class="w-full py-10 text-center text-[12px] text-[#999]">暂无上榜小说</p>{{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-2 flex items-start justify-between">
+    {{/* 左：最近更新 760 长列表 */}}
+    <div class="min-w-0 flex-1 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
+      <div class="border border-[#E4E4E4] bg-white">
+        <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+        <div class="flex h-[40px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+          <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+            <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>最近更新
+          </div>
+          <a href="/" title="演示模板：全部分类列表未实现" class="mr-2 inline-block cursor-pointer text-[11px] text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">更多…</a>
+        </div>
+        <ul class="px-1 py-1">
+          {{range .Latest}}
+          <li class="flex h-[30px] items-center border-b border-dotted border-[#E4E4E4] text-[12px] last:border-b-0">
+            <span class="min-w-0 flex-1 truncate pl-1 lg:w-[250px] lg:flex-none"><span class="text-[#999]">[{{.categoryName}}]</span> <a href="{{bookURL .id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">《{{.title}}》</a></span>
+            <span class="hidden min-w-0 flex-1 truncate lg:block lg:w-[340px] lg:flex-none"><a href="{{bookURL .id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}暂无章节{{end}}</a></span>
+            <span class="min-w-0 flex-1 truncate pr-1 text-right text-[#999]">{{.author}}<span class="ml-2">{{dateFmt .updatedAt}}</span></span>
+          </li>
+          {{else}}<p class="py-10 text-center text-[12px] text-[#999]">暂无更新</p>{{end}}
+        </ul>
+      </div>
+    </div>
+
+    {{/* 右：总推荐榜 + 最新小说 190 */}}
+    <div class="hidden w-[190px] shrink-0 space-y-2 lg:block">
+      <div class="border border-[#E4E4E4] bg-white">
+        <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+        <div class="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+          <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+            <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>总推荐榜
+          </div>
+          <a href="/" title="演示模板：全部分类列表未实现" class="mr-1 inline-block cursor-pointer text-[11px] text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">更多…</a>
+        </div>
+        <ol class="px-2 py-1">
+          {{range $i, $n := .RankClicks}}
+          <li class="flex h-[25px] items-center border-b border-dotted border-[#F2F2F2] text-[12px] last:border-b-0">
+            <span class="w-[20px] shrink-0 text-right text-[#999]">{{add $i 1}}.</span>
+            <a href="{{bookURL $n.id}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$n.title}}</a>
+            <span class="ml-1 shrink-0 text-[11px] text-[#FF6600]">{{$n.clicks}}</span>
+          </li>
+          {{else}}<li><p class="px-2 py-4 text-center text-[12px] text-[#999]">暂无数据</p></li>{{end}}
+        </ol>
+      </div>
+      <div class="border border-[#E4E4E4] bg-white">
+        <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+        <div class="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+          <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+            <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>最新小说
+          </div>
+          <a href="/" title="演示模板：全部分类列表未实现" class="mr-1 inline-block cursor-pointer text-[11px] text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">更多…</a>
+        </div>
+        <ol class="px-2 py-1">
+          {{range $i, $n := .RankUpdates}}
+          <li class="flex h-[25px] items-center border-b border-dotted border-[#F2F2F2] text-[12px] last:border-b-0">
+            <span class="w-[20px] shrink-0 text-right text-[#999]">{{add $i 1}}.</span>
+            <a href="{{bookURL $n.id}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$n.title}}</a>
+            <span class="ml-1 shrink-0 text-[11px] text-[#999]">{{dateFmt $n.updatedAt}}</span>
+          </li>
+          {{else}}<li><p class="px-2 py-4 text-center text-[12px] text-[#999]">暂无数据</p></li>{{end}}
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  {{/* 友情链接：标准 block（blocktitle + blockmore + ulrow 链接流） */}}
+  <div class="mt-2">
+    <div class="border border-[#E4E4E4] bg-white">
+      <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+      <div class="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+        <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+          <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>友情链接
+        </div>
+        <a href="/" class="mr-1 inline-block cursor-pointer text-[11px] text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">更多...</a>
+      </div>
+      <div class="flex flex-wrap px-3 py-2 leading-[22px]">
+        {{range .Nav}}<a href="{{catURL .id}}" class="mr-3 inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$n := printf "%v" .name}}{{if eq (trimSuffixStr $n "小说") $n}}{{$n}}小说{{else}}{{$n}}{{end}}</a>{{end}}
+        <a href="/" class="mr-3 inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">全部分类</a>
+        <a href="/" title="进入全部分类列表" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">完本列表</a>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

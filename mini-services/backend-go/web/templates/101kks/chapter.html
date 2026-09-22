@@ -1,0 +1,122 @@
+{{/* 101kks 阅读页（移植 ChapterView）：独立沉浸式阅读器（layout 对 chapter 只渲染 content）。
+深灰圆形工具行（書頁/書籤/目錄/設置/夜間）+ 4 等分翻页条 + 底部弹出设置面板（背景/字體/行距/字色/字號）
++ 移动端固定底部工具条；正文容器保留公共契约 id=fb-chapter-content + data-*，偏好存 reader-prefs-v1。 */}}
+{{define "content"}}
+<div id="kks-reader" class="min-h-screen transition-colors" style="background:#f2f3f4">
+  <div class="mx-auto max-w-[1112px] px-2 pb-20 pt-3 sm:px-4 sm:pb-6 sm:pt-5">
+    <section id="kks-paper" class="rounded-[3px] p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] transition-colors sm:p-8" style="background:#ffffff">
+      {{/* 面包屑（≤sm 隐藏） */}}
+      <nav aria-label="面包屑" class="hidden items-center gap-1.5 text-sm text-[#888] sm:flex">
+        <a href="/" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">首頁</a>
+        <span>/</span>
+        <a href="{{bookURL .Novel.id}}" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">{{.Novel.title}}</a>
+        <span>/</span>
+        <span class="truncate">{{.Chapter.title}}</span>
+      </nav>
+
+      {{/* 工具行：右对齐深灰圆形按钮 */}}
+      <div class="mt-2 flex justify-end gap-2">
+        <a href="{{bookURL .Novel.id}}" title="書頁" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#4c5356] text-white transition-colors hover:bg-[#2f3538]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+        </a>
+        <button type="button" id="kks-save-btn" title="收藏書籤" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#4c5356] text-white transition-colors hover:bg-[#2f3538]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+        </button>
+        <a href="{{tocURL .Novel.id}}" title="目錄" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#4c5356] text-white transition-colors hover:bg-[#2f3538]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M3 12h12"/><path d="M3 6h18"/><path d="M3 18h8"/></svg>
+        </a>
+        <button type="button" id="kks-panel-btn" title="設置" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#4c5356] text-white transition-colors hover:bg-[#2f3538]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/></svg>
+        </button>
+        <button type="button" id="kks-night-btn" title="黑夜模式" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full bg-[#4c5356] text-white transition-colors hover:bg-[#2f3538]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        </button>
+      </div>
+
+      {{/* 居中标题 + 元信息 */}}
+      <h1 id="kks-ch-title" class="mt-3 text-center text-xl font-bold text-[#333]">{{.Chapter.title}}</h1>
+      <p id="kks-ch-meta" class="mt-2 text-center text-sm text-[#888]">{{.Novel.title}} · {{wcFmt .Chapter.wordCount}} · 第 {{.Chapter.idx}} 章</p>
+      <p id="kks-ch-hint" class="mt-1 text-center text-xs text-[#888]">打開章節時自動記錄閱讀進度</p>
+
+      {{/* 正文：行高可调、段首两格缩进、字号/字体可调（公共契约容器） */}}
+      <article id="fb-chapter-content" class="mt-6" style="font-size:18px;line-height:1.8;color:#333333"
+        data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+        {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}>
+        {{range .Paragraphs}}<p class="break-words indent-[2em]">{{.}}</p>{{else}}<p class="py-10 text-center text-sm text-[#999]">本章內容為空，請返回目錄選擇其他章節。</p>{{end}}
+      </article>
+
+      {{/* 底部翻页条：4 等分按钮 */}}
+      <div id="kks-pager" class="mt-8 flex overflow-hidden rounded-[3px] border text-sm transition-colors" style="border-color:rgba(0,0,0,.12);background:#fafafa">
+        {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="flex h-12 flex-1 items-center justify-center border-r text-[#333] transition-colors hover:bg-white" style="border-color:rgba(0,0,0,.1)">上一章</a>
+        {{else}}<span class="flex h-12 flex-1 cursor-not-allowed items-center justify-center border-r text-[#333] opacity-40" style="border-color:rgba(0,0,0,.1)">上一章</span>{{end}}
+        <button type="button" id="kks-save-btn2" class="flex h-12 flex-1 cursor-pointer items-center justify-center border-r text-[#333] transition-colors hover:bg-white" style="border-color:rgba(0,0,0,.1)">書籤</button>
+        <a href="{{tocURL .Novel.id}}" class="flex h-12 flex-1 items-center justify-center border-r text-[#333] transition-colors hover:bg-white" style="border-color:rgba(0,0,0,.1)">目錄</a>
+        {{if .Next}}<a href="{{chapterURL .Next.id}}" class="flex h-12 flex-1 items-center justify-center text-[#333] transition-colors hover:bg-white" style="border-color:rgba(0,0,0,.1)">下一章</a>
+        {{else}}<span class="flex h-12 flex-1 cursor-not-allowed items-center justify-center text-[#333] opacity-40" style="border-color:rgba(0,0,0,.1)">下一章</span>{{end}}
+      </div>
+    </section>
+  </div>
+
+  {{/* 设置面板：底部弹出白色圆角面板（101kks.js 控制显隐） */}}
+  <div id="kks-panel" hidden class="fixed bottom-0 left-1/2 z-[70] w-[min(500px,94vw)] -translate-x-1/2 rounded-t-2xl bg-white p-5 shadow-[0_-6px_24px_rgba(0,0,0,.28)]">
+    <div class="flex items-center justify-between">
+      <p class="text-base font-bold text-[#333]">閱讀設置</p>
+      <button type="button" aria-label="關閉" id="kks-panel-close" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-[#888] hover:bg-[#f0f2f4]">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="mt-4 flex items-center gap-3">
+      <span class="w-14 shrink-0 text-sm text-[#666]">背景</span>
+      <button type="button" data-bg="day" aria-label="背景：日間" class="kks-bg h-8 w-8 cursor-pointer rounded-full border-2 border-black/15 transition-all" style="background:#ffffff"></button>
+      <button type="button" data-bg="paper" aria-label="背景：羊皮紙" class="kks-bg h-8 w-8 cursor-pointer rounded-full border-2 border-black/15 transition-all" style="background:#f7f3e8"></button>
+      <button type="button" data-bg="green" aria-label="背景：護眼" class="kks-bg h-8 w-8 cursor-pointer rounded-full border-2 border-black/15 transition-all" style="background:#e8f0e4"></button>
+      <button type="button" data-bg="blue" aria-label="背景：淡藍" class="kks-bg h-8 w-8 cursor-pointer rounded-full border-2 border-black/15 transition-all" style="background:#eaf1fa"></button>
+      <button type="button" data-bg="night" aria-label="背景：夜間" class="kks-bg h-8 w-8 cursor-pointer rounded-full border-2 border-black/15 transition-all" style="background:#202830"></button>
+      <span class="text-xs text-[#888]" id="kks-bg-label">日間</span>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <span class="w-14 shrink-0 text-sm text-[#666]">字體</span>
+      <button type="button" data-font="default" class="kks-font h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">默認</button>
+      <button type="button" data-font="song" class="kks-font h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]" style="font-family:&quot;Songti SC&quot;,&quot;SimSun&quot;,serif">宋體</button>
+      <button type="button" data-font="hei" class="kks-font h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">黑體</button>
+      <button type="button" data-font="kai" class="kks-font h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">楷體</button>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <span class="w-14 shrink-0 text-sm text-[#666]">行距</span>
+      <button type="button" data-lh="1.5" class="kks-lh h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">1.5</button>
+      <button type="button" data-lh="1.8" class="kks-lh h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">1.8</button>
+      <button type="button" data-lh="2.0" class="kks-lh h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">2.0</button>
+      <button type="button" data-lh="2.2" class="kks-lh h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">2.2</button>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <span class="w-14 shrink-0 text-sm text-[#666]">字色</span>
+      <button type="button" data-ink="" class="kks-ink h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">跟隨背景</button>
+      <button type="button" data-ink="#5b4636" class="kks-ink h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">深棕</button>
+      <button type="button" data-ink="#234d3f" class="kks-ink h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">墨綠</button>
+      <button type="button" data-ink="#2c3e5d" class="kks-ink h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">藏藍</button>
+      <button type="button" data-ink="#262626" class="kks-ink h-8 cursor-pointer rounded-[3px] bg-[#f0f2f4] px-3 text-sm text-[#333] transition-colors hover:bg-[#e2e6ea]">炭黑</button>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <span class="w-14 shrink-0 text-sm text-[#666]">字號</span>
+      <button type="button" id="kks-font-dec" aria-label="减小字号" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[3px] bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+      <span id="kks-font-size" class="w-12 text-center text-sm text-[#333]">18px</span>
+      <button type="button" id="kks-font-inc" aria-label="增大字号" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[3px] bg-[#f0f2f4] text-[#333] hover:bg-[#e2e6ea]">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      </button>
+    </div>
+  </div>
+
+  {{/* 移动端底部固定深灰工具面板 */}}
+  <div class="fixed inset-x-0 bottom-0 z-[65] flex items-stretch justify-around bg-[#424e52] py-1.5 text-white sm:hidden">
+    {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="flex-1 cursor-pointer py-1.5 text-center text-xs transition-colors hover:bg-white/10">上一章</a>
+    {{else}}<span class="flex-1 cursor-not-allowed py-1.5 text-center text-xs opacity-40">上一章</span>{{end}}
+    <a href="{{tocURL .Novel.id}}" class="flex-1 cursor-pointer py-1.5 text-center text-xs transition-colors hover:bg-white/10">目錄</a>
+    <button type="button" id="kks-panel-btn-m" class="flex-1 cursor-pointer py-1.5 text-xs transition-colors hover:bg-white/10">設置</button>
+    <button type="button" id="kks-night-btn-m" class="flex-1 cursor-pointer py-1.5 text-xs transition-colors hover:bg-white/10">夜間</button>
+    {{if .Next}}<a href="{{chapterURL .Next.id}}" class="flex-1 cursor-pointer py-1.5 text-center text-xs transition-colors hover:bg-white/10">下一章</a>
+    {{else}}<span class="flex-1 cursor-not-allowed py-1.5 text-center text-xs opacity-40">下一章</span>{{end}}
+  </div>
+</div>
+{{end}}

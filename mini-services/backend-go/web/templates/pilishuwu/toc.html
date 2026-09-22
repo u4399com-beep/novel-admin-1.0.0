@@ -1,0 +1,57 @@
+{{/* pilishuwu 目录页 —— 移植 TocView：书头小卡 + 最新章节（最近 12 章）+ 三栏章节列表（正序全量）。
+「最新章节」用 len/sub 取全量末 12 段（模板无 reverse，区间内为旧→新）。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[980px] px-2 py-3">
+
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1 border border-[#BFD8EA] bg-white px-3 py-1.5 text-xs">
+    <span class="flex items-center gap-1"><a href="/" class="cursor-pointer text-[#3366BB] hover:text-[#FF6600] hover:underline">首页</a></span>
+    <span class="flex items-center gap-1"><span class="text-[#C9DEEF]">›</span><a href="{{bookURL .Novel.id}}" class="cursor-pointer text-[#3366BB] hover:text-[#FF6600] hover:underline">{{.Novel.title}}</a></span>
+    <span class="flex items-center gap-1"><span class="text-[#C9DEEF]">›</span><span class="text-[#666]">目录</span></span>
+  </nav>
+
+  {{/* 书头小卡 */}}
+  <div class="mt-3 flex gap-4 border border-[#BFD8EA] bg-white p-4">
+    <span aria-hidden="true" class="relative flex h-[120px] w-[90px] shrink-0 select-none items-center justify-center overflow-hidden text-4xl {{gcls .Novel.cover}}">
+      {{if isLocalCover .Novel.cover}}<img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="font-serif font-bold text-white/90 drop-shadow-sm text-4xl">{{title0 .Novel.title}}</span>{{end}}
+    </span>
+    <div class="min-w-0 flex-1 text-xs leading-6 text-[#666]">
+      <a href="{{bookURL .Novel.id}}" class="cursor-pointer text-base font-bold text-[#3366BB] hover:text-[#FF6600]">《{{.Novel.title}}》</a>
+      <p>作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</p>
+      <p>共 {{len .Chapters}} 章 · {{wcFmt .Novel.wordCount}} · 更新于 {{fullFmt .Novel.updatedAt}}</p>
+      {{if .Chapters}}<a href="{{with $fc := index .Chapters 0}}{{chapterURL $fc.id}}{{end}}" class="mt-2 inline-block cursor-pointer bg-[#3B76A8] px-5 py-1.5 text-sm text-white transition-colors hover:bg-[#2F6FA3]">开始阅读</a>
+      {{else}}<span class="mt-2 inline-block cursor-not-allowed bg-[#B9CFE2] px-5 py-1.5 text-sm text-white">开始阅读</span>{{end}}
+    </div>
+  </div>
+
+  {{/* 最新章节（最近更新 12 章，区间内旧→新） */}}
+  {{$total := len .Chapters}}{{if gt $total 0}}<section class="mt-3 border border-[#BFD8EA] bg-white">
+    <header class="flex h-[30px] items-center justify-between border-b border-[#BFD8EA] bg-[#EAF3FB] px-3">
+      <h2 class="flex items-center gap-1.5 text-[13px] font-bold text-[#2F5E8C]"><span aria-hidden="true" class="h-3 w-[3px] bg-[#3B76A8]"></span>最新章节（最近更新 12 章）</h2>
+    </header>
+    <div class="p-2">
+      <div class="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
+        {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="flex cursor-pointer items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]">
+          <span class="truncate text-[#3366BB] hover:text-[#FF6600] hover:underline">{{$c.idx}}. {{$c.title}}</span>
+          <span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt $c.wordCount}}</span>
+        </a>{{end}}{{end}}
+      </div>
+    </div>
+  </section>{{end}}
+
+  {{/* 三栏章节列表（全量正序） */}}
+  <section class="mt-3 border border-[#BFD8EA] bg-white">
+    <header class="flex h-[30px] items-center justify-between border-b border-[#BFD8EA] bg-[#EAF3FB] px-3">
+      <h2 class="flex items-center gap-1.5 text-[13px] font-bold text-[#2F5E8C]"><span aria-hidden="true" class="h-3 w-[3px] bg-[#3B76A8]"></span>章节目录（{{len .Chapters}} 章 · 正序）</h2>
+    </header>
+    <div class="p-2">
+      <div class="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
+        {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="flex cursor-pointer items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]">
+          <span class="truncate text-[#3366BB] hover:text-[#FF6600] hover:underline">{{.idx}}. {{.title}}</span>
+          <span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt .wordCount}}</span>
+        </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">暂无章节数据</p>{{end}}
+      </div>
+    </div>
+  </section>
+</div>
+{{end}}

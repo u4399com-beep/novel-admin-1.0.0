@@ -1,0 +1,43 @@
+{{/* shipsay 搜索页（移植 Search.tsx）：搜索框 + 双列图书卡结果。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[960px] px-2 pb-6 pt-[10px]">
+  <section class="bg-white">
+    <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+      <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+        <span class="text-[#BF2C24]" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </span>
+        {{if .Q}}“{{.Q}}” 的搜索结果{{else}}站内搜索{{end}}
+      </div>
+      {{if .Q}}<span class="text-[12px] font-normal text-[#969BA3]">共 {{.Total}} 条</span>{{end}}
+    </div>
+
+    <form class="flex gap-2 px-4 pt-4" action="/search" method="get" role="search">
+      <input name="q" value="{{.Q}}" placeholder="输入书名 / 作者关键词" aria-label="搜索小说" class="h-[36px] min-w-0 flex-1 rounded-[3px] border border-[#E6E6E6] px-3 text-[13px] text-[#333] outline-none placeholder:text-[#C0C4CC] focus:border-[#BF2C24]">
+      <button type="submit" class="h-[36px] cursor-pointer rounded-[3px] bg-[#BF2C24] px-5 text-[13px] text-white transition-colors hover:bg-[#ED4259]">搜索</button>
+    </form>
+
+    {{if .Novels}}
+    <div class="grid grid-cols-2 gap-x-6 gap-y-5 px-4 py-4 max-[639px]:grid-cols-1">
+      {{range .Novels}}
+      <a class="group flex gap-3" href="{{bookURL .id}}">
+        {{if isLocalCover .cover}}<span class="relative block h-[133px] w-[100px] shrink-0 overflow-hidden shadow-sm"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span></span>
+        {{else}}<span class="relative block h-[133px] w-[100px] shrink-0 overflow-hidden shadow-sm {{gcls .cover}}"><span class="flex h-full w-full items-center justify-center"><span class="select-none font-bold text-white/90 drop-shadow text-3xl" aria-hidden="true">{{title0 .title}}</span></span><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span></span>{{end}}
+        <span class="flex min-w-0 flex-1 flex-col">
+          <span class="block truncate text-[15px] font-bold text-[#1A1A1A] transition-colors group-hover:text-[#ED4259]">{{.title}}</span>
+          <span class="mt-1.5 line-clamp-2 flex-1 text-justify indent-[2em] text-[12px] leading-[1.7] text-[#999]">{{if .description}}{{.description}}{{else}}（暂无简介）{{end}}</span>
+          <span class="mt-auto flex items-center gap-1.5 text-[11px]">
+            <span class="min-w-0 truncate text-[#969BA3]">{{.author}}</span>
+            <span class="ml-auto shrink-0 rounded-sm border border-[#F0643A]/50 px-1 py-px leading-none text-[#F0643A]">{{wcFmt .wordCount}}</span>
+            <span class="shrink-0 rounded-sm border border-[#4284ED]/50 px-1 py-px leading-none text-[#4284ED]">{{dateFmt .updatedAt}}</span>
+          </span>
+        </span>
+      </a>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="px-4 py-10 text-center text-[13px] text-[#969BA3]">{{if .Q}}未找到与“{{.Q}}”相关的小说，换个关键词试试{{else}}输入关键词开始搜索，支持书名与作者{{end}}</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

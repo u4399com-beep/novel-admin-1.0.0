@@ -1,0 +1,59 @@
+{{/* 23qb 阅读页 —— 移植 ChapterView：680px 阅读栏 + 18px/1.6 正文 + 底部胶囊翻页条。
+字号/夜间由 app.js fb-* 契约；书签由 23qb.js（localStorage 23qb.bookmarks）。 */}}
+{{define "content"}}
+<div class="mx-auto max-w-[680px] px-4 pb-28 pt-6">
+
+  {{/* 顶部搜索框（与首页同款，sm 尺寸） */}}
+  <form action="/search" method="get" role="search" class="flex h-12 items-center rounded-[10px] bg-white shadow-[0_7px_21px_rgba(149,157,165,.28)]">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-4 h-5 w-5 shrink-0 text-black/30"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="search" name="q" placeholder="搜索书名 / 作者 / 简介" aria-label="站内搜索" class="h-full min-w-0 flex-1 bg-transparent px-3 text-base text-[#282828] outline-none placeholder:text-black/30">
+    <a href="/" class="hidden h-full items-center gap-1 border-l border-[#eaedf1] px-4 text-sm leading-[3rem] text-black/55 transition-colors hover:text-[#ff2a14] sm:flex">书库</a>
+    <button type="submit" aria-label="搜索" class="flex h-full w-14 cursor-pointer items-center justify-center rounded-r-[10px] bg-gradient-to-r from-[#ff9800] to-[#ff2a14] text-white transition-opacity hover:opacity-90">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    </button>
+  </form>
+
+  <section class="mt-6 rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-10">
+    {{/* 面包屑 */}}
+    <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1.5 text-xs text-black/45 md:text-sm">
+      <a href="/" class="cursor-pointer hover:text-[#ff2a14]">首页</a>
+      <span>/</span>
+      <a href="{{bookURL .Novel.id}}" class="cursor-pointer hover:text-[#ff2a14]">{{.Novel.title}}</a>
+      <span>/</span>
+      <span class="truncate">正文</span>
+    </nav>
+    <h1 class="mt-4 text-[30px] font-extrabold leading-tight text-[#282828] md:text-[44px]">{{.Chapter.title}}</h1>
+    <p class="mt-2 text-sm text-black/45">{{.Novel.title}} · {{wcFmt .Chapter.wordCount}}</p>
+
+    {{/* 阅读设置 */}}
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-[12px] bg-[#fafafa] px-3 py-2.5 text-xs text-black/45">
+      <span class="flex items-center gap-1">字号
+        <button type="button" id="fb-font-dec" title="减小字号" class="inline-flex h-7 min-w-[28px] cursor-pointer items-center justify-center rounded-[8px] bg-[#f3f5f7] px-2 text-xs text-[#282828] transition-colors">A-</button>
+        <span class="w-[34px] text-center">17px</span>
+        <button type="button" id="fb-font-inc" title="增大字号" class="inline-flex h-7 min-w-[28px] cursor-pointer items-center justify-center rounded-[8px] bg-[#f3f5f7] px-2 text-xs text-[#282828] transition-colors">A+</button>
+      </span>
+      <button type="button" id="fb-night" class="inline-flex h-7 cursor-pointer items-center rounded-[8px] bg-[#f3f5f7] px-2 text-xs text-[#282828] transition-colors">夜间模式</button>
+      <button type="button" data-qb-reset-prefs class="cursor-pointer text-xs text-black/35 hover:text-[#ff2a14]">恢复默认</button>
+    </div>
+
+    {{/* 正文 */}}
+    <article class="mt-6 border-t border-[#f5f5f5] pt-8">
+      <div id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}"{{if .Prev}} data-prev-url="{{chapterURL .Prev.id}}"{{end}}{{if .Next}} data-next-url="{{chapterURL .Next.id}}"{{end}}>
+        {{range .Paragraphs}}<p class="mb-[0.825rem] break-words">{{.}}</p>{{else}}<p class="py-10 text-sm text-black/45">本章内容为空，请返回目录选择其他章节。</p>{{end}}
+      </div>
+    </article>
+  </section>
+
+  {{/* 底部翻页条：限宽 768px、高 70px 四段药丸 */}}
+  <div class="mx-auto mt-10 max-w-[768px]">
+    <div class="flex h-[70px] items-stretch overflow-hidden rounded-[50px] bg-[#f3f5f7] text-sm text-[#282828] shadow-[0_4px_14px_rgba(149,157,165,.18)]">
+      {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="flex-1 cursor-pointer rounded-l-[50px] px-2 leading-[70px] transition-colors hover:bg-white">上一章</a>
+      {{else}}<span class="flex-1 cursor-not-allowed rounded-l-[50px] px-2 leading-[70px] text-black/30">上一章</span>{{end}}
+      <button type="button" id="qb-bookmark" data-novel-id="{{.Novel.id}}" data-chapter-id="{{.Chapter.id}}" data-chapter-title="{{.Chapter.title}}" class="mx-0.5 my-3 flex-[0.8] cursor-pointer rounded-[5px] transition-colors hover:bg-white">书签</button>
+      <a href="{{tocURL .Novel.id}}" class="mx-0.5 my-3 flex-[0.8] cursor-pointer rounded-[5px] leading-[46px] transition-colors hover:bg-white">目录</a>
+      {{if .Next}}<a href="{{chapterURL .Next.id}}" class="flex-1 cursor-pointer rounded-r-[50px] px-2 leading-[70px] transition-colors hover:bg-white">下一章</a>
+      {{else}}<span class="flex-1 cursor-not-allowed rounded-r-[50px] px-2 leading-[70px] text-black/30">下一章</span>{{end}}
+    </div>
+  </div>
+</div>
+{{end}}

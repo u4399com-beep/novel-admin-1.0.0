@@ -1,0 +1,133 @@
+{{/* 23qb（铅笔小说）共享骨架 —— 忠实移植 src/themes/23qb/Layout.tsx QBLayout。
+固定 70px 顶栏：首页悬浮透明、滚动/非首页 #eaedf1 毛玻璃（23qb.js 切换）；
+横向分类导航（选中项红橙渐变短条）+ 右侧「全部分类」下拉 + 移动端抽屉；页脚浅灰。
+配色：浅灰底 #f8f9f9 + 红橙渐变 (#ff9800→#ff2a14) 强调。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}}</title>
+{{if .pageDescription}}<meta name="description" content="{{.pageDescription}}">{{end}}
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<style>
+.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body class="min-h-screen bg-[#f8f9f9] text-[#282828]">
+
+{{/* 固定 70px 顶栏：首页初始透明，滚动后毛玻璃（data-qb-header 供 JS 切换） */}}
+<header id="qb-header" data-qb-header data-qb-home="{{if eq .Path "/"}}1{{else}}0{{end}}" class="fixed inset-x-0 top-0 z-50 transition-[background-color,box-shadow] duration-300 {{if eq .Path "/"}}bg-transparent{{else}}bg-[#eaedf1]/95 shadow-[0_2px_12px_rgba(149,157,165,.18)] backdrop-blur-[10px]{{end}}">
+  <div class="mx-auto flex h-[70px] w-full max-w-[1150px] items-center gap-4 px-4 md:max-w-[1240px] md:gap-8 md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">
+
+    {{/* Logo（原创文字标） */}}
+    <a href="/" class="flex shrink-0 cursor-pointer items-center gap-2">
+      <span class="flex h-8 w-8 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#ff9800] to-[#ff2a14] text-base font-black italic text-white">笔</span>
+      <span class="text-lg font-bold tracking-wide text-[#282828]">{{.Site.siteName}}<span class="ml-1 hidden text-xs font-medium text-black/40 sm:inline">结构演示主题</span></span>
+    </a>
+
+    {{/* 横向分类导航（桌面） */}}
+    <nav aria-label="小说分类导航" class="no-scrollbar hidden min-w-0 flex-1 items-center gap-6 overflow-x-auto lg:flex xl:gap-7">
+      {{range .Nav}}<a href="{{catURL .id}}" class="relative shrink-0 cursor-pointer py-2 text-base font-bold transition-colors {{if eq $path (catURL .id)}}text-[#ff2a14]{{else}}text-[#282828] hover:text-[#ff2a14]{{end}}">{{.name}}{{if eq $path (catURL .id)}}<span aria-hidden="true" class="absolute inset-x-1/2 bottom-0 h-1 w-[35%] -translate-x-1/2 rounded-full bg-gradient-to-r from-[#ff9800] to-[#ff2a14]"></span>{{end}}</a>{{end}}
+    </nav>
+
+    <div class="ml-auto flex items-center gap-2 lg:ml-0">
+      {{/* 顶栏内嵌搜索（桌面） */}}
+      <form action="/search" method="get" role="search" class="hidden h-9 w-[220px] items-center overflow-hidden rounded-[10px] bg-white/85 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.04)] transition-all focus-within:bg-white focus-within:shadow-[0_2px_10px_rgba(149,157,165,0.3)] xl:flex">
+        <input type="search" name="q" value="{{.Q}}" placeholder="可搜书名、作者、角色" aria-label="站内搜索" class="h-full min-w-0 flex-1 bg-transparent px-3 text-sm text-[#282828] outline-none placeholder:text-black/30">
+        <button type="submit" aria-label="搜索" class="flex h-full w-10 cursor-pointer items-center justify-center text-black/40 transition-colors hover:text-[#ff2a14]">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </button>
+      </form>
+
+      {{/* 阅读记录（全端） */}}
+      <button type="button" data-qb-history aria-label="阅读记录" title="阅读记录：查看最近阅读过的章节" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] text-[#282828] transition-colors hover:bg-white/70 hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-[18px] w-[18px]"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+      </button>
+
+      {{/* 全部分类下拉 */}}
+      <div class="relative" id="qb-allcat-box">
+        <button type="button" data-qb-allcat aria-expanded="false" class="hidden h-9 cursor-pointer items-center gap-1 rounded-[10px] px-3 text-sm font-medium text-[#282828] transition-colors hover:bg-white/70 hover:text-[#ff2a14] sm:flex">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+          全部分类
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="qb-allcat-panel" class="absolute right-0 top-[calc(100%+10px)] z-50 hidden w-[275px] rounded-[14px] bg-white p-3 shadow-[0_12px_30px_rgba(149,157,165,.3)]">
+          <div class="grid grid-cols-2 gap-1">
+            <a href="/" class="flex h-10 cursor-pointer items-center rounded-[10px] px-3 text-sm font-bold text-[#ff2a14] transition-colors hover:bg-[#f3f5f7]">全部小说</a>
+            {{range .Nav}}<a href="{{catURL .id}}" class="flex h-10 cursor-pointer items-center justify-between rounded-[10px] px-3 text-sm text-[#282828] transition-colors hover:bg-[#f3f5f7] hover:text-[#ff2a14]"><span class="truncate">{{.name}}</span><span class="text-[11px] text-black/30">{{.novelCount}}</span></a>{{end}}
+          </div>
+        </div>
+      </div>
+
+      {{/* 移动端汉堡 */}}
+      <button type="button" data-qb-drawer-open aria-label="菜单" class="flex h-9 w-9 cursor-pointer items-center justify-center rounded-[10px] text-[#282828] transition-colors hover:bg-white/70 lg:hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+{{/* 移动端分类抽屉 */}}
+<div id="qb-drawer" class="fixed inset-0 z-[60] hidden lg:hidden">
+  <div class="absolute inset-0 bg-black/40" data-qb-drawer-close></div>
+  <div class="absolute inset-y-0 right-0 flex w-[280px] flex-col bg-white shadow-2xl">
+    <div class="flex h-[70px] shrink-0 items-center justify-between border-b border-[#eaedf1] px-4">
+      <span class="font-bold">全部分类</span>
+      <button type="button" data-qb-drawer-close aria-label="关闭" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-black/50 hover:bg-[#f3f5f7]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="no-scrollbar flex-1 overflow-y-auto p-3">
+      <a href="/" class="flex h-11 w-full cursor-pointer items-center rounded-[10px] px-3 text-sm font-bold text-[#ff2a14] hover:bg-[#f3f5f7]">全部小说</a>
+      {{range .Nav}}<a href="{{catURL .id}}" class="flex h-11 w-full cursor-pointer items-center justify-between rounded-[10px] px-3 text-sm hover:bg-[#f3f5f7] hover:text-[#ff2a14] {{if eq $path (catURL .id)}}font-bold text-[#ff2a14]{{else}}text-[#282828]{{end}}"><span class="truncate">{{.name}}</span><span class="text-[11px] text-black/30">{{.novelCount}}</span></a>{{end}}
+    </div>
+    <div class="mt-3 border-t border-[#eaedf1] p-3">
+      <button type="button" data-qb-history class="flex h-11 w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-3 text-sm text-[#282828] transition-colors hover:bg-[#f3f5f7] hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 text-[#ff2a14]"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+        阅读记录
+      </button>
+      <button type="button" data-qb-favorite class="flex h-11 w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-3 text-sm text-[#282828] transition-colors hover:bg-[#f3f5f7] hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 text-[#ff2a14]"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></svg>
+        收藏本站
+      </button>
+    </div>
+  </div>
+</div>
+
+{{/* 首页顶栏悬浮在头图上：无占位 padding */}}
+<main class="{{if ne .Path "/"}}pt-[70px]{{end}}">{{template "content" .}}</main>
+
+{{/* 页脚 */}}
+<footer class="mt-12 bg-[#f3f5f7]">
+  <div class="mx-auto flex w-full max-w-[1150px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-4 text-xs text-black/50 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">
+    <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}} · 界面结构级主题模板（仿 23qb 布局 / 原创实现）{{end}}</p>
+    <p class="flex flex-wrap items-center gap-3">
+      <button type="button" data-qb-history class="cursor-pointer transition-colors hover:text-[#ff2a14]">阅读记录</button>
+      <span class="text-black/20">|</span>
+      <button type="button" data-qb-favorite class="cursor-pointer transition-colors hover:text-[#ff2a14]">收藏本站</button>
+      {{range .Site.footerLinks}}<span class="text-black/20">|</span><a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-[#ff2a14]">{{.label}}</a>{{end}}
+      <span class="text-black/20">|</span><span>RSS</span>
+      <span class="text-black/20">|</span><span>Google</span>
+      <span class="text-black/20">|</span><span>Bing</span>
+    </p>
+  </div>
+  {{if .Site.footerExtra}}<div class="mx-auto w-full max-w-[1150px] border-t border-black/5 px-4 py-2 text-center text-[11px] text-black/40 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">{{.Site.footerExtra}}</div>{{end}}
+</footer>
+
+{{/* 阅读记录弹层（23qb.js 填充） */}}
+<div id="qb-history-mask" class="fixed inset-0 z-[70] hidden bg-black/40" data-qb-history-close></div>
+<div id="qb-history-panel" class="fixed left-1/2 top-1/2 z-[70] hidden w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-white p-4 shadow-[0_12px_30px_rgba(149,157,165,.3)]">
+  <div class="mb-2 flex items-center justify-between">
+    <p class="text-sm font-bold text-[#282828]">阅读记录</p>
+    <button type="button" data-qb-history-close aria-label="关闭" class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-black/50 hover:bg-[#f3f5f7]">×</button>
+  </div>
+  <div id="qb-history-list" class="max-h-[50vh] overflow-y-auto text-sm"></div>
+</div>
+
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/23qb.js" defer></script>
+</body>
+</html>{{end}}

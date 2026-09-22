@@ -1,0 +1,100 @@
+{{/* ddyueshu 章节页（移植 Chapter.tsx）：章首章尾双导航 + 阅读设置条（A±/行距/字体/字色/五场景/恢复默认）。
+正文容器保留公共契约 id=fb-chapter-content + data-*（app.js 继续阅读记录）；偏好切换由 ddyueshu.js。
+适配：React 热门推荐/精彩推荐行（客户端拉取）删除；书签保留（localStorage dd-marks-*）。 */}}
+{{define "content"}}
+<div id="dd-reader" class="min-h-screen transition-colors" style="background:#f7f3e6">
+  {{/* 面包屑 */}}
+  <div class="mt-1 flex h-[36px] items-center gap-1 overflow-hidden border-b border-[#a6d3e8] bg-[#e1eced] px-2 text-[13px]">
+    <a class="dd-link flex-none" href="/">首页</a>
+    <span class="flex-none text-[#b3b3b3]">&gt;</span>
+    <a class="dd-link flex-none" href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a>
+    <span class="flex-none text-[#b3b3b3]">&gt;</span>
+    <a class="dd-link flex-none" href="{{bookURL .Novel.id}}">{{.Novel.title}}</a>
+    <span class="flex-none text-[#b3b3b3]">&gt;</span>
+    <span class="truncate text-[#667788]">{{.Chapter.title}}</span>
+  </div>
+
+  {{/* 正文盒 */}}
+  <article id="dd-paper" class="dd-box dd-box-strong mt-2 transition-colors" style="background:#f7f3e6">
+    <header class="mx-3 border-b border-dashed border-[#a6d3e8]">
+      <h1 class="dd-hei pt-3 text-center text-[25px] font-bold leading-[34px] text-[#333]">{{.Chapter.title}}</h1>
+      <p class="pt-1 text-center text-[12px] text-[#b3b3b3]">第 {{.Chapter.idx}} 章 · 约 {{wcFmt .Chapter.wordCount}}</p>
+
+      {{/* 章首导航行 */}}
+      <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 py-2 text-[14px]">
+        {{if .Prev}}<a class="dd-greenlink" href="{{chapterURL .Prev.id}}">上一章 ←</a>{{else}}<span class="dd-greenlink" style="color:#9db4a0">上一章 ←</span>{{end}}
+        <a class="dd-greenlink" href="{{tocURL .Novel.id}}">章节目录</a>
+        {{if .Next}}<a class="dd-greenlink" href="{{chapterURL .Next.id}}">→ 下一章</a>{{else}}<span class="dd-greenlink" style="color:#9db4a0">→ 下一章</span>{{end}}
+        <button type="button" class="dd-mark-btn dd-greenlink" data-novel-id="{{.Novel.id}}" data-chapter-id="{{.Chapter.id}}">加入书签</button>
+      </div>
+
+      {{/* 阅读设置条 */}}
+      <div class="mx-3 mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 border-y border-dashed border-[#a6d3e8] py-1.5 text-[12px] text-[#667788]">
+        <span class="flex items-center gap-1">
+          字号
+          <button type="button" id="dd-font-dec" title="减小字号" class="dd-set-btn h-[20px] min-w-[24px] cursor-pointer border border-[#c8d4e1] px-1.5 text-[11px] leading-[18px] text-[#667788] transition-colors hover:border-[#459df5] hover:text-[#1a6fb0]">A-</button>
+          <button type="button" id="dd-font-inc" title="增大字号" class="dd-set-btn h-[20px] min-w-[24px] cursor-pointer border border-[#c8d4e1] px-1.5 text-[11px] leading-[18px] text-[#667788] transition-colors hover:border-[#459df5] hover:text-[#1a6fb0]">A+</button>
+          <span id="dd-font-size" class="w-[30px] text-right text-[11px]">20px</span>
+        </span>
+        <span class="flex items-center gap-1">
+          行距
+          <button type="button" class="dd-set-btn dd-lh h-[20px] min-w-[24px] cursor-pointer border border-[#c8d4e1] px-1.5 text-[11px] leading-[18px] text-[#667788] transition-colors hover:border-[#459df5] hover:text-[#1a6fb0]" data-lh="1.5">1.5</button>
+          <button type="button" class="dd-set-btn dd-lh dd-set-on h-[20px] min-w-[24px] cursor-pointer border border-[#459df5] bg-[#e3f1fb] px-1.5 text-[11px] leading-[18px] text-[#1a6fb0]" data-lh="1.8">1.8</button>
+          <button type="button" class="dd-set-btn dd-lh h-[20px] min-w-[24px] cursor-pointer border border-[#c8d4e1] px-1.5 text-[11px] leading-[18px] text-[#667788] transition-colors hover:border-[#459df5] hover:text-[#1a6fb0]" data-lh="2.0">2.0</button>
+          <button type="button" class="dd-set-btn dd-lh h-[20px] min-w-[24px] cursor-pointer border border-[#c8d4e1] px-1.5 text-[11px] leading-[18px] text-[#667788] transition-colors hover:border-[#459df5] hover:text-[#1a6fb0]" data-lh="2.2">2.2</button>
+        </span>
+        <label class="flex items-center gap-1">
+          字体
+          <select id="dd-font" class="h-[22px] cursor-pointer border border-[#c8d4e1] bg-white px-1 text-[11px] text-[#667788] outline-none">
+            <option value="default" selected>默认</option>
+            <option value="song">宋体</option>
+            <option value="hei">黑体</option>
+            <option value="kai">楷体</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1">
+          字色
+          <select id="dd-ink" aria-label="字色" class="h-[22px] cursor-pointer border border-[#c8d4e1] bg-white px-1 text-[11px] text-[#667788] outline-none">
+            <option value="" selected>跟随背景</option>
+            <option value="#5b4636">深棕</option>
+            <option value="#234d3f">墨绿</option>
+            <option value="#2c3e5d">藏蓝</option>
+            <option value="#262626">炭黑</option>
+          </select>
+        </label>
+        <span class="flex items-center gap-1.5">
+          背景
+          <button type="button" title="日间" aria-label="背景：日间" class="dd-scene h-4 w-4 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f7f3e6" data-scene="day"></button>
+          <button type="button" title="羊皮纸" aria-label="背景：羊皮纸" class="dd-scene h-4 w-4 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f8f0da" data-scene="paper"></button>
+          <button type="button" title="护眼" aria-label="背景：护眼" class="dd-scene h-4 w-4 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f0f6ec" data-scene="green"></button>
+          <button type="button" title="淡蓝" aria-label="背景：淡蓝" class="dd-scene h-4 w-4 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#eef4fa" data-scene="blue"></button>
+          <button type="button" title="夜间" aria-label="背景：夜间" class="dd-scene h-4 w-4 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#26262b" data-scene="night"></button>
+        </span>
+        <button type="button" id="dd-reset" class="cursor-pointer text-[11px] text-[#999] hover:text-[#cc0000]">恢复默认</button>
+      </div>
+    </header>
+
+    {{/* 正文：可调字号/行距/字体 + 字距 0.2em + 85% 宽居中（公共契约容器） */}}
+    <div id="fb-chapter-content" class="dd-reader-content mx-auto w-[92%] py-5 break-words tracking-[0.2em] sm:w-[85%]"
+      data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+      {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}
+      style="font-size:20px;line-height:1.8;color:#444444">
+      {{range .Paragraphs}}<p>{{.}}</p>{{else}}<p class="dd-hottext text-center">本章内容为空，请返回目录选择其他章节。</p>{{end}}
+    </div>
+
+    {{/* 章尾导航 */}}
+    <footer class="mx-3 border-t border-dashed border-[#a6d3e8]">
+      <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 py-2 text-[14px]">
+        {{if .Prev}}<a class="dd-greenlink" href="{{chapterURL .Prev.id}}">上一章 ←</a>{{else}}<span class="dd-greenlink" style="color:#9db4a0">上一章 ←</span>{{end}}
+        <a class="dd-greenlink" href="{{tocURL .Novel.id}}">章节目录</a>
+        {{if .Next}}<a class="dd-greenlink" href="{{chapterURL .Next.id}}">→ 下一章</a>{{else}}<span class="dd-greenlink" style="color:#9db4a0">→ 下一章</span>{{end}}
+        <button type="button" class="dd-mark-btn dd-greenlink" data-novel-id="{{.Novel.id}}" data-chapter-id="{{.Chapter.id}}">加入书签</button>
+      </div>
+      <p class="pb-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]">
+        <span class="dd-hottext mr-2">发现章节错误？演示站点暂未开放反馈。</span>
+        请记住本站地址：{{.siteName}}
+      </p>
+    </footer>
+  </article>
+</div>
+{{end}}

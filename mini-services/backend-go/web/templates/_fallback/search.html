@@ -1,0 +1,11 @@
+{{define "content"}}
+<div class="fb-panel">
+  <h2 class="fb-h2">搜索 "{{.Q}}"<span style="font-size:13px;color:#737373;font-weight:400">共 {{.Total}} 本</span></h2>
+  <ul class="fb-rank">
+    {{range .Novels}}<li>
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <span class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{wcFmt .wordCount}} · {{.lastChapterTitle}}</span>
+    </li>{{else}}<li>{{if .Q}}未找到与"{{.Q}}"相关的书籍{{else}}请输入关键词搜索书名或作者{{end}}</li>{{end}}
+  </ul>
+</div>
+{{end}}

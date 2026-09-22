@@ -1,0 +1,105 @@
+{{/* ggd66 首页 —— 移植 Home：宽主栏 + 窄侧栏 双行双栏。
+HomeCustomBlocks 契约：首页无分类板块，置于首个主体内容区（热门推荐/排行榜双栏）之前。
+决策说明：TSX「最新小说/友情链接」由 featured+hot+三榜去重合并（dedupMerge），Go home 契约无去重函数，
+分别以 .RankUpdates / .RankFinished 承载，插入点与行样式不变。 */}}
+{{define "content"}}
+<div class="mx-auto mt-1 w-[90%] max-w-[1200px]">
+
+  {{/* 后台自定义图文区块（小编精选等）：theme-extras HomeCustomBlocks 同构 */}}
+  <div class="mt-3">
+    {{if .HomeBlocks}}<div class="mx-auto w-full max-w-6xl px-4">
+      {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
+        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+          <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+          <h2 class="text-base font-bold tracking-wide text-neutral-900">{{.title}}</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {{range .novels}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden rounded-lg {{gcls .cover}}">
+              {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
+            </span>
+            <span class="mt-2 truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+            <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+          </a>{{else}}<p class="py-6 text-center text-xs text-[#999]">暂无数据</p>{{end}}
+        </div>
+      </section>{{end}}
+    </div>{{end}}
+  </div>
+
+  <div class="grid gap-5 md:grid-cols-[minmax(0,73%)_minmax(0,1fr)] md:gap-[2%]">
+
+    {{/* 第一行左：热门小说推荐（2 列封面简介卡，共 6 张） */}}
+    <section>
+      <h2 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">热门小说推荐</h2>
+      <div class="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+        {{range $i, $n := .Hot}}{{if lt $i 6}}<article class="flex gap-3">
+          <a href="{{bookURL .id}}" class="h-[150px] w-[120px] shrink-0 cursor-pointer border border-[#ccc] bg-white p-[1px] transition-opacity duration-200 hover:opacity-90">
+            <span aria-hidden="true" class="relative flex h-full w-full shrink-0 select-none items-center justify-center overflow-hidden {{gcls .cover}}">
+              {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="font-bold text-white/90 text-[30px]">{{title0 .title}}</span>{{end}}
+            </span>
+          </a>
+          <dl class="min-w-0 flex-1">
+            <dt class="flex h-[25px] items-center justify-between gap-2 border-b border-dotted border-[#ccc]">
+              <a href="{{bookURL .id}}" class="min-w-0 flex-1 cursor-pointer truncate text-left text-[15px] font-bold text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>
+              <span class="shrink-0 text-[12px] font-normal text-[#888]">{{.author}}</span>
+            </dt>
+            <dd><a href="{{bookURL .id}}" class="mt-2 block h-[120px] cursor-pointer overflow-hidden text-[14px] leading-[24px] text-[#888] indent-[2em]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</a></dd>
+          </dl>
+        </article>{{end}}{{else}}<p class="py-6 text-center text-[13px] text-[#999]">暂无数据</p>{{end}}
+      </div>
+    </section>
+
+    {{/* 第一行右：搜索框 + 阅读排行榜 */}}
+    <aside>
+      <form action="/search" method="get" role="search" class="flex h-[38px] overflow-hidden rounded-[5px] border-2 border-[#56ccb5] bg-white">
+        <input type="search" name="q" placeholder="输入关键词" aria-label="搜索小说" class="min-w-0 flex-[4] px-3 text-[14px] text-[#333] outline-none placeholder:text-[#bbb]">
+        <button type="submit" class="flex-[1] cursor-pointer bg-[#56ccb5] text-[13px] text-white transition-colors duration-200 hover:bg-[#48b9a2]">搜索</button>
+      </form>
+      <h2 class="mb-2 mt-4 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">阅读排行榜</h2>
+      <div>
+        {{range .RankClicks}}<div class="flex h-[28px] items-center gap-1 border-b border-dashed border-[#ccc] text-[13px]">
+          <a href="{{catURL .categoryId}}" class="shrink-0 cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">[{{.categoryName}}]</a>
+          <a href="{{bookURL .id}}" class="min-w-0 flex-1 cursor-pointer truncate text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>
+          <span class="shrink-0 text-[12px] text-[#999]">{{.author}}</span>
+        </div>{{else}}<p class="py-6 text-center text-[13px] text-[#999]">暂无数据</p>{{end}}
+      </div>
+    </section>
+
+    {{/* 第二行左：最近更新（五列字段表，Go 契约 .Latest 容量 14） */}}
+    <section>
+      <h2 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">最近更新</h2>
+      <div>
+        {{range .Latest}}<div class="grid h-[28px] items-center border-b border-dashed border-[#ccc] text-[13px] grid-cols-[72px_minmax(0,1fr)_80px] md:grid-cols-[75px_165px_minmax(0,1fr)_85px] lg:grid-cols-[75px_165px_minmax(0,1fr)_85px_85px]">
+          <a href="{{catURL .categoryId}}" class="cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.categoryName}}</a>
+          <a href="{{bookURL .id}}" class="cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>
+          <a href="{{bookURL .id}}" class="hidden cursor-pointer truncate pr-1 text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50] md:block">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}暂无章节{{end}}</a>
+          <span class="truncate text-right text-[#999]">{{fullFmt .updatedAt}}</span>
+          <span class="hidden truncate text-right text-[#999] lg:block">{{.author}}</span>
+        </div>{{else}}<p class="py-6 text-center text-[13px] text-[#999]">暂无数据</p>{{end}}
+      </div>
+    </section>
+
+    {{/* 第二行右：最新小说（两字段行榜单） */}}
+    <aside>
+      <h2 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">最新小说</h2>
+      <div>
+        {{range .RankUpdates}}<div class="flex h-[28px] items-center gap-1 border-b border-dashed border-[#ccc] text-[13px]">
+          <a href="{{catURL .categoryId}}" class="shrink-0 cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">[{{.categoryName}}]</a>
+          <a href="{{bookURL .id}}" class="min-w-0 flex-1 cursor-pointer truncate text-left text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>
+          <span class="shrink-0 text-[12px] text-[#999]">{{.author}}</span>
+        </div>{{else}}<p class="py-6 text-center text-[13px] text-[#999]">暂无数据</p>{{end}}
+      </div>
+    </aside>
+  </div>
+
+  {{/* 友情链接（源站首页底部同款单行文字链；无外站可交换，用站内入口填充） */}}
+  <section class="mt-5 rounded-[4px] border border-[#ccc] bg-white p-3">
+    <strong class="text-[13px] text-[#333]">友情链接：</strong>
+    <span class="ml-1 inline-flex flex-wrap gap-x-[10px] gap-y-1 align-baseline text-[13px]">
+      {{range .RankFinished}}<a href="{{bookURL .id}}" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>{{end}}
+      <a href="/" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">全部分类</a>
+      {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.label}}</a>{{end}}
+    </span>
+  </section>
+</div>
+{{end}}

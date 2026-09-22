@@ -1,0 +1,39 @@
+{{/* 23qb 目录页 —— 移植 TocView：白盒头部 + 阅读进度（app.js fb-resume）+ 最新章节 + 单列斑马章节行。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[1150px] space-y-6 px-4 py-6 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">
+
+  <section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <a href="{{bookURL .Novel.id}}" class="cursor-pointer text-left text-[30px] font-extrabold leading-tight text-[#282828] transition-colors hover:text-[#ff2a14] md:text-[38px]">{{.Novel.title}}</a>
+    <p class="mt-2 text-sm text-black/45">作者：{{.Novel.author}} · 更新于 {{fullFmt .Novel.updatedAt}} · 共 {{len .Chapters}} 章</p>
+
+    {{/* 阅读进度（书签）块：app.js 依据 reader.history 注入「继续阅读」按钮 */}}
+    <div class="mt-5 flex items-center justify-between gap-3 rounded-[10px] bg-[#f7f8f9] px-4 py-3">
+      <div id="fb-resume" data-book-id="{{.Novel.id}}" data-btn-class="inline-flex h-9 shrink-0 cursor-pointer items-center rounded-[50px] bg-gradient-to-r from-[#7ec53d] to-[#34a853] px-5 text-sm font-medium text-white transition-opacity hover:opacity-90" class="min-w-0 flex-1 truncate text-sm text-black/40">暂无阅读进度 —— 打开任意章节后会自动记录书签</div>
+    </div>
+  </section>
+
+  {{/* 最新章节（最近更新 12 章，区间内旧→新） */}}
+  {{$total := len .Chapters}}{{if gt $total 0}}<section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <h2 class="text-[22px] font-bold text-[#282828] md:text-[26px]">最新章节</h2>
+    <p class="mt-1 text-sm text-black/45">全书最近更新 12 章</p>
+    <div class="mt-4 grid gap-x-8 md:grid-cols-2">
+      {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+        <span class="flex-1 truncate">{{$c.title}}</span>
+        <span class="shrink-0 text-xs text-black/35">{{wcFmt $c.wordCount}}</span>
+      </a>{{end}}{{end}}
+    </div>
+  </section>{{end}}
+
+  <section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <h2 class="text-[22px] font-bold text-[#282828] md:text-[26px]">正文 · 全部章节</h2>
+    <div class="mt-4 flex flex-col">
+      {{range .Chapters}}<a href="{{chapterURL .id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        <span class="flex-1 truncate">{{.title}}</span>
+        <span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>
+      </a>{{else}}<p class="py-8 text-center text-sm text-black/40">暂无章节</p>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}

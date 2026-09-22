@@ -1,0 +1,80 @@
+{{/* x2552 目录页（移植 Toc.tsx，紧凑顶栏 + #a_footer，白底）：
+当前位置面包屑 → 书籍信息头（书名/作者/分类/状态/字数/点击/按钮）→ 最新章节（尾 12 新→旧，JS 反转）
+→ 全量章节目录（4 列网格，按 idx 升序）。 */}}
+{{define "content"}}
+<div class="mt-2">
+  {{/* 当前位置面包屑 */}}
+  <div class="flex h-[30px] items-center gap-1 overflow-hidden border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-2 text-[12px]">
+    <span class="shrink-0 font-bold text-[#333]">当前位置：</span>
+    <a href="/" class="inline-block shrink-0 cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">首页</a>
+    <span class="shrink-0 text-[#CCC]">&gt;</span>
+    <a href="{{catURL .Novel.categoryId}}" class="inline-block shrink-0 cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.Novel.categoryName}}</a>
+    <span class="shrink-0 text-[#CCC]">&gt;</span>
+    <a href="{{bookURL .Novel.id}}" class="inline-block min-w-0 max-w-[360px] shrink-0 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.Novel.title}}</a>
+    <span class="shrink-0 text-[#CCC]">&gt;</span>
+    <span class="shrink-0 text-[#999]">目录</span>
+  </div>
+
+  {{/* 书籍信息头 */}}
+  <div class="mt-2 border border-[#E4E4E4] bg-white">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+    <h1 class="text-center text-[20px] leading-[48px] text-[#333]">《{{.Novel.title}}》目录</h1>
+    <div class="border-t border-dotted border-[#E4E4E4] px-3 py-2 text-center text-[12px] leading-[22px] text-[#666]">
+      作者：{{.Novel.author}}
+      <span class="mx-1.5 text-[#DDD]">|</span>
+      分类：<a href="{{catURL .Novel.categoryId}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.Novel.categoryName}}</a>
+      <span class="mx-1.5 text-[#DDD]">|</span>
+      状态：{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}
+      <span class="mx-1.5 text-[#DDD]">|</span>
+      字数：{{wcFmt .Novel.wordCount}}
+      <span class="mx-1.5 text-[#DDD]">|</span>
+      点击：{{.Novel.clicks}}
+      <span class="mx-1.5 text-[#DDD]">|</span>
+      共 {{len .Chapters}} 章
+    </div>
+    <div class="flex flex-wrap items-center justify-center gap-2 border-t border-dotted border-[#E4E4E4] px-3 py-2">
+      {{if .Chapters}}<a href="{{chapterURL (index .Chapters 0).id}}" class="h-[30px] w-[100px] cursor-pointer border border-[#E88B00] bg-gradient-to-b from-[#FFEAD3] to-[#FFD8AB] text-center text-[13px] font-bold leading-[28px] text-[#FF6600] transition-colors hover:text-[#333]">开始阅读</a>
+      {{else}}<span class="h-[30px] w-[100px] cursor-not-allowed border border-[#E88B00] bg-gradient-to-b from-[#FFEAD3] to-[#FFD8AB] text-center text-[13px] font-bold leading-[28px] text-[#FF6600] opacity-60">开始阅读</span>{{end}}
+      <a href="{{bookURL .Novel.id}}" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-center text-[13px] leading-[28px] text-[#333] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">返回书页</a>
+      {{if .LastChapter}}<a href="{{chapterURL .LastChapter.id}}" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-center text-[13px] leading-[28px] text-[#333] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">最新章节</a>{{end}}
+    </div>
+  </div>
+
+  {{/* 最新章节（全书倒数 12 章，服务端正序，JS 反转新→旧） */}}
+  {{if .Chapters}}
+  <div class="mt-2 border border-[#E4E4E4] bg-white">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+    <div class="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-2 text-[12px] font-bold text-[#333]">
+      <span>最新章节</span>
+      <span class="text-[11px] font-normal text-[#999]">最近更新 12 章 · 新→旧</span>
+    </div>
+    <ul id="x25-toc-latest" data-reverse="1" class="grid grid-cols-1 gap-x-6 px-3 py-1 sm:grid-cols-2 lg:grid-cols-4">
+      {{$total := len .Chapters}}{{$from := sub $total 12}}
+      {{range $i, $c := .Chapters}}{{if ge $i $from}}
+      <li class="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]">
+        <span class="w-[42px] shrink-0 text-right text-[#999]">{{$c.idx}}.</span>
+        <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$c.title}}</a>
+      </li>
+      {{end}}{{end}}
+    </ul>
+  </div>
+  {{end}}
+
+  {{/* 全量章节目录 */}}
+  <div class="mt-2 border border-[#E4E4E4] bg-white">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+    <div class="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-2 text-[12px] font-bold text-[#333]">
+      <span>正文目录（按章节序号排列）</span>
+      <span class="text-[11px] font-normal text-[#999]">{{len .Chapters}} 章</span>
+    </div>
+    <ul class="grid grid-cols-1 gap-x-6 px-3 py-1 sm:grid-cols-2 lg:grid-cols-4">
+      {{range .Chapters}}
+      <li class="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]">
+        <span class="w-[42px] shrink-0 text-right text-[#999]">{{.idx}}.</span>
+        <a href="{{chapterURL .id}}" title="{{.title}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.title}}</a>
+      </li>
+      {{else}}<li class="col-span-full"><p class="py-10 text-center text-[12px] text-[#999]">本书暂无章节记录</p></li>{{end}}
+    </ul>
+  </div>
+</div>
+{{end}}

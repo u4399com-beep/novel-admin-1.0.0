@@ -1,0 +1,76 @@
+{{/* ggd66（谷谷小说）共享骨架 —— 忠实移植 src/themes/ggd66/index.tsx Layout。
+青绿顶栏 50px #1abc9c（桌面单行：Logo + 首页/全部小说/前 3 分类 + 工具组；移动端第二行均分导航）
++ 公告条 + 绿底页脚 #56ccb5。深青绿链接 #00886d hover 橙 #f50。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}}</title>
+{{if .pageDescription}}<meta name="description" content="{{.pageDescription}}">{{end}}
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<style>
+body{font-family:"Microsoft YaHei","微软雅黑",simsun,arial,sans-serif}
+</style>
+</head>
+<body class="flex min-h-screen flex-col bg-[#f9f9f9] text-[15px] text-[#888]">
+
+{{/* 青绿顶栏 50px */}}
+<header class="mb-[10px] bg-[#1abc9c] shadow-[0_1px_1px_#1abc9c]">
+  <div class="mx-auto flex h-[50px] w-[90%] max-w-[1200px] items-center justify-between">
+    <a href="/" class="cursor-pointer text-[18px] font-bold text-white" style="text-shadow:1px 1px 0 rgba(0,0,0,.4)">{{.Site.siteName}}</a>
+    <nav aria-label="小说分类导航" class="hidden h-[50px] items-stretch md:flex">
+      <a href="/" class="h-[50px] cursor-pointer text-center text-[14px] leading-[50px] text-white transition-colors duration-200 {{if eq .Path "/"}}font-bold text-[#f50]{{else}}hover:text-[#f50]{{end}}" style="text-shadow:1px 1px 1px #666">首页</a>
+      <a href="/" class="h-[50px] cursor-pointer text-center text-[14px] leading-[50px] text-white transition-colors duration-200 hover:text-[#f50]" style="text-shadow:1px 1px 1px #666">全部小说</a>
+      {{range $i, $n := .Nav}}{{if lt $i 3}}<a href="{{catURL .id}}" class="h-[50px] cursor-pointer text-center text-[14px] leading-[50px] text-white transition-colors duration-200 {{if eq $path (catURL .id)}}font-bold text-[#f50]{{else}}hover:text-[#f50]{{end}}" style="text-shadow:1px 1px 1px #666">{{.name}}</a>{{end}}{{end}}
+    </nav>
+    <div class="hidden items-center gap-2 text-[13px] text-white/85 md:flex">
+      <button type="button" data-gg-history title="查看最近读过的章节" class="cursor-pointer transition-colors duration-200 hover:text-white">阅读记录</button>
+      <span class="opacity-50">|</span>
+      <button type="button" data-gg-favorite title="把本站加入浏览器收藏夹（Ctrl+D）" class="cursor-pointer transition-colors duration-200 hover:text-white">收藏本站</button>
+    </div>
+  </div>
+  {{/* 移动端第二行导航（源站 header-nav 展开行：宽 20% 均分，上边线 #e9faff） */}}
+  <nav aria-label="移动端分类导航" class="flex border-t border-[#e9faff] md:hidden">
+    <a href="/" class="h-[50px] flex-1 cursor-pointer text-center text-[14px] leading-[50px] text-white transition-colors duration-200 {{if eq .Path "/"}}font-bold text-[#f50]{{else}}hover:text-[#f50]{{end}}" style="text-shadow:1px 1px 1px #666">首页</a>
+    <a href="/" class="h-[50px] flex-1 cursor-pointer text-center text-[14px] leading-[50px] text-white transition-colors duration-200 hover:text-[#f50]" style="text-shadow:1px 1px 1px #666">全部小说</a>
+    {{range $i, $n := .Nav}}{{if lt $i 3}}<a href="{{catURL .id}}" class="h-[50px] flex-1 cursor-pointer text-center text-[14px] leading-[50px] text-white transition-colors duration-200 {{if eq $path (catURL .id)}}font-bold text-[#f50]{{else}}hover:text-[#f50]{{end}}" style="text-shadow:1px 1px 1px #666">{{.name}}</a>{{end}}{{end}}
+  </nav>
+</header>
+
+{{/* 公告条 */}}
+{{if .Site.notice}}<div class="mx-auto mb-[10px] w-[90%] max-w-[1200px]">
+  <p class="truncate rounded-[4px] border border-[#ccc] bg-[#cdf3eb] px-3 py-2 text-[13px] text-[#00886d]">公告：{{.Site.notice}}</p>
+</div>{{end}}
+
+<main class="min-w-0 flex-1">{{template "content" .}}</main>
+
+{{/* 绿底页脚 */}}
+<footer class="mt-5 bg-[#56ccb5] py-[10px] text-center text-[14px] leading-[22px] text-white shadow-[0_-1px_1px_rgba(0,0,0,0.06)]">
+  <p class="flex flex-wrap items-center justify-center gap-x-3 px-4">
+    <button type="button" data-gg-history title="查看最近读过的章节" class="cursor-pointer underline-offset-2 transition-colors hover:underline">阅读记录</button>
+    <span class="opacity-60">|</span>
+    <button type="button" data-gg-favorite title="把本站加入浏览器收藏夹（Ctrl+D）" class="cursor-pointer underline-offset-2 transition-colors hover:underline">收藏本站</button>
+  </p>
+  <p class="hidden sm:block">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为结构级主题模板演示，页面布局风格仿 ggd66.com，内容均为演示数据{{end}}</p>
+  <p class="hidden sm:block">{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}} · 仅用于前端学习与技术交流{{end}}</p>
+  {{if .Site.footerLinks}}<p class="flex flex-wrap items-center justify-center gap-x-3 px-4">
+    {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="underline-offset-2 hover:underline">{{.label}}</a>{{end}}
+  </p>{{end}}
+</footer>
+
+{{/* 阅读记录弹层（ggd66.js 填充） */}}
+<div id="gg-history-mask" class="fixed inset-0 z-50 hidden bg-black/40" data-gg-history-close></div>
+<div id="gg-history-panel" class="fixed left-1/2 top-1/2 z-50 hidden w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-[4px] border border-[#ccc] bg-white p-4">
+  <div class="mb-2 flex items-center justify-between">
+    <p class="text-[14px] font-bold text-[#333]">阅读记录</p>
+    <button type="button" data-gg-history-close aria-label="关闭" class="cursor-pointer px-2 text-lg leading-none text-[#999] hover:text-[#f50]">×</button>
+  </div>
+  <div id="gg-history-list" class="max-h-[50vh] overflow-y-auto text-[13px]"></div>
+</div>
+
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/ggd66.js" defer></script>
+</body>
+</html>{{end}}

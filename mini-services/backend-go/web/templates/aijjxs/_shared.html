@@ -1,0 +1,116 @@
+{{/* aijjxs 爱尚小说 —— Go 模板共享骨架（移植自 src/themes/aijjxs/index.tsx Layout）。
+深酒红毛玻璃固定顶条 + 奶油纸头部卡 + 青绿琥珀主题 CSS（/static/css/aijjxs.css）。
+数据字段见 web_data.go 头部契约；html/template 自动转义。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}} | {{.Site.siteName}}</title>
+<meta name="description" content="{{.pageDescription}}">
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<link rel="stylesheet" href="/static/css/aijjxs.css">
+</head>
+<body class="aj-root flex min-h-screen flex-col">
+{{/* 固定顶条：深酒红毛玻璃（源站 #550F1C→#26040C 三段渐变） */}}
+<div class="aj-topbar fixed inset-x-0 top-0 z-40">
+  <div class="mx-auto flex h-[58px] w-full max-w-[1220px] items-center gap-1.5 px-3 sm:px-4">
+    <a href="/" class="aj-toplink flex-none text-[15px] font-bold tracking-wide">{{.Site.siteName}}</a>
+    <nav class="hidden min-w-0 flex-1 overflow-x-auto no-scrollbar lg:block" aria-label="分类导航">
+      <div class="flex items-center gap-1 py-3">
+        <a class="aj-toplink" data-active="{{if eq .Path "/"}}true{{end}}" href="/">首页</a>
+        {{range .Nav}}<a class="aj-toplink" data-active="{{if eq $path (catURL .id)}}true{{end}}" href="{{catURL .id}}">{{.name}}</a>{{end}}
+      </div>
+    </nav>
+    <a href="/search" class="aj-toplink ml-auto flex-none lg:hidden" aria-label="搜索">搜索</a>
+    <button type="button" id="aj-menu-btn" class="aj-toplink flex-none" aria-label="菜单" aria-expanded="false" aria-controls="aj-drawer">≡ 菜单</button>
+    <a href="/search" class="aj-toplink hidden flex-none lg:inline-flex">搜索</a>
+    <button type="button" class="aj-toplink aj-hist-btn hidden flex-none lg:inline-flex" title="查看最近阅读过的章节">阅读记录</button>
+  </div>
+  {{/* 移动端：深色两列抽屉（aijjxs.js 控制显隐） */}}
+  <div id="aj-drawer" hidden class="no-scrollbar max-h-[70vh] overflow-y-auto border-t border-white/10 bg-[rgba(52,6,16,0.97)] px-4 py-3 lg:hidden">
+    <div class="grid grid-cols-2 gap-1.5">
+      <a class="aj-toplink justify-center" href="/">首页</a>
+      {{range .Nav}}<a class="aj-toplink justify-center" href="{{catURL .id}}">{{.name}}</a>{{end}}
+      <a class="aj-toplink justify-center" href="/search">搜索全站</a>
+      <button type="button" class="aj-toplink aj-hist-btn justify-center">阅读记录</button>
+      <button type="button" class="aj-toplink aj-fav justify-center" title="把本站加入浏览器收藏夹">收藏本站</button>
+    </div>
+  </div>
+</div>
+
+<div class="flex min-w-0 flex-1 flex-col pt-[58px]">
+  {{/* 正文页（非章节页）显示头部卡片：站名 + 搜索 + 热搜胶囊 + 公告 */}}
+  {{if ne (printf "%.9s" .Path) "/chapter/"}}
+  <div class="mx-auto w-full max-w-[1220px] px-3 sm:px-4">
+    <header class="mt-4">
+      <div class="aj-card px-4 py-4 sm:px-6 sm:py-5">
+        <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <div>
+            <a href="/" class="block text-left">
+              <span class="aj-logo block text-[26px] leading-[1.15] sm:text-[30px]">{{.Site.siteName}}</span>
+              <span class="aj-logo-underline mt-1 block w-[9em] max-w-full" aria-hidden="true"></span>
+            </a>
+            <p class="mt-1.5 text-xs text-[#6b7280]">全站小说在线阅读 · 章节即时更新 · 支持TXT下载</p>
+          </div>
+          <form class="flex w-full items-center gap-2 sm:w-auto" action="/search" method="get" role="search">
+            <input type="search" name="q" value="{{.Q}}" placeholder="搜索书名 / 作者，回车直达" aria-label="搜索小说" class="h-[44px] w-full min-w-0 flex-1 rounded-[10px] border border-[#e5dccd] bg-white px-4 text-[14px] text-[#1f2937] outline-none transition-colors placeholder:text-[#b7ac97] focus:border-[#0f766e] sm:w-[320px] sm:flex-none">
+            <button type="submit" class="aj-btn aj-btn-teal w-[128px] flex-none">搜索全站</button>
+          </form>
+        </div>
+        {{/* 热门搜索胶囊行（点击榜前列书名；仅首页数据可用，其余页面自动隐藏） */}}
+        {{with .Hot}}
+        {{if .}}
+        <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-dashed border-[#e5dccd] pt-3">
+          <span class="flex-none text-xs text-[#6b7280]">热门搜索</span>
+          {{range .}}<a href="{{searchURL (printf "%v" .title)}}" class="max-w-[180px] truncate rounded-full border border-[#c8e8e2] bg-[#edf9f6] px-2.5 py-[3px] text-xs text-[#0f766e] transition-colors hover:bg-[#0f766e] hover:text-white" title="{{.title}}">{{.title}}</a>{{end}}
+        </div>
+        {{end}}
+        {{end}}
+      </div>
+      {{if .Site.notice}}
+      <div class="aj-card mt-3 flex items-center gap-2 px-4 py-2.5 text-[13px] text-[#8a6d3b]">
+        <span class="aj-badge">公告</span>
+        <p class="min-w-0 flex-1 truncate">{{.Site.notice}}</p>
+      </div>
+      {{end}}
+    </header>
+  </div>
+  {{end}}
+  <main class="{{if ne (printf "%.9s" .Path) "/chapter/"}}mx-auto w-full max-w-[1220px] px-3 pb-12 pt-4 sm:px-4{{end}}">{{template "content" .}}</main>
+  <div class="mt-auto">
+    <footer class="border-t border-[#e5dccd] bg-[#efe9dc]/60 py-6">
+      <div class="mx-auto max-w-[1220px] px-4 text-center">
+        <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px] text-[#6b7280]">
+          <a class="transition-colors hover:text-[#0f766e] hover:underline" href="/">网站首页</a>
+          <a class="transition-colors hover:text-[#0f766e] hover:underline" href="/search">站内搜索</a>
+          <button type="button" class="aj-hist-btn transition-colors hover:text-[#0f766e] hover:underline" title="查看最近阅读过的章节">阅读记录</button>
+          <button type="button" class="aj-fav transition-colors hover:text-[#0f766e] hover:underline" title="把本站加入浏览器收藏夹">收藏本站</button>
+          <button type="button" class="aj-totop transition-colors hover:text-[#0f766e] hover:underline" title="回到页面顶部">回顶部</button>
+          {{range $i, $c := .Nav}}{{if lt $i 6}}<a class="transition-colors hover:text-[#0f766e] hover:underline" href="{{catURL $c.id}}">{{$c.name}}</a>{{end}}{{end}}
+          {{range .Site.footerLinks}}<a class="transition-colors hover:text-[#0f766e] hover:underline" href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.label}}</a>{{end}}
+        </div>
+        <p class="mt-3 text-xs leading-5 text-[#9aa1a9]">{{if .Site.footerText}}{{.Site.footerText}}{{else}}Copyright © {{.Site.siteName}} · 本站为小说系统演示站点，所有内容仅用于技术学习交流。{{end}}</p>
+        <p class="text-xs leading-5 text-[#9aa1a9]">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}免责声明：本站书籍均来自网络收集，版权归原作者所有，如有侵权请联系删除。{{end}}</p>
+      </div>
+    </footer>
+  </div>
+</div>
+
+{{/* 阅读记录浮层（aijjxs.js 从 localStorage reader.history 填充） */}}
+<div id="aj-hist-panel" hidden class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+  <div class="absolute inset-0 bg-black/40" data-aj-hist-close></div>
+  <div class="relative z-10 max-h-[70vh] w-[92%] max-w-[520px] overflow-y-auto rounded-[14px] bg-white p-4 shadow-xl">
+    <div class="mb-3 flex items-center justify-between">
+      <h2 class="text-[16px] font-bold text-[#1f3f3a]">阅读记录</h2>
+      <button type="button" class="aj-reader-btn" data-aj-hist-close>关闭</button>
+    </div>
+    <ol id="aj-hist-list" class="text-[13px]"></ol>
+    <p id="aj-hist-empty" class="py-6 text-center text-xs text-[#9ca3af]">暂无阅读记录，去挑一本书开始阅读吧。</p>
+  </div>
+</div>
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/aijjxs.js" defer></script>
+</body>
+</html>{{end}}

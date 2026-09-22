@@ -1,0 +1,91 @@
+{{/* shipsay 书籍页（移植 Book.tsx）：信息头 + Tab 卡片（作品信息 / 完整目录）。
+适配：React 最新 12 章（客户端全量尾 12 倒序）→ Go 以 .LastChapter + .Chapters[12] 预览呈现
+（预览组由 shipsay.js 反转为新→旧）；Tab 由 shipsay.js 切换，完整目录 Tab 内置跳转目录页入口。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[960px] px-2 pb-6 pt-[10px]">
+  <div class="space-y-[10px]">
+    {{/* 信息头 */}}
+    <section class="bg-white p-4">
+      <div class="flex gap-4 max-[639px]:flex-col">
+        {{if isLocalCover .Novel.cover}}<span class="relative block h-[160px] w-[120px] shrink-0 overflow-hidden shadow-md shadow-black/20"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span></span>
+        {{else}}<span class="relative block h-[160px] w-[120px] shrink-0 overflow-hidden shadow-md shadow-black/20 {{gcls .Novel.cover}}"><span class="flex h-full w-full items-center justify-center"><span class="select-none font-bold text-white/90 drop-shadow text-4xl" aria-hidden="true">{{title0 .Novel.title}}</span></span><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span></span>{{end}}
+        <div class="min-w-0 flex-1">
+          <h1 class="text-[24px] font-bold leading-tight text-[#555]">{{.Novel.title}}</h1>
+          <div class="mt-1 text-[13px] text-[#969BA3]">
+            作者：<a class="transition-colors hover:text-[#ED4259]" href="{{searchURL (printf "%v" .Novel.author)}}">{{.Novel.author}}</a> · <a class="transition-colors hover:text-[#ED4259]" href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{.Novel.categoryName}}</span>
+            <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{wcFmt .Novel.wordCount}}</span>
+            <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span>
+            <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{.ChaptersTotal}} 章</span>
+          </div>
+          <div class="mt-2 text-[13px] text-[#666]">
+            最新章节：
+            {{if .LastChapter}}<a class="text-[#BF2C24] transition-colors hover:text-[#ED4259]" href="{{chapterURL .LastChapter.id}}">{{.LastChapter.title}}</a>{{else}}<span>暂无</span>{{end}}
+            <span class="ml-2 text-[#969BA3]">{{fullFmt .Novel.updatedAt}}</span>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2">
+            {{if .Chapters}}<a href="{{chapterURL (index .Chapters 0).id}}" class="h-[35px] w-[108px] cursor-pointer rounded-[3px] bg-[#BF2C24] text-center text-[14px] leading-[35px] text-white transition-colors hover:bg-[#ED4259]">开始阅读</a>{{end}}
+            <a href="{{tocURL .Novel.id}}" class="h-[35px] w-[108px] cursor-pointer rounded-[3px] border border-[#BF2C24] bg-white text-center text-[14px] leading-[33px] text-[#BF2C24] transition-colors hover:border-[#ED4259] hover:bg-[#ED4259] hover:text-white">查看目录</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {{/* Tab 卡片栏 */}}
+    <div class="flex border-b border-[#EEE] bg-white px-4" id="ss-book-tabs">
+      <button type="button" data-tab="info" data-active="true" class="ss-tab h-[40px] cursor-pointer border-b-2 border-[#BF2C24] px-4 text-[18px] font-medium text-[#BF2C24] transition-colors">作品信息</button>
+      <button type="button" data-tab="catalog" class="ss-tab h-[40px] cursor-pointer border-b-2 border-transparent px-4 text-[18px] text-[#666] transition-colors hover:text-[#ED4259]">目录（{{.ChaptersTotal}} 章）</button>
+    </div>
+
+    {{/* Tab1：作品简介 + 最新章节 */}}
+    <div id="ss-tab-info">
+      <section class="bg-white p-4">
+        <p class="indent-[2em] text-[14px] leading-[1.8] text-[#666]">{{if .Novel.description}}{{.Novel.description}}{{else}}（暂无简介）{{end}}</p>
+        {{if .Tags}}
+        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          <span class="text-xs font-medium text-neutral-500">相关标签：</span>
+          {{range .Tags}}<a class="rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
+        </div>
+        {{end}}
+      </section>
+      <section class="bg-white">
+        <div class="border-b border-[#DDD] py-2.5 text-center text-[15px] font-bold text-[#3E3D43]">最新章节</div>
+        {{if .Chapters}}
+        <div class="px-2 py-2">
+          <div id="ss-book-latest" data-reverse="1" class="grid grid-cols-3 max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
+            {{range .Chapters}}
+            <a class="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2" href="{{chapterURL .id}}">
+              <span class="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{{.idx}}</span>
+              <span class="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">{{.title}}</span>
+            </a>
+            {{end}}
+          </div>
+        </div>
+        {{else}}<p class="px-4 py-10 text-center text-[13px] text-[#969BA3]">暂无章节</p>{{end}}
+      </section>
+    </div>
+
+    {{/* Tab2：完整目录（Go 书页契约仅含前 12 章预览，全量目录请前往目录页） */}}
+    <div id="ss-tab-catalog" hidden>
+      <section class="bg-white">
+        <div class="border-b border-[#DDD] py-2.5 text-center text-[15px] font-bold text-[#3E3D43]">完整目录（升序）</div>
+        {{if .Chapters}}
+        <div class="px-2 py-2">
+          <div class="grid grid-cols-3 max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
+            {{range .Chapters}}
+            <a class="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2" href="{{chapterURL .id}}">
+              <span class="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{{.idx}}</span>
+              <span class="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">{{.title}}</span>
+            </a>
+            {{end}}
+          </div>
+        </div>
+        <p class="border-t border-[#F0F0F0] px-4 py-3 text-center text-[13px] text-[#969BA3]">书页仅展示前 {{len .Chapters}} 章预览 · <a class="text-[#BF2C24] transition-colors hover:text-[#ED4259]" href="{{tocURL .Novel.id}}">查看全部 {{.ChaptersTotal}} 章 →</a></p>
+        {{else}}<p class="px-4 py-10 text-center text-[13px] text-[#969BA3]">暂无章节</p>{{end}}
+      </section>
+    </div>
+  </div>
+</div>
+{{end}}

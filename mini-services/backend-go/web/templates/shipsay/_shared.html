@@ -1,0 +1,101 @@
+{{/* shipsay 演示主题 —— Go 模板共享骨架（移植自 src/themes/shipsay/Layout.tsx）。
+现代扁平红白灰三段式：白页头 + 深灰 #3E3D43 导航/页脚 + 960px 容器。
+繁简切换（TradToggle）本版跳过；书库/完本/全部分类快捷入口因 Go 无全站书库路由而移除。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}} | {{.Site.siteName}}</title>
+<meta name="description" content="{{.pageDescription}}">
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+</head>
+<body class="min-h-screen bg-[#F4F4F4] text-[#333]" style="font-family:'Microsoft Yahei','PingFang SC','Hiragino Sans GB','Helvetica Neue',Arial,sans-serif">
+  {{/* 页头 */}}
+  <header class="mx-auto w-full max-w-[960px] px-2">
+    <div class="flex items-center gap-4 py-4">
+      <a href="/" class="shrink-0 text-left leading-tight max-[639px]:hidden">
+        <span class="block text-[22px] font-bold text-[#3E3D43]">{{.Site.siteName}}</span>
+        <span class="block text-[12px] text-[#BF2C24]">{{.Site.siteName}} · 红白灰主题</span>
+      </a>
+      <div class="flex min-w-0 flex-1 justify-center">
+        <form action="/search" method="get" role="search" class="flex w-full max-w-[344px]">
+          <input name="q" value="{{.Q}}" placeholder="输入书名 / 作者，回车搜索" aria-label="搜索小说" class="h-[36px] min-w-0 flex-1 rounded-l-[3px] border border-r-0 border-[#E6E6E6] bg-white px-3 text-[13px] text-[#333] outline-none placeholder:text-[#C0C4CC] focus:border-[#BF2C24]">
+          <button type="submit" title="搜索" class="flex h-[36px] w-[44px] cursor-pointer items-center justify-center rounded-r-[3px] bg-[#BF2C24] text-white transition-colors hover:bg-[#ED4259]">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </button>
+        </form>
+      </div>
+      {{/* 快捷入口（≤639px Logo 隐藏后搜索框收窄，gap-3 给搜索留宽——Task 23-b 适配） */}}
+      <div class="flex shrink-0 items-start gap-3 min-[640px]:gap-4">
+        <a href="/" class="flex flex-col items-center gap-1 text-[#555] transition-colors hover:text-[#BF2C24]" title="回到首页">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span class="text-[12px] leading-none">首页</span>
+        </a>
+        <button type="button" class="ss-hist-btn flex cursor-pointer flex-col items-center gap-1 text-[#555] transition-colors hover:text-[#BF2C24]" title="查看最近阅读过的章节">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h3l2-7 4 14 3-9 2 2h6"/></svg>
+          <span class="text-[12px] leading-none">足迹</span>
+        </button>
+        <button type="button" class="ss-fav flex cursor-pointer flex-col items-center gap-1 text-[#555] transition-colors hover:text-[#BF2C24]" title="把本站加入浏览器收藏夹">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
+          <span class="text-[12px] leading-none">收藏</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  {{/* 主导航条：深灰 41px，hover 上边框高亮红 */}}
+  <nav class="h-[41px] bg-[#3E3D43] max-[767px]:hidden">
+    <div class="no-scrollbar mx-auto flex h-full max-w-[960px] items-stretch overflow-x-auto px-2">
+      <a href="/" class="flex h-full cursor-pointer items-center whitespace-nowrap border-t-2 border-transparent px-5 text-[14px] text-[#FBFBFB] transition-colors hover:border-[#ED4259] hover:bg-[#252428]">首页</a>
+      {{range .Nav}}<a href="{{catURL .id}}" class="{{if eq $path (catURL .id)}}flex h-full cursor-pointer items-center whitespace-nowrap border-t-2 border-[#ED4259] bg-[#252428] px-5 text-[14px] text-[#FBFBFB] transition-colors{{else}}flex h-full cursor-pointer items-center whitespace-nowrap border-t-2 border-transparent px-5 text-[14px] text-[#FBFBFB] transition-colors hover:border-[#ED4259] hover:bg-[#252428]{{end}}">{{.name}}</a>{{end}}
+      <span class="ml-auto flex items-center gap-2 pl-4 text-[13px] text-[#FBFBFB]/60">
+        <span class="cursor-pointer transition-colors hover:text-[#ED4259]" title="演示模板：登录未实现">登录</span>
+        <span class="text-[#FBFBFB]/30">|</span>
+        <span class="cursor-pointer transition-colors hover:text-[#ED4259]" title="演示模板：注册未实现">注册</span>
+      </span>
+    </div>
+  </nav>
+
+  <main>{{template "content" .}}</main>
+
+  {{/* 页脚：深灰两行 */}}
+  <footer class="bg-[#3E3D43] text-[#FBFBFB]">
+    <div class="mx-auto w-full max-w-[960px] px-2 py-5 text-center text-[12px] leading-[22px]">
+      <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}} · 找书读书一站直达，每日更新不断档{{end}}</p>
+      <p class="mt-1">
+        <span class="font-medium">简体版</span>
+        {{if .Site.footerExtra}}<span class="mx-2 text-[#FBFBFB]/40">·</span><span class="text-[#FBFBFB]/60">{{.Site.footerExtra}}</span>{{end}}
+        {{range .Site.footerLinks}}<span class="mx-2 text-[#FBFBFB]/40">·</span><a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-[#ED4259]">{{.label}}</a>{{end}}
+        <span class="ml-3 text-[#FBFBFB]/40">© {{.Site.siteName}}</span>
+      </p>
+    </div>
+  </footer>
+
+  {{/* 右侧边缘固定回顶部/回底部箭头 */}}
+  <div class="fixed right-3 top-1/2 z-40 hidden -translate-y-1/2 flex-col border border-[#E6E6E6] bg-white shadow-sm min-[960px]:flex">
+    <button type="button" id="ss-totop" title="回顶部" class="cursor-pointer p-2 text-[#999] transition-colors hover:text-[#BF2C24]">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+    </button>
+    <button type="button" id="ss-tobottom" title="回底部" class="cursor-pointer border-t border-[#E6E6E6] p-2 text-[#999] transition-colors hover:text-[#BF2C24]">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+  </div>
+
+  {{/* 阅读记录浮层（shipsay.js 填充） */}}
+  <div id="ss-hist-panel" hidden class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div class="absolute inset-0 bg-black/40" data-ss-hist-close></div>
+    <div class="relative z-10 max-h-[70vh] w-[92%] max-w-[520px] overflow-y-auto rounded-[3px] bg-white p-4 shadow-xl">
+      <div class="mb-3 flex items-center justify-between border-b border-[#DDD] pb-2">
+        <h2 class="text-[15px] font-bold text-[#3E3D43]">足迹 · 阅读记录</h2>
+        <button type="button" class="cursor-pointer text-[13px] text-[#969BA3] transition-colors hover:text-[#ED4259]" data-ss-hist-close>关闭</button>
+      </div>
+      <ol id="ss-hist-list" class="text-[13px]"></ol>
+      <p id="ss-hist-empty" class="px-4 py-10 text-center text-[13px] text-[#969BA3]">暂无阅读记录，去挑一本书开始阅读吧。</p>
+    </div>
+  </div>
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/shipsay.js" defer></script>
+</body>
+</html>{{end}}

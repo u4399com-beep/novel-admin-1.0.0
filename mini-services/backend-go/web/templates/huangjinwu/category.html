@@ -1,0 +1,68 @@
+{{/* huangjinwu 分类页（移植 Category）：面包屑 + 分类标题 + 筛选药丸条 + 图文推荐/热门书籍区块
++ 文字卡网格（.Novels 全量无分页）。 */}}
+{{define "content"}}
+<div class="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1.5 text-[15px]">
+    <a href="/" class="cursor-pointer text-[#64748b] transition-colors duration-200 hover:text-[#2563eb]">首页</a>
+    <span class="text-[#cbd5e1]">/</span>
+    <span class="max-w-[240px] truncate text-[#94a3b8]">小说书库</span>
+  </nav>
+  <h1 class="border-l-4 border-[#2563eb] pl-4 text-[24px] leading-8 font-semibold text-[#1e293b]">
+    {{.Category.name}}
+    <span class="ml-3 text-[13px] font-normal text-[#94a3b8]">{{len .Novels}}</span>
+  </h1>
+
+  {{/* 筛选条 */}}
+  <div class="flex flex-wrap gap-2 rounded-[10px] border border-[#e6edf7] bg-white p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+    {{range .Nav}}<a href="{{catURL .id}}" class="cursor-pointer rounded-full px-4 py-1.5 text-[13px] transition-colors duration-200 {{if eq .id $.Category.id}}bg-[#2563eb] text-white{{else}}bg-[#f0f4fb] text-[#1e293b] hover:bg-[#e8f1ff] hover:text-[#2563eb]{{end}}">{{.name}}</a>{{end}}
+  </div>
+
+  {{/* 图文推荐（theme-extras 中性样式：精选优先横向大图卡 ×3） */}}
+  {{if .FeaturedBlock}}
+  <section aria-label="图文推荐">
+    <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+      <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span>
+      <h2 class="text-base font-bold tracking-wide text-neutral-900">图文推荐</h2>
+    </div>
+    <div class="grid gap-3 md:grid-cols-3">
+      {{range .FeaturedBlock}}<a href="{{bookURL .id}}" class="group flex gap-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+        {{if isLocalCover .cover}}<span class="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+        {{else}}<span class="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg {{gcls .cover}}"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+        <span class="block min-w-0 flex-1 py-0.5">
+          <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+          <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
+          <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-neutral-600">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</span>
+          <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+        </span>
+      </a>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{/* 热门书籍（theme-extras 中性样式：点击榜网格小卡 ×8） */}}
+  {{if .HotBlock}}
+  <section aria-label="热门书籍">
+    <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+      <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+      <h2 class="text-base font-bold tracking-wide text-neutral-900">热门书籍</h2>
+    </div>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {{range .HotBlock}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+        {{if isLocalCover .cover}}<span class="relative block w-full overflow-hidden rounded-lg" style="aspect-ratio:3/4"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+        {{else}}<span class="relative block w-full overflow-hidden rounded-lg {{gcls .cover}}" style="aspect-ratio:3/4"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+        <span class="mt-2 block truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+        <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+      </a>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{/* 文字卡网格（全量无分页） */}}
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    {{range .Novels}}{{template "hj-textcard" .}}{{else}}
+    <div class="col-span-full rounded-[10px] border border-dashed border-[#dbe4f0] bg-white/70 p-12 text-center text-[14px] text-[#94a3b8]">该分类下暂无收录小说</div>
+    {{end}}
+  </div>
+</div>
+{{end}}

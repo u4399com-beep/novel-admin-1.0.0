@@ -1,0 +1,103 @@
+{{/* trxsw（唐人小说/葡萄模板风）共享骨架 —— 忠实移植 src/themes/trxsw/index.tsx Layout。
+工具行 + Logo/双按钮搜索 + 蓝底圆角导航 #88c6e5 + 黄条分类导航 #fff9d9 + 公告 + 页脚。
+配色令牌：强调 #c42205 / hover 橙 #FF6600 / 区块框 #a6d3e8 / 标题条 #e1eced / 链接 #6f78a7 / 阅读底 #e9faff。
+搜书名/搜作者为源站杰奇双按钮语义还原（Go 契约 /search 为联合检索，两按钮同参数提交）。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}}</title>
+{{if .pageDescription}}<meta name="description" content="{{.pageDescription}}">{{end}}
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<style>
+.no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body class="flex min-h-screen flex-col bg-[#e9faff] text-[#333]">
+
+{{/* 右上工具行：源站 .headds（#e1eced 底 + #a6d3e8 底边） */}}
+<div class="border-b border-[#a6d3e8] bg-[#e1eced]">
+  <div class="mx-auto flex h-7 max-w-[980px] flex-wrap items-center justify-end gap-x-3 gap-y-1 px-3 py-0.5 text-[11px] text-[#999]">
+    <button type="button" data-trx-favorite title="按 Ctrl+D 也可收藏本站" class="cursor-pointer transition-colors hover:text-[#c42205]">收藏本站（Ctrl+D）</button>
+    <span class="text-[#DDD]">|</span>
+    <button type="button" data-trx-history title="查看最近阅读过的章节" class="cursor-pointer transition-colors hover:text-[#c42205]">阅读记录</button>
+    <span class="hidden text-[#DDD] sm:inline">|</span>
+    <span class="hidden sm:inline">简单 · 快速 · 纯净阅读</span>
+  </div>
+</div>
+
+{{/* Logo + 双按钮搜索 */}}
+<header class="bg-white">
+  <div class="mx-auto flex max-w-[980px] flex-wrap items-center gap-x-5 gap-y-3 px-3 py-3.5">
+    <a href="/" class="flex cursor-pointer select-none items-center gap-2 text-left">
+      <span class="flex h-11 w-11 items-center justify-center bg-[#c42205] text-xl font-black text-white">天</span>
+      <span>
+        <span class="block text-[22px] font-black leading-none tracking-wide text-[#c42205]">{{.Site.siteName}}</span>
+        <span class="mt-1 block text-[10px] tracking-[0.3em] text-[#B0B0B0]">TRXSW · 杰奇经典风</span>
+      </span>
+    </a>
+    <form action="/search" method="get" role="search" class="ml-auto flex w-full items-center sm:w-auto">
+      <input type="search" name="q" value="{{.Q}}" placeholder="输入书名或作者" aria-label="搜索小说" class="h-8 w-full min-w-0 border border-[#a6d3e8] bg-[#e9faff] px-2 text-sm text-[#333] outline-none placeholder:text-[#C8C8C8] focus:border-[#459df5] sm:w-[240px]">
+      <button type="submit" title="按书名字段检索" class="h-8 shrink-0 cursor-pointer bg-[#c42205] px-3 text-xs text-white transition-colors hover:bg-[#a01c04]">搜书名</button>
+      <button type="submit" title="按作者字段检索" class="h-8 shrink-0 cursor-pointer border border-l-0 border-[#c42205] px-3 text-xs text-[#c42205] transition-colors hover:bg-[#FFF3F0]">搜作者</button>
+    </form>
+  </div>
+</header>
+
+{{/* 主导航：源站 .daohang（980 蓝底 #88c6e5 圆角 10px 条） */}}
+<nav aria-label="小说分类导航" class="px-2">
+  <div class="no-scrollbar mx-auto flex h-10 max-w-[980px] items-stretch overflow-x-auto rounded-[10px] bg-[#88c6e5] px-1">
+    <a href="/" class="flex shrink-0 cursor-pointer items-center border-r border-white/25 px-4 text-[13px] text-white transition-colors hover:bg-[#459df5] {{if eq .Path "/"}}bg-[#459df5] font-bold{{end}}">首页</a>
+    {{range .Nav}}<a href="{{catURL .id}}" class="flex shrink-0 cursor-pointer items-center border-r border-white/25 px-4 text-[13px] text-white transition-colors hover:bg-[#459df5] {{if eq $path (catURL .id)}}bg-[#459df5] font-bold{{end}}">{{.name}}</a>{{end}}
+    <a href="/" class="flex shrink-0 cursor-pointer items-center border-r border-white/25 px-4 text-[13px] text-white transition-colors hover:bg-[#459df5]">全部小说</a>
+  </div>
+</nav>
+
+{{/* 次级分类条：源站 .nav1（黄底 #fff9d9 + 边 #fc3 圆角，分类一览） */}}
+<div class="px-2">
+  <div class="no-scrollbar mx-auto mt-2 flex h-[30px] max-w-[980px] items-center gap-x-4 overflow-x-auto rounded-[10px] border border-[#fc3] bg-[#fff9d9] px-3">
+    {{range .Nav}}<a href="{{catURL .id}}" class="shrink-0 cursor-pointer text-[12px] text-[#6f78a7] transition-colors hover:text-[#c42205]">{{.name}}</a>{{end}}
+    <a href="/" class="shrink-0 cursor-pointer text-[12px] font-bold text-[#6f78a7] transition-colors hover:text-[#c42205]">全部分类</a>
+  </div>
+</div>
+
+{{/* 公告条 */}}
+{{if .Site.notice}}<div class="border-b border-[#F2E3CC] bg-[#FFF8EF]">
+  <div class="mx-auto max-w-[980px] px-3 py-2 text-xs leading-5 text-[#8A6D3B]">
+    <span class="mr-2 inline-block bg-[#FF6600] px-1.5 py-0.5 align-[1px] text-[10px] text-white">通知</span>{{.Site.notice}}
+  </div>
+</div>{{end}}
+
+<main class="flex-1">{{template "content" .}}</main>
+
+{{/* 页脚：网站地图分页链接 + 版权 */}}
+<footer class="mt-8 border-t border-[#a6d3e8] bg-[#FAFAFA]">
+  <div class="mx-auto max-w-[980px] px-3 py-6 text-center text-xs leading-6 text-[#999]">
+    <p class="flex flex-wrap items-center justify-center gap-x-1 gap-y-1">
+      <span class="mr-1 text-[#666]">网站地图：</span>
+      {{range $i, $c := .Nav}}<a href="{{catURL $c.id}}" class="cursor-pointer text-[#6f78a7] hover:text-[#FF6600] hover:underline">[{{add $i 1}}]{{$c.name}}</a>{{end}}
+      <a href="/" class="cursor-pointer text-[#6f78a7] hover:text-[#FF6600] hover:underline">[{{add (len .Nav) 1}}]全部</a>
+      {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer text-[#6f78a7] hover:text-[#FF6600] hover:underline">[{{.label}}]</a>{{end}}
+    </p>
+    <p class="mt-2">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说 CMS 结构级主题演示，界面按经典杰奇 CMS 风格重建，全部内容来自演示数据，仅供学习交流，请勿用于商业用途。{{end}}</p>
+    <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}} · 源站 trxsw.com（重建模板）{{end}}</p>
+  </div>
+</footer>
+
+{{/* 阅读记录弹层（trxsw.js 填充） */}}
+<div id="trx-history-mask" class="fixed inset-0 z-50 hidden bg-black/40" data-trx-history-close></div>
+<div id="trx-history-panel" class="fixed left-1/2 top-1/2 z-50 hidden w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 rounded-[10px] border-2 border-[#a6d3e8] bg-white p-4">
+  <div class="mb-2 flex items-center justify-between">
+    <p class="text-sm font-bold text-[#333]">阅读记录</p>
+    <button type="button" data-trx-history-close aria-label="关闭" class="cursor-pointer px-2 text-lg leading-none text-[#999] hover:text-[#FF6600]">×</button>
+  </div>
+  <div id="trx-history-list" class="max-h-[50vh] overflow-y-auto text-xs"></div>
+</div>
+
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/trxsw.js" defer></script>
+</body>
+</html>{{end}}

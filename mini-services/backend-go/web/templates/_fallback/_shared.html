@@ -1,0 +1,75 @@
+{{/* _fallback 主题共享骨架：模板契约活样例（各主题照此结构实现 _shared.html）。
+数据字段见 web_data.go 头部契约。html/template 自动转义，无需手工 safe 处理。 */}}
+{{define "layout"}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}} | {{.Site.siteName}}</title>
+<meta name="description" content="{{.pageDescription}}">
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<style>
+.fb-body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#fafafa;color:#262626;margin:0}
+.fb-wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+.fb-header{background:#fff;border-bottom:1px solid #e5e5e5}
+.fb-topbar{display:flex;align-items:center;gap:16px;padding:14px 0;flex-wrap:wrap}
+.fb-logo{font-size:22px;font-weight:700;color:#171717;text-decoration:none}
+.fb-search{flex:1;min-width:220px;display:flex;gap:8px}
+.fb-search input{flex:1;border:1px solid #d4d4d4;border-radius:8px;padding:8px 12px;font-size:14px}
+.fb-search button{background:#171717;color:#fff;border:0;border-radius:8px;padding:8px 18px;cursor:pointer}
+.fb-nav{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 10px}
+.fb-nav a{padding:6px 12px;border-radius:999px;font-size:14px;color:#525252;text-decoration:none}
+.fb-nav a.on,.fb-nav a:hover{background:#171717;color:#fff}
+.fb-panel{background:#fff;border:1px solid #e5e5e5;border-radius:12px;padding:16px;margin:16px 0}
+.fb-h2{font-size:17px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;justify-content:space-between}
+.fb-more{font-size:13px;color:#737373;text-decoration:none}
+.fb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.fb-rank{list-style:none;margin:0;padding:0}
+.fb-rank li{display:flex;gap:8px;padding:6px 0;border-bottom:1px dashed #e5e5e5;font-size:14px}
+.fb-rank li:last-child{border-bottom:0}
+.fb-cover{width:84px;height:112px;border-radius:8px;overflow:hidden;flex:none;position:relative;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;font-weight:700}
+.fb-cover img{width:100%;height:100%;object-fit:cover}
+.fb-novel-title{font-weight:600;color:#171717;text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-novel-meta{font-size:12px;color:#737373}
+.fb-novel-desc{font-size:12px;color:#525252;margin:4px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fb-footer{margin-top:32px;padding:20px 0;border-top:1px solid #e5e5e5;color:#737373;font-size:13px;text-align:center}
+.fb-stats{display:flex;gap:24px;flex-wrap:wrap;font-size:13px;color:#737373}
+.fb-stats b{color:#171717}
+.fb-content p{margin:0 0 1em;line-height:1.9;font-size:17px}
+.fb-tag{display:inline-block;margin:0 8px 8px 0;padding:4px 12px;background:#f5f5f5;border-radius:999px;font-size:13px;color:#404040;text-decoration:none}
+.fb-tag:hover{background:#171717;color:#fff}
+.fb-pager-btn{display:inline-block;padding:6px 14px;border:1px solid #d4d4d4;border-radius:8px;color:#404040;text-decoration:none;margin:0 4px}
+.fb-chapter-nav{display:flex;justify-content:space-between;gap:8px;margin:20px 0;flex-wrap:wrap}
+.fb-reader-tools{display:flex;gap:8px;justify-content:center;margin:12px 0;flex-wrap:wrap}
+.fb-reader-tools button{border:1px solid #d4d4d4;background:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:13px}
+</style>
+</head>
+<body class="fb-body">
+<header class="fb-header">
+  <div class="fb-wrap">
+    <div class="fb-topbar">
+      <a class="fb-logo" href="/">{{.Site.siteName}}</a>
+      <form class="fb-search" action="/search" method="get" role="search">
+        <input type="search" name="q" value="{{.Q}}" placeholder="搜索书名或作者" aria-label="搜索小说">
+        <button type="submit">搜索</button>
+      </form>
+    </div>
+    <nav class="fb-nav" aria-label="小说分类导航">
+      <a href="/" class="{{if eq .Path "/"}}on{{end}}">首页</a>
+      {{range .Nav}}<a href="{{catURL .id}}" class="{{if eq .Path (catURL .id)}}on{{end}}">{{.name}}<sup style="font-size:10px"> {{.novelCount}}</sup></a>{{end}}
+    </nav>
+  </div>
+</header>
+<main class="fb-wrap">{{template "content" .}}</main>
+<footer class="fb-footer">
+  <div class="fb-wrap">
+    {{if .Site.footerText}}<p>{{.Site.footerText}}</p>{{end}}
+    {{range .Site.footerLinks}}<a href="{{.url}}" style="color:#737373;margin:0 6px">{{.label}}</a>{{end}}
+    {{if .Site.footerExtra}}<p>{{.Site.footerExtra}}</p>{{end}}
+    <p>{{.Site.notice}}</p>
+  </div>
+</footer>
+<script src="/static/js/app.js" defer></script>
+</body>
+</html>{{end}}

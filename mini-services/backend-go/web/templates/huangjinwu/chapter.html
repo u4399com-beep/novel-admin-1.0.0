@@ -1,0 +1,103 @@
+{{/* huangjinwu 阅读页（移植 Chapter，900px 阅读容器）：面包屑 + 阅读器头部卡（字号/行距滑杆
++ 背景/字体/字色）+ 正文卡（缩进 2em + 字距 0.2em）+ 三段式章节导航 + {分类}热门小说。
+正文容器保留公共契约 id=fb-chapter-content + data-*；偏好存 reader-prefs-v1（huangjinwu.js）。 */}}
+{{define "content"}}
+<div class="mx-auto max-w-[900px] space-y-5 px-4 py-6">
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1.5 text-[15px]">
+    <a href="/" class="cursor-pointer text-[#64748b] transition-colors duration-200 hover:text-[#2563eb]">首页</a>
+    <span class="text-[#cbd5e1]">/</span>
+    <a href="{{bookURL .Novel.id}}" class="cursor-pointer text-[#64748b] transition-colors duration-200 hover:text-[#2563eb]">{{.Novel.title}}</a>
+    <span class="text-[#cbd5e1]">/</span>
+    <span class="max-w-[240px] truncate text-[#94a3b8]">{{.Chapter.title}}</span>
+  </nav>
+
+  {{/* 阅读器头部卡：书名 + 字号/行距滑杆 + 背景/字体/字色 */}}
+  <section id="hj-reader-head" class="flex flex-wrap items-center justify-between gap-4 rounded-[10px] border p-4 shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-colors" style="background:#f8fafc;border-color:#d8e3f0">
+    <a href="{{bookURL .Novel.id}}" id="hj-reader-book" class="cursor-pointer truncate text-[20px] font-semibold transition-colors duration-200 text-[#1e293b]">{{.Novel.title}}</a>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <label class="flex items-center gap-2 text-[13px] text-[#94a3b8]">
+        字号
+        <input type="range" min="14" max="28" step="1" value="18" id="hj-font-range" class="w-28 accent-[#2563eb]">
+        <span class="w-9 text-right" id="hj-font-val">18px</span>
+      </label>
+      <label class="flex items-center gap-2 text-[13px] text-[#94a3b8]">
+        行距
+        <input type="range" min="1.4" max="2.6" step="0.1" value="1.8" id="hj-lh-range" class="w-28 accent-[#2563eb]">
+        <span class="w-9 text-right" id="hj-lh-val">1.8</span>
+      </label>
+    </div>
+    <div class="flex w-full flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3 text-[13px] text-[#94a3b8] sm:w-auto sm:border-t-0 sm:pt-0" style="border-color:#d8e3f0">
+      <span class="flex items-center gap-1.5">
+        背景
+        <button type="button" title="日间" aria-label="背景：日间" class="hj-scene h-5 w-5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f8fafc" data-scene="day"></button>
+        <button type="button" title="羊皮纸" aria-label="背景：羊皮纸" class="hj-scene h-5 w-5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f8f0da" data-scene="paper"></button>
+        <button type="button" title="护眼" aria-label="背景：护眼" class="hj-scene h-5 w-5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f0f6ec" data-scene="green"></button>
+        <button type="button" title="淡蓝" aria-label="背景：淡蓝" class="hj-scene h-5 w-5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#eef4fa" data-scene="blue"></button>
+        <button type="button" title="夜间" aria-label="背景：夜间" class="hj-scene h-5 w-5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#26262b" data-scene="night"></button>
+      </span>
+      <label class="flex items-center gap-1.5">
+        字体
+        <select id="hj-font" class="cursor-pointer rounded-[6px] border bg-white px-1.5 py-1 text-[13px] text-[#1e293b] outline-none" style="border-color:#d8e3f0">
+          <option value="default" selected>默认</option>
+          <option value="song">宋体</option>
+          <option value="hei">黑体</option>
+          <option value="kai">楷体</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-1.5">
+        字色
+        <select id="hj-ink" aria-label="字色" class="cursor-pointer rounded-[6px] border bg-white px-1.5 py-1 text-[13px] text-[#1e293b] outline-none" style="border-color:#d8e3f0">
+          <option value="" selected>跟随背景</option>
+          <option value="#5b4636">深棕</option>
+          <option value="#234d3f">墨绿</option>
+          <option value="#2c3e5d">藏蓝</option>
+          <option value="#262626">炭黑</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  {{/* 正文卡（源站 .reader-content padding 3.2rem / h1 上 3.2rem 下 4.8rem） */}}
+  <article id="hj-paper" class="rounded-[10px] border px-6 py-8 transition-colors sm:px-8" style="background:#f8fafc;border-color:#d8e3f0">
+    <h1 id="hj-ch-title" class="mb-12 mt-8 text-center text-[24px] font-semibold text-[#1e293b]">
+      {{.Chapter.title}}
+      <span class="mt-2 block text-[13px] font-normal text-[#94a3b8]">第 {{.Chapter.idx}} 章 · 约 {{wcFmt .Chapter.wordCount}}</span>
+    </h1>
+    <div id="fb-chapter-content" class="break-words" style="font-size:18px;line-height:1.8;color:#1e293b"
+      data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+      {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}>
+      {{range .Paragraphs}}<p class="mx-auto mb-[1.5em] max-w-[800px] text-justify tracking-[0.2em] indent-[2em]">{{.}}</p>{{else}}<p class="mx-auto max-w-[800px] text-[#94a3b8]">本章内容为空</p>{{end}}
+    </div>
+  </article>
+
+  {{/* 三段式章节导航：上一章 | 目录 | 下一章 */}}
+  <nav aria-label="章节导航" class="mx-auto flex max-w-[800px] flex-wrap items-center justify-between gap-3">
+    {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="min-w-[128px] cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-6 py-2.5 text-center text-[14px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb]">上一章</a>
+    {{else}}<span class="min-w-[128px] cursor-not-allowed rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-6 py-2.5 text-center text-[14px] text-[#1e293b] opacity-40">上一章</span>{{end}}
+    <a href="{{tocURL .Novel.id}}" class="min-w-[128px] cursor-pointer rounded-[10px] bg-[#2563eb] px-6 py-2.5 text-center text-[14px] text-white transition-colors duration-200 hover:bg-[#1d4ed8]">目录</a>
+    {{if .Next}}<a href="{{chapterURL .Next.id}}" class="min-w-[128px] cursor-pointer rounded-[10px] bg-[#2563eb] px-6 py-2.5 text-center text-[14px] text-white transition-colors duration-200 hover:bg-[#1d4ed8]">下一章</a>
+    {{else}}<span class="min-w-[128px] cursor-not-allowed rounded-[10px] bg-[#2563eb] px-6 py-2.5 text-center text-[14px] text-white opacity-40">下一章</span>{{end}}
+  </nav>
+
+  {{/* {分类}热门小说（Related 承载，数据为空时整块隐藏） */}}
+  {{if .Related}}
+  <section class="rounded-[10px] border border-[#e6edf7] bg-white p-6 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+    <div class="mb-5 flex items-end justify-between gap-3">
+      <h2 class="border-l-4 border-[#2563eb] pl-4 text-[20px] leading-7 font-semibold text-[#0f172a]">{{.Novel.categoryName}}热门小说</h2>
+      <a href="{{catURL .Novel.categoryId}}" class="shrink-0 cursor-pointer text-[13px] text-[#2563eb] transition-colors duration-200 hover:text-[#1d4ed8]">进入分类 →</a>
+    </div>
+    <div class="grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-4">
+      {{range .Related}}<a href="{{bookURL .id}}" class="flex h-9 cursor-pointer items-center justify-between gap-2 border-b border-[#eef2f9] px-1 text-left transition-colors duration-200 last:border-b-0 hover:bg-[#f5f9ff]">
+        <span class="min-w-0 flex-1 truncate text-[14px] text-[#1e293b] transition-colors duration-200 hover:text-[#2563eb]">《{{.title}}》</span>
+        <span class="shrink-0 text-[12px] text-[#94a3b8]">{{.author}}</span>
+      </a>{{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <div class="pt-2 text-center text-[13px] text-[#94a3b8]">
+    更新于 {{fullFmt .Novel.updatedAt}} · 内容为演示数据
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,93 @@
+{{/* pilishuwu（飞速小说风）共享骨架 —— 忠实移植 src/themes/pilishuwu/index.tsx Layout。
+规格：980px 定宽居中；顶部欢迎条 + Logo/搜索 + 深蓝导航(#3B76A8) + 公告条 + 页脚。
+配色令牌：主色 #3B76A8 / hover 橙 #FF6600 / 边框 #BFD8EA / 标题栏 #EAF3FB / 链接 #3366BB / 强调红 #CC0000。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}}</title>
+{{if .pageDescription}}<meta name="description" content="{{.pageDescription}}">{{end}}
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+</head>
+<body class="flex min-h-screen flex-col bg-[#F5F9FD] text-[#333]">
+
+{{/* 顶部欢迎条（源站 md+ 才显示） */}}
+<div class="hidden border-b border-[#D7E7F4] bg-[#EAF3FB] text-xs text-[#666] md:block">
+  <div class="mx-auto flex h-7 max-w-[980px] items-center justify-between px-2">
+    <div class="flex items-center gap-4">
+      <button type="button" data-pls-homepage title="如何在浏览器中把本站设为主页" class="cursor-pointer hover:text-[#FF6600]">设为首页</button>
+      <button type="button" data-pls-favorite title="按 Ctrl+D 也可收藏本站" class="cursor-pointer hover:text-[#FF6600]">收藏本站</button>
+      <button type="button" data-pls-history title="查看最近阅读过的章节" class="cursor-pointer hover:text-[#FF6600]">阅读记录</button>
+      <span class="text-[#8AA6C0]">简洁阅读 · 全站无弹窗</span>
+    </div>
+    <span id="pls-date" class="text-[#8AA6C0]"></span>
+  </div>
+</div>
+
+{{/* Logo + 搜索 */}}
+<header class="bg-white">
+  <div class="mx-auto flex max-w-[980px] flex-wrap items-center gap-x-5 gap-y-3 px-2 py-4">
+    <a href="/" class="flex cursor-pointer select-none items-center gap-2 text-left">
+      <span class="flex h-11 w-11 items-center justify-center bg-[#3B76A8] text-xl font-black text-white">飞</span>
+      <span>
+        <span class="block text-2xl font-black leading-none tracking-wide text-[#3B76A8]">{{.Site.siteName}}</span>
+        <span class="mt-1 block text-[10px] tracking-[0.35em] text-[#9BB8D2]">PILISHUWU · 经典蓝白风</span>
+      </span>
+    </a>
+    <form action="/search" method="get" role="search" class="ml-auto flex w-full max-w-[420px] items-center sm:w-auto">
+      <input type="search" name="q" value="{{.Q}}" placeholder="输入书名 / 作者，回车搜索" aria-label="搜索小说" class="h-8 min-w-0 flex-1 border border-r-0 border-[#BFD8EA] bg-white px-2 text-sm text-[#333] outline-none placeholder:text-[#B9CBDC] focus:border-[#3B76A8]">
+      <button type="submit" class="h-8 shrink-0 cursor-pointer bg-[#3B76A8] px-4 text-sm text-white transition-colors hover:bg-[#2F6FA3]">搜 索</button>
+    </form>
+  </div>
+</header>
+
+{{/* 深蓝主导航 */}}
+<nav aria-label="小说分类导航" class="bg-[#3B76A8] text-sm text-white shadow-sm">
+  <div class="mx-auto flex max-w-[980px] flex-wrap items-stretch px-2">
+    <a href="/" class="shrink-0 cursor-pointer px-4 py-2.5 transition-colors {{if eq .Path "/"}}bg-[#2F6FA3] font-bold shadow-[inset_0_-3px_0_#FF9900]{{else}}hover:bg-[#2F6FA3]{{end}}">首 页</a>
+    {{range .Nav}}<a href="{{catURL .id}}" class="shrink-0 cursor-pointer px-4 py-2.5 transition-colors {{if eq $path (catURL .id)}}bg-[#2F6FA3] font-bold shadow-[inset_0_-3px_0_#FF9900]{{else}}hover:bg-[#2F6FA3]{{end}}">{{.name}}</a>{{end}}
+    <a href="/" class="shrink-0 cursor-pointer px-4 py-2.5 transition-colors hover:bg-[#2F6FA3]">全部书库</a>
+  </div>
+</nav>
+
+{{/* 公告条 */}}
+{{if .Site.notice}}<div class="bg-white">
+  <div class="mx-auto max-w-[980px] px-2 py-2 text-xs leading-5 text-[#8A6D3B]">
+    <span class="mr-2 inline-block bg-[#CC0000] px-1.5 py-0.5 align-[1px] text-[10px] text-white">公告</span>{{.Site.notice}}
+  </div>
+</div>{{end}}
+
+<main class="flex-1">{{template "content" .}}</main>
+
+{{/* 页脚 */}}
+<footer class="mt-8 border-t-2 border-[#3B76A8] bg-white">
+  <div class="mx-auto max-w-[980px] px-2 py-6 text-center text-xs leading-6 text-[#999]">
+    <p class="mb-2 flex flex-wrap items-center justify-center gap-x-5">
+      <a href="/" class="cursor-pointer text-[#666] hover:text-[#FF6600]">返回首页</a>
+      <a href="/" class="cursor-pointer text-[#666] hover:text-[#FF6600]">全部小说</a>
+      <button type="button" data-pls-history class="cursor-pointer text-[#666] hover:text-[#FF6600]">阅读记录</button>
+      <button type="button" data-pls-favorite class="cursor-pointer text-[#666] hover:text-[#FF6600]">收藏本站</button>
+      <button type="button" data-pls-totop class="cursor-pointer text-[#666] hover:text-[#FF6600]">回到顶部</button>
+      {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="text-[#666] hover:text-[#FF6600]">{{.label}}</a>{{end}}
+    </p>
+    <p>{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说 CMS 结构级主题演示，界面按经典杰奇蓝白风格重建，内容均来自演示数据，仅供学习交流。{{end}}</p>
+    <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}} · 源站 pilishuwu.com（重建模板）{{end}}</p>
+  </div>
+</footer>
+
+{{/* 阅读记录弹层（pilishuwu.js 从 localStorage reader.history 填充） */}}
+<div id="pls-history-mask" class="fixed inset-0 z-50 hidden bg-black/40" data-pls-history-close></div>
+<div id="pls-history-panel" class="fixed left-1/2 top-1/2 z-50 hidden w-[420px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 border border-[#BFD8EA] bg-white p-4 shadow-lg">
+  <div class="mb-2 flex items-center justify-between">
+    <p class="text-sm font-bold text-[#2F5E8C]">阅读记录</p>
+    <button type="button" data-pls-history-close aria-label="关闭" class="cursor-pointer px-2 text-lg leading-none text-[#999] hover:text-[#FF6600]">×</button>
+  </div>
+  <div id="pls-history-list" class="max-h-[50vh] overflow-y-auto text-xs"></div>
+</div>
+
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/pilishuwu.js" defer></script>
+</body>
+</html>{{end}}

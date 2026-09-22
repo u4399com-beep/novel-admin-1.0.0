@@ -1,0 +1,49 @@
+{{/* 101kks 搜索页（移植 SearchView）：门户搜索盒（大圆角）+ 结果网格（CoverCard）。
+Go 契约：/search 仅在有关键词时返回 .Novels/.Total；空关键词无热榜数据（React 熱門推薦
+为客户端点击榜拉取），降级为提示与分类药丸。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[1112px] space-y-4 px-3 py-4 sm:px-4">
+
+  {{/* 门户搜索盒 */}}
+  <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+    <form action="/search" method="get" role="search" class="flex h-[50px] items-center rounded-[25px] border border-[#dce9f5] bg-white px-5 shadow-[0_2px_10px_rgba(31,108,178,.18)]">
+      <input type="search" name="q" value="{{.Q}}" placeholder="{{if .Q}}「{{.Q}}」· 換個關鍵字再搜一次{{else}}輸入書名 / 作者關鍵字{{end}}" aria-label="搜尋小說" class="h-full min-w-0 flex-1 bg-transparent text-base text-[#333] outline-none placeholder:text-[#b8c4cf]">
+      <button type="submit" aria-label="搜尋" class="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#1f6cb2] transition-colors hover:bg-[#e8f4ff]">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+    </form>
+    <p class="mt-3 text-sm text-[#888]">{{if .Q}}共 {{.Total}} 條與「{{.Q}}」相關的結果{{else}}直接搜尋，或看看本週熱門推薦{{end}}</p>
+  </section>
+
+  <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+    <div class="flex items-center justify-between gap-3 border-b border-black/10 pb-2">
+      <h2 class="text-base font-bold text-[#333]">{{if .Q}}搜尋結果{{else}}熱門推薦{{end}}</h2>
+    </div>
+    <div class="mt-4">
+      {{if .Q}}
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {{range .Novels}}<a href="{{bookURL .id}}" class="group min-w-0 cursor-pointer select-none">
+          {{if isLocalCover .cover}}<span class="relative block aspect-[3/4] w-full overflow-hidden rounded-[3px] shadow-[0_1px_3px_rgba(0,0,0,.2)] transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_4px_10px_rgba(0,0,0,.25)]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+          {{else}}<span class="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-[3px] shadow-[0_1px_3px_rgba(0,0,0,.2)] transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_4px_10px_rgba(0,0,0,.25)] {{gcls .cover}}"><span class="font-bold text-white/90 drop-shadow text-3xl sm:text-4xl" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+          <span class="mt-1.5 block truncate text-[13px] text-[#333] transition-colors group-hover:text-[#06c]">{{.title}}</span>
+          <span class="block truncate text-xs text-[#888]">{{.author}}</span>
+        </a>{{else}}
+        <div class="col-span-full py-10 text-center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto h-9 w-9 text-[#bbb]" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></svg>
+          <p class="mt-3 text-sm text-[#888]">沒有找到與「{{.Q}}」相關的小說</p>
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">{{$c.name}}</a>{{end}}{{end}}
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="py-10 text-center text-sm text-[#888]">請輸入書名或作者關鍵字開始搜尋。</p>
+      <div class="flex flex-wrap items-center justify-center gap-2 pb-6">
+        {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">{{$c.name}}</a>{{end}}{{end}}
+      </div>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

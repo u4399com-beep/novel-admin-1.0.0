@@ -1,0 +1,50 @@
+{{/* ddyueshu 目录页（移植 Toc.tsx）：dl 三栏目录，最新章节（尾 12 章）置顶 + 正文全量正序。
+适配：React「最新章节 新→旧」由 ddyueshu.js 反转 #dd-toc-latest（禁 JS 仍正序可用）。 */}}
+{{define "content"}}
+<div>
+  {{/* 面包屑条 */}}
+  <div class="mt-1 flex h-[36px] items-center justify-between gap-2 border-b border-[#a6d3e8] bg-[#e1eced] px-2 text-[13px]">
+    <div class="flex min-w-0 items-center gap-1">
+      <a class="dd-link flex-none" href="/">首页</a>
+      <span class="flex-none text-[#b3b3b3]">&gt;</span>
+      <a class="dd-link flex-none" href="{{bookURL .Novel.id}}">{{.Novel.title}}</a>
+      <span class="flex-none text-[#b3b3b3]">&gt;</span>
+      <span class="truncate text-[#667788]">章节目录</span>
+    </div>
+    <span class="hidden flex-none text-[12px] text-[#999] sm:block">共 {{len .Chapters}} 章 · 正序排列</span>
+  </div>
+
+  {{/* 书籍信息头 */}}
+  <section class="dd-box dd-box-mid mt-2 flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+    <div class="min-w-0">
+      <h1 class="dd-hei truncate text-[22px] font-bold leading-[30px] text-[#333]">《{{.Novel.title}}》章节目录</h1>
+      <p class="mt-0.5 truncate text-[12px] text-[#999]">作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}} · {{wcFmt .Novel.wordCount}}</p>
+    </div>
+    <div class="flex flex-none items-center gap-3 text-[13px]">
+      <a class="dd-greenlink" href="{{bookURL .Novel.id}}">返回书页</a>
+      {{if .Chapters}}<a class="h-[26px] cursor-pointer bg-[#88c6e5] px-3 font-bold leading-[26px] text-white transition-colors hover:bg-[#459df5]" href="{{chapterURL (index .Chapters 0).id}}">开始阅读</a>{{end}}
+    </div>
+  </section>
+
+  {{/* dl 式目录 */}}
+  <section class="dd-box dd-box-strong mt-2">
+    {{if .Chapters}}
+    <dl class="dd-dd-grid px-2 py-2">
+      <dt class="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">最新章节</dt>
+      <div id="dd-toc-latest" data-reverse="1" class="contents">
+        {{$total := len .Chapters}}{{$from := sub $total 12}}
+        {{range $i, $c := .Chapters}}{{if ge $i $from}}
+        <dd class="dd-dd-item"><a class="block" href="{{chapterURL $c.id}}">{{$c.title}}</a></dd>
+        {{end}}{{end}}
+      </div>
+      <dt class="dd-hei col-span-full mt-2 bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">《{{.Novel.title}}》正文</dt>
+      {{range .Chapters}}
+      <dd class="dd-dd-item"><a class="block" href="{{chapterURL .id}}">{{.title}}</a></dd>
+      {{end}}
+    </dl>
+    {{else}}
+    <p class="dd-hottext px-3 py-4 text-[13px]">本书暂无章节，先去书库看看别的吧。</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

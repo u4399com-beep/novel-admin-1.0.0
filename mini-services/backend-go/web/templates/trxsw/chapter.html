@@ -1,0 +1,73 @@
+{{/* trxsw 阅读页 —— 移植 ChapterView：淡蓝底阅读区 + 居中标题 + 双份翻章导航 + 阅读设置条。
+淡蓝底 #e9faff（场景换肤由 app.js 夜间模式承接）；键盘 ←/→ 由 trxsw.js。
+TSX 的书架/推荐按钮行保留为 trxsw.js 驱动；章尾「热门推荐」无契约数据省略。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[980px] px-2 py-3">
+
+  {{/* 淡蓝底阅读区 */}}
+  <div class="border border-[#D8E8F6] bg-[#e9faff] px-3 py-4 transition-colors sm:px-6">
+
+    {{/* 面包屑 + 操作链接 */}}
+    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+      <nav aria-label="面包屑" class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-[#999]">
+        <span class="flex items-center gap-1"><a href="/" class="cursor-pointer text-[#6f78a7] hover:text-[#FF6600] hover:underline">首页</a></span>
+        <span class="flex items-center gap-1"><span class="text-[#D5D5D5]">›</span><a href="{{bookURL .Novel.id}}" class="cursor-pointer text-[#6f78a7] hover:text-[#FF6600] hover:underline">{{.Novel.title}}</a></span>
+        <span class="flex items-center gap-1"><span class="text-[#D5D5D5]">›</span><span class="text-[#666]">{{.Chapter.title}}</span></span>
+      </nav>
+      <div class="flex shrink-0 gap-3 text-[#6f78a7]">
+        <button type="button" data-trx-shelf data-novel-id="{{.Novel.id}}" class="cursor-pointer hover:text-[#FF6600]">加入书架</button>
+        <button type="button" data-trx-vote class="cursor-pointer hover:text-[#FF6600]">推荐本书</button>
+      </div>
+    </div>
+
+    {{/* 居中章节标题 */}}
+    <h1 class="py-3 text-center text-lg font-bold text-[#333]">{{.Chapter.title}}</h1>
+
+    {{/* 章首翻章导航 */}}
+    <div class="flex items-center justify-center gap-3">
+      {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="cursor-pointer border px-4 py-1.5 text-xs transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">上一页</a>
+      {{else}}<span class="cursor-not-allowed border px-4 py-1.5 text-xs border-[#DCEAF5] bg-[#F4FAFF] text-[#B9CDE0]">上一页</span>{{end}}
+      <a href="{{tocURL .Novel.id}}" class="cursor-pointer border px-4 py-1.5 text-xs transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">返回目录</a>
+      {{if .Next}}<a href="{{chapterURL .Next.id}}" class="cursor-pointer border px-4 py-1.5 text-xs transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">下一页</a>
+      {{else}}<span class="cursor-not-allowed border px-4 py-1.5 text-xs border-[#DCEAF5] bg-[#F4FAFF] text-[#B9CDE0]">下一页</span>{{end}}
+    </div>
+
+    {{/* 阅读设置条 */}}
+    <div class="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-[#8FA6C0]">
+      字号
+      <button type="button" id="fb-font-dec" title="减小字号" class="flex h-[22px] min-w-[26px] cursor-pointer items-center justify-center border border-[#CBE0F2] bg-white px-1.5 text-[11px] text-[#6f78a7] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">A-</button>
+      <button type="button" id="fb-font-inc" title="增大字号" class="flex h-[22px] min-w-[26px] cursor-pointer items-center justify-center border border-[#CBE0F2] bg-white px-1.5 text-[11px] text-[#6f78a7] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">A+</button>
+      <span class="w-[36px] text-right">17px</span>
+      <span class="h-[12px] w-px bg-[#D8E8F6]"></span>
+      <button type="button" id="fb-night" class="flex h-[22px] min-w-[26px] cursor-pointer items-center justify-center border border-[#CBE0F2] bg-white px-1.5 text-[11px] text-[#6f78a7] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">夜间</button>
+      <button type="button" data-trx-reset-prefs class="cursor-pointer text-[11px] text-[#B7C8DA] hover:text-[#FF6600]">恢复默认</button>
+    </div>
+
+    {{/* 正文：居中约 85% 宽，缩进 2em */}}
+    <article class="mt-3 border border-[#D8E8F6] bg-white px-4 py-6 transition-colors sm:px-10">
+      <div class="mx-auto w-[92%] max-w-[760px] break-words md:w-[85%]">
+        <div id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}"{{if .Prev}} data-prev-url="{{chapterURL .Prev.id}}"{{end}}{{if .Next}} data-next-url="{{chapterURL .Next.id}}"{{end}}>
+          {{range .Paragraphs}}<p class="indent-[2em]">{{.}}</p>{{else}}<p class="py-6 text-center text-sm text-[#8FA6C0]">本章内容为空</p>{{end}}
+        </div>
+        <p class="mt-6 text-center text-[11px] text-[#8FA6C0]">本章约 {{.Chapter.wordCount}} 字 · 键盘 ← / → 也可翻章</p>
+      </div>
+    </article>
+
+    {{/* 尾部按钮排 */}}
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+      <button type="button" data-trx-shelf data-novel-id="{{.Novel.id}}" class="cursor-pointer border px-4 py-1.5 transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">加入书架</button>
+      <button type="button" data-trx-vote class="cursor-pointer border px-4 py-1.5 transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">推荐本书</button>
+      <span class="cursor-default px-2 text-[#8FA6C0]">举报错误</span>
+    </div>
+
+    {{/* 章尾翻章导航 */}}
+    <div class="mt-3 flex items-center justify-center gap-3">
+      {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="cursor-pointer border px-4 py-1.5 text-xs transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">上一页</a>
+      {{else}}<span class="cursor-not-allowed border px-4 py-1.5 text-xs border-[#DCEAF5] bg-[#F4FAFF] text-[#B9CDE0]">上一页</span>{{end}}
+      <a href="{{tocURL .Novel.id}}" class="cursor-pointer border px-4 py-1.5 text-xs transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">返回目录</a>
+      {{if .Next}}<a href="{{chapterURL .Next.id}}" class="cursor-pointer border px-4 py-1.5 text-xs transition-colors border-[#CBE0F2] bg-white text-[#6f78a7] hover:border-[#FF6600] hover:text-[#FF6600]">下一页</a>
+      {{else}}<span class="cursor-not-allowed border px-4 py-1.5 text-xs border-[#DCEAF5] bg-[#F4FAFF] text-[#B9CDE0]">下一页</span>{{end}}
+    </div>
+  </div>
+</div>
+{{end}}

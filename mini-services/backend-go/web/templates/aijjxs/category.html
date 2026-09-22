@@ -1,0 +1,153 @@
+{{/* aijjxs 分类页（移植 Category.tsx）：左 cenMain 卡（标题/筛选条/图文推荐/热门书籍/全量列表）
++ 右侧栏（热门排行/相关分类/热门作者）。无分页：.Novels 全量渲染。
+排序/状态筛选条由 aijjxs.js 按 data-* 属性做客户端排序过滤。 */}}
+{{define "content"}}
+<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+  <div class="min-w-0">
+    <section class="aj-card overflow-hidden">
+      <h1 class="border-b border-[#e5dccd] py-5 text-center text-[20px] font-bold text-[#134e4a]">{{.Category.name}}小说电子书下载</h1>
+      {{/* 筛选条：胶囊按钮组（客户端排序/过滤） */}}
+      <div class="space-y-2.5 border-b border-dashed border-[#e5dccd] px-4 py-3.5 sm:px-5">
+        <div class="flex flex-wrap items-center gap-1.5" id="aj-cat-sorts">
+          <span class="mr-1 flex-none text-xs text-[#9ca3af]">排序</span>
+          <button type="button" data-key="latest" data-active="true" class="cursor-pointer rounded-full bg-[#0f766e] px-3 py-1.5 text-[13px] text-white shadow-sm">最新上传</button>
+          <button type="button" data-key="clicks" class="cursor-pointer rounded-full border border-[#e5dccd] bg-white px-3 py-1.5 text-[13px] text-[#6b7280] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]">人气最高</button>
+          <button type="button" data-key="words" class="cursor-pointer rounded-full border border-[#e5dccd] bg-white px-3 py-1.5 text-[13px] text-[#6b7280] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]">字数最多</button>
+          <button type="button" data-key="featured" class="cursor-pointer rounded-full border border-[#e5dccd] bg-white px-3 py-1.5 text-[13px] text-[#6b7280] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]">只看推荐</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5" id="aj-cat-status">
+          <span class="mr-1 flex-none text-xs text-[#9ca3af]">状态</span>
+          <button type="button" data-key="all" data-active="true" class="cursor-pointer rounded-full bg-[#0f766e] px-3 py-1.5 text-[13px] text-white shadow-sm">不限</button>
+          <button type="button" data-key="serial" class="cursor-pointer rounded-full border border-[#e5dccd] bg-white px-3 py-1.5 text-[13px] text-[#6b7280] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]">连载中</button>
+          <button type="button" data-key="finished" class="cursor-pointer rounded-full border border-[#e5dccd] bg-white px-3 py-1.5 text-[13px] text-[#6b7280] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]">已完结</button>
+        </div>
+      </div>
+
+      {{/* 图文推荐（theme-extras 中性样式：精选优先横向大图卡 ×3） */}}
+      {{if .FeaturedBlock}}
+      <section class="mb-6 px-3 pt-4 sm:px-4" aria-label="图文推荐">
+        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+          <span class="text-neutral-700" aria-hidden="true">✦</span>
+          <h2 class="text-base font-bold tracking-wide text-neutral-900">图文推荐</h2>
+        </div>
+        <div class="grid gap-3 md:grid-cols-3">
+          {{range .FeaturedBlock}}
+          <a class="group flex gap-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md" href="{{bookURL .id}}">
+            {{if isLocalCover .cover}}<span class="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg {{gcls .cover}}"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+            <span class="block min-w-0 flex-1 py-0.5">
+              <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+              <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
+              <span class="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-600">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</span>
+              <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+            </span>
+          </a>
+          {{end}}
+        </div>
+      </section>
+      {{end}}
+
+      {{/* 热门书籍（点击榜网格小卡 ×8） */}}
+      {{if .HotBlock}}
+      <section class="mb-6 px-3 sm:px-4" aria-label="热门书籍">
+        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+          <span class="text-neutral-700" aria-hidden="true">↗</span>
+          <h2 class="text-base font-bold tracking-wide text-neutral-900">热门书籍</h2>
+        </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {{range .HotBlock}}
+          <a class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md" href="{{bookURL .id}}">
+            {{if isLocalCover .cover}}<span class="relative block w-full overflow-hidden rounded-lg" style="aspect-ratio:3/4"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative block w-full overflow-hidden rounded-lg {{gcls .cover}}" style="aspect-ratio:3/4"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+            <span class="mt-2 block truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+            <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+          </a>
+          {{end}}
+        </div>
+      </section>
+      {{end}}
+
+      {{/* 全量列表（无分页，服务端按 updatedAt DESC 注入；data-* 供筛选） */}}
+      <div class="space-y-3 p-3 sm:p-4" id="aj-cat-list" data-empty="该条件下暂无小说，换个筛选试试。">
+        {{range .Novels}}
+        <article data-words="{{.wordCount}}" data-clicks="{{.clicks}}" data-featured="{{if .isFeatured}}1{{else}}0{{end}}" data-status="{{.status}}" class="group flex gap-4 rounded-[14px] border border-[#e5dccd] bg-gradient-to-b from-[#fffdf8] to-[#f8f2e4] p-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg sm:p-4">
+          {{if isLocalCover .cover}}<a href="{{bookURL .id}}" class="relative h-[128px] w-[92px] flex-none overflow-hidden rounded-[6px]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>
+          {{else}}<a href="{{bookURL .id}}" class="relative flex h-[128px] w-[92px] flex-none items-center justify-center overflow-hidden rounded-[6px] text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[26px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></a>{{end}}
+          <div class="flex min-w-0 flex-1 flex-col">
+            <div class="flex items-center gap-2">
+              <h3 class="min-w-0 truncate text-[17px] font-bold text-[#155e4b] transition-colors group-hover:text-[#0f766e] sm:text-[18px]"><a href="{{bookURL .id}}">{{.title}}</a></h3>
+              {{if .isFeatured}}<span class="aj-badge">荐</span>{{end}}
+              <span class="ml-auto hidden flex-none text-xs text-[#9ca3af] sm:block">上传 {{dateFmt .updatedAt}}</span>
+            </div>
+            <p class="mt-1 line-clamp-2 text-[13px] leading-[1.65] text-[#6b7280]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</p>
+            <div class="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs text-[#8a7a5c]">
+              <span>作者：{{.author}}</span>
+              <span>{{wcFmt .wordCount}}</span>
+              {{if eq .status "finished"}}<span class="aj-pill aj-pill-done">已完结</span>{{else}}<span class="aj-pill aj-pill-serial">连载中</span>{{end}}
+              <a class="rounded-full bg-[#f3ecdd] px-2 py-0.5" href="{{bookURL .id}}">在线阅读</a>
+              <a class="rounded-full bg-[#f3ecdd] px-2 py-0.5" href="{{tocURL .id}}">TXT下载</a>
+            </div>
+          </div>
+        </article>
+        {{else}}
+        <p class="py-10 text-center text-[14px] text-[#6b7280]">该条件下暂无小说，换个筛选试试。</p>
+        {{end}}
+      </div>
+    </section>
+  </div>
+
+  {{/* 右侧栏 */}}
+  <aside class="min-w-0 space-y-4 self-start lg:sticky lg:top-[70px]">
+    {{if .HotBlock}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">{{.Category.name}}·热门排行</h2>
+      </header>
+      <div class="p-3">
+        <ol class="mt-1">
+          {{range $i, $n := .HotBlock}}
+          <li><a class="aj-row py-[5px]" href="{{bookURL $n.id}}">
+            <span class="w-5 flex-none text-center text-[13px] font-bold tabular-nums {{if lt $i 3}}text-[#9a3412]{{else}}text-[#c2854f]{{end}}">{{add $i 1}}</span>
+            <span class="aj-row-title min-w-0 flex-1">{{$n.title}}</span>
+            <span class="flex-none text-[11px] tabular-nums text-[#9ca3af]">{{$n.clicks}}</span>
+          </a></li>
+          {{end}}
+        </ol>
+      </div>
+    </section>
+    {{end}}
+
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">相关分类</h2>
+      </header>
+      <div class="p-3">
+        <div class="grid grid-cols-2 gap-x-4">
+          {{range .Nav}}
+          <a class="aj-row justify-between {{if eq .id $.Category.id}}font-bold text-[#0f766e]{{end}}" href="{{catURL .id}}">
+            <span class="min-w-0 truncate text-[13px]">{{.name}}</span>
+            <span class="flex-none text-xs text-[#9ca3af]">{{.novelCount}}本</span>
+          </a>
+          {{else}}<p class="py-3 text-center text-xs text-[#9ca3af]">暂无分类</p>{{end}}
+        </div>
+      </div>
+    </section>
+
+    {{if .HotBlock}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">热门作者</h2>
+      </header>
+      <div class="p-3">
+        <div class="flex flex-wrap gap-2">
+          {{range .HotBlock}}<a class="rounded-full bg-[#eef9f7] px-3 py-1.5 text-xs text-[#0f766e] transition-colors hover:bg-[#0f766e] hover:text-white" href="{{searchURL (printf "%v" .author)}}">{{.author}}</a>{{end}}
+        </div>
+      </div>
+    </section>
+    {{end}}
+  </aside>
+</div>
+{{end}}

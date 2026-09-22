@@ -1,0 +1,160 @@
+{{/* aijjxs 书籍页（移植 Book.tsx）：①书籍信息三列 Grid ②内容简介+相关标签 ③下载与在线阅读
+④猜您喜欢 + 右侧栏（同类热门榜/本书导航）。
+适配：作者其它作品列表（客户端拉取）改为「搜索该作者全部作品」入口；收藏/简介折叠由 aijjxs.js。 */}}
+{{define "content"}}
+<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
+  <div class="min-w-0 space-y-4">
+    {{/* ① 书籍信息 */}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h1 class="aj-panel-title">{{.Novel.title}}</h1>
+        <div class="ml-auto">
+          {{if eq .Novel.status "finished"}}<span class="aj-pill aj-pill-done">已完结</span>{{else}}<span class="aj-pill aj-pill-serial">连载中</span>{{end}}
+        </div>
+      </header>
+      <div class="p-3 sm:p-4">
+        <div class="grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] lg:grid-cols-[112px_minmax(0,1fr)_235px]">
+          <div>
+            {{if isLocalCover .Novel.cover}}<span class="relative block h-[148px] w-[112px] overflow-hidden"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+            {{else}}<span class="relative flex h-[148px] w-[112px] items-center justify-center overflow-hidden text-white {{gcls .Novel.cover}}"><span class="font-bold tracking-[0.2em] text-[30px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
+            <button type="button" id="aj-fav-btn" data-novel-id="{{.Novel.id}}" aria-label="收藏书籍 {{.Novel.id}}" class="mt-1.5 w-full cursor-pointer rounded-[6px] border border-[#e5dccd] bg-white py-1 text-center text-xs text-[#6b7280] transition-colors hover:border-[#b45309] hover:text-[#b45309]">加入收藏</button>
+          </div>
+          <div class="min-w-0">
+            <dl class="text-[14px] leading-[1.9]">
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">作者</dt><dd class="min-w-0 text-[#1f2937]"><a class="text-[#115e59] underline-offset-2 hover:text-[#0f766e] hover:underline" href="{{searchURL (printf "%v" .Novel.author)}}">{{.Novel.author}}</a></dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">分类</dt><dd class="min-w-0 text-[#1f2937]"><a class="text-[#115e59] underline-offset-2 hover:text-[#0f766e] hover:underline" href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a></dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">写作进度</dt><dd class="min-w-0 text-[#1f2937]">{{if eq .Novel.status "finished"}}<span class="aj-pill aj-pill-done">已完结</span>{{else}}<span class="aj-pill aj-pill-serial">连载中</span>{{end}}</dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">总字数</dt><dd class="min-w-0 text-[#1f2937]">{{wcFmt .Novel.wordCount}}</dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">总点击</dt><dd class="min-w-0 text-[#1f2937]">{{.Novel.clicks}}</dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">章节</dt><dd class="min-w-0 text-[#1f2937]">{{.ChaptersTotal}} 章</dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">更新时间</dt><dd class="min-w-0 text-[#1f2937]">{{fullFmt .Novel.updatedAt}}</dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">下载方式</dt><dd class="min-w-0 text-[#1f2937]">在线阅读 / TXT下载（演示）</dd></div>
+            </dl>
+          </div>
+          <div class="rounded-[12px] border border-dashed border-[#da5627]/70 bg-[#fffaf0] p-3.5">
+            <div class="flex items-center gap-3">
+              <span class="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-full bg-gradient-to-br text-[20px] font-bold text-white shadow-sm {{gcls .Novel.cover}}" aria-hidden="true">{{title0 .Novel.author}}</span>
+              <div class="min-w-0">
+                <p class="truncate text-[16px] font-bold text-[#7c2d12]">{{.Novel.author}}</p>
+                <p class="text-xs text-[#9ca3af]">TA 在本站的 bookshelf</p>
+              </div>
+            </div>
+            <div class="mt-3 border-t border-dashed border-[#e5b78f] pt-2.5">
+              <p class="text-xs text-[#8a6d3b]">已收录作品（{{.ChaptersTotal}} 章节骨架）</p>
+              <p class="mt-1 text-[13px] text-[#9ca3af]">点击下方按钮检索该作者全部作品</p>
+            </div>
+            <a class="mt-3 block w-full rounded-[8px] border border-[#da5627]/50 py-1.5 text-center text-xs text-[#b45309] transition-colors hover:bg-[#da5627] hover:text-white" href="{{searchURL (printf "%v" .Novel.author)}}">搜索该作者全部作品 →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {{/* ② 内容简介 + 相关标签 */}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">内容简介</h2>
+      </header>
+      <div class="p-3 sm:p-4">
+        <div class="relative">
+          <p id="aj-desc" class="line-clamp-4 text-[15px] leading-[1.8] text-[#374151]">{{if .Novel.description}}{{.Novel.description}}{{else}}暂无简介{{end}}</p>
+          <button type="button" id="aj-desc-btn" class="mt-1 cursor-pointer text-[13px] font-semibold text-[#0f766e] hover:underline">展开全部 ↓</button>
+        </div>
+        {{if .Tags}}
+        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+          <span class="text-xs font-medium text-neutral-500">相关标签：</span>
+          {{range .Tags}}<a class="rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
+        </div>
+        {{end}}
+      </div>
+    </section>
+
+    {{/* ③ 下载与在线阅读 */}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">下载与在线阅读</h2>
+      </header>
+      <div class="p-3 sm:p-4">
+        <div id="fb-resume" data-book-id="{{.Novel.id}}" data-btn-class="aj-btn aj-btn-teal mb-3 w-[184px]"></div>
+        <div class="flex flex-wrap gap-3">
+          {{if .Chapters}}<a class="aj-btn aj-btn-fire w-[184px]" href="{{chapterURL (index .Chapters 0).id}}">在线阅读全文</a>
+          {{else}}<span class="aj-btn aj-btn-fire w-[184px] opacity-50">在线阅读全文</span>{{end}}
+          <a class="aj-btn aj-btn-fire w-[184px]" href="{{tocURL .Novel.id}}">章节目录 / TXT下载</a>
+        </div>
+        <div class="mt-3 flex items-start gap-2 rounded-[10px] border border-dashed border-[#b45309]/50 bg-[#fffbeb] px-3.5 py-2.5 text-[13px] leading-[1.7] text-[#8a6d3b]">
+          <span class="aj-badge mt-0.5">TIP</span>
+          <span>本站为演示站点，TXT 下载未开放；点击「在线阅读全文」直接进入第一章，或前往「章节目录」挑选任意章节阅读。</span>
+        </div>
+      </div>
+    </section>
+
+    {{/* ④ 猜您喜欢（同分类 Related 前 4） */}}
+    {{with .Related}}
+    {{if .}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">猜您喜欢</h2>
+      </header>
+      <div class="p-3 sm:p-4">
+        <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+          {{range $i, $n := .}}{{if lt $i 4}}
+          <article class="group flex gap-3">
+            {{if isLocalCover $n.cover}}<a href="{{bookURL $n.id}}" class="relative h-[122px] w-[88px] flex-none overflow-hidden rounded-[8px] shadow-[inset_0_0_24px_rgba(0,0,0,0.18)]"><img src="{{$n.cover}}" alt="{{$n.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>
+            {{else}}<a href="{{bookURL $n.id}}" class="relative flex h-[122px] w-[88px] flex-none items-center justify-center overflow-hidden rounded-[8px] text-white shadow-[inset_0_0_24px_rgba(0,0,0,0.18)] {{gcls $n.cover}}"><span class="font-bold tracking-[0.2em] text-[22px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 $n.title}}</span></a>{{end}}
+            <div class="min-w-0 flex-1">
+              <h3 class="flex items-center gap-1.5 text-[15px] font-bold text-[#1f2937] transition-colors group-hover:text-[#0f766e]">
+                <a class="min-w-0 truncate" href="{{bookURL $n.id}}">{{$n.title}}</a>
+                {{if $n.isHot}}<span class="aj-badge">新</span>{{end}}
+              </h3>
+              <p class="mt-1 truncate text-xs text-[#6b7280]">{{$n.categoryName}} · {{$n.author}} · {{wcFmt $n.wordCount}}</p>
+              <p class="mt-1.5 line-clamp-3 text-[13px] leading-[1.6] text-[#6b7280]">{{$n.description}}</p>
+            </div>
+          </article>
+          {{end}}{{end}}
+        </div>
+      </div>
+    </section>
+    {{end}}
+    {{end}}
+  </div>
+
+  {{/* 右侧栏 */}}
+  <aside class="min-w-0 space-y-4 self-start lg:sticky lg:top-[70px]">
+    {{if .Related}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">同类热门榜</h2>
+      </header>
+      <div class="p-3">
+        <ol class="mt-1">
+          {{range $i, $n := .Related}}
+          <li><a class="aj-row py-[5px]" href="{{bookURL $n.id}}">
+            <span class="w-5 flex-none text-center text-[13px] font-bold tabular-nums {{if lt $i 3}}text-[#9a3412]{{else}}text-[#c2854f]{{end}}">{{add $i 1}}</span>
+            <span class="aj-row-title min-w-0 flex-1">{{$n.title}}</span>
+            <span class="flex-none text-[11px] tabular-nums text-[#9ca3af]">{{$n.clicks}}</span>
+          </a></li>
+          {{end}}
+        </ol>
+      </div>
+    </section>
+    {{end}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">本书导航</h2>
+      </header>
+      <div class="p-2">
+        <a class="aj-row" href="{{catURL .Novel.categoryId}}"><span class="aj-row-title flex-1">返回分类列表</span><span class="flex-none text-xs text-[#c2854f]">→</span></a>
+        <a class="aj-row" href="{{tocURL .Novel.id}}"><span class="aj-row-title flex-1">全部章节目录</span><span class="flex-none text-xs text-[#c2854f]">→</span></a>
+        {{if .Chapters}}<a class="aj-row" href="{{chapterURL (index .Chapters 0).id}}"><span class="aj-row-title flex-1">从第一章开始读</span><span class="flex-none text-xs text-[#c2854f]">→</span></a>{{end}}
+        {{if .LastChapter}}<a class="aj-row" href="{{chapterURL .LastChapter.id}}"><span class="aj-row-title flex-1">跳到最新章节</span><span class="flex-none text-xs text-[#c2854f]">→</span></a>{{end}}
+        <a class="aj-row" href="/search"><span class="aj-row-title flex-1">站内搜索</span><span class="flex-none text-xs text-[#c2854f]">→</span></a>
+      </div>
+    </section>
+  </aside>
+</div>
+{{end}}

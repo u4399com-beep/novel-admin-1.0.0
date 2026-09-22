@@ -1,0 +1,50 @@
+{{/* shipsay 目录页（移植 Toc.tsx）：白卡 3 列章节升序 + 最新章节置顶组。
+「最新章节 新→旧」由 shipsay.js 反转 #ss-toc-latest（禁 JS 仍正序可用）。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[960px] px-2 pb-6 pt-[10px]">
+  <section class="bg-white">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#DDD] px-4 py-3">
+      <h1 class="flex min-w-0 items-center gap-3 text-[18px] font-bold text-[#3E3D43]">
+        <a href="{{bookURL .Novel.id}}" class="flex shrink-0 items-center gap-1 text-[12px] font-normal text-[#969BA3] transition-colors hover:text-[#ED4259]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          返回详情
+        </a>
+        <span class="min-w-0 truncate">《{{.Novel.title}}》完整目录</span>
+      </h1>
+      <span class="shrink-0 text-[12px] text-[#969BA3]">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}} · {{wcFmt .Novel.wordCount}} · 共 {{len .Chapters}} 章（升序）</span>
+    </div>
+
+    {{if .Chapters}}
+    {{/* 最新章节（尾 12 章，JS 反转新→旧） */}}
+    <div class="border-b border-[#E6E6E6] px-2 pb-2 pt-3">
+      <p class="px-2 pb-1 text-center text-[15px] font-bold text-[#3E3D43]">
+        最新章节
+        <span class="ml-1 text-[11px] font-normal text-[#969BA3]">最近更新 12 章 · 新→旧</span>
+      </p>
+      <div id="ss-toc-latest" data-reverse="1" class="grid grid-cols-3 max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
+        {{$total := len .Chapters}}{{$from := sub $total 12}}
+        {{range $i, $c := .Chapters}}{{if ge $i $from}}
+        <a class="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2" href="{{chapterURL $c.id}}">
+          <span class="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{{$c.idx}}</span>
+          <span class="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">{{$c.title}}</span>
+        </a>
+        {{end}}{{end}}
+      </div>
+    </div>
+
+    <div class="px-2 py-3">
+      <div class="grid grid-cols-3 max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
+        {{range .Chapters}}
+        <a class="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2" href="{{chapterURL .id}}">
+          <span class="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{{.idx}}</span>
+          <span class="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">{{.title}}</span>
+        </a>
+        {{end}}
+      </div>
+    </div>
+    {{else}}
+    <p class="py-10 text-center text-[13px] text-[#969BA3]">暂无章节</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

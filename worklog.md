@@ -873,3 +873,89 @@ Work Log:
 
 Stage Summary:
 - 远端 main 现为 Task 23 权威状态（Go 全业务 API + 10 主题 + admin UI）；db 运行时文件（含 homeConfig/其他分类迁移/926 pseo 词）随提交同步
+---
+Task ID: 24-a
+Agent: go-theme-agent-1
+Task: 主题组1（pilishuwu/23qb/trxsw/ggd66）React→Go html/template 完整移植
+
+Work Log:
+- 【前情恢复】本任务代码曾由上一轮 24-a 会话开工后被沙箱回滚打断：4 主题目录（28 个模板文件）+ 4 个主题私有 JS（pilishuwu.js/23qb.js/trxsw.js/ggd66.js）在工作区完好但未经验证、未写 worklog。本轮按 23-a 同款「逐行审查忠实性后收编」模式处理：4 主题 ×（index.tsx/views.tsx/Layout.tsx/ui.tsx 共 6349 行 TSX）与全部模板逐文件比对，确认 DOM 结构/Tailwind class/配色令牌/插入点语义忠实后收编，仅做缺陷修复，未重写
+- 【逐主题审查结论（均为 7 文件：_shared.html 定义 layout + home/category/book/toc/chapter/search 定义 content）】
+  · pilishuwu：Layout 欢迎条+Logo/搜索+深蓝导航(#3B76A8)+公告条+页脚+阅读记录弹层；首页 左700 主栏（强推 2×2/热门双栏序号/五段式更新表）+ 右260 榜单（站点数据/排行榜三标签 JS 切换/最新入库/友情链接）；HomeBlocks 在首屏 grid 之前（23-b 契约位）。书籍页信息卡+书架/推荐票（pls-shelf localStorage）+内容简介+Tags+章节预览；目录页书头卡+末12章+三栏全量；阅读页章首章尾双导航+85% 正文
+  · 23qb：Layout 固定 70px 顶栏（首页透明/滚动毛玻璃由 23qb.js 切换 data-qb-header）+「全部分类」下拉+移动抽屉+页脚；首页 搜索 Hero（-mt-70 暖渐变）+热门封面榜（RankCover 斜切角标 Impact 数字）+HomeBlocks（[&>div]:max-w-none 解除内旋对齐宽容器）+四张 TextRankCard；分类页药丸筛选+图文两区块+CoverCard 网格；书籍页封面在右白盒+斑马 ChapterRow+相关作品；阅读页 680px+底部胶囊翻页条+书签（23qb.bookmarks）
+  · trxsw：Layout 工具行+双按钮搜索（搜书名/搜作者）+蓝底圆角导航(#88c6e5)+黄条分类导航(#fff9d9)+页脚网站地图[N]式链接；首页 编辑推荐横条+760/190 双栏（最新更新五段式/热门 TOP12/总推荐榜/最新入库）+HomeBlocks（分类导航+双榜上方）+三块榜单+友链；分类页左190榜单侧栏+右760六列数据表（灰底表头）；阅读页淡蓝底 #e9faff 双份翻章导航
+  · ggd66：Layout 青绿顶栏 50px(#1abc9c)（桌面单行+移动第二行均分）+公告条+绿底页脚(#56ccb5)+微软雅黑字体；首页 HomeBlocks（首栏前）+热门推荐 6 封面简介卡+阅读排行榜+最近更新五列表+最新小说+友链文字链；分类页导航条+图文两区块+虚线盒序号徽章列表（i+1 序号）；书籍页信息卡（RedTag/BlueTag）+最新章节+相关阅读；阅读页米黄纸 #FBF4EC+三按钮翻页+书签（ggd66-marks-{id}）
+- 【CSS 处理】4 主题零自有 css（TSX 无内嵌大段自定义样式，全部 Tailwind class 由 build:css 扫描模板+JS 生成）；no-scrollbar（23qb/trxsw）与微软雅黑（ggd66）以内联 <style> 承载；css 引入顺序 tw.css → cover-gradients.css →（无主题 css）；4 个主题 js 均已在 _shared 以 defer 引入（app.js 在前）
+- 【本轮缺陷修复（收编审查发现 3 类）】
+  ① 致命：`{{range slice .X 0 N}}` 在列表长度 < N 时 text/template 内建 slice 报 "index out of range" → 整页降级 _fallback（实测 trxsw/ggd66 首页必现：.Featured<8、.Hot<6；分类页 FeaturedBlock<3 同隐患）。15 处（pilishuwu×2/23qb×3/ggd66×5/trxsw×5）全部改为安全模式 `{{range $i, $n := .X}}{{if lt $i N}}…{{end}}{{else}}空态{{end}}`；其中 2 处（trxsw home 编辑推荐、ggd66 home 热门推荐）修正脚本首版把 range 的 {{else}} 吞进 if 的语义错误（空态仅在列表为空时渲染）
+  ② 导航高亮失效（含 _fallback 同款问题，本辖区修复）：`{{if eq .Path (catURL .id)}}` 位于 `{{range .Nav}}` 内时 .Path 在 range 作用域指向 map 项（无该 key → nil 恒 false，Go template 无作用域链，程序实测）→ 7 处改为 layout/content 顶部 `{{$path := .Path}}` + `eq $path (catURL .id)`（pilishuwu×1/23qb×3/trxsw×1/ggd66×2），修复后分类页恰有 1 个高亮项
+  ③ pilishuwu 首页强推卡底部文案语序对齐 TSX：`点击 N` → `N点击`（formatWords(wordCount)字 · formatWords(clicks)点击）
+- 【翻译难点与决策（逐主题）】排序/状态筛选（4 主题分类页）Go 契约无排序参数 → 静态默认态保留 UI；23qb 首页分类热度榜（TSX 宽口径 500 本按分类聚合）→ 同构 TextRankCard 承载四张全局榜（点击/更新/完本/编辑推荐），插入点不变；ggd66 最新小说/友链（dedupMerge 去重池）→ 以 .RankUpdates/.RankFinished 承载；trxsw 搜书名/搜作者字段检索（zustand）→ 双按钮语义保留、统一 /search 联合检索；TSX「最新 12 章倒序」依赖全量章节数据 → book 页按 Go 契约 12 章预览语义改标「章节预览」，toc 页用 len/sub 取末 12 段（旧→新，标题注明）；「开始阅读」用 index .Chapters 0 取首章、空书库降级目录链接；lucide 图标全部手写内联 SVG（search/history/flame/layout-grid/sparkles/trending-up/book-open/bookmark/thumbs-up 等）；TradToggle/繁简按指令跳过；React 骨架屏/错误态（SSR 无意义）删除
+- 【验证实录】（/tmp/a1-test.bin，BACKEND_PORT=3101，DB=custom.db，用完已 pkill）①go build 通过 ②bun run build:css → tw.css 170KB（含 4 主题全部类名）③/、/category/9999（=「其他」分类，本库 id 即 9999）、/search?q=x 三路由 ×4 主题全部 200 且 HTML 含主题特征类（pilishuwu bg-[#3B76A8]×11、23qb rounded-[18px]+qb-header、trxsw bg-[#88c6e5]+bg-[#fff9d9]、ggd66 bg-[#56ccb5]+bg-[#1abc9c]）④/book/60、/book/60/toc、/chapter/24751 ×4 主题 200；章节页 fb-chapter-content/fb-font-dec/fb-font-inc/fb-night/data-prev-url/data-next-url 契约齐备，主题私钩（data-pls-shelf/qb-bookmark/data-gg-mark/data-trx-shelf）在位 ⑤书籍页 pseo 标签 13 链接渲染 ⑥空分类（/category/5 科幻未来 0 本）四主题空态文案各按 TSX 降级不破版 ⑦HomeBlocks 小编精选在 4 主题首页按 23-b 契约位渲染 ⑧导航高亮修复后 /category/1 恰 1 个 active 项 ⑨模板修复后日志零新增「模板解析失败/渲染失败」（仅存修复前 17:24 的 6 条旧记录）
+
+Stage Summary:
+- 交付物：web/templates/{pilishuwu,23qb,trxsw,ggd66}/ 各 7 文件（共 28 个，layout+6 content 页）+ web/static/js/{pilishuwu,23qb,trxsw,ggd66}.js（主题私有交互：排行榜切换/顶栏换肤/下拉抽屉/阅读记录弹层/书架/推荐票/书签/键盘翻章，零依赖 vanilla）+ tw.css 重扫；零自有主题 css（无需新建）
+- 验证结论：4 主题 7 页面 ×（200 状态码+主题特征类+fb-* 阅读器契约+空态降级+HomeBlocks/FeaturedBlock/HotBlock 三区块契约位）全过；go build 通过；测试实例已清理（3101，未触碰 3000/3005/3030）
+- 遗留 TODO（交主 Agent）：①`slice` 越界与 range 内 `.Path` 失效两个坑为全套模板系统性风险，_fallback 与其他 3 组主题（aijjxs/ddyueshu/shipsay/x2552/101kks/huangjinwu）存在同款写法（grep "range slice" 与 "eq .Path (catURL" 可复现），建议各辖区 agent 比照修复 ②pseo 聚合页主题目录无 pseo.html（7 文件契约不含）→ 永远走 _fallback 整页渲染，如需主题化需扩契约 ③点击数显示：theme-extras 图文卡与 trxsw/ggd66 榜单右浮数字沿用原始数值（funcmap 无 formatCount 等价物且不可改 web.go），与 React 万单位格式化有细微差异
+---
+---
+Task ID: 24-b（收编记录）
+Agent: main (Z.ai Code)
+Task: 主题组2（aijjxs/ddyueshu/shipsay/x2552/101kks/huangjinwu）React→Go 模板移植——agent 超时但文件已全量交付，主 Agent 逐项验证收编
+
+Work Log:
+- 6 主题 × 7 文件全齐（_shared+home/category/book/toc/chapter/search）+ aijjxs.css/ddyueshu.css 拷贝适配 + 各主题 js
+- 全量验证：bun run build:css（tw.css 类扫描含 23qb rounded-[18px] 等特征类 ✓）→ go build ✓ → spawn :3102 → 10 主题 × {/,/category/9999,/search,/book} 全 200、零降级、日志零解析失败
+- 逐主题截图目验：aijjxs（暗红 Hero+最新上传两列+热榜渐变封面）、ddyueshu（浅蓝+分类计数）、shipsay（红白+分类小版块）、x2552/101kks/huangjinwu 全达标
+
+Stage Summary:
+- 10/10 主题 Go 模板层全部就绪；24-a 移植的 slice 越界/.Path 作用域两坑在组 2 未复发（成品样例参照到位）
+---
+Task ID: 24-c（收编记录）
+Agent: main (Z.ai Code)
+Task: 管理后台 Go 化完整版——agent 超时但文件交付，主 Agent 修复后验证
+
+Work Log:
+- 交付物：admin/admin.html（359 行，7 tab：总览/规则/任务/书籍/分类/PSEO/设置）+ admin.js（963 行 vanilla）+ admin.css
+- 修复【admin 渲染降级 bug】：renderPage 按 {activeTheme}/admin 查模板必然落空 → handleWebAdmin data["theme"]="admin" 固定走 templates/admin/（自包含 layout 不随主题）
+- 验证：截图目验 GO 徽章/统计卡（书籍4/章节7726/规则11/PSEO332）/运行健康/任务表状态徽章/tab 导航全齐；3000 代理与 3007 直连双路 200
+
+Stage Summary:
+- admin 全功能 Go 化（任务生命周期控件按 23-a 契约、homeConfig 区块编辑器、主题切换、规则 CRUD JSON 表单）
+---
+Task ID: 24-d
+Agent: main (Z.ai Code)（noise-audit-agent 三连超时后主 Agent 亲自执行）
+Task: 11 条采集规则噪声清洗完整性审计+修复+快填
+
+Work Log:
+- 【背景】库曾被清空（dev.log 实证前端逐个 DELETE 规则）→ 从 git 历史 4cb1619 快照恢复 11 规则/15 分类/69 关键词（旧 schema 无 insecureTLS 按列映射导入）；「未分类」id=10 →「其他」挪 id=9999 sort=9999，删 6 个旧源站空壳分类，sqlite_sequence=8 保证新类 id 永远 <9999（其他 ID 恒最后）
+- 【本地样本审计】aijjxs/ddyueshu 4 本 240 章 python 扫描（域名/推广语/HTML 残留/导航文字/控制字符/标题污染六类模式）→ 零噪声，清洗链健康
+- 【逐站实采】11 站任务串行下发，runner 自动领取；23qb 16 本/huangjinwu 24 本（曾一次瞬时全策略超时重试成功）/xinjianpan 30 本/trxsw 50 本 Phase1 全部正常
+- 【修复①ggd66】首页 .bookbox 失效 → curl 实测 #gengxin ul li 五段式（s1分类/s2书名/s3最新章/s4作者/s5时间）→ listRule 校准 → 30 本验证通过。⚠️ 中途踩 PUT 全字段覆盖坑（listRule 传字符串被 sanitize 成 {} 且 bookRule/chapterRule 一并清空）→ 从快照组全量对象重建
+- 【修复②x2552】"#centerm tr" 失效 → 实测 #centeri ul.update li（p.ul1 a.poptext 书名/p:last-child 作者）→ 35 本验证通过
+- 【修复③101kks】首页改版为书单聚合 → siteUrl 校准 /last + listRule=.newnovels2 ul li（h3 书名/a 链接无作者）；重试仍 challenge-page 全策略拦截（curl 可过引擎被指纹识别，与 Task 22-c 诊断一致）→ 判定硬反爬记录
+- 【不可达】77shuku 全策略超时/网络错误；pilishuwu 挑战页拦截（历史已知硬反爬）
+- 【审计结论落档】11 条规则 notes 全部追加 [噪声审计 2026-09-22] 结论（PUT 全字段防覆盖）
+- 【快填】8 个可用站（aijjxs/ddyueshu/23qb/huangjinwu/ggd66/xinjianpan/x2552/trxsw）各下发 pages=2 快填任务（id 20-27）+ 恢复 3 个因进程重启转 paused 的任务（resume 续传语义）；收尾时 novels 160+/chapters 23万+ 持续增长
+- 【正文渲染 bug 修复】模板 {{range .Paragraphs}} 顶层路径 vs 数据 .Chapter.Paragraphs 错位 → web_data.go 双挂载（顶层副本）一次覆盖 10 主题；验证真实正文（12091 字符章）渲染 <p class="indent-[2em]"> 段落
+
+Stage Summary:
+- 审计总表：8 站可用（2 站选择器现场校准后通过）、2 站硬反爬（101kks/pilishuwu）、1 站不可达（77shuku）；样本正文零残留证明清洗链完整
+- 数据面：小编精选/点击最多 homeConfig 落库+featured/hot 标记（PUT /api/novels 部分更新）→ 首页 8 本真实封面卡渲染实证
+---
+Task ID: 24（主线·主 Agent）
+Agent: main (Z.ai Code)
+Task: ①取消 Next.js 前端、整个项目全部 Go 化改造 ②主题模板逐页核查 ③逐规则噪声清洗审计（用户指令 0/1/2）
+
+Work Log:
+- 【架构终态】backend-go(:3005 mode=all: API+runner+pseo富集+页面) + backend-go(:3007 mode=api: 页面双保险) + scraper-go(:3030 引擎)；3000 Next dev 仅剩 [[...slug]]/route.ts 全量分流代理（/api/*→3005、其余→3007）——React 前端/SSR pseo/robots/sitemap 路由全删，page.tsx/pseo/[kw]/robots.ts/sitemap.ts 移除，"取消 Next.js 前端"落地（Next=纯网络管道+backend-supervisor 看护）
+- 【Go 页面层新建】web.go（renderPage mtime 缓存渲染器+funcmap+?theme=白名单预览+static/covers 前缀路由+robots+sitemap）+ web_data.go（7 页面数据装配：home 聚合/category 全量无分页/书籍 tags+预览+相关/toc 全量/chapter 段落化+上下章/搜索/pseo pageData 保序/admin 聚合）+ router.go 前缀路由支持
+- 【Tailwind 管线】web-src/tw-input.css（@import tailwindcss + @source 扫 Go 模板/static/covers.ts）+ scripts/build-web-css.mjs（bun+postcss）→ tw.css 170KB；package.json build:css；cover-gradients.css 原生 g1-g12 渐变（零 Tailwind 变量依赖）
+- 【模板契约】_shared.html define layout + {page}.html define content；_fallback 兜底主题（永不白屏）；web_data.go 头注释=字段权威契约
+- 【环境】Go 工具链消失（/home/z/go-sdk 被回收）→ 阿里镜像重装 go1.22.10 + goproxy.cn；Task API 多次超时（24-a 成功收编、24-b/c 超时但文件全量交付由主 Agent 验证收编、24-d 三连超时改为主 Agent 亲自执行）
+- 【切换验证】3000 分流代理后 /、/admin、/category、/api/*、/static、/robots.txt 全 200；agent-browser 截图目验 10 主题首页+书籍页+章节页+pseo 聚合页+admin 台全达标；小编精选 8 本真实封面卡实证
+- 【事故与自愈】pkill backend-go.bin 误杀 3005 → supervisor 自愈拉起（新二进制）+ 手动补拉；进程重启触发任务 running→paused 自愈语义 → PATCH resume 续传；admin 渲染降级 bug（模板路径）与章节正文空渲染 bug（Paragraphs 路径错位）均已修复实证
+
+Stage Summary:
+- 用户指令①全 Go 化完成：页面渲染全量进 backend-go（10 主题×6 视图+admin+SEO 路由），Next.js 退役为管道；②主题核查 10/10 截图目验达标（导航/小编精选位/分类计数/渐变封面/阅读器工具栏/键盘翻章）；③噪声审计 11 规则全落档（8 可用含 2 现场校准、2 硬反爬、1 不可达）+ 快填 8 站入队
+- 数据面：清库后重建 160+ 书/23 万+章持续采集；分类"其他"id=9999 恒最后；pseo 671 词 generated、书籍页相关标签=pseo 链接实证

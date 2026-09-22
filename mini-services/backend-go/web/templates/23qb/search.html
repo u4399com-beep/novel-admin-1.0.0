@@ -1,0 +1,36 @@
+{{/* 23qb 搜索页 —— 移植 SearchPanel：同款搜索框 + 封面结果网格（全量无分页） + 空态分类药丸。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[1150px] space-y-6 px-4 py-6 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">
+
+  <section class="rounded-[18px] bg-white p-5 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-7">
+    <form action="/search" method="get" role="search" class="flex h-14 items-center rounded-[10px] bg-[#f3f5f7]">
+      <input type="search" name="q" value="{{.Q}}" placeholder="搜索书名 / 作者 / 简介" aria-label="站内搜索" class="h-full min-w-0 flex-1 bg-transparent px-4 text-base text-[#282828] outline-none placeholder:text-black/30">
+      <button type="submit" class="mr-1 inline-flex h-11 cursor-pointer items-center rounded-[10px] bg-gradient-to-r from-[#ff9800] to-[#ff2a14] px-6 text-sm font-medium text-white transition-opacity hover:opacity-90">搜索</button>
+    </form>
+    {{if .Q}}<p class="mt-3 text-sm text-black/45">共 {{.Total}} 条与「{{.Q}}」相关的结果</p>
+    {{else}}<p class="mt-3 text-sm text-black/45">输入关键词搜索，或看看大家都在读什么</p>{{end}}
+  </section>
+
+  <section class="rounded-[18px] bg-white p-5 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-7">
+    <div class="grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8">
+      {{range .Novels}}<a href="{{bookURL .id}}" class="group cursor-pointer select-none">
+        <div class="transition-all duration-300 group-hover:-translate-y-1 group-hover:drop-shadow-[0_10px_18px_rgba(149,157,165,.45)]">
+          <div class="relative overflow-hidden rounded-[5px] {{gcls .cover}}">
+            {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<div class="flex aspect-[5/7] items-center justify-center"><span class="text-5xl font-bold text-white/90 drop-shadow-md">{{title0 .title}}</span></div>{{end}}
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6"><p class="truncate text-[11px] text-white/85">{{.categoryName}} · {{wcFmt .wordCount}}</p></div>
+          </div>
+        </div>
+        <p class="mt-2 truncate text-center text-[15px] font-semibold text-[#282828] transition-colors group-hover:text-[#ff2a14]">{{.title}}</p>
+        <p class="truncate text-center text-xs text-black/40">{{.author}}</p>
+      </a>{{else}}<div class="col-span-full py-10 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto h-10 w-10 text-black/25"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="m8 8 6 6"/><path d="m14 8-6 6"/></svg>
+        <p class="mt-3 text-sm text-black/45">{{if .Q}}没有找到与「{{.Q}}」相关的小说{{else}}输入关键词开始搜索{{end}}</p>
+        <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+          {{range $i, $n := .Nav}}{{if lt $i 9}}<a href="{{catURL .id}}" class="inline-flex h-[35px] cursor-pointer items-center rounded-[10px] px-4 text-sm transition-colors bg-[#f3f5f7] text-black/55 hover:text-[#ff2a14]">{{.name}}</a>{{end}}{{end}}
+        </div>
+      </div>{{end}}
+    </div>
+    {{if and .Novels (not .Q)}}<p class="mt-6 text-center text-xs text-black/35">—— 热门点击推荐 ——</p>{{end}}
+  </section>
+</div>
+{{end}}

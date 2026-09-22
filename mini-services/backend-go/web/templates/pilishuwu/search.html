@@ -1,0 +1,29 @@
+{{/* pilishuwu 搜索页 —— 移植 SearchView：搜索面板 + 六段式结果行（全量无分页）。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[980px] px-2 py-3">
+
+  {{/* 搜索面板 */}}
+  <form action="/search" method="get" role="search" class="flex flex-wrap items-center gap-2 border border-[#BFD8EA] bg-white p-3">
+    <input type="search" name="q" value="{{.Q}}" placeholder="输入书名 / 作者关键词" aria-label="搜索小说" class="h-8 min-w-0 flex-1 border border-[#BFD8EA] px-2 text-sm outline-none focus:border-[#3B76A8]">
+    <button type="submit" class="h-8 cursor-pointer bg-[#3B76A8] px-4 text-sm text-white transition-colors hover:bg-[#2F6FA3]">搜 索</button>
+  </form>
+
+  <p class="mt-2 text-xs text-[#999]">搜索“<span class="text-[#CC0000]">{{if .Q}}{{.Q}}{{else}}…{{end}}</span>”{{if .Q}}，共找到 {{.Total}} 条结果{{end}}</p>
+
+  <section class="mt-2 border border-[#BFD8EA] bg-white">
+    <header class="flex h-[30px] items-center justify-between border-b border-[#BFD8EA] bg-[#EAF3FB] px-3">
+      <h2 class="flex items-center gap-1.5 text-[13px] font-bold text-[#2F5E8C]"><span aria-hidden="true" class="h-3 w-[3px] bg-[#3B76A8]"></span>搜索结果</h2>
+    </header>
+    <div class="px-2 py-1">
+      {{range .Novels}}<a href="{{bookURL .id}}" class="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-dotted border-[#D5E6F3] px-1 py-2 text-xs hover:bg-[#F7FBFF] md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_74px_56px_66px_38px] md:items-center md:py-[7px]">
+        <span class="truncate font-medium text-[#3366BB]">{{.title}}</span>
+        <span class="hidden truncate text-[#888] md:block">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}—{{end}}</span>
+        <span class="hidden truncate text-[#999] md:block">{{.author}}</span>
+        <span class="hidden text-right text-[#999] md:block">{{wcFmt .wordCount}}</span>
+        <span class="truncate text-right text-[#999] md:text-left">{{fullFmt .updatedAt}}</span>
+        <span class="hidden text-center md:block {{if eq .status "finished"}}text-[#2E8B57]{{else}}text-[#CC0000]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span>
+      </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">{{if .Q}}未找到相关小说，换个关键词试试～{{else}}请输入书名或作者关键词搜索{{end}}</p>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}

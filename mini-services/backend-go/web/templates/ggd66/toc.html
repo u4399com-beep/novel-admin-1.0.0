@@ -1,0 +1,34 @@
+{{/* ggd66 目录页 —— 移植 Toc：面包屑 + 白盒（标题行 + 返回书页 + 最新章节 + 4 列全量列表）。
+最新章节用 len/sub 取全量末 12 段（模板无 reverse，区间内为旧→新）。 */}}
+{{define "content"}}
+<div class="mx-auto mt-1 w-[90%] max-w-[1200px]">
+
+  {{/* 面包屑（浅绿底 » 分隔） */}}
+  <ol aria-label="面包屑" class="mb-3 flex flex-wrap items-center gap-1 rounded-[4px] border border-[#ccc] bg-[#cdf3eb] px-3 py-2 text-[13px] text-[#666]">
+    <li class="flex items-center gap-1"><a href="/" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">首页</a></li>
+    <li class="flex items-center gap-1"><span class="px-0.5 text-[#666]">»</span><a href="{{bookURL .Novel.id}}" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.Novel.title}}</a></li>
+    <li class="flex items-center gap-1"><span class="px-0.5 text-[#666]">»</span><span class="max-w-[260px] truncate">全部章节目录</span></li>
+  </ol>
+
+  <section class="rounded-[4px] border border-[#ccc] bg-white p-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h2 class="mb-0 flex-1 border-b-0 pb-0 text-[18px] font-medium text-[#333]">{{.Novel.title}} · 全部章节目录<span class="ml-2 text-[13px] font-normal text-[#999]">共 {{len .Chapters}} 章</span></h2>
+      <a href="{{bookURL .Novel.id}}" class="cursor-pointer rounded-[4px] border border-[#ccc] bg-white px-4 py-1.5 text-[13px] text-[#333] transition-colors duration-200 hover:border-[#56ccb5] hover:text-[#56ccb5]">返回书页</a>
+    </div>
+
+    {{/* 最新章节（最近更新 12 章，区间内旧→新） */}}
+    {{$total := len .Chapters}}{{if gt $total 0}}<div class="mb-2 mt-2 border-b border-[#ccc] pb-3">
+      <h3 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">最新章节<span class="ml-2 text-[13px] font-normal text-[#999]">最近更新 12 章</span></h3>
+      <div class="grid grid-cols-1 gap-x-3 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="h-[28px] cursor-pointer truncate border-b border-dashed border-[#ccc] px-1 text-left text-[13px] leading-[28px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{$c.title}}</a>{{end}}{{end}}
+      </div>
+    </div>{{end}}
+
+    <div class="mt-2">
+      <div class="grid grid-cols-1 gap-x-3 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="h-[28px] cursor-pointer truncate border-b border-dashed border-[#ccc] px-1 text-left text-[13px] leading-[28px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>{{else}}<div class="col-span-full rounded-[4px] border border-dashed border-[#ccc] bg-white p-10 text-center text-[14px] text-[#999]">暂无章节</div>{{end}}
+      </div>
+    </div>
+  </section>
+</div>
+{{end}}

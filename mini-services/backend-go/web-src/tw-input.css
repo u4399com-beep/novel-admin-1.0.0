@@ -1,0 +1,9 @@
+/*
+ * tw-input.css —— Tailwind 构建入口（Go 页面层）。
+ * @source 声明内容源：Go 模板 + 静态 JS + 渐变样式文件。
+ * 路径相对本文件（mini-services/backend-go/web-src/）。
+ */
+@import "tailwindcss";
+@source "../web/templates";
+@source "../web/static";
+@source "../../../src/lib/covers.ts";

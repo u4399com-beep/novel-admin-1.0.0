@@ -1,0 +1,72 @@
+{{/* _fallback 首页样例：数据字段活文档（Featured/Hot/Latest/Rank﹡/Stats/HomeBlocks）。 */}}
+{{define "content"}}
+<div class="fb-panel">
+  <h2 class="fb-h2">站点统计</h2>
+  <div class="fb-stats">
+    <span>收录 <b>{{.Stats.novelCount}}</b> 本</span>
+    <span>章节 <b>{{.Stats.chapterCount}}</b> 章</span>
+    <span>总字数 <b>{{wcFmt .Stats.totalWordCount}}</b></span>
+    <span>今日更新 <b>{{.Stats.todayUpdates}}</b> 章</span>
+  </div>
+</div>
+
+{{/* 后台自定义图文区块（小编精选等）——契约：位于小说分类板块上方 */}}
+{{range .HomeBlocks}}
+<div class="fb-panel">
+  <h2 class="fb-h2">{{.title}}<a class="fb-more" href="/#">更多</a></h2>
+  <div class="fb-grid">
+    {{range .novels}}<article>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span></a>
+      {{else}}<a href="{{bookURL .id}}"><span class="fb-cover {{gcls .cover}}">{{title0 .title}}</span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="fb-novel-meta">{{.author}} · {{.categoryName}}</p>
+    </article>{{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="fb-panel">
+  <h2 class="fb-h2">小说分类</h2>
+  <div>
+    {{range .Nav}}<a class="fb-tag" href="{{catURL .id}}">{{.name}}（{{.novelCount}}）</a>{{end}}
+  </div>
+</div>
+
+<div class="fb-panel">
+  <h2 class="fb-h2">本周强推</h2>
+  <div class="fb-grid">
+    {{range .Featured}}<article>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span></a>
+      {{else}}<a href="{{bookURL .id}}"><span class="fb-cover {{gcls .cover}}">{{title0 .title}}</span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="fb-novel-meta">{{.author}} · {{wcFmt .wordCount}}</p>
+    </article>{{end}}
+  </div>
+</div>
+
+<div class="fb-panel">
+  <h2 class="fb-h2">热门书籍</h2>
+  <ul class="fb-rank">
+    {{range $i, $n := .Hot}}<li><span style="color:#a3a3a3">{{$i}}</span>
+      <a class="fb-novel-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <span class="fb-novel-meta">{{$n.author}}</span></li>{{end}}
+  </ul>
+</div>
+
+<div class="fb-panel">
+  <h2 class="fb-h2">最新更新</h2>
+  <ul class="fb-rank">
+    {{range .Latest}}<li><a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <span class="fb-novel-meta">{{.author}} · {{.lastChapterTitle}} · {{dateFmt .updatedAt}}</span></li>{{end}}
+  </ul>
+</div>
+
+<div class="fb-panel">
+  <h2 class="fb-h2">点击排行</h2>
+  <ul class="fb-rank">
+    {{range $i, $n := .RankClicks}}<li><span style="color:#a3a3a3">{{$i}}</span>
+      <a class="fb-novel-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <span class="fb-novel-meta">{{wcFmt $n.wordCount}}</span></li>{{end}}
+  </ul>
+</div>
+{{end}}

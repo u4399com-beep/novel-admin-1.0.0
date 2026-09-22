@@ -1,0 +1,74 @@
+{{/* shipsay 章节页（移植 Chapter.tsx）：米黄纸感皮肤 #E7E1D4 + 纸色卡片 #FBF6EC + 右上角设置面板。
+正文容器保留公共契约 id=fb-chapter-content + data-*（app.js 继续阅读记录）；偏好/极简/夜间由 shipsay.js。 */}}
+{{define "content"}}
+<div id="ss-reader" class="pb-8" style="background:#E7E1D4">
+  <div id="ss-reader-wrap" class="mx-auto w-full max-w-[900px] px-2 pt-4">
+    {{/* 正文卡片：右上角设置面板 */}}
+    <section id="ss-paper" class="relative shadow-[0_2px_14px_rgba(0,0,0,0.13)]" style="background:#FBF6EC">
+      <div class="absolute right-3 top-3 flex flex-wrap justify-end gap-1.5">
+        <button type="button" id="ss-font-dec" title="缩小字号" class="flex h-[26px] min-w-[26px] cursor-pointer items-center justify-center rounded-sm border border-[#D8D2C2] px-1 text-[12px] text-[#969BA3] transition-colors hover:border-[#ED4259] hover:text-[#ED4259]">A-</button>
+        <button type="button" id="ss-font-inc" title="放大字号" class="flex h-[26px] min-w-[26px] cursor-pointer items-center justify-center rounded-sm border border-[#D8D2C2] px-1 text-[12px] text-[#969BA3] transition-colors hover:border-[#ED4259] hover:text-[#ED4259]">A+</button>
+        <select id="ss-lh" title="行距" aria-label="行距" class="h-[26px] cursor-pointer rounded-sm border border-[#D8D2C2] bg-transparent px-0.5 text-[12px] text-[#969BA3] outline-none">
+          <option value="1.5">行距 1.5</option>
+          <option value="1.8" selected>行距 1.8</option>
+          <option value="2.0">行距 2.0</option>
+          <option value="2.2">行距 2.2</option>
+        </select>
+        <select id="ss-font" title="字体" aria-label="字体" class="h-[26px] cursor-pointer rounded-sm border border-[#D8D2C2] bg-transparent px-0.5 text-[12px] text-[#969BA3] outline-none">
+          <option value="default" selected>默认</option>
+          <option value="song">宋体</option>
+          <option value="hei">黑体</option>
+          <option value="kai">楷体</option>
+        </select>
+        <span class="flex items-center gap-1" title="背景色">
+          <button type="button" title="背景：日间" aria-label="背景：日间" class="ss-scene h-[26px] w-[18px] cursor-pointer rounded-sm border border-[#ED4259] transition-all" style="background:#FBF6EC" data-scene="day"></button>
+          <button type="button" title="背景：羊皮纸" aria-label="背景：羊皮纸" class="ss-scene h-[26px] w-[18px] cursor-pointer rounded-sm border border-[#D8D2C2] transition-all hover:border-[#ED4259]" style="background:#f8f0da" data-scene="paper"></button>
+          <button type="button" title="背景：护眼" aria-label="背景：护眼" class="ss-scene h-[26px] w-[18px] cursor-pointer rounded-sm border border-[#D8D2C2] transition-all hover:border-[#ED4259]" style="background:#f0f6ec" data-scene="green"></button>
+          <button type="button" title="背景：淡蓝" aria-label="背景：淡蓝" class="ss-scene h-[26px] w-[18px] cursor-pointer rounded-sm border border-[#D8D2C2] transition-all hover:border-[#ED4259]" style="background:#eef4fa" data-scene="blue"></button>
+          <button type="button" title="背景：夜间" aria-label="背景：夜间" class="ss-scene h-[26px] w-[18px] cursor-pointer rounded-sm border border-[#D8D2C2] transition-all hover:border-[#ED4259]" style="background:#26262B" data-scene="night"></button>
+        </span>
+        <select id="ss-ink" title="字色" aria-label="字色" class="h-[26px] cursor-pointer rounded-sm border border-[#D8D2C2] bg-transparent px-0.5 text-[12px] text-[#969BA3] outline-none">
+          <option value="" selected>跟随背景</option>
+          <option value="#5b4636">深棕</option>
+          <option value="#234d3f">墨绿</option>
+          <option value="#2c3e5d">藏蓝</option>
+          <option value="#262626">炭黑</option>
+        </select>
+        <button type="button" id="ss-night" title="夜间模式" aria-label="夜间模式" class="flex h-[26px] min-w-[26px] cursor-pointer items-center justify-center rounded-sm border border-[#D8D2C2] px-1 text-[12px] text-[#969BA3] transition-colors hover:border-[#ED4259] hover:text-[#ED4259]">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        </button>
+        <button type="button" id="ss-minimal" title="极简模式" aria-label="极简模式" class="flex h-[26px] min-w-[26px] cursor-pointer items-center justify-center rounded-sm border border-[#D8D2C2] px-1 text-[12px] text-[#969BA3] transition-colors hover:border-[#ED4259] hover:text-[#ED4259]">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><path d="M14 6H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10Z"/></svg>
+        </button>
+      </div>
+
+      <div class="px-6 pb-8 pt-10 max-[639px]:px-4" id="ss-paper-inner">
+        <div class="flex flex-wrap items-baseline gap-2">
+          <h1 id="ss-ch-head" class="text-[24px] font-bold leading-tight text-[#555]">{{.Chapter.title}}</h1>
+          <span class="text-[13px] text-[#969BA3]">（第 {{.Chapter.idx}} 章）</span>
+        </div>
+        <div id="ss-ch-meta" class="mt-1.5 flex flex-wrap gap-3 text-[12px] text-[#969BA3]">
+          <a class="cursor-pointer transition-colors hover:text-[#ED4259]" href="{{bookURL .Novel.id}}">{{.Novel.title}}</a>
+          <span>{{wcFmt .Chapter.wordCount}}</span>
+          <span class="max-[639px]:hidden">键盘 ← → 翻章 · 回车回目录</span>
+        </div>
+        <article id="fb-chapter-content" class="mt-5 space-y-1 text-justify"
+          data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+          {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}
+          style="font-size:18px;line-height:1.8;color:#262626">
+          {{range .Paragraphs}}<p class="break-words indent-[2em]">{{.}}</p>{{else}}<p class="py-8 text-center opacity-60">本章内容为空，请返回目录选择其他章节。</p>{{end}}
+        </article>
+      </div>
+    </section>
+
+    {{/* 翻页导航条：3 等分 60px */}}
+    <div class="mt-[10px] grid h-[60px] grid-cols-3 divide-x" style="background:#FBF6EC">
+      {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="flex items-center justify-center text-[18px] text-[#555] transition-colors hover:text-[#ED4259]" style="border-color:#E6E6E6">上一章</a>
+      {{else}}<span class="flex cursor-not-allowed items-center justify-center text-[18px] text-[#C0C4CC]" style="border-color:#E6E6E6">上一章</span>{{end}}
+      <a href="{{tocURL .Novel.id}}" class="flex items-center justify-center text-[18px] text-[#555] transition-colors hover:text-[#ED4259]" style="border-color:#E6E6E6">书页 · 目录</a>
+      {{if .Next}}<a href="{{chapterURL .Next.id}}" class="flex items-center justify-center text-[18px] text-[#555] transition-colors hover:text-[#ED4259]" style="border-color:#E6E6E6">下一章</a>
+      {{else}}<span class="flex cursor-not-allowed items-center justify-center text-[18px] text-[#C0C4CC]" style="border-color:#E6E6E6">没有了</span>{{end}}
+    </div>
+  </div>
+</div>
+{{end}}

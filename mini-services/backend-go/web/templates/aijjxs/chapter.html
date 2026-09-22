@@ -1,0 +1,85 @@
+{{/* aijjxs 章节页（移植 Chapter.tsx）：暖纸阅读器（5 场景色/5 档字号/行距/字体/字色）。
+正文容器保留公共契约 id=fb-chapter-content + data-*（app.js 继续阅读记录）；
+阅读器偏好切换由 aijjxs.js（localStorage aj.reader，场景色板与 React 版 SCENES 一致）。 */}}
+{{define "content"}}
+<div id="aj-reader" class="aj-reader pb-10" style="--r-bg:#efe6d8;--r-paper:#fffcf6;--r-accent:#a85a2a;--r-ink:#3d3327">
+  {{/* 阅读工具条 */}}
+  <div class="aj-reader-paper mx-auto w-[calc(100%-24px)] max-w-[1080px] px-4 py-3 sm:w-[94%]">
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs" style="color:var(--r-ink)">
+      <div class="flex items-center gap-1.5">
+        <span class="mr-0.5 opacity-80">背景</span>
+        <button type="button" class="aj-swatch" data-scene="day" title="日间" aria-label="背景：日间" style="background:#fffcf6"></button>
+        <button type="button" class="aj-swatch" data-scene="paper" title="羊皮纸" aria-label="背景：羊皮纸" style="background:#f8f0da"></button>
+        <button type="button" class="aj-swatch" data-scene="green" title="护眼" aria-label="背景：护眼" style="background:#f1f6ee"></button>
+        <button type="button" class="aj-swatch" data-scene="blue" title="淡蓝" aria-label="背景：淡蓝" style="background:#eef3f8"></button>
+        <button type="button" class="aj-swatch" data-scene="night" title="夜间" aria-label="背景：夜间" style="background:#31302a"></button>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="mr-0.5 opacity-80">字号</span>
+        <button type="button" class="aj-reader-btn" data-size="19">小</button>
+        <button type="button" class="aj-reader-btn" data-size="21" data-active="true">中</button>
+        <button type="button" class="aj-reader-btn" data-size="23">大</button>
+        <button type="button" class="aj-reader-btn" data-size="25">加大</button>
+        <button type="button" class="aj-reader-btn" data-size="28">极大</button>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="mr-0.5 opacity-80">行距</span>
+        <button type="button" class="aj-reader-btn" data-lh="1.5">1.5</button>
+        <button type="button" class="aj-reader-btn" data-lh="1.8" data-active="true">1.8</button>
+        <button type="button" class="aj-reader-btn" data-lh="2.0">2.0</button>
+        <button type="button" class="aj-reader-btn" data-lh="2.2">2.2</button>
+      </div>
+      <label class="flex items-center gap-1">
+        <span class="opacity-80">字体</span>
+        <select id="aj-font" class="aj-reader-select">
+          <option value="default" selected>默认</option>
+          <option value="song">宋体</option>
+          <option value="hei">黑体</option>
+          <option value="kai">楷体</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-1">
+        <span class="opacity-80">字色</span>
+        <select id="aj-ink" class="aj-reader-select">
+          <option value="" selected>跟随背景</option>
+          <option value="#5b4636">深棕</option>
+          <option value="#234d3f">墨绿</option>
+          <option value="#2c3e5d">藏蓝</option>
+          <option value="#262626">炭黑</option>
+        </select>
+      </label>
+      <span class="ml-auto hidden opacity-60 sm:inline">键盘 ← → 可翻章</span>
+    </div>
+  </div>
+
+  {{/* 章节标题卡 */}}
+  <div class="aj-reader-paper mx-auto mt-4 w-[calc(100%-24px)] max-w-[1080px] px-[clamp(20px,4vw,40px)] py-5 text-center sm:w-[94%]" style="color:var(--r-ink)">
+    <p class="text-[13px] opacity-70">{{.Novel.title}}</p>
+    <h1 class="mt-1 text-[22px] font-bold leading-snug sm:text-[26px]">{{.Chapter.title}}</h1>
+    <div class="mx-auto mt-3 flex max-w-[560px] flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-dashed pt-2.5 text-xs opacity-75" style="border-color:var(--r-accent)">
+      <span>第 {{.Chapter.idx}} 章</span>
+      <span>全书共 {{.Novel.chapterCount}} 章</span>
+      <span>{{wcFmt .Chapter.wordCount}}</span>
+      <span data-wc="{{.Chapter.wordCount}}"></span>
+    </div>
+  </div>
+
+  {{/* 正文卡：公共契约容器（app.js 记录继续阅读/字号兜底，aijjxs.js 接管场景与字号档位） */}}
+  <article id="fb-chapter-content" class="aj-reader-paper mx-auto mt-4 w-[calc(100%-24px)] max-w-[1080px] px-[clamp(24px,4vw,40px)] py-[clamp(24px,4vw,40px)] sm:w-[94%]"
+    data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+    {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}
+    style="color:var(--r-ink);line-height:1.8">
+    {{range .Paragraphs}}<p class="aj-reader-para break-words">{{.}}</p>{{else}}<p class="py-8 text-center text-sm opacity-70">本章内容为空，请返回目录选择其他章节。</p>{{end}}
+  </article>
+
+  {{/* 翻页条 */}}
+  <div class="aj-reader-paper mx-auto mt-4 w-[calc(100%-24px)] max-w-[1080px] px-4 py-3.5 sm:w-[94%]">
+    <div class="flex flex-wrap items-center justify-center gap-2">
+      {{if .Prev}}<a class="aj-reader-btn" href="{{chapterURL .Prev.id}}">上一章</a>{{else}}<span class="aj-reader-btn opacity-40">上一章</span>{{end}}
+      <a class="aj-reader-btn" href="{{tocURL .Novel.id}}">章节目录</a>
+      {{if .Next}}<a class="aj-reader-btn" href="{{chapterURL .Next.id}}">下一章</a>{{else}}<span class="aj-reader-btn opacity-40">下一章</span>{{end}}
+      <a class="aj-reader-btn" href="{{bookURL .Novel.id}}">返回书页</a>
+    </div>
+  </div>
+</div>
+{{end}}

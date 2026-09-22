@@ -1,0 +1,83 @@
+{{/* 23qb 书籍页 —— 移植 BookView：白盒左右分区（封面在右）+ 章节预览盒 + 相关作品。
+Go 契约 .Chapters 为最早 12 章预览，标题按数据语义标注为「章节预览」；书架/推荐由 23qb.js 提供。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[1150px] space-y-6 px-4 py-6 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">
+
+  {{/* 信息白盒：信息在左、封面在右 */}}
+  <section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <div class="flex flex-col-reverse gap-7 md:flex-row md:gap-10">
+      <div class="min-w-0 flex-1">
+        <h1 class="text-[30px] font-extrabold leading-tight text-[#282828] md:text-[38px]">{{.Novel.title}}</h1>
+        {{/* 元信息药丸行 */}}
+        <div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
+          <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#fef0e5] px-3 text-[#c25705]">作者：{{.Novel.author}}</span>
+          <a href="{{catURL .Novel.categoryId}}" class="inline-flex h-[30px] cursor-pointer items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60 transition-colors hover:text-[#ff2a14]">{{.Novel.categoryName}}</a>
+          <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{wcFmt .Novel.wordCount}}</span>
+          <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{if eq .Novel.status "finished"}}完本{{else}}连载中{{end}}</span>
+          <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{.ChaptersTotal}} 章</span>
+        </div>
+        <p class="mt-5 whitespace-pre-line text-[15px] leading-7 text-black/68">{{if .Novel.description}}{{.Novel.description}}{{else}}（作者还未填写简介）{{end}}</p>
+        {{/* 小说标签：书名+作者+pseo 下拉词 */}}
+        {{if .Tags}}<div class="mt-3 flex flex-wrap items-center gap-1.5">
+          <span class="text-xs font-medium text-neutral-500">相关标签：</span>
+          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+        </div>{{end}}
+        {{/* 按钮行 */}}
+        <div class="mt-6 flex flex-wrap items-center gap-3">
+          {{if .Chapters}}<a href="{{with $fc := index .Chapters 0}}{{chapterURL $fc.id}}{{end}}" class="inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-[50px] bg-gradient-to-r from-[#ff9800] to-[#ff2a14] px-6 text-sm font-medium text-white shadow-[0_4px_12px_rgba(255,42,20,.3)] transition-all hover:shadow-[0_6px_16px_rgba(255,42,20,.42)]">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            开始阅读</a>
+          {{else}}<a href="{{tocURL .Novel.id}}" class="inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-[50px] bg-gradient-to-r from-[#ff9800] to-[#ff2a14] px-6 text-sm font-medium text-white shadow-[0_4px_12px_rgba(255,42,20,.3)] transition-all hover:shadow-[0_6px_16px_rgba(255,42,20,.42)]">查看目录</a>{{end}}
+          <button type="button" data-qb-shelf data-novel-id="{{.Novel.id}}" class="inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-[50px] border border-black/15 bg-white px-6 text-sm font-medium text-[#282828] transition-all hover:border-[#ff2a14] hover:text-[#ff2a14]">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+            收藏</button>
+          <button type="button" data-qb-vote class="inline-flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-[50px] bg-gradient-to-r from-[#7ec53d] to-[#34a853] px-6 text-sm font-medium text-white shadow-[0_4px_12px_rgba(52,168,83,.28)] transition-all hover:shadow-[0_6px_16px_rgba(52,168,83,.4)]">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+            推荐本书</button>
+        </div>
+      </div>
+      {{/* 封面在右 */}}
+      <div class="mx-auto w-[170px] shrink-0 md:w-[200px]">
+        <div class="relative flex aspect-[5/7] items-center justify-center overflow-hidden rounded-[10px] shadow-[0_10px_26px_rgba(149,157,165,.4)] {{gcls .Novel.cover}}">
+          {{if isLocalCover .Novel.cover}}<img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="text-6xl font-bold text-white/90 drop-shadow-md">{{title0 .Novel.title}}</span>{{end}}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {{/* 章节预览盒 */}}
+  <section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <div class="flex items-baseline justify-between gap-3">
+      <h2 class="text-[22px] font-bold text-[#282828] md:text-[26px]">章节预览</h2>
+      <span class="text-xs text-black/40">更新于 {{fullFmt .Novel.updatedAt}}</span>
+    </div>
+    <div class="mt-4 flex flex-col">
+      {{range .Chapters}}<a href="{{chapterURL .id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        <span class="flex-1 truncate">{{.title}}</span>
+        <span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>
+      </a>{{else}}<p class="py-8 text-center text-sm text-black/40">本书暂无章节</p>{{end}}
+    </div>
+    <div class="mt-5 border-t border-[#f5f5f5] pt-5 text-center">
+      <a href="{{tocURL .Novel.id}}" class="inline-flex h-10 cursor-pointer items-center rounded-[50px] bg-gradient-to-r from-[#7ec53d] to-[#34a853] px-8 text-sm font-medium text-white transition-opacity hover:opacity-90">完整目录（{{.ChaptersTotal}} 章）</a>
+    </div>
+  </section>
+
+  {{/* 相关作品盒 */}}
+  {{if .Related}}<section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <h2 class="text-[22px] font-bold text-[#282828] md:text-[26px]">相关作品</h2>
+    <div class="mt-5 grid grid-cols-3 gap-x-5 gap-y-7 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8">
+      {{range .Related}}<a href="{{bookURL .id}}" class="group cursor-pointer select-none">
+        <div class="transition-all duration-300 group-hover:-translate-y-1 group-hover:drop-shadow-[0_10px_18px_rgba(149,157,165,.45)]">
+          <div class="relative overflow-hidden rounded-[5px] {{gcls .cover}}">
+            {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<div class="flex aspect-[5/7] items-center justify-center"><span class="text-5xl font-bold text-white/90 drop-shadow-md">{{title0 .title}}</span></div>{{end}}
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6"><p class="truncate text-[11px] text-white/85">{{.categoryName}} · {{wcFmt .wordCount}}</p></div>
+          </div>
+        </div>
+        <p class="mt-2 truncate text-center text-[15px] font-semibold text-[#282828] transition-colors group-hover:text-[#ff2a14]">{{.title}}</p>
+        <p class="truncate text-center text-xs text-black/40">{{.author}}</p>
+      </a>{{end}}
+    </div>
+  </section>{{end}}
+</div>
+{{end}}

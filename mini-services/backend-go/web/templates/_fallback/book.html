@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="fb-panel">
+  <h2 class="fb-h2">{{.Novel.title}}</h2>
+  <div style="display:flex;gap:16px;flex-wrap:wrap">
+    {{if isLocalCover .Novel.cover}}<span class="fb-cover"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+    {{else}}<span class="fb-cover {{gcls .Novel.cover}}" style="width:120px;height:160px;font-size:36px">{{title0 .Novel.title}}</span>{{end}}
+    <div style="flex:1;min-width:220px">
+      <p class="fb-novel-meta">作者：{{.Novel.author}} · 分类：{{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}} · {{wcFmt .Novel.wordCount}} · 点击 {{.Novel.clicks}}</p>
+      <p class="fb-novel-desc" style="font-size:14px;line-height:1.8">{{.Novel.description}}</p>
+      <p style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        {{if .LastChapter}}<a class="fb-pager-btn" href="{{chapterURL .LastChapter.id}}">立即阅读</a>{{end}}
+        <a class="fb-pager-btn" href="{{tocURL .Novel.id}}">查看目录</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+{{/* 小说标签：书名+作者+搜索引擎下拉词（pseo 长尾词），点击跳转聚合页 */}}
+{{if .Tags}}
+<div class="fb-panel">
+  <h2 class="fb-h2">小说标签</h2>
+  <div>
+    {{range .Tags}}<a class="fb-tag" href="{{pseoURL .}}">{{.}}</a>{{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="fb-panel">
+  <h2 class="fb-h2">章节预览<a class="fb-more" href="{{tocURL .Novel.id}}">共 {{.ChaptersTotal}} 章 · 查看完整目录</a></h2>
+  <ul class="fb-rank">
+    {{range .Chapters}}<li><a class="fb-novel-title" href="{{chapterURL .id}}">{{.title}}</a>
+      <span class="fb-novel-meta">{{wcFmt .wordCount}}</span></li>{{else}}<li>暂无章节</li>{{end}}
+  </ul>
+</div>
+
+{{if .Related}}
+<div class="fb-panel">
+  <h2 class="fb-h2">同类推荐</h2>
+  <div class="fb-grid">
+    {{range .Related}}<article>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span></a>
+      {{else}}<a href="{{bookURL .id}}"><span class="fb-cover {{gcls .cover}}">{{title0 .title}}</span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="fb-novel-meta">{{.author}}</p>
+    </article>{{end}}
+  </div>
+</div>
+{{end}}
+{{end}}

@@ -1,0 +1,22 @@
+{{define "content"}}
+<div class="fb-panel">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+    <h2 class="fb-h2" style="margin:0">{{.Chapter.title}}</h2>
+    <a class="fb-more" href="{{bookURL .Novel.id}}">返回书页 {{.Novel.title}}</a>
+  </div>
+  <div class="fb-reader-tools">
+    <button type="button" id="fb-font-dec">A-</button>
+    <button type="button" id="fb-font-inc">A+</button>
+    <button type="button" id="fb-night">夜间模式</button>
+  </div>
+  <hr style="border:0;border-top:1px solid #e5e5e5">
+  <div class="fb-content" id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}">
+    {{range .Paragraphs}}<p>{{.}}</p>{{end}}
+  </div>
+  <div class="fb-chapter-nav">
+    {{if .Prev}}<a class="fb-pager-btn" href="{{chapterURL .Prev.id}}">上一章</a>{{else}}<span class="fb-pager-btn" style="opacity:.4">上一章</span>{{end}}
+    <a class="fb-pager-btn" href="{{tocURL .Novel.id}}">目录</a>
+    {{if .Next}}<a class="fb-pager-btn" href="{{chapterURL .Next.id}}">下一章</a>{{else}}<span class="fb-pager-btn" style="opacity:.4">下一章</span>{{end}}
+  </div>
+</div>
+{{end}}

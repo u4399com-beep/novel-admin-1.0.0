@@ -1,0 +1,97 @@
+{{/* x2552 阅读页（移植 Chapter.tsx，紧凑顶栏 + #a_footer，body 淡蓝 #E6F3FF）：
+面包屑 → 白色正文盒（章名 + 章首/章尾双份导航 + 阅读设置条 + 缩进 2em 正文）。
+正文容器保留公共契约 id=fb-chapter-content + data-*；场景/字号/行距/字体/字色由 x2552.js
+（localStorage reader-prefs-v1，与 React 版 use-reader-prefs 同 key 同形状）管理。 */}}
+{{define "content"}}
+<div id="x25-reader" class="mt-2 min-h-screen transition-colors" style="background:transparent">
+  {{/* 面包屑：首页 > 分类 > 书名 > 章节名 */}}
+  <div class="flex h-[30px] items-center gap-1 overflow-hidden border border-[#E4E4E4] bg-white px-2 text-[12px]">
+    <span class="shrink-0 font-bold text-[#333]">当前位置：</span>
+    <a href="/" class="inline-block shrink-0 cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">首页</a>
+    <span class="shrink-0 text-[#CCC]">&gt;</span>
+    <a href="{{catURL .Novel.categoryId}}" class="inline-block shrink-0 cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.Novel.categoryName}}</a>
+    <span class="shrink-0 text-[#CCC]">&gt;</span>
+    <a href="{{bookURL .Novel.id}}" class="inline-block min-w-0 max-w-[240px] shrink-0 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.Novel.title}}</a>
+    <span class="shrink-0 text-[#CCC]">&gt;</span>
+    <span class="min-w-0 truncate text-[#999]">{{.Chapter.title}}</span>
+    <a href="{{bookURL .Novel.id}}" class="ml-auto inline-block shrink-0 cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">返回书页</a>
+  </div>
+
+  {{/* 正文盒 */}}
+  <article id="x25-paper" class="mt-2 border transition-colors" style="background:#ffffff;border-color:#E4E4E4">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+
+    <header class="px-3 pt-1">
+      {{/* 源站 h1：20px 居中，line-height 65px / height 70px */}}
+      <h1 id="x25-ch-title" class="h-[70px] text-center text-[20px] font-bold leading-[65px] text-[#333333]">{{.Chapter.title}}</h1>
+      <p id="x25-ch-meta" class="pb-1 text-center text-[11px] text-[#999999]">第 {{.Chapter.idx}} 章 · 约 {{wcFmt .Chapter.wordCount}}</p>
+
+      {{/* 章首导航行（上一页 | 返回目录 | 下一页，杰奇阅读页同款文案） */}}
+      <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 border-t border-dotted py-2 text-[14px]" style="border-color:#E4E4E4">
+        {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">上一页</a>{{else}}<span class="text-[#BBB]">上一页</span>{{end}}
+        <a href="{{tocURL .Novel.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">返回目录</a>
+        {{if .Next}}<a href="{{chapterURL .Next.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">下一页</a>{{else}}<span class="text-[#BBB]">下一页</span>{{end}}
+      </div>
+
+      {{/* 阅读设置：字号 A± / 行距 / 字体 / 字色 / 背景 / 夜间 / 恢复 */}}
+      <div id="x25-reader-bar" class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-b border-dotted border-[#E4E4E4] px-3 py-1.5 text-[11px] text-[#999]">
+        字号
+        <button type="button" id="x25-font-dec" title="减小字号" class="x25-rbtn flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#CCCCCC] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">A-</button>
+        <button type="button" id="x25-font-inc" title="增大字号" class="x25-rbtn flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#CCCCCC] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">A+</button>
+        <span id="x25-font-size" class="ml-0.5 w-[40px] text-right">当前 18px</span>
+        <span class="mx-1 hidden h-[12px] w-px bg-[#E4E4E4] sm:inline-block"></span>
+        行距
+        <button type="button" class="x25-rbtn x25-lh flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#CCCCCC] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]" data-lh="1.5">1.5</button>
+        <button type="button" class="x25-rbtn x25-lh x25-on flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#FF6600] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]" data-lh="1.8">1.8</button>
+        <button type="button" class="x25-rbtn x25-lh flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#CCCCCC] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]" data-lh="2.0">2.0</button>
+        <button type="button" class="x25-rbtn x25-lh flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#CCCCCC] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]" data-lh="2.2">2.2</button>
+        <span class="mx-1 hidden h-[12px] w-px bg-[#E4E4E4] sm:inline-block"></span>
+        <label class="flex items-center gap-1">字体
+          <select id="x25-font" class="h-[20px] cursor-pointer border border-[#CCCCCC] bg-white px-0.5 text-[11px] text-[#666] outline-none">
+            <option value="default" selected>默认</option>
+            <option value="song">宋体</option>
+            <option value="hei">黑体</option>
+            <option value="kai">楷体</option>
+          </select>
+        </label>
+        <span class="mx-1 hidden h-[12px] w-px bg-[#E4E4E4] sm:inline-block"></span>
+        <label class="flex items-center gap-1">字色
+          <select id="x25-ink" aria-label="字色" class="h-[20px] cursor-pointer border border-[#CCCCCC] bg-white px-0.5 text-[11px] text-[#666] outline-none">
+            <option value="" selected>跟随背景</option>
+            <option value="#5b4636">深棕</option>
+            <option value="#234d3f">墨绿</option>
+            <option value="#2c3e5d">藏蓝</option>
+            <option value="#262626">炭黑</option>
+          </select>
+        </label>
+        <span class="mx-1 hidden h-[12px] w-px bg-[#E4E4E4] sm:inline-block"></span>
+        背景
+        <button type="button" title="日间" aria-label="背景：日间" class="x25-scene h-3.5 w-3.5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#ffffff" data-scene="day"></button>
+        <button type="button" title="羊皮纸" aria-label="背景：羊皮纸" class="x25-scene h-3.5 w-3.5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f8f0da" data-scene="paper"></button>
+        <button type="button" title="护眼" aria-label="背景：护眼" class="x25-scene h-3.5 w-3.5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#f0f6ec" data-scene="green"></button>
+        <button type="button" title="淡蓝" aria-label="背景：淡蓝" class="x25-scene h-3.5 w-3.5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#eef4fa" data-scene="blue"></button>
+        <button type="button" title="夜间" aria-label="背景：夜间" class="x25-scene h-3.5 w-3.5 cursor-pointer rounded-full border border-black/25 transition-all" style="background:#26262b" data-scene="night"></button>
+        <button type="button" id="x25-night" title="夜间模式" class="x25-rbtn ml-1 flex h-[20px] min-w-[24px] cursor-pointer items-center justify-center border border-[#CCCCCC] bg-white px-1 text-[11px] text-[#666] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">夜间</button>
+        <button type="button" id="x25-reset" class="cursor-pointer text-[11px] text-[#BBB] hover:text-[#FF6600]">恢复</button>
+      </div>
+    </header>
+
+    {{/* 正文：源站 #contents padding 25px（约 95% 宽），\n 分段、缩进 2em（公共契约容器） */}}
+    <div id="fb-chapter-content" class="mx-auto w-[95%] py-6 break-words"
+      data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+      {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}
+      style="font-size:18px;line-height:1.8;color:#333333">
+      {{range .Paragraphs}}<p class="indent-[2em]">{{.}}</p>{{else}}<p class="py-6 text-center text-[12px] text-[#999999]">本章暂无内容，请返回目录选择其他章节。</p>{{end}}
+    </div>
+
+    {{/* 章尾导航 */}}
+    <footer class="mx-3 border-t border-dotted pb-1" style="border-color:#E4E4E4">
+      <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 py-2 text-[14px]">
+        {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">上一页</a>{{else}}<span class="text-[#BBB]">上一页</span>{{end}}
+        <a href="{{tocURL .Novel.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">返回目录</a>
+        {{if .Next}}<a href="{{chapterURL .Next.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">下一页</a>{{else}}<span class="text-[#BBB]">下一页</span>{{end}}
+      </div>
+    </footer>
+  </article>
+</div>
+{{end}}

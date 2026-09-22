@@ -1,0 +1,183 @@
+{{/* 101kks 书籍页（移植 BookView）：面包屑 + 66/32 两列（主栏：信息盒 + 选项卡盒 | 本週最強）。
+适配：右侧栏 sideRank 为客户端全站点击榜 → Go 契约以同分类 .Related 承載（熱門=全部，完本=過濾 finished）；
+书架（101kks.shelf）/投票/三选项卡/侧栏切换由 101kks.js；简介页签含 pseo 标签行。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[1112px] px-3 py-4 sm:px-4">
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1.5 py-3 text-sm">
+    <a href="/" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">首頁</a>
+    <span class="text-[#bbb]">/</span>
+    <a href="{{catURL .Novel.categoryId}}" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">{{.Novel.categoryName}}</a>
+    <span class="text-[#bbb]">/</span>
+    <span class="truncate text-[#666]">{{.Novel.title}}</span>
+  </nav>
+
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
+    {{/* 主栏 */}}
+    <div class="min-w-0 flex-1 space-y-4 lg:max-w-[66%]">
+      {{/* 盒一：书籍信息 */}}
+      <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+        <div class="flex flex-col gap-5 sm:flex-row">
+          {{/* 封面 180×240 + 角章 + 底部浮层 */}}
+          <div class="relative mx-auto w-[180px] shrink-0 sm:mx-0">
+            {{if isLocalCover .Novel.cover}}<span class="relative block h-[240px] w-[180px] overflow-hidden rounded-[3px] shadow-[0_4px_12px_rgba(0,0,0,.25)]"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative flex h-[240px] w-[180px] items-center justify-center overflow-hidden rounded-[3px] shadow-[0_4px_12px_rgba(0,0,0,.25)] {{gcls .Novel.cover}}"><span class="font-bold text-white/90 drop-shadow text-6xl" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
+            <span class="absolute left-0 top-2 w-[69px] bg-[#1f6cb2] py-1 text-center text-xs text-white">{{if eq .Novel.status "finished"}}完結{{else}}連載{{end}}</span>
+            <span class="absolute inset-x-0 bottom-0 rounded-b-[3px] bg-black/70 py-1 text-center text-xs text-white">推薦 {{.Novel.clicks}}</span>
+          </div>
+          {{/* 信息列 */}}
+          <div class="min-w-0 flex-1">
+            <h1 class="text-2xl font-bold text-[#333]">{{.Novel.title}}</h1>
+            <ul class="mt-3 space-y-1.5 text-[15px] text-[#757575]">
+              <li>作者：<a href="{{searchURL (printf "%v" .Novel.author)}}" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">{{.Novel.author}}</a></li>
+              <li>分類：<a href="{{catURL .Novel.categoryId}}" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">{{.Novel.categoryName}}</a></li>
+              <li>字數：{{wcFmt .Novel.wordCount}}</li>
+              <li>狀態：{{if eq .Novel.status "finished"}}完結{{else}}連載{{end}}</li>
+              <li>更新：{{fullFmt .Novel.updatedAt}}</li>
+            </ul>
+            <div class="mt-4 flex flex-wrap gap-1.5">
+              {{if .Chapters}}<a href="{{chapterURL (index .Chapters 0).id}}" class="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-4 text-sm text-white transition-all hover:bg-[#06c] hover:shadow-[0_2px_6px_rgba(0,0,0,.2)]">開始閱讀</a>
+              {{else}}<span class="inline-flex h-9 cursor-not-allowed items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-4 text-sm text-white opacity-45">開始閱讀</span>{{end}}
+              <button type="button" id="kks-shelf-btn" data-novel-id="{{.Novel.id}}" class="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-4 text-sm text-white transition-all hover:bg-[#06c] hover:shadow-[0_2px_6px_rgba(0,0,0,.2)]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+                <span id="kks-shelf-label">加入書架</span>
+              </button>
+              <button type="button" id="kks-vote-btn" class="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-4 text-sm text-white transition-all hover:bg-[#06c] hover:shadow-[0_2px_6px_rgba(0,0,0,.2)]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
+                <span id="kks-vote-label">投推薦票</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {{/* 盒二：标签 + 选项卡 */}}
+      <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+        <div class="flex flex-wrap gap-2">
+          <a href="{{catURL .Novel.categoryId}}" class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">{{.Novel.categoryName}}</a>
+          <span class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">{{if eq .Novel.status "finished"}}完結{{else}}連載{{end}}</span>
+          {{if .Novel.isFeatured}}<span class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">本站推薦</span>{{end}}
+          {{if .Novel.isHot}}<span class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">熱門</span>{{end}}
+        </div>
+
+        {{/* 三选项卡（目錄 / 簡介 / 書評，101kks.js 切换） */}}
+        <div class="mt-4 flex gap-6 border-b border-black/10" id="kks-tabs">
+          <button type="button" data-tab="toc" data-active="true" class="-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 border-[#1f6cb2] pb-2 text-sm font-bold text-[#1f6cb2] transition-colors">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M3 12h12"/><path d="M3 6h18"/><path d="M3 18h8"/></svg>目錄
+          </button>
+          <button type="button" data-tab="intro" class="-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 border-transparent pb-2 text-sm text-[#888] transition-colors hover:text-[#333]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M3 5h18"/><path d="M3 12h14"/><path d="M3 19h10"/></svg>簡介
+          </button>
+          <button type="button" data-tab="review" class="-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 border-transparent pb-2 text-sm text-[#888] transition-colors hover:text-[#333]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>書評
+          </button>
+        </div>
+
+        {{/* 页签：目錄（章节预览 12 条） */}}
+        <div data-panel="toc" class="mt-1">
+          {{range .Chapters}}<div class="flex items-center justify-between gap-3 border-b border-black/5">
+            <a href="{{chapterURL .id}}" class="min-w-0 flex-1 cursor-pointer truncate py-2.5 text-left text-[15px] text-[#333] transition-colors hover:text-[#06c]">{{.title}}</a>
+            <span class="shrink-0 text-xs text-[#888]">{{wcFmt .wordCount}}</span>
+          </div>{{else}}<p class="py-8 text-center text-sm text-[#888]">暫無章節</p>{{end}}
+          <div class="mt-4 text-center">
+            <a href="{{tocURL .Novel.id}}" class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-3 text-[13px] text-white transition-all hover:bg-[#06c] hover:shadow-[0_2px_6px_rgba(0,0,0,.2)]">完整目錄（{{.ChaptersTotal}} 章）</a>
+          </div>
+        </div>
+
+        {{/* 页签：簡介 */}}
+        <div data-panel="intro" hidden class="mt-4">
+          <div class="grid grid-cols-2 rounded-[8px] bg-[#f4f4f4] py-3 text-center">
+            <div>
+              <p class="text-lg font-bold text-[#333]">{{wcFmt .Novel.wordCount}}</p>
+              <p class="text-xs text-[#888]">總字數</p>
+            </div>
+            <div>
+              <p class="text-lg font-bold text-[#333]">{{.ChaptersTotal}} 章</p>
+              <p class="text-xs text-[#888]">章節數</p>
+            </div>
+          </div>
+          <p class="mt-4 whitespace-pre-line text-[15px] leading-relaxed text-[#333]">{{if .Novel.description}}{{.Novel.description}}{{else}}（作者還未填寫簡介）{{end}}</p>
+          {{if .Tags}}
+          <div class="mt-3 flex flex-wrap items-center gap-1.5">
+            {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看標籤「{{.}}」相關小說聚合頁" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+          </div>
+          {{end}}
+        </div>
+
+        {{/* 页签：書評（演示） */}}
+        <div data-panel="review" hidden class="mt-4">
+          <div class="flex items-center gap-1" id="kks-rating">
+            <button type="button" data-star="1" aria-label="1 星" class="cursor-pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 text-[#ccc]" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg></button>
+            <button type="button" data-star="2" aria-label="2 星" class="cursor-pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 text-[#ccc]" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg></button>
+            <button type="button" data-star="3" aria-label="3 星" class="cursor-pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 text-[#ccc]" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg></button>
+            <button type="button" data-star="4" aria-label="4 星" class="cursor-pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 text-[#ccc]" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg></button>
+            <button type="button" data-star="5" aria-label="5 星" class="cursor-pointer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 text-[#ccc]" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg></button>
+            <span class="ml-2 text-sm text-[#888]" id="kks-rating-label">點擊評分</span>
+          </div>
+          <textarea placeholder="說點什麼吧…（演示模板，發表功能未開放）" aria-label="發表評論" class="mt-3 h-24 w-full resize-none rounded-[3px] border border-black/15 p-2 text-sm text-[#333] outline-none focus:border-[#1f6cb2]"></textarea>
+          <div class="mt-2 text-right">
+            <span class="inline-flex h-9 cursor-not-allowed items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-4 text-sm text-white opacity-45">發表評論</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    {{/* 右侧栏：本週最強（熱門/完本 切换） */}}
+    <aside class="w-full shrink-0 lg:w-[32%]">
+      <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+        <div class="flex items-center justify-between gap-3 border-b border-black/10 pb-2">
+          <h2 class="text-base font-bold text-[#333]">本週最強</h2>
+        </div>
+        <div class="mt-3 flex gap-4 border-b border-black/10" id="kks-side-tabs">
+          <button type="button" data-sidetab="hot" data-active="true" class="-mb-px cursor-pointer border-b-2 border-[#1f6cb2] pb-1.5 text-sm font-bold text-[#1f6cb2] transition-colors">熱門</button>
+          <button type="button" data-sidetab="finished" class="-mb-px cursor-pointer border-b-2 border-transparent pb-1.5 text-sm text-[#888] transition-colors hover:text-[#333]">完本</button>
+        </div>
+
+        {{with .Related}}
+        {{if .}}
+        <div data-sidepanel="hot">
+          {{/* 第一条：大封面样式 */}}
+          {{with index . 0}}<a href="{{bookURL .id}}" class="group flex cursor-pointer gap-3 border-b border-black/10 py-3">
+            {{if isLocalCover .cover}}<span class="relative h-[120px] w-[90px] shrink-0 overflow-hidden rounded-[3px]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative flex h-[120px] w-[90px] shrink-0 items-center justify-center overflow-hidden rounded-[3px] {{gcls .cover}}"><span class="font-bold text-white/90 text-3xl" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+            <span class="min-w-0 flex-1">
+              <span class="line-clamp-2 block font-bold text-[#333] transition-colors group-hover:text-[#06c]">{{.title}}</span>
+              <span class="mt-2 block text-xs text-[#888]">{{.author}}</span>
+              <span class="mt-1 block text-xs text-[#757575]">{{.categoryName}} · {{wcFmt .wordCount}}</span>
+            </span>
+          </a>{{end}}
+          {{/* 其余纯文字行（序号 2..N，前两号红） */}}
+          {{$first := index . 0}}{{$k := 2}}
+          {{range $n := .}}{{if ne $n.id $first.id}}
+          <a href="{{bookURL $n.id}}" class="group flex cursor-pointer items-center gap-2 border-b border-black/5 py-2.5 last:border-b-0">
+            <span class="w-5 shrink-0 text-center text-sm font-bold {{if lt $k 4}}text-[#e84118]{{else}}text-[#888]{{end}}">{{$k}}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[15px] text-[#333] transition-colors group-hover:text-[#06c]">{{$n.title}}</span>
+              <span class="block truncate text-xs text-[#888]">{{$n.categoryName}} · {{$n.author}}</span>
+            </span>
+            <span class="shrink-0 rounded-[2px] px-1.5 py-0.5 text-[10px] {{if eq $n.status "finished"}}bg-[#e8f4ff] text-[#1f6cb2]{{else}}border border-black/15 text-[#888]{{end}}">{{if eq $n.status "finished"}}完結{{else}}連載{{end}}</span>
+          </a>
+          {{$k = add $k 1}}{{end}}{{end}}
+        </div>
+        {{/* 完本页签：finished 过滤（顺序号连续递增） */}}
+        <div data-sidepanel="finished" hidden>
+          {{$j := 1}}{{range $n := .}}{{if eq $n.status "finished"}}
+          <a href="{{bookURL $n.id}}" class="group flex cursor-pointer items-center gap-2 border-b border-black/5 py-2.5 last:border-b-0">
+            <span class="w-5 shrink-0 text-center text-sm font-bold {{if lt $j 3}}text-[#e84118]{{else}}text-[#888]{{end}}">{{$j}}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[15px] text-[#333] transition-colors group-hover:text-[#06c]">{{$n.title}}</span>
+              <span class="block truncate text-xs text-[#888]">{{$n.categoryName}} · {{$n.author}}</span>
+            </span>
+            <span class="shrink-0 rounded-[2px] bg-[#e8f4ff] px-1.5 py-0.5 text-[10px] text-[#1f6cb2]">完結</span>
+          </a>
+          {{$j = add $j 1}}{{end}}{{end}}{{if eq $j 1}}<p class="py-8 text-center text-sm text-[#888]">暫無完本數據</p>{{end}}
+        </div>
+        {{else}}
+        <p class="py-8 text-center text-sm text-[#888]">暫無數據</p>
+        {{end}}
+        {{end}}
+      </section>
+    </aside>
+  </div>
+</div>
+{{end}}

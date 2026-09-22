@@ -1,0 +1,92 @@
+{{/* x2552 书籍页（移植 Book.tsx）：左 190 侧栏 + 中 760 属性表格白盒布局：
+h1 全文阅读 → 属性表格+封面 → 按钮排（.btnlinks）→ 内容简介（含 pseo 标签行）→ 书评区。
+书架/投票/TXT 为演示按钮；书评发表为静态演示（React 本地 state 行为，不落库）。 */}}
+{{define "content"}}
+<div class="mt-2 flex items-start justify-between">
+  {{template "x25-sidebar" .}}
+
+  <div class="min-w-0 flex-1 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
+    <div class="border border-[#E4E4E4] bg-white">
+      <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+
+      <h1 class="text-center text-[20px] leading-[65px] text-[#333]">{{.Novel.title}} 全文阅读</h1>
+
+      {{/* 信息区：封面 120×150（7px 内衬）+ 属性表格 */}}
+      <div class="border-t border-[#E4E4E4] px-2 py-2">
+        <div class="flex gap-3 max-[1000px]:flex-col">
+          <div class="shrink-0 border border-[#E4E4E4] p-[7px]">
+            {{if isLocalCover .Novel.cover}}<span class="relative block h-[150px] w-[120px] overflow-hidden"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative flex h-[150px] w-[120px] items-center justify-center overflow-hidden {{gcls .Novel.cover}}"><span class="select-none font-bold text-white/90 text-4xl" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
+          </div>
+          <table class="w-full self-start border-collapse text-[12px]">
+            <tbody>
+              <tr>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">类别</th>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]"><a href="{{catURL .Novel.categoryId}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.Novel.categoryName}}</a></td>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">状态</th>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</td>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">作者</th>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{.Novel.author}}</td>
+              </tr>
+              <tr>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">字数</th>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{wcFmt .Novel.wordCount}}</td>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">章节</th>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{.ChaptersTotal}} 章</td>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">总点击</th>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{.Novel.clicks}}</td>
+              </tr>
+              <tr>
+                <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">最新</th>
+                <td colspan="5" class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">
+                  {{if .LastChapter}}<a href="{{chapterURL .LastChapter.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.LastChapter.title}}</a>{{else}}<span>暂无章节</span>{{end}}
+                  <span class="ml-2 text-[#999]">{{fullFmt .Novel.updatedAt}}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {{/* 按钮行 .btnlinks：全文阅读（橙主）+ 辅助灰按钮 */}}
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <a href="{{tocURL .Novel.id}}" class="h-[30px] w-[100px] cursor-pointer border border-[#E88B00] bg-gradient-to-b from-[#FFEAD3] to-[#FFD8AB] text-center text-[13px] font-bold leading-[28px] text-[#FF6600] transition-colors hover:text-[#333]">全文阅读</a>
+          <button type="button" title="演示模板未开放此功能" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-[13px] text-[#333] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">加入书架</button>
+          <button type="button" title="演示模板未开放此功能" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-[13px] text-[#333] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">推荐本书</button>
+          <button type="button" title="演示模板未开放此功能" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-[13px] text-[#333] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">TXT下载</button>
+          <button type="button" title="演示模板未开放此功能" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-[13px] text-[#FF3300] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">手机阅读</button>
+          <span class="text-[11px] text-[#FF3300]">〔加入书架 / 推荐本书 / TXT下载〕演示模板未开放此功能</span>
+        </div>
+      </div>
+
+      {{/* 内容简介 .pl */}}
+      <div class="mx-2 mb-2 border border-[#E4E4E4]">
+        <div class="bg-[#F2F2F2] px-[10px] text-[12px] font-bold leading-[26px] text-[#333]">内容简介</div>
+        <p class="indent-[2em] px-3 py-2 text-[12px] leading-[1.8] text-[#666]">{{if .Novel.description}}{{.Novel.description}}{{else}}（暂无简介）{{end}}</p>
+        {{if .Tags}}
+        <div class="flex flex-wrap items-center gap-1.5 px-3 pb-2">
+          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+        </div>
+        {{end}}
+        <div class="border-t border-dotted border-[#E4E4E4] px-3 py-1.5 text-[12px] text-[#999]">
+          关键字：{{.Novel.categoryName}}，{{.Novel.author}}，{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}} · 最近章节：{{if .LastChapter}}<a href="{{chapterURL .LastChapter.id}}" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.LastChapter.title}}</a>{{else}}<span>暂无</span>{{end}}
+        </div>
+      </div>
+
+      {{/* 书评区：评论链接行 + 发表评论表单（静态演示） */}}
+      <div class="mx-2 mb-3 border border-[#E4E4E4]">
+        <div class="bg-[#F2F2F2] px-[10px] text-[12px] font-bold leading-[26px] text-[#333]">书评区</div>
+        <div class="px-3 py-2 text-[12px]">
+          <div class="flex items-center justify-between text-[#999]">
+            <span>本书暂无书评，快来发表第一条评论吧。</span>
+            <span class="cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]" title="演示模板：书评列表未实现">查看全部书评</span>
+          </div>
+          <textarea placeholder="发表你的看法…" aria-label="发表评论" class="mt-2 h-[80px] w-[380px] max-w-full resize-none border border-[#CCCCCC] p-1 text-[12px] text-[#333] outline-none placeholder:text-[#BBB] focus:border-[#FF6600]"></textarea>
+          <div class="mt-1 flex items-center gap-2">
+            <button type="button" title="演示模板：评论不会真正保存" class="h-[30px] w-[100px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-[13px] text-[#333] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">发表评论</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

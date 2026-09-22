@@ -1,0 +1,42 @@
+{{/* ddyueshu 搜索页（移植 Search.tsx）：搜索表单 + 高密度结果列表（[分类] 书名 最新章节 作者 日期）。 */}}
+{{define "content"}}
+<div>
+  {{/* 搜索表单（同 Layout 头部样式：2px 天蓝描边 + 蓝底白字按钮） */}}
+  <section class="dd-box dd-box-mid mt-1">
+    <div class="dd-box-title bg-[#f6f8fe]">站内搜索</div>
+    <form class="flex flex-wrap items-center gap-2 p-2" action="/search" method="get" role="search">
+      <input name="q" value="{{.Q}}" placeholder="搜书名 / 搜作者" aria-label="搜索小说" class="h-[30px] min-w-0 flex-1 border-0 bg-white px-2 text-[13px] text-[#444] outline-none placeholder:text-[#b3b3b3]">
+      <button type="submit" class="h-[30px] flex-none cursor-pointer bg-[#88c6e5] px-5 text-[16px] text-white transition-colors hover:bg-[#459df5]">搜 索</button>
+    </form>
+  </section>
+
+  {{/* 结果列表 */}}
+  <section class="dd-box dd-box-strong mt-2">
+    <div class="dd-box-title bg-[#a6d3e8]">
+      {{if .Q}}“{{.Q}}” 的搜索结果（共 {{.Total}} 条）{{else}}全部小说 · 输入关键词可按书名 / 作者查找{{end}}
+    </div>
+    <div class="bg-[#e1eced] px-2 py-1.5">
+      {{if .Novels}}
+      <div class="dd-row25 flex items-center gap-1.5 px-1 text-[#777]">
+        <span class="w-[70px] flex-none">分类</span>
+        <span class="w-[120px] flex-none">书名</span>
+        <span class="min-w-0 flex-1">最新章节</span>
+        <span class="hidden w-[70px] flex-none sm:block">作者</span>
+        <span class="w-[72px] flex-none text-right">日期</span>
+      </div>
+      {{range .Novels}}
+      <a class="dd-row25 flex items-center gap-1.5 px-1 transition-colors hover:bg-white" href="{{bookURL .id}}">
+        <span class="w-[70px] flex-none truncate text-[#999]">[{{.categoryName}}]</span>
+        <span class="dd-link w-[120px] flex-none truncate">{{.title}}</span>
+        <span class="min-w-0 flex-1 truncate text-[#555]">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}即将更新…{{end}}</span>
+        <span class="hidden w-[70px] flex-none truncate text-[#b3b3b3] sm:block">{{.author}}</span>
+        <span class="w-[72px] flex-none truncate text-right text-[#b3b3b3]">{{dateFmt .updatedAt}}</span>
+      </a>
+      {{end}}
+      {{else}}
+      <p class="dd-hottext py-6 text-center text-[13px]">{{if .Q}}没有找到与“{{.Q}}”相关的小说，换个关键词试试。{{else}}书库暂时为空，请稍后再来。{{end}}</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

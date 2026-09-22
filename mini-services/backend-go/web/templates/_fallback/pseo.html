@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="fb-panel">
+  <h2 class="fb-h2">关于"{{.Keyword}}"的小说推荐</h2>
+  <p class="fb-novel-desc" style="font-size:14px">{{.Description}}</p>
+</div>
+<div class="fb-panel">
+  <div class="fb-grid">
+    {{range .Novels}}<article>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span></a>
+      {{else}}<a href="{{bookURL .id}}"><span class="fb-cover {{gcls .cover}}">{{title0 .title}}</span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{wcFmt .wordCount}}</p>
+      <p class="fb-novel-desc">{{excerpt .description 60}}</p>
+    </article>{{else}}<p>暂无匹配书籍</p>{{end}}
+  </div>
+</div>
+{{end}}

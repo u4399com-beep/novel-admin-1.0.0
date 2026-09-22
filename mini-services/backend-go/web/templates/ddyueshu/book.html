@@ -1,0 +1,93 @@
+{{/* ddyueshu 书籍页（移植 Book.tsx）：面包屑 + 封面信息区 + 简介/标签 + 推荐阅读行 + 最新章节 dl。
+适配：React latest6（客户端全量章节尾 6）→ Go 契约以 .LastChapter 单条 + .Chapters[12] 预览呈现；
+推荐阅读行复用同分类 .Related。开始阅读=预览首章。 */}}
+{{define "content"}}
+<div>
+  {{/* 面包屑条 */}}
+  <div class="mt-1 flex h-[36px] items-center justify-between gap-2 border-b border-[#a6d3e8] bg-[#e1eced] px-2 text-[13px]">
+    <div class="flex min-w-0 items-center gap-1">
+      <a class="dd-link flex-none" href="/">首页</a>
+      <span class="flex-none text-[#b3b3b3]">&gt;</span>
+      <a class="dd-link flex-none" href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a>
+      <span class="flex-none text-[#b3b3b3]">&gt;</span>
+      <span class="truncate text-[#667788]">{{.Novel.title}}最新章节列表</span>
+    </div>
+    <span class="hidden flex-none text-[12px] text-[#999] sm:block">字数 {{wcFmt .Novel.wordCount}} · 点击 {{.Novel.clicks}}</span>
+  </div>
+
+  {{/* 信息区 */}}
+  <section class="dd-box dd-box-strong mt-2">
+    <div class="flex flex-col gap-3 p-[12px] sm:flex-row">
+      <div class="relative w-fit flex-none self-start border border-[#a6d3e8] bg-[#e1eced] p-[10px]">
+        {{if isLocalCover .Novel.cover}}<span class="relative block h-[195px] w-[152px] overflow-hidden border border-[#a6d3e8]"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+        {{else}}<span class="relative flex h-[195px] w-[152px] items-center justify-center overflow-hidden border border-[#a6d3e8] text-white {{gcls .Novel.cover}}"><span class="dd-hei font-bold tracking-[0.15em] text-[40px] [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
+        {{if .Novel.isFeatured}}<span class="absolute right-0 top-0 bg-[#88c6e5] px-1.5 text-[12px] leading-[20px] text-white">强推</span>{{end}}
+      </div>
+      <div class="min-w-0 flex-1">
+        <h1 class="dd-hei text-[24px] font-bold leading-[34px] text-[#333] sm:text-[28px]">{{.Novel.title}}</h1>
+        <div class="mt-1 space-y-0.5 text-[13px] leading-[22px]">
+          <p>
+            <span class="text-[#999]">作者：</span>
+            <a class="dd-link" href="{{searchURL (printf "%v" .Novel.author)}}">{{.Novel.author}}</a>
+            <span class="ml-3 text-[#999]">分类：</span>
+            <a class="dd-link" href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a>
+          </p>
+          <p>
+            <span class="text-[#999]">状态：</span>
+            {{if eq .Novel.status "finished"}}<span class="text-[#085308]">已完本</span>{{else}}<span class="dd-hottext">连载中</span>{{end}}
+            <span class="ml-3 text-[#999]">字数：</span>{{wcFmt .Novel.wordCount}}
+            <span class="ml-3 text-[#999]">点击：</span>{{.Novel.clicks}}
+            <span class="ml-3 text-[#999]">章节：</span>共 {{.ChaptersTotal}} 章
+          </p>
+          <p class="min-w-0">
+            <span class="text-[#999]">最后更新：</span>{{fullFmt .Novel.updatedAt}}
+            {{if .LastChapter}}<span class="ml-2 text-[#999]">〔</span><a class="dd-link" href="{{chapterURL .LastChapter.id}}">{{.LastChapter.title}}</a><span class="text-[#999]">〕</span>{{end}}
+          </p>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          {{if .Chapters}}<a class="h-[30px] cursor-pointer bg-[#88c6e5] px-5 text-[14px] font-bold leading-[30px] text-white transition-colors hover:bg-[#459df5]" href="{{chapterURL (index .Chapters 0).id}}">开始阅读</a>
+          {{else}}<span class="h-[30px] cursor-not-allowed bg-[#88c6e5] px-5 text-[14px] font-bold leading-[30px] text-white opacity-50">开始阅读</span>{{end}}
+          <a class="h-[30px] cursor-pointer border-2 border-[#88c6e5] bg-white px-5 text-[14px] leading-[26px] text-[#2f6f9f] transition-colors hover:bg-[#e1eced]" href="{{tocURL .Novel.id}}">进入目录</a>
+        </div>
+      </div>
+    </div>
+    <p class="mx-3 border-t border-dashed border-[#a6d3e8] py-2 text-[13px] leading-[22px] text-[#555] [text-indent:2em]">{{if .Novel.description}}{{.Novel.description}}{{else}}暂无简介{{end}}</p>
+    {{if .Tags}}
+    <div class="mx-3 flex flex-wrap items-center gap-1.5 pb-2">
+      <span class="text-xs font-medium text-neutral-500">相关标签：</span>
+      {{range .Tags}}<a class="rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
+    </div>
+    {{end}}
+  </section>
+
+  {{/* 推荐阅读行（同分类热门 Related） */}}
+  {{if .Related}}
+  <p class="mt-2 px-1 text-[13px] leading-[22px]">
+    <span class="mr-1 font-bold text-[#333]">推荐阅读：</span>
+    {{range .Related}}<a class="dd-link mr-2" href="{{bookURL .id}}">{{.title}}</a>{{end}}
+  </p>
+  {{end}}
+
+  {{/* 最新章节：dl 卷头 + dd 三栏（33%） */}}
+  <section class="dd-box dd-box-mid mt-2">
+    <div class="dd-box-title flex items-center justify-between bg-[#f6f8fe]">
+      <span>最新章节</span>
+      <a class="dd-greenlink text-[12px]" href="{{tocURL .Novel.id}}">完整目录 &gt;&gt;</a>
+    </div>
+    {{if or .LastChapter .Chapters}}
+    <dl class="dd-dd-grid px-2 pb-2 pt-1">
+      <dt class="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">《{{.Novel.title}}》最新章节</dt>
+      {{if .LastChapter}}
+      <dd class="dd-dd-item"><a class="block" href="{{chapterURL .LastChapter.id}}">〔最新〕{{.LastChapter.title}}</a></dd>
+      {{end}}
+      <dt class="dd-hei col-span-full mt-2 bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">《{{.Novel.title}}》章节预览</dt>
+      {{range .Chapters}}
+      <dd class="dd-dd-item"><a class="block" href="{{chapterURL .id}}">{{.title}}</a></dd>
+      {{end}}
+    </dl>
+    {{else}}
+    <p class="dd-hottext px-3 py-3 text-[12px]">本书暂无章节，先去书库看看别的吧。</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

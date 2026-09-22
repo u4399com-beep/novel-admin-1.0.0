@@ -30,6 +30,38 @@ func register(method, pattern string, handler func(w http.ResponseWriter, r *htt
 	})
 }
 
+// ---------- 前缀路由（web.go 页面层：静态资源/封面等无段语义路径） ----------
+
+// prefixRoute 前缀匹配路由：request path 以 prefix 开头即命中（method 需一致）
+type prefixRoute struct {
+	method  string
+	prefix  string
+	handler http.HandlerFunc
+}
+
+var prefixRoutes []prefixRoute
+
+// registerPrefix 前缀路由自注册（web.go 的 init() 调用）；优先级高于段路由（dispatch 顶部先查）
+func registerPrefix(method, prefix string, handler http.HandlerFunc) {
+	prefixRoutes = append(prefixRoutes, prefixRoute{
+		method:  strings.ToUpper(method),
+		prefix:  prefix,
+		handler: handler,
+	})
+}
+
+// matchPrefix 遍历前缀路由表；命中返回 true（已写响应）
+func matchPrefix(w http.ResponseWriter, r *http.Request) bool {
+	for i := range prefixRoutes {
+		pr := &prefixRoutes[i]
+		if pr.method == strings.ToUpper(r.Method) && strings.HasPrefix(r.URL.Path, pr.prefix) {
+			pr.handler(w, r)
+			return true
+		}
+	}
+	return false
+}
+
 func splitPath(p string) []string {
 	p = strings.Trim(p, "/")
 	if p == "" {
@@ -71,6 +103,10 @@ func routeHasParam(segs []string) bool {
 
 // dispatch 总入口（main.go 挂到 http.Server）
 func dispatch(w http.ResponseWriter, r *http.Request) {
+	// 前缀路由优先（静态资源 /static/ /covers/ 等，无段匹配语义）
+	if matchPrefix(w, r) {
+		return
+	}
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")

@@ -1,0 +1,53 @@
+{{/* pilishuwu 阅读页 —— 移植 ChapterView：章首/章尾双份上下章导航 + 阅读工具条 + 居中 85% 正文。
+键盘 ←/→ 翻章、字号/夜间由 app.js（fb-* 契约）与 pilishuwu.js 提供。
+TSX 章尾「热门推荐」行依赖首页点击榜数据，Go 章节页契约无此数据，按最小化省略。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[980px] px-2 py-3">
+
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1 border border-[#BFD8EA] bg-white px-3 py-1.5 text-xs">
+    <span class="flex items-center gap-1"><a href="/" class="cursor-pointer text-[#3366BB] hover:text-[#FF6600] hover:underline">首页</a></span>
+    <span class="flex items-center gap-1"><span class="text-[#C9DEEF]">›</span><a href="{{bookURL .Novel.id}}" class="cursor-pointer text-[#3366BB] hover:text-[#FF6600] hover:underline">{{.Novel.title}}</a></span>
+    <span class="flex items-center gap-1"><span class="text-[#C9DEEF]">›</span><span class="text-[#666]">{{.Chapter.title}}</span></span>
+  </nav>
+
+  <div class="mt-3 border border-[#BFD8EA] bg-white px-4 py-6 transition-colors sm:px-8">
+    <h1 class="text-center text-xl font-bold text-[#333]">{{.Chapter.title}}</h1>
+    <p class="mt-1 text-center text-xs text-[#999]">第 {{.Chapter.idx}} 章 · 约 {{.Chapter.wordCount}} 字</p>
+
+    {{/* 章首导航 */}}
+    <div class="mt-4 flex items-center justify-center gap-3">
+      {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="cursor-pointer border px-5 py-1.5 text-sm transition-colors border-[#BFD8EA] bg-white text-[#3366BB] hover:border-[#3B76A8] hover:bg-[#EAF3FB] hover:text-[#FF6600]">上一章</a>
+      {{else}}<span class="cursor-not-allowed border px-5 py-1.5 text-sm border-[#E3EEF7] bg-[#F7FBFF] text-[#BBB]">上一章</span>{{end}}
+      <a href="{{tocURL .Novel.id}}" class="cursor-pointer border px-5 py-1.5 text-sm transition-colors border-[#BFD8EA] bg-white text-[#3366BB] hover:border-[#3B76A8] hover:bg-[#EAF3FB] hover:text-[#FF6600]">目 录</a>
+      {{if .Next}}<a href="{{chapterURL .Next.id}}" class="cursor-pointer border px-5 py-1.5 text-sm transition-colors border-[#BFD8EA] bg-white text-[#3366BB] hover:border-[#3B76A8] hover:bg-[#EAF3FB] hover:text-[#FF6600]">下一章</a>
+      {{else}}<span class="cursor-not-allowed border px-5 py-1.5 text-sm border-[#E3EEF7] bg-[#F7FBFF] text-[#BBB]">下一章</span>{{end}}
+    </div>
+
+    {{/* 阅读工具条：字号 / 夜间（app.js fb-* 契约） */}}
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+      <button type="button" id="fb-font-dec" class="cursor-pointer border px-2 py-0.5 transition-colors border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]">A-</button>
+      <button type="button" id="fb-font-inc" class="cursor-pointer border px-2 py-0.5 transition-colors border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]">A+</button>
+      <button type="button" id="fb-night" class="cursor-pointer border px-2 py-0.5 transition-colors border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]">夜间模式</button>
+      <button type="button" data-pls-reset-prefs class="cursor-pointer border px-2 py-0.5 transition-colors border-[#BFD8EA] text-[#3366BB] hover:border-[#FF6600] hover:text-[#FF6600]">恢复默认</button>
+    </div>
+
+    {{/* 正文：居中 85% 宽，缩进 2em */}}
+    <article class="mx-auto mt-5 w-[92%] max-w-[820px] break-words md:w-[85%]">
+      <div id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}"{{if .Prev}} data-prev-url="{{chapterURL .Prev.id}}"{{end}}{{if .Next}} data-next-url="{{chapterURL .Next.id}}"{{end}}>
+        {{range .Paragraphs}}<p class="indent-[2em]">{{.}}</p>{{else}}<p class="py-6 text-center text-sm text-[#999]">本章内容为空</p>{{end}}
+      </div>
+      <p class="mt-6 text-center text-[11px] text-[#999]">键盘 ← / → 也可翻章</p>
+    </article>
+
+    {{/* 章尾导航 */}}
+    <div class="mt-6 flex items-center justify-center gap-3">
+      {{if .Prev}}<a href="{{chapterURL .Prev.id}}" class="cursor-pointer border px-5 py-1.5 text-sm transition-colors border-[#BFD8EA] bg-white text-[#3366BB] hover:border-[#3B76A8] hover:bg-[#EAF3FB] hover:text-[#FF6600]">上一章</a>
+      {{else}}<span class="cursor-not-allowed border px-5 py-1.5 text-sm border-[#E3EEF7] bg-[#F7FBFF] text-[#BBB]">上一章</span>{{end}}
+      <a href="{{tocURL .Novel.id}}" class="cursor-pointer border px-5 py-1.5 text-sm transition-colors border-[#BFD8EA] bg-white text-[#3366BB] hover:border-[#3B76A8] hover:bg-[#EAF3FB] hover:text-[#FF6600]">目 录</a>
+      {{if .Next}}<a href="{{chapterURL .Next.id}}" class="cursor-pointer border px-5 py-1.5 text-sm transition-colors border-[#BFD8EA] bg-white text-[#3366BB] hover:border-[#3B76A8] hover:bg-[#EAF3FB] hover:text-[#FF6600]">下一章</a>
+      {{else}}<span class="cursor-not-allowed border px-5 py-1.5 text-sm border-[#E3EEF7] bg-[#F7FBFF] text-[#BBB]">下一章</span>{{end}}
+    </div>
+  </div>
+</div>
+{{end}}

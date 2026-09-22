@@ -1,0 +1,42 @@
+{{define "content"}}
+<div class="fb-panel">
+  <h2 class="fb-h2">{{.Category.name}} · 分类列表</h2>
+  <div class="fb-stats"><span>共 <b>{{len .Novels}}</b> 本</span></div>
+</div>
+
+{{/* 分类页图文推荐区块（无分页契约：列表全量渲染） */}}
+{{if .FeaturedBlock}}
+<div class="fb-panel">
+  <h2 class="fb-h2">图文推荐</h2>
+  <div class="fb-grid">
+    {{range .FeaturedBlock}}<article>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span></a>
+      {{else}}<a href="{{bookURL .id}}"><span class="fb-cover {{gcls .cover}}">{{title0 .title}}</span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="fb-novel-meta">{{.author}} · {{wcFmt .wordCount}}</p>
+    </article>{{end}}
+  </div>
+</div>
+{{end}}
+
+{{if .HotBlock}}
+<div class="fb-panel">
+  <h2 class="fb-h2">热门书籍</h2>
+  <ul class="fb-rank">
+    {{range $i, $n := .HotBlock}}<li><span style="color:#a3a3a3">{{$i}}</span>
+      <a class="fb-novel-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <span class="fb-novel-meta">{{$n.author}} · 点击 {{$n.clicks}}</span></li>{{end}}
+  </ul>
+</div>
+{{end}}
+
+<div class="fb-panel">
+  <h2 class="fb-h2">全部书籍</h2>
+  <ul class="fb-rank">
+    {{range .Novels}}<li>
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <span class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{wcFmt .wordCount}} · {{.lastChapterTitle}} · {{dateFmt .updatedAt}}</span>
+    </li>{{else}}<li>本分类暂无书籍</li>{{end}}
+  </ul>
+</div>
+{{end}}

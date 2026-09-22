@@ -1,0 +1,112 @@
+{{/* huangjinwu 首页（移植 Home）：热门推荐 6 文字卡 → HomeBlocks（契约位：「分类排行榜」上方）
+→ 分类排行榜模块卡 → 最新更新文字卡流 → 最新电子书胶囊栅格。
+适配：源站「分类排行榜」为 6 个逐分类点击榜卡（客户端逐分类拉取，Go 首页契约无分类内数据）
+→ 以同构 ranking-module 卡承载三张全站榜（点击/完本/最近更新，.RankClicks/.RankFinished/.RankUpdates）；
+「最新电子书」胶囊池 React 为 latest+featured+hot+clicks 去重 24 → Go 以 .Latest[14] 全量承接。 */}}
+{{define "content"}}
+<div class="mx-auto max-w-[1180px] space-y-10 px-4 py-8">
+
+  {{/* 热门推荐 3×2 文字卡 */}}
+  <section>
+    <div class="mb-5 flex items-end justify-between gap-3">
+      <h2 class="border-l-4 border-[#2563eb] pl-4 text-[20px] leading-7 font-semibold text-[#0f172a]">热门推荐</h2>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {{range $i, $n := .Hot}}{{if lt $i 6}}
+      <article class="group cursor-pointer rounded-[10px] border border-[#e6edf7] bg-white p-5 shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(37,99,235,0.12)]">
+        <h3 class="truncate text-[16px] font-semibold text-[#1e293b] transition-colors duration-200 group-hover:text-[#2563eb]"><a href="{{bookURL $n.id}}">{{$n.title}}</a></h3>
+        <p class="mt-1 truncate text-[13px] text-[#64748b]">作者：{{$n.author}}</p>
+        <p class="mt-2 line-clamp-2 min-h-[40px] text-[14px] leading-5 text-[#64748b]"><a href="{{bookURL $n.id}}">{{if $n.description}}{{$n.description}}{{else}}暂无简介{{end}}</a></p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a href="{{catURL $n.categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{$n.categoryName}}</a>
+          <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq $n.status "finished"}}完本{{else}}连载中{{end}}</span>
+          <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{wcFmt $n.wordCount}}</span>
+        </div>
+      </article>
+      {{end}}{{else}}<p class="col-span-full rounded-[10px] border border-dashed border-[#dbe4f0] bg-white/70 p-12 text-center text-[14px] text-[#94a3b8]">暂无推荐小说</p>{{end}}
+    </div>
+  </section>
+
+  {{/* 后台自定义图文区块（小编精选等）—— theme-extras 中性样式，契约位：分类排行榜上方 */}}
+  {{if .HomeBlocks}}
+  <div class="mx-auto w-full max-w-6xl px-4">
+    {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
+      <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
+        <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+        <h2 class="text-base font-bold tracking-wide text-neutral-900">{{.title}}</h2>
+      </div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {{range .novels}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+          {{if isLocalCover .cover}}<span class="relative block w-full overflow-hidden rounded-lg" style="aspect-ratio:3/4"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+          {{else}}<span class="relative block w-full overflow-hidden rounded-lg {{gcls .cover}}" style="aspect-ratio:3/4"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+          <span class="mt-2 block truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
+          <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+        </a>{{else}}<p class="py-6 text-center text-xs text-neutral-400">暂无数据</p>{{end}}
+      </div>
+    </section>{{end}}
+  </div>
+  {{end}}
+
+  {{/* 分类排行榜模块卡（ranking-module 同构：源站 6 分类榜 → 全站三榜降级） */}}
+  <section>
+    <div class="mb-5 flex items-end justify-between gap-3">
+      <h2 class="border-l-4 border-[#2563eb] pl-4 text-[20px] leading-7 font-semibold text-[#0f172a]">分类排行榜<span class="ml-3 text-[13px] font-normal text-[#94a3b8]">全站榜单 · 按分类进入查看</span></h2>
+    </div>
+    <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      <div class="overflow-hidden rounded-[10px] border border-[#dbe4f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_16px_rgba(37,99,235,0.06)] transition-shadow duration-300 hover:shadow-[0_8px_24px_rgba(37,99,235,0.14),0_2px_8px_rgba(15,23,42,0.06)]">
+        <div class="flex items-center gap-2 border-b border-[#dbe4f0] bg-[#f0f4fb] px-4 py-3 text-[18px] font-semibold text-[#1e293b]"><span class="h-4 w-[3px] rounded-sm bg-[#2563eb]" aria-hidden="true"></span>全站点击榜</div>
+        {{template "hj-rank-rows" .RankClicks}}
+      </div>
+      <div class="overflow-hidden rounded-[10px] border border-[#dbe4f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_16px_rgba(37,99,235,0.06)] transition-shadow duration-300 hover:shadow-[0_8px_24px_rgba(37,99,235,0.14),0_2px_8px_rgba(15,23,42,0.06)]">
+        <div class="flex items-center gap-2 border-b border-[#dbe4f0] bg-[#f0f4fb] px-4 py-3 text-[18px] font-semibold text-[#1e293b]"><span class="h-4 w-[3px] rounded-sm bg-[#2563eb]" aria-hidden="true"></span>全站完本榜</div>
+        {{template "hj-rank-rows" .RankFinished}}
+      </div>
+      <div class="overflow-hidden rounded-[10px] border border-[#dbe4f0] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_16px_rgba(37,99,235,0.06)] transition-shadow duration-300 hover:shadow-[0_8px_24px_rgba(37,99,235,0.14),0_2px_8px_rgba(15,23,42,0.06)]">
+        <div class="flex items-center gap-2 border-b border-[#dbe4f0] bg-[#f0f4fb] px-4 py-3 text-[18px] font-semibold text-[#1e293b]"><span class="h-4 w-[3px] rounded-sm bg-[#2563eb]" aria-hidden="true"></span>最近更新榜</div>
+        {{template "hj-rank-rows" .RankUpdates}}
+      </div>
+    </div>
+  </section>
+
+  {{/* 最新更新文字卡流 */}}
+  <section>
+    <div class="mb-5 flex items-end justify-between gap-3">
+      <h2 class="border-l-4 border-[#2563eb] pl-4 text-[20px] leading-7 font-semibold text-[#0f172a]">最新更新<span class="ml-3 text-[13px] font-normal text-[#94a3b8]">每日持续更新中</span></h2>
+    </div>
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {{range .Latest}}
+      <article class="group cursor-pointer rounded-[10px] border border-[#e6edf7] bg-white p-5 shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_6px_18px_rgba(37,99,235,0.12)]">
+        <h3 class="truncate text-[16px] font-semibold text-[#1e293b] transition-colors duration-200 group-hover:text-[#2563eb]"><a href="{{bookURL .id}}">{{.title}}</a></h3>
+        <p class="mt-1 truncate text-[13px] text-[#64748b]">作者：{{.author}}</p>
+        <p class="mt-2 line-clamp-2 min-h-[40px] text-[14px] leading-5 text-[#64748b]"><a href="{{bookURL .id}}">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</a></p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a href="{{catURL .categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{.categoryName}}</a>
+          <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq .status "finished"}}完本{{else}}连载中{{end}}</span>
+          <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{wcFmt .wordCount}}</span>
+        </div>
+      </article>
+      {{else}}<p class="col-span-full rounded-[10px] border border-dashed border-[#dbe4f0] bg-white/70 p-12 text-center text-[14px] text-[#94a3b8]">暂无更新数据</p>{{end}}
+    </div>
+  </section>
+
+  {{/* 最新电子书 胶囊栅格 */}}
+  <section>
+    <div class="mb-5 flex items-end justify-between gap-3">
+      <h2 class="border-l-4 border-[#2563eb] pl-4 text-[20px] leading-7 font-semibold text-[#0f172a]">最新电子书</h2>
+    </div>
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
+      {{range .Latest}}<a href="{{bookURL .id}}" class="cursor-pointer truncate rounded-[10px] border border-[#dbe4f0] bg-white px-5 py-3 text-[14px] text-[#1e293b] shadow-[0_1px_3px_rgba(37,99,235,0.06)] transition-all duration-200 hover:border-[#2563eb]/40 hover:text-[#2563eb] hover:shadow-[0_4px_12px_rgba(37,99,235,0.12)]">《{{.title}}》</a>{{else}}<p class="col-span-full rounded-[10px] border border-dashed border-[#dbe4f0] bg-white/70 p-12 text-center text-[14px] text-[#94a3b8]">暂无数据</p>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}
+
+{{/* ranking-module 行列表（源站 .ranking-item 同构）：编号徽章行，前三名蓝系渐深。 */}}
+{{define "hj-rank-rows"}}{{if .}}<ol class="py-1">
+  {{range $i, $n := .}}<li class="flex items-center gap-3 border-b border-[#dbe4f0] px-4 py-2 transition-colors duration-200 last:border-b-0 hover:bg-[#e8f1ff]">
+    <span class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[10px] text-[12px] font-bold {{if eq $i 0}}bg-[#2563eb] text-white{{else if eq $i 1}}bg-[#6692f1] text-white{{else if eq $i 2}}bg-[#acc7f4] text-white{{else}}bg-[#e8f1ff] text-[#64748b]{{end}}">{{add $i 1}}</span>
+    <a href="{{bookURL $n.id}}" class="min-w-0 flex-1 cursor-pointer truncate text-left text-[16px] font-medium text-[#1e293b] transition-colors duration-200 hover:text-[#2563eb]">{{$n.title}}</a>
+    <span class="max-w-[100px] shrink-0 truncate text-right text-[14px] text-[#64748b]">{{$n.author}}</span>
+  </li>{{end}}
+</ol>
+{{else}}<p class="px-4 py-6 text-center text-[14px] text-[#94a3b8]">该分类暂无上榜小说</p>{{end}}{{end}}

@@ -1,0 +1,157 @@
+{{/* x2552 杰奇经典模板 —— Go 模板共享骨架（移植自 src/themes/x2552/Layout.tsx）。
+定宽 960px；首页/分类/搜索/书籍 = 完整页头(.m_head) + 主导航(.m_menu) + 公告条 + .footer；
+目录/正文 = #a_head 紧凑顶栏 + #a_footer（正文页 body 淡蓝 #E6F3FF）。
+繁简切换（TradToggle）本版跳过；全部分类类入口因 Go 无全站路由指向首页。 */}}
+{{define "layout"}}{{$path := .Path}}{{$compact := or (eq (printf "%.9s" $path) "/chapter/") (ne (trimSuffixStr $path "/toc") $path)}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.pageTitle}} | {{.Site.siteName}}</title>
+<meta name="description" content="{{.pageDescription}}">
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+</head>
+<body class="{{if eq (printf "%.9s" $path) "/chapter/"}}bg-[#E6F3FF]{{else}}bg-white{{end}} flex min-h-screen min-w-0 flex-col" style="font-family:'Microsoft Yahei','SimSun','PingFang SC','Hiragino Sans GB',sans-serif;font-size:12px;line-height:1.5;color:#666666">
+
+{{if $compact}}
+  {{/* 目录/正文页专用紧凑顶栏 #a_head：30px 高渐变条 + 小搜索框 */}}
+  <div class="pt-2">
+    <div class="no-scrollbar mx-auto flex h-[30px] w-full max-w-[960px] items-center gap-1 overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-1 text-[12px]">
+      <a href="/" class="inline-block cursor-pointer px-1.5 text-[#666666] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">首页</a>
+      {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="inline-block cursor-pointer px-1.5 text-[#666666] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$c.name}}</a>{{end}}{{end}}
+      <a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer px-1.5 text-[#666666] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">全本</a>
+      <form action="/search" method="get" role="search" class="ml-auto flex shrink-0 items-center gap-1">
+        <input name="q" value="{{.Q}}" placeholder="搜书名/作者" aria-label="搜索小说" class="h-[20px] w-[120px] border border-[#CCCCCC] px-1 text-[12px] text-[#333] outline-none placeholder:text-[#BBB] focus:border-[#FF6600]">
+        <button type="submit" title="按书名字段检索（演示模板：统一综合检索）" class="h-[20px] cursor-pointer border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08] px-1.5 text-[12px] font-bold text-white transition hover:brightness-105">搜书名</button>
+        <button type="submit" title="按作者字段检索（演示模板：统一综合检索）" class="h-[20px] cursor-pointer border border-[#0578BB] bg-gradient-to-b from-[#73B7EE] to-[#0578BB] px-1.5 text-[12px] font-bold text-white transition hover:brightness-105">搜作者</button>
+      </form>
+    </div>
+  </div>
+{{else}}
+  {{/* 完整页头 .m_head：左 Logo 180 + 右工具行/搜索组 */}}
+  <header class="mx-auto flex h-[60px] w-full max-w-[960px] items-center">
+    <a href="/" class="w-[180px] shrink-0 text-left leading-tight">
+      <span class="block text-[20px] font-bold text-[#2F468F]">{{.Site.siteName}}</span>
+      <span class="block text-[11px] text-[#FF6600]">x2552.com · 杰奇经典模板</span>
+    </a>
+    <div class="flex min-w-0 flex-1 flex-col items-end gap-[6px]">
+      <div class="flex flex-wrap items-center justify-end gap-2 text-[12px] text-[#999]">
+        <button type="button" class="x25-hist-btn cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]" title="查看最近阅读过的章节">阅读记录</button>
+        <span class="text-[#DDD]">|</span>
+        <button type="button" class="x25-fav cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]" title="按 Ctrl+D 也可收藏">加入收藏</button>
+        <span class="text-[#DDD]">|</span>
+        <span class="cursor-pointer text-[#2F468F] transition-colors hover:text-[#FF6600]" title="演示模板">联系我们</span>
+      </div>
+      <div class="hidden items-center gap-1 min-[720px]:flex">
+        <form action="/search" method="get" role="search" class="flex items-center gap-1">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input name="q" value="{{.Q}}" placeholder="输入书名或作者" aria-label="搜索小说" class="h-[28px] w-[260px] max-w-full border border-[#CCCCCC] px-1 text-[12px] text-[#333] outline-none placeholder:text-[#BBB] focus:border-[#FF6600]">
+          <button type="submit" title="按书名字段检索（演示模板：统一综合检索）" class="h-[30px] w-[70px] cursor-pointer border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08] text-[12px] font-bold text-white transition hover:brightness-105">搜书名</button>
+          <button type="submit" title="按作者字段检索（演示模板：统一综合检索）" class="h-[30px] w-[70px] cursor-pointer border border-[#0578BB] bg-gradient-to-b from-[#73B7EE] to-[#0578BB] text-[12px] font-bold text-white transition hover:brightness-105">搜作者</button>
+        </form>
+        <span class="ml-2 text-[12px]">
+          <span class="cursor-pointer text-[#2F468F] hover:text-[#FF6600]" title="演示模板：登录未实现">登录</span>
+          <span class="mx-1 text-[#DDD]">|</span>
+          <span class="cursor-pointer text-[#2F468F] hover:text-[#FF6600]" title="演示模板：注册未实现">注册</span>
+        </span>
+      </div>
+    </div>
+  </header>
+
+  {{/* 主导航 .m_menu：浅灰渐变 40px，右绝对定位阅读记录按钮 */}}
+  <nav aria-label="主导航" class="no-scrollbar relative mx-auto flex h-[40px] w-full max-w-[960px] items-center overflow-x-auto border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pr-[110px]">
+    <a href="/" class="inline-block cursor-pointer px-3 text-[14px] font-bold text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]{{if eq $path "/"}} text-[#FF6600]{{end}}">首页</a>
+    {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="inline-block cursor-pointer px-3 text-[14px] font-bold text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]{{if eq $path (catURL $c.id)}} text-[#FF6600]{{end}}">{{$c.name}}</a>{{end}}{{end}}
+    <a href="/" title="进入全部分类" class="inline-block cursor-pointer px-3 text-[14px] font-bold text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">全本</a>
+    <button type="button" class="x25-hist-btn absolute right-2 top-[5px] h-[30px] w-[100px] cursor-pointer bg-[#666666] text-[12px] font-bold text-white transition-colors hover:bg-[#FF6600]" title="查看最近阅读过的章节">阅读记录</button>
+  </nav>
+
+  {{/* 公告条 */}}
+  {{if .Site.notice}}
+  <div class="mx-auto w-full max-w-[960px]">
+    <div class="mt-2 border border-[#E4E4E4] bg-white px-2 text-[12px] leading-[25px] text-[#FF3300]">公告：{{.Site.notice}}</div>
+  </div>
+  {{end}}
+{{end}}
+
+  <div class="mx-auto w-full max-w-[960px] min-w-0 flex-1">{{template "content" .}}</div>
+
+{{if $compact}}
+  {{/* 书页 #a_footer：顶线 + 网站地图 */}}
+  <footer class="mx-auto mt-3 w-full max-w-[960px] border-t border-[#E4E4E4] py-3 text-center text-[12px] text-[#666666]">
+    <p>
+      网站地图：
+      {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="mx-0.5 hover:text-[#FF6600] hover:underline">[{{add $i 1}}]</a>{{end}}{{end}}
+      {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-0.5 hover:text-[#FF6600] hover:underline">[{{.label}}]</a>{{end}}
+    </p>
+    <p class="mt-1">{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}}（x2552.com）· 目录/正文页精简页脚{{end}}</p>
+  </footer>
+{{else}}
+  {{/* 频道页 .footer：浅蓝顶条 + 白渐变 */}}
+  <footer class="mx-auto mt-2 w-full max-w-[960px]">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+    <div class="bg-gradient-to-b from-white to-[#EDEDED] py-3 text-center text-[12px] leading-[20px] text-[#666666]">
+      <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}}（x2552.com）—— 杰奇 CMS 经典结构主题演示{{end}}</p>
+      <p>{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本页面为前端结构级主题模板演示，所有数据均来自本地演示库{{end}}</p>
+      {{if .Site.footerLinks}}<p>{{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-1 text-[#666666] hover:text-[#FF6600] hover:underline">[{{.label}}]</a>{{end}}</p>{{end}}
+    </div>
+  </footer>
+{{end}}
+
+{{/* 阅读记录浮层（x2552.js 从 localStorage reader.history 填充） */}}
+<div id="x25-hist-panel" hidden class="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+  <div class="absolute inset-0 bg-black/40" data-x25-hist-close></div>
+  <div class="relative z-10 max-h-[70vh] w-[92%] max-w-[520px] overflow-y-auto border border-[#E4E4E4] bg-white p-4 shadow-xl">
+    <div class="mb-3 flex items-center justify-between border-b border-[#E4E4E4] pb-2">
+      <h2 class="text-[14px] font-bold text-[#333]">阅读记录</h2>
+      <button type="button" class="cursor-pointer text-[12px] text-[#999] hover:text-[#FF6600]" data-x25-hist-close>关闭</button>
+    </div>
+    <ol id="x25-hist-list" class="text-[12px]"></ol>
+    <p id="x25-hist-empty" class="py-8 text-center text-[12px] text-[#999]">暂无阅读记录，去挑一本书开始阅读吧。</p>
+  </div>
+</div>
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/x2552.js" defer></script>
+</body>
+</html>{{end}}
+
+{{/* 侧栏共享块（分类/书籍/搜索页左 190）：会员推荐（点击榜）+ 排行榜入口。
+React 版侧栏为客户端自拉全站点击榜；Go 契约按页面可用数据降级：
+分类页取 .HotBlock（本分类点击榜）、书籍页取 .Related、搜索页无数据显示空态。 */}}
+{{define "x25-sidebar"}}<div class="hidden w-[190px] shrink-0 space-y-2 lg:block">
+  <div class="border border-[#E4E4E4] bg-white">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+    <div class="flex h-[26px] items-center gap-1.5 border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1 text-[12px] font-bold text-[#333]">
+      <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>会员推荐
+    </div>
+    {{$rows := .HotBlock}}{{if not $rows}}{{$rows = .Related}}{{end}}
+    {{range $i, $n := $rows}}{{if lt $i 15}}
+    <div class="flex h-[25px] items-center border-b border-dotted border-[#F2F2F2] px-2 text-[12px] last:border-b-0">
+      <span class="w-[20px] shrink-0 text-right text-[#999]">{{add $i 1}}.</span>
+      <a href="{{bookURL $n.id}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$n.title}}</a>
+      <span class="ml-1 shrink-0 text-[11px] text-[#FF6600]">{{$n.clicks}}</span>
+    </div>
+    {{end}}{{else}}<p class="px-2 py-4 text-center text-[12px] text-[#999]">暂无数据</p>{{end}}
+  </div>
+  <div class="border border-[#E4E4E4] bg-white">
+    <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+    <div class="flex h-[26px] items-center gap-1.5 border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1 text-[12px] font-bold text-[#333]">
+      <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>排行榜
+    </div>
+    <ul class="grid grid-cols-2 px-2 py-1">
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">总排行</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">月排行</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">周排行</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">总推荐</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">月推荐</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">周推荐</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">最新入库</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">最近更新</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">收藏榜</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">字数排行</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px]"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">完本列表</a></li>
+      <li class="flex h-[25px] items-center justify-center border-b border-dotted border-[#F2F2F2] text-[12px] last:border-b-0"><a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">连载列表</a></li>
+    </ul>
+  </div>
+</div>{{end}}

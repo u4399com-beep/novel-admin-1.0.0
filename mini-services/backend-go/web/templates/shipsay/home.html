@@ -1,0 +1,171 @@
+{{/* shipsay 首页（移植 Home.tsx）：精选双列卡(700)+热门 aside(250) → HomeBlocks（契约位：分类小版块上方）
+→ 6 个分类小版块 → 最新章节长列表+最近更新 aside → 友情链接。
+适配：React 6 个分类小版块逐分类拉 13 本（客户端），Go 契约无分类内数据 → .Nav 前 6 分类版块降级为
+「分类名 + 本数 + 更多」白卡清单（保板块位置与三列栅格）。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[960px] px-2 pb-6 pt-[10px]">
+  <div class="space-y-[10px]">
+    {{if .Site.notice}}
+    <div class="flex items-center gap-2 bg-white px-4 py-2.5 text-[13px] text-[#666]">
+      <span class="shrink-0 rounded-sm bg-[#BF2C24] px-1.5 py-0.5 text-[11px] leading-none text-white">公告</span>
+      <span class="min-w-0 truncate">{{.Site.notice}}</span>
+    </div>
+    {{end}}
+
+    {{/* 区块一：精选推荐 700 + 右侧热门 250 */}}
+    <div class="flex items-start gap-[10px]">
+      <section class="min-w-0 flex-1 bg-white">
+        <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+          <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+            <span class="text-[#BF2C24]" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+            </span>
+            精选推荐
+          </div>
+          <span class="text-[12px] font-normal text-[#969BA3]">编推优先 · 每日更新</span>
+        </div>
+        {{with .Featured}}
+        {{if .}}
+        <div class="grid grid-cols-2 gap-x-6 gap-y-5 px-4 py-4 max-[639px]:grid-cols-1">
+          {{range $i, $n := .}}{{if lt $i 8}}
+          <a class="group flex gap-3" href="{{bookURL $n.id}}">
+            {{if isLocalCover $n.cover}}<span class="relative block h-[133px] w-[100px] shrink-0 overflow-hidden shadow-sm"><img src="{{$n.cover}}" alt="{{$n.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq $n.status "finished"}}完本{{else}}连载{{end}}</span></span>
+            {{else}}<span class="relative block h-[133px] w-[100px] shrink-0 overflow-hidden shadow-sm {{gcls $n.cover}}"><span class="flex h-full w-full items-center justify-center"><span class="select-none font-bold text-white/90 drop-shadow text-3xl" aria-hidden="true">{{title0 $n.title}}</span></span><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq $n.status "finished"}}完本{{else}}连载{{end}}</span></span>{{end}}
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="block truncate text-[15px] font-bold text-[#1A1A1A] transition-colors group-hover:text-[#ED4259]">{{$n.title}}</span>
+              <span class="mt-1.5 line-clamp-2 flex-1 text-justify indent-[2em] text-[12px] leading-[1.7] text-[#999]">{{if $n.description}}{{$n.description}}{{else}}（暂无简介）{{end}}</span>
+              <span class="mt-auto flex items-center gap-1.5 text-[11px]">
+                <span class="min-w-0 truncate text-[#969BA3]">{{$n.author}}</span>
+                <span class="ml-auto shrink-0 rounded-sm border border-[#F0643A]/50 px-1 py-px leading-none text-[#F0643A]">{{wcFmt $n.wordCount}}</span>
+                <span class="shrink-0 rounded-sm border border-[#4284ED]/50 px-1 py-px leading-none text-[#4284ED]">{{dateFmt $n.updatedAt}}</span>
+              </span>
+            </span>
+          </a>
+          {{end}}{{end}}
+        </div>
+        {{else}}<p class="px-4 py-10 text-center text-[13px] text-[#969BA3]">暂无精选小说</p>{{end}}
+        {{end}}
+      </section>
+      <aside class="w-[250px] shrink-0 max-[767px]:hidden">
+        <div class="bg-white">
+          <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+            <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+              <span class="text-[#BF2C24]" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+              </span>
+              热门小说
+            </div>
+          </div>
+          <div class="bg-white px-4 py-1">
+            {{range $i, $n := .Hot}}{{if lt $i 12}}
+            <a class="group flex h-[41px] items-center justify-between gap-2 border-b border-dotted border-[#E6E6E6] last:border-b-0" href="{{bookURL $n.id}}">
+              <span class="min-w-0 truncate text-[13px] text-[#1A1A1A] transition-colors group-hover:text-[#ED4259]">{{$n.title}}</span>
+              <span class="shrink-0 text-[12px] text-[#969BA3]">{{$n.author}}</span>
+            </a>
+            {{end}}{{else}}<p class="px-2 py-6 text-center text-[12px] text-[#969BA3]">暂无数据</p>{{end}}
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    {{/* 区块一.5：后台自定义图文区块（小编精选等）——契约位：分类小版块上方 */}}
+    {{range .HomeBlocks}}
+    <section class="bg-white" aria-label="{{.title}}">
+      <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+        <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+          <span class="text-[#BF2C24]" aria-hidden="true">▦</span>
+          {{.title}}
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 px-4 py-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {{range .novels}}
+        <a class="group flex flex-col rounded-sm border border-[#E6E6E6] p-2 transition hover:shadow-md" href="{{bookURL .id}}">
+          {{if isLocalCover .cover}}<span class="relative block w-full overflow-hidden" style="aspect-ratio:3/4"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+          {{else}}<span class="relative block w-full overflow-hidden {{gcls .cover}}" style="aspect-ratio:3/4"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+          <span class="mt-2 block truncate text-xs font-semibold text-[#1A1A1A] group-hover:text-[#ED4259]">{{.title}}</span>
+          <span class="truncate text-[11px] text-[#969BA3]">{{.author}}</span>
+        </a>
+        {{else}}<p class="px-2 py-6 text-center text-[12px] text-[#969BA3]">暂无数据</p>{{end}}
+      </div>
+    </section>
+    {{end}}
+
+    {{/* 区块二：6 个分类小版块（.Nav 前 6；无分类内书籍数据，降级为清单卡） */}}
+    <div class="grid grid-cols-3 gap-[10px] max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
+      {{$count := 0}}
+      {{range $cat := .Nav}}{{if lt $count 6}}{{$count = add $count 1}}
+      <section class="bg-white">
+        <a class="flex w-full items-center justify-between border-b border-[#E6E6E6] px-3 py-2.5 transition-colors hover:bg-[#FAFAFA]" href="{{catURL $cat.id}}">
+          <span class="text-[15px] font-bold text-[#3E3D43] transition-colors hover:text-[#ED4259]">{{$cat.name}}</span>
+          <span class="text-[12px] text-[#969BA3]">更多 ›</span>
+        </a>
+        <div class="px-3 py-4">
+          <p class="text-[13px] text-[#666]">本分类已收录 <span class="font-bold text-[#BF2C24]">{{$cat.novelCount}}</span> 本小说</p>
+          <p class="mt-1 text-[12px] leading-[1.6] text-[#969BA3]">点击「更多 ›」进入{{$cat.name}}书库，按最新更新与热门点击挑选阅读。</p>
+        </div>
+      </section>
+      {{end}}{{end}}
+    </div>
+
+    {{/* 区块三：最新章节长列表 700 + 右侧最近更新 250 */}}
+    <div class="flex items-start gap-[10px]">
+      <section class="min-w-0 flex-1 bg-white">
+        <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+          <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+            <span class="text-[#BF2C24]" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </span>
+            最新章节
+          </div>
+        </div>
+        {{range $i, $n := .Latest}}{{if lt $i 30}}
+        <a class="group flex h-[41px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-3 text-[13px] last:border-b-0" href="{{bookURL $n.id}}">
+          <span class="w-[9%] min-w-[44px] shrink-0 truncate text-[12px] text-[#BF2C24]">{{$n.categoryName}}</span>
+          <span class="w-[25%] shrink-0 truncate font-medium text-[#1A1A1A] transition-colors group-hover:text-[#ED4259]">{{$n.title}}</span>
+          <span class="min-w-0 flex-1 truncate text-[#666] transition-colors group-hover:text-[#ED4259]">{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}暂无章节{{end}}</span>
+          <span class="w-[25%] shrink-0 truncate text-right text-[12px] text-[#969BA3] max-[639px]:hidden">{{$n.author}} · {{dateFmt $n.updatedAt}}</span>
+        </a>
+        {{end}}{{else}}<p class="px-4 py-10 text-center text-[13px] text-[#969BA3]">暂无更新</p>{{end}}
+      </section>
+      <aside class="w-[250px] shrink-0 max-[767px]:hidden">
+        <div class="bg-white">
+          <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+            <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+              <span class="text-[#BF2C24]" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </span>
+              最近更新
+            </div>
+          </div>
+          <div class="bg-white px-4 py-1">
+            {{range $i, $n := .RankUpdates}}{{if lt $i 12}}
+            <a class="group flex h-[41px] items-center justify-between gap-2 border-b border-dotted border-[#E6E6E6] last:border-b-0" href="{{bookURL $n.id}}">
+              <span class="min-w-0 truncate text-[13px] text-[#1A1A1A] transition-colors group-hover:text-[#ED4259]">{{$n.title}}</span>
+              <span class="shrink-0 text-[12px] text-[#969BA3]">{{$n.author}}</span>
+            </a>
+            {{end}}{{else}}<p class="px-2 py-6 text-center text-[12px] text-[#969BA3]">暂无数据</p>{{end}}
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    {{/* 区块四：友情链接 */}}
+    <section class="bg-white">
+      <div class="flex items-center justify-between border-b border-[#DDD] px-4 py-3">
+        <div class="flex items-center gap-2 text-[15px] font-bold text-[#3E3D43]">
+          <span class="text-[#BF2C24]" aria-hidden="true">▦</span>
+          友情链接
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-x-5 gap-y-2 px-4 pb-4 pt-1">
+        {{range .Nav}}<a class="text-[13px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]" href="{{catURL .id}}">{{.name}}小说</a>{{end}}
+        <a class="text-[13px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]" href="/">{{.siteName}}</a>
+      </div>
+      <div class="flex items-center gap-1.5 border-t border-[#F0F0F0] px-4 py-2 text-[11px] text-[#C0C4CC]">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        本站为结构级主题演示模板，友链区展示分类导航
+      </div>
+    </section>
+  </div>
+</div>
+{{end}}

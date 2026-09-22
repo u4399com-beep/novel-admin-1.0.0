@@ -1,0 +1,71 @@
+{{/* x2552 搜索页（移植 Search.tsx）：左 190 侧栏 + 右 760 站内搜索 Block + 结果 6 列数据表。
+源站 searchtype 双按钮（搜书名/搜作者）字段检索为本地二次过滤，Go 契约 /search 为
+书名/作者联合模糊检索 → 三按钮统一提交（title 注明演示限制）。 */}}
+{{define "content"}}
+<div class="mt-2 flex items-start justify-between">
+  {{template "x25-sidebar" .}}
+
+  <div class="min-w-0 flex-1 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
+    <div class="border border-[#E4E4E4] bg-white">
+      <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+      <div class="flex h-[30px] items-center gap-1.5 border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+        <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+          <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>站内搜索
+        </div>
+      </div>
+      <form action="/search" method="get" role="search" class="flex flex-wrap items-center gap-1 p-2">
+        <input type="search" name="q" value="{{.Q}}" placeholder="输入书名或作者关键词" aria-label="搜索小说" class="h-[28px] w-[280px] min-w-0 max-w-full flex-1 border border-[#CCCCCC] px-1 text-[12px] text-[#333] outline-none placeholder:text-[#BBB] focus:border-[#FF6600]">
+        <button type="submit" title="按书名字段检索（演示模板：统一综合检索）" class="h-[30px] w-[70px] cursor-pointer border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08] text-[12px] font-bold text-white transition hover:brightness-105">搜书名</button>
+        <button type="submit" title="按作者字段检索（演示模板：统一综合检索）" class="h-[30px] w-[70px] cursor-pointer border border-[#0578BB] bg-gradient-to-b from-[#73B7EE] to-[#0578BB] text-[12px] font-bold text-white transition hover:brightness-105">搜作者</button>
+        <button type="submit" title="书名/作者综合检索" class="h-[30px] w-[70px] cursor-pointer border border-[#CCCCCC] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] text-[12px] text-[#333] transition hover:border-[#FF6600] hover:text-[#FF6600]">综合</button>
+      </form>
+    </div>
+
+    {{if .Q}}
+    <div class="mt-2">
+      <h2 class="flex h-[30px] items-center gap-1.5 border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-2 text-[14px] font-bold text-[#333]">
+        <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>
+        <span class="min-w-0 truncate">综合检索“{{.Q}}” 的搜索结果</span>
+        {{if gt .Total 0}}<span class="ml-1 shrink-0 text-[11px] font-normal text-[#999]">共 {{.Total}} 条</span>{{end}}
+      </h2>
+      <div class="mt-1">
+        <table class="w-full table-fixed border-collapse border border-[#E4E4E4] bg-white text-[12px]">
+          <thead>
+            <tr class="bg-[#F2F2F2]">
+              <th class="w-[18%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">文章名称</th>
+              <th class="w-[46%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">最新章节</th>
+              <th class="w-[13%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">作者</th>
+              <th class="w-[8%] border-b border-[#E4E4E4] px-1 py-[6px] text-center font-bold text-[#333]">字数</th>
+              <th class="w-[9%] border-b border-[#E4E4E4] px-1 py-[6px] text-center font-bold text-[#333]">更新</th>
+              <th class="w-[6%] border-b border-[#E4E4E4] px-1 py-[6px] text-center font-bold text-[#333]">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Novels}}
+            <tr class="border-b border-dotted border-[#E4E4E4] last:border-b-0">
+              <td class="px-1 py-[6px]"><a href="{{bookURL .id}}" class="inline-block w-full cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.title}}</a></td>
+              <td class="px-1 py-[6px]"><a href="{{bookURL .id}}" class="inline-block w-full cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}暂无章节{{end}}</a></td>
+              <td class="truncate px-1 py-[6px] text-[#666]">{{.author}}</td>
+              <td class="px-1 py-[6px] text-center">{{wcFmt .wordCount}}</td>
+              <td class="px-1 py-[6px] text-center text-[#999]">{{dateFmt .updatedAt}}</td>
+              <td class="px-1 py-[6px] text-center {{if eq .status "finished"}}text-[#FF6600]{{else}}text-[#999]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</td>
+            </tr>
+            {{else}}
+            <tr><td colspan="6" class="px-2 py-6 text-center text-[#999]">没有找到与“{{.Q}}”相关的小说，换个关键词试试</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{else}}
+    <div class="mt-2 border border-[#E4E4E4] bg-white py-10 text-center text-[12px] leading-[22px] text-[#999]">
+      <p>输入关键词后点击「搜书名 / 搜作者」按字段检索，回车综合检索。</p>
+      <p class="mt-2">
+        <a href="/" class="mr-3 inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">返回首页</a>
+        <a href="/" title="演示模板：全部分类列表未实现" class="inline-block cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">浏览全部分类</a>
+      </p>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
