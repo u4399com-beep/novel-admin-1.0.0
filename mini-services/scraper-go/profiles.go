@@ -24,8 +24,10 @@ type headerProfile struct {
 }
 
 // chromeMajor 进程启动时从近期版本集随机挑选一次，UA 与 Sec-CH-UA 全部由它派生
+// （Task 26-d：候选集刷新到当前活跃大版本带 130-137，降低「陈旧 UA 白名单外被拒」概率；
+// sec-ch-ua 与 UA 同源派生，版本一致性不受候选集变化影响）
 var chromeMajor = func() int {
-	candidates := []int{124, 125, 126, 127, 128, 129, 130, 131, 132, 133}
+	candidates := []int{130, 131, 132, 133, 134, 135, 136, 137}
 	return candidates[rand.Intn(len(candidates))]
 }()
 

@@ -959,3 +959,75 @@ Work Log:
 Stage Summary:
 - 用户指令①全 Go 化完成：页面渲染全量进 backend-go（10 主题×6 视图+admin+SEO 路由），Next.js 退役为管道；②主题核查 10/10 截图目验达标（导航/小编精选位/分类计数/渐变封面/阅读器工具栏/键盘翻章）；③噪声审计 11 规则全落档（8 可用含 2 现场校准、2 硬反爬、1 不可达）+ 快填 8 站入队
 - 数据面：清库后重建 160+ 书/23 万+章持续采集；分类"其他"id=9999 恒最后；pseo 671 词 generated、书籍页相关标签=pseo 链接实证
+---
+Task ID: 25
+Agent: main (Z.ai Code)
+Task: 用户报告预览 {"error":"后端服务不可用","detail":"fetch failed"} → 根因定位与修复；数据库全空取证与 git 快照恢复
+
+Work Log:
+- 【502 根因】3000 catch-all 代理把非 /api 请求分流到 :3007「页面进程」，但 3007 无任何看护者（backend-supervisor 只拉 3005 mode=all、ensure-services.sh 只管 3005/3030）→ 沙箱重启后 3007 无人拉起 → 页面全 502；实证 3005 mode=all 本身同时服务 API+页面（web.go 与 API 共用 dispatch），/ 200、/static 200
+- 【修复】src/app/[[...slug]]/route.ts WEB_ORIGIN 默认值 3007 → API_ORIGIN(3005)，单进程拓扑收敛；注释记录 3007 无看护导致全站 502 的事故史；GO_WEB_ORIGIN env 保留拆分能力；验证 /、/api/health、/admin、/search 经 3000 全 200
+- 【数据面取证】db/custom.db 全空：Category/Novel/Chapter/ScrapeRule/ScrapeTask 全 0、sqlite_sequence 空（dev.log 实证 10:21 沙箱启动时库即空，与 Task 24-d 的库被清空同款事故再现）
+- 【快照恢复】git 历史 db 快照盘点：HEAD 无 db 文件；4cb1619 = 11 规则/15 分类/54 书/1960 章/12 任务（最优）；3c4a352 = 11 规则/10 分类/42 书。选定 4cb1619 整库恢复：备份空库 → pkill backend-go → 清 wal/shm → 覆盖 custom.db → ensure-services.sh 重拉 → API/页面全链路 200
+- 【遗留观察】快照分类表同时存在「未分类」(id10) 与「其他小说」，且玄幻/都市/科幻存在语义重复类目（智能分类归并前遗留）→ 交采集 Agent 治理；恢复的 12 个历史任务状态待重置
+
+Stage Summary:
+- 全站恢复可访问：Next 代理壳单后端拓扑（3005 mode=all 一体服务 API+页面+runner），502 根除
+- 数据资产找回：11 规则/15 分类/54 书/1960 章/69 pseo 词（git 4cb1619 快照）；空库备份于 /tmp/empty-db-backup-*.db
+- 后续分派：26-a 采集强化（4 新站规则+快填+反反爬攻关+采集链逐行抓bug+分类治理）、26-b Go 模板逐页巡检修复、26-c TS 死代码清理精简
+
+---
+Task ID: 26-c
+Agent: cleanup-agent
+Task: TS 死代码清理精简——Next.js 代理壳收敛到最小运行面（依赖图分析→分批删除→依赖瘦身→静态产物核查→全量回归）
+
+Work Log:
+- 【依赖图分析】从 src/app/[[...slug]]/route.ts + src/app/api/[...path]/route.ts + src/lib/backend-supervisor.ts 出发反向追踪：运行时闭包仅 {next/server, node:child_process, node:fs}；page.tsx 时代入口（Task 24 已删）失效后 src/themes、src/components、src/hooks、src/lib 残留构成无入口孤岛（themes↔components 互引、hooks→lib/types、lib 内聚），rg 全仓确认 src/ 外无 import（mini-services 仅注释提及；scripts 非 archive 零引用）
+- 【src/ 分批删除 113 文件 19,065 行，每批 tsc+lint+3000 双 curl 回归】①src/themes/ 59 文件 17,396 行（10 主题 React 版+registry+types，Go 模板已全覆盖）②src/components/ 40 文件 5,227 行（ThemeRenderer/admin 全套/scrape 9 件/ui 13 件/theme-tools 7 件/novel-cover/novel-tags/toc-chapters/theme-extras/book-suggest-links/SeoSync）③src/hooks/ 2 文件 354 行 ④src/lib/ 12 文件 1,094 行（db/format/home-blocks/pseo/reading-history/s2t/seo/site-tools/store/suggest/types/utils）⑤src/app/layout.tsx+globals.css 174 行——实证 Next 16 纯 route.ts 工程无需 root layout：删后 /、/api/health、/book/54、/admin、/search、/book/54/toc、/robots.txt 全 200，dev.log 零编译错误
+- 【covers.ts 保留决策】src/lib/covers.ts 非死代码：mini-services/backend-go/web-src/tw-input.css @source 指向它作为 Tailwind 扫描源（build:css 管线）；改写为纯常量表（去除 cn/@/lib/utils import，GRADIENT_CLASSES 逐字保留），双构建对照实证 md5 一致（扫描输出零变化）；曾误跑 build:css 产出 vs HEAD 少 1,240 行——定位为 tailwindcss 工具链版本漂移（HEAD tw.css 系旧版生成），已 git checkout 还原，build:css 留给 Go 层资产变更时重跑
+- 【scripts/ 盘点】保留 5：build-web-css.mjs（build:css）、ensure-services.sh/dev-supervisor.sh（看护）、install-curl-impersonate.sh（docs/deployment.md 引用）、engine-rule-test.mjs（唯一面向现行 scraper-go 引擎的规则试测工具，26-a 直接可用）；删除 11（584 行）：watchdog.ts（会重启已删除的 TS worker-runner+误杀 TS engine，被 ensure-services+backend-supervisor+devwatch.go 三层取代）、port-forward.ts（3000→3001 转发器，dev 已直跑 3000）、8 个与 archive/ 逐字节相同的重复脚本（forensic-badchapters/add-new-rules/dump-rules/rule-config-dump/db-evidence/fix-toc-pollution/forensic-tails/forensic-continue）；归档 16（git mv → scripts/archive/）：probe-nav×3/probe-cat×2/probe-pagination×2/probe-sites/probe-covers/rule-probe/check-task-urls/check-rules-integrity/dump-task-logs/set-pagination/fix-category-selectors/reclassify-others（均可独立跑的 TS 时代诊断，archive 版留档可随时 bun 直跑）
+- 【package.json 精简】dependencies 42→5（保留 next/react/react-dom/@prisma/client/prisma），devDependencies 9→7（保留 @tailwindcss/postcss/@types/react/@types/react-dom/eslint/eslint-config-next/tailwindcss/typescript；移除 @types/bun/bun-types/tw-animate-css）；移除 37 包：@radix-ui/* ×24、@tanstack/react-query+table、@dnd-kit/* ×3、lucide-react、sonner、next-themes、framer-motion、zustand、opencc-js、clsx、tailwind-merge、class-variance-authority、cmdk、embla-carousel-react、input-otp、react-day-picker、react-hook-form、@hookform/resolvers、@mdxeditor/editor、react-markdown、react-syntax-highlighter、recharts、react-resizable-panels、vaul、date-fns、next-auth、next-intl、sharp、undici、uuid、vaul、z-ai-web-dev-sdk、zod、@reactuses/core、tailwindcss-animate（逐一 rg 确认 src/scripts/prisma/mini-services 零引用；唯一消费者 reclassify-others.ts 已归档）；bun install 重生成 lockfile（Removed 66）
+- 【静态产物核查】删除 public/logo.svg（Go 模板/配置零引用）、examples/websocket（socket.io 未安装的死示例，引用已删除的 @/components/ui）、tailwind.config.ts（v3 时代配置，content 指向不存在目录；实证 @tailwindcss/postcss v4 自动加载它导致 build:css 混入外部泄漏类——删除后输出纯 @source 驱动，Go 模板所需类零缺失、无 dark: 变体，md5 对照核实）、components.json（shadcn CLI 配置，ui 全删后无意义）、.12f-pick.json/.12f-validation.txt（一次性验证产物）；next.config.ts 核查已最小（无重写/代理段）不动；postcss.config.mjs 保留（Next CSS 管线入口，81 字节零成本）；.zscripts/tests(3 个 shell=沙箱 .zscripts 构建脚本的自测)/download(平台目录) 查明用途后保留
+- 【配置卫生】tool-results/ 已 gitignore 但 tsc/eslint 仍会扫描（26-a 草稿 sc.ts 报错）→ tsconfig exclude + eslint ignores 补 tool-results
+- 【回归验证】bunx tsc --noEmit 0 错误；bun run lint 0 errors（10 warnings 全部位于 mini-services/*/web/static/js/*.js 既有表达式告警，非本任务辖区）；:3000 代理 / 、/api/health（返回真实 backend-go health ok:true）、/book/54、/admin、/search、/book/54/toc、/robots.txt、/category/1 全 200（/category/9999 404=Go 对不存在分类的正确行为，Task 25 快照恢复库无 9999）；dev server 未重启（红线），删后新编译路径（/book/54 compile 134ms）实证按需编译无损
+
+Stage Summary:
+- src/ 终态 4 文件：[[...slug]]/route.ts + api/[...path]/route.ts + lib/backend-supervisor.ts + lib/covers.ts（CSS 扫描源）；layout/globals 实证可删，Next.js 彻底退化为「双 route handler + 进程看护」纯网络管道
+- 净删除 133 文件 ≈24,700 行（src 113 文件 19,065 行、scripts 11 文件 584 行、静态产物 9 文件）；归档 16 脚本；依赖 42+9 → 5+7（移除 40 包）；Next 运行面零业务代码
+- 保留决策：covers.ts（build:css @source 契约）、engine-rule-test.mjs（现行引擎工具）、postcss.config.mjs、tests/、.zscripts/、download/（平台/基建）；待议：z-ai-web-dev-sdk 已移除（若 26-a 需 LLM 直调可用 backend-go llm.go；归档的 reclassify-others.ts 重跑需临时重装）
+- 环境备注：mini-services/ 多文件 M 状态=沙箱 chmod 000755 的 mode-only 变更+26-a/26-b 并行工作（api_scrape_rules.go/go.mod/web.go/模板），本任务未触碰；HEAD tw.css 与现行工具链构建产物存在 1,240 行版本漂移，Go 层下次资产变更后重跑 bun run build:css 即自然收敛
+---
+Task ID: 26（主线观察与补位·主 Agent）
+Agent: main (Z.ai Code)
+Task: 26-a/b/c/d 四路并行；Task API 三波超时但 Agent 实际都在后台工作（幽灵 Agent 现象）——主 Agent 转为监控+补位
+
+Work Log:
+- 【幽灵 Agent 实证】Task API 三次 "context deadline exceeded" 均为「等结果超时」，Agent 本体实际已启动并工作：26-a 建 11 条快填任务（12:04-12:48）、26-b 测试实例 /tmp/t26b.bin（pid 24204）、26-d 测试实例 t26d-engine/backend.bin（pid 16565/16567，13:28 仍在复现 recoverStaleTasks）持续活跃——教训：Task API 超时≠Agent 未运行，需查 ps/临时文件/worklog 再决定重发，防双实例互踩
+- 【26-a 幽灵成果收编】505 书（54→505）/55.1 万章（1960→551166）；分类治理完成：15→9 类（玄幻奇幻/武侠仙侠/都市言情/历史军事/科幻未来/游戏竞技/悬疑灵异/轻小说 + 其他 id=9999 sort 9999，「未分类」清零、重复语义合并，书数对账 505 ✓）；任务 34-44 Phase1 全部完成（done==total），Phase2 进行中（30s 采样 ddyueshu/yebanshu 各 +200 章活跃）
+- 【15 条规则可行性快照】8 老站可用（aijjxs/ddyueshu/23qb/huangjinwu/ggd66/xinjianpan/x2552/trxsw）；23uswx ✅30本、ixdzs8 ✅20本、yebanshu(38.34.172.127) ✅30本；5165 ⛔ 书页全策略 403 维持 disabled 落档（26-a 幽灵复核）；101kks/pilishuwu ⛔硬反爬、77shuku ⛔不可达（Task 24-d 结论沿用）
+- 【trxsw 封禁事故】任务 41 partial「388 成功/46836 失败」：Phase1 猛抓 50 本后源站 IP 级封禁（curl 全策略 EOF 连接层拒绝）→ 移交 26-d 两改进点：hosthealth 连续网络错误快速熔断+任务暂停止损；Phase2 单主请求节奏治理
+- 【主 Agent 补位】homeConfig 随快照丢失（"{}"）→ PATCH /api/settings 重建三区块：小编精选 featured 8 + 热门 hot 12 + 最新上架 latest 12；验证首页渲染：小编精选 pos 37244 < 分类导航 pos 62697（23-b 契约位 ✓）8 封面卡；阅读链路 /book/514、/toc、/chapter/513172（fb-chapter-content ✓）、空正文 /chapter/551185 200 降级、/search 200、admin 160KB 渲染正常；pseo DDG 富集循环实测正常（curl-impersonate 1.5s/词，聚合页 12-14 个/种子）
+- 【数据面在途】任务 40（x2552）chaptersTotal 143940 预计长跑（限速 1.2s/req ≈ 48h 量级），其余任务陆续收尾；引擎/后端零重启，runner 平稳
+
+Stage Summary:
+- 四路并行格局：26-c ✅ 完结（133 文件/2.47 万行/40 包清理）；26-a 实质完成（幽灵超时无报告，成果已由主 Agent 收编）；26-b/26-d 幽灵在岗（测试实例活跃，待其写 worklog 后收编）
+- 全站数据面恢复至 505 书/55 万章/9 分类/15 规则/pseo 富集持续产出；前台后台全链路 200 验证通过
+- 待办：26-b/26-d 收编 → 主线终局（agent-browser 目验 + lint + git 推送）
+---
+Task ID: 26（终局收编·主 Agent）
+Agent: main (Z.ai Code)
+Task: 26-b/26-d 幽灵源码收编+换装+全链路目验+git 推送
+
+Work Log:
+- 【幽灵平息判定】26-b 最后痕迹 11:52、26-d 最后痕迹 13:28（recover-test.db），均停滞 1.5h+ 判定主体已死；杀孤儿测试实例（pid 15684/16565/16567/24204，3101/3102 释放，DDG/LLM 配额互扰解除）
+- 【26-d 源码收编】git diff 实证 125 文件 +1028/-1632 行：backend-go（api_scrape*/runner/engineclient/chapterorder/recoverStaleTasks createdAt 失配修复）+ scraper-go（ssrf/httpguard/ratelimit/hosthealth 快速熔断/cookies/curlimp/strategies 反反爬增强）；go vet 双模块 0 输出、go test -race ok、go build 绿
+- 【换装】先杀后换（首试 cp 撞 Text file busy，顺序修正：pkill→cp→ensure-services 拉起）；backend-go.bin + scraper-go.bin 新二进制上线；3005/3030 健康全绿
+- 【recoverStaleTasks 修复实证】重启日志「僵尸任务 #42（createdAt 12:15:39）已转 paused」——修复前同批任务从未被识别（Prisma DateTime 存储格式 vs Go time.Time 比较失配），修复后精确识别
+- 【断点续采闭环】6 条 paused 任务 PATCH action=resume 全 200（t34/35/40/42/43/44，trxsw t41 除外——IP 封禁期不烧请求）；t36-39 已在换装前自然跑完
+- 【数据面终态】书籍 576 / 章节 66.4 万（持续增长）/ 分类 9（其他兜底末位）/ 规则 15 / PSEO 词 1591（富集循环持续产出 12-14 聚合页/种子）；正文填充 2.3 万+ 章持续推进
+- 【终局目验 agent-browser】首页（trxsw 主题：导航 9+其他+全部小说、编辑推荐 8 渐变封面卡、最新更新五段式 61.8 万章今日更新、总推荐榜/最新入库）✓；书籍页（信息卡+简介+相关标签+章节预览双列带字数）✓；后台（GO 徽章/5 统计卡/运行健康/任务状态徽章执行中-部分成功渲染）✓；lint 0 errors / tsc 0 错误
+- 【homeConfig 重建】快照缺配置 → PATCH 三区块（小编精选 featured 8 上移分类板块上方契约位 ✓ + 热门 12 + 最新上架 12）
+
+Stage Summary:
+- 本轮用户指令全交付：①预览 502 根除（3007 无看护进程事故 → 单后端拓扑收敛）②数据库空壳恢复（git 4cb1619 快照）+ 快填至 576 书/66 万章 ③多 Agent 并行（Task API 三波超时但实际完成工作，幽灵现象定式沉淀：超时后先查进程痕迹再决定重发）④采集+反反爬增强落码（熔断/节奏/SSRF/指纹）⑤代码大清理（26-c：133 文件 2.47 万行 40 包）
+- 遗留：trxsw IP 封禁待冷却/换出口代理；101kks/pilishuwu/77shuku/5165 硬反爬落档；任务 40（x2552 14 万章）预计 48h 长跑

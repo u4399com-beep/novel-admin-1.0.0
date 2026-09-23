@@ -28,7 +28,6 @@ const (
 	// runnerTSKillEvery TS runner 防复活护栏的低频执行周期（轮数）：15 轮×2s=30s 探引擎，
 	// 150 轮≈5 分钟清一次 TS runner（残余复活窗口 ≤5 分钟，与引擎互监护同数量级）
 	runnerTSKillEvery = 150
-	engineBaseURL     = "http://127.0.0.1:3030"
 )
 
 // tsRunnerPkillPattern TS 版采集 runner（scripts/worker-runner.ts，bun 进程）的 pkill 模式。
@@ -96,14 +95,20 @@ func recategorizeOne() bool {
 	return true
 }
 
-// ensureEngine 引擎互监护：不可达则杀残留后 setsid 完全托孤拉起 scraper-go
+// ensureEngine 引擎互监护：不可达则杀残留后 setsid 完全托孤拉起 scraper-go。
+// Task 26-d：BACKEND_ENGINE_URL/PORT 指向非默认引擎时只观测不杀不拉（自定义引擎进程
+// 的拉起方式未知，pkill 'scraper-[g]o.bin' 会误杀生产引擎且无法正确重拉）。
 func ensureEngine() {
-	resp, err := runnerHTTPClient.Get(engineBaseURL + "/api/strategies")
+	resp, err := runnerHTTPClient.Get(engineBaseURL() + "/api/strategies")
 	if err == nil {
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 500 {
 			return // 引擎存活（40x 也说明进程在）
 		}
+	}
+	if !isDefaultEngineURL() {
+		log.Printf("[backend-go-runner] 自定义引擎 %s 不可达（仅观测，不执行 pkill/拉起）", engineBaseURL())
+		return
 	}
 	log.Println("[backend-go-runner] engine 不可达，重新拉起")
 	// 两步走：先 pkill（[g] 防自匹配），再 setsid 托孤拉起（Task 13 教训：pkill 与 spawn

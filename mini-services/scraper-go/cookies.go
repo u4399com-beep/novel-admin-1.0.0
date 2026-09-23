@@ -61,10 +61,15 @@ func (j *cookieJar) touchHost(host string) *cookieBucket {
 	}
 	j.hosts[host] = b
 	for len(j.hosts) > cookieMaxHosts {
+		// Task 26-d 修复：淘汰候选必须跳过本次触达的 host——map 迭代无序，旧实现可能把
+		// 刚插入/刚触达的 host 自己逐出，返回值指向已不在 map 的孤儿桶，后续写入静默丢失
 		oldest := ""
 		for k := range j.hosts {
+			if k == host {
+				continue
+			}
 			oldest = k
-			break // map 迭代无序，但只需任一淘汰（TS 版淘汰最旧；Go 版近似）
+			break
 		}
 		if oldest == "" {
 			break

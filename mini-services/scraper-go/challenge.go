@@ -102,16 +102,21 @@ func looksLikeChallenge(b []byte) bool {
 	if len(b) >= 3072 {
 		return false
 	}
-	// 中文挑战关键词在 latin1 视图下永远无法命中：按真实编码再解码一次才能命中
-	if reChallengeKeyword.MatchString(string(head)) {
+	// Task 26-d 误判率收敛：极小页（<3KB）的关键词层加「可见正文近空（<200 字符）」守卫。
+	// 真挑战壳的正文几乎全由脚本/提示语构成（可见正文极短）；小体积真实章节页若叙事中
+	// 恰含「安全验证/verify」等词，旧版会被整页误判为挑战（引擎四策略全 blocked → 章节失败）。
+	keywordHit := func(text string) bool {
+		return reChallengeKeyword.MatchString(text) && runeLen(visibleBodyText(text)) < 200
+	}
+	if keywordHit(string(head)) {
 		return true
 	}
 	if gb18030Encoding != nil {
-		if decoded, err := gb18030Encoding.NewDecoder().Bytes(head); err == nil && reChallengeKeyword.MatchString(string(decoded)) {
+		if decoded, err := gb18030Encoding.NewDecoder().Bytes(head); err == nil && keywordHit(string(decoded)) {
 			return true
 		}
 	}
-	if reChallengeKeyword.MatchString(scan) {
+	if keywordHit(scan) {
 		return true
 	}
 	bodyTextLatin1 := visibleBodyText(scan)

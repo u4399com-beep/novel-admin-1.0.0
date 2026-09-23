@@ -138,3 +138,20 @@ func TestChapterOrderNoReorder(t *testing.T) {
 		t.Fatalf("章节过少不应重排")
 	}
 }
+
+func TestChapterOrderOverflowBlockNotPartialFix(t *testing.T) {
+	// Task 26-d 回归：重复序号场景（分卷/最新块与正文块同序号不同 URL），头块严格倒序
+	// 连续段超过 60 条 → 修复必须整体放弃。旧版把递减计数截断在 61 就按 k=61 搬移，
+	// 头部残留 9 条倒序段，重排后反而仍乱。
+	titles := []string{}
+	for i := 70; i >= 1; i-- { // 头部「最新章节」块：第70章..第1章（新→旧，URL 与正文块不同）
+		titles = append(titles, "第"+itoa(i)+"章")
+	}
+	for i := 1; i <= 70; i++ { // 完整目录块：第1..70章（旧→新）
+		titles = append(titles, "第"+itoa(i)+"章")
+	}
+	rr := reorderChapterRefs(mkRefs(titles))
+	if rr.reordered {
+		t.Fatalf("超长倒序块（>60）应整体放弃保守修复，不得部分搬移（note=%s）", rr.note)
+	}
+}

@@ -43,6 +43,7 @@
     "skills",
     "download",
     "upload",
-    "scripts/archive"
+    "scripts/archive",
+    "tool-results"
   ]
 }

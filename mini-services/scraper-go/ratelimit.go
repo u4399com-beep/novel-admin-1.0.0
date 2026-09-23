@@ -12,6 +12,7 @@ package main
 import (
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -55,6 +56,9 @@ type hostSlot struct {
 	// 下写、acquireDomainSlot 在 slot.mu 下写同一字段 —— 两把不同的锁保护同一变量，
 	// go race detector 实证 DATA RACE（同主机两请求并发即触发）。统一改原子读写。
 	lastUsedNano atomic.Int64
+	// consec 同主机连续请求计数（Task 26-d 突发抑制）：持续大批量请求时温和拉长间隔，
+	// 空闲 ≥5 分钟复位。槽位跨任务共享 → 多任务打同一站点时天然累计（单站限速共享）
+	consec atomic.Int64
 }
 
 var (
@@ -83,19 +87,39 @@ func getHostSlot(host string) *hostSlot {
 	return slot
 }
 
+// politenessExtraMS 突发抑制的额外间隔：每满 200 次连续请求 +100ms，上界 +1s。
+// 抽成纯函数便于单测（Task 26-d）。
+func politenessExtraMS(consec int64) int64 {
+	if consec <= 0 {
+		return 0
+	}
+	extra := (consec / 200) * 100
+	if extra > 1000 {
+		extra = 1000
+	}
+	return extra
+}
+
 // acquireDomainSlot 获取指定域名的请求槽位：同域名并发请求串行排队，相邻两次请求
 // 之间至少间隔 getMinIntervalMs() ± 抖动；不同域名互不影响。
 // 语义对齐 TS 版（FIFO 排队 + 排队后各自计算等待），锁仅在计算窗口持有，等待发生在锁外。
+// Task 26-d 突发抑制：同主机持续请求时在基准间隔上叠加 politenessExtraMS(consec)，
+// 长跑 Phase 2（数万章）随请求量自动从 1.2s 放缓至 ≈2.2-2.5s，降低触发源站封禁的概率；
+// 只增不减，空闲 5 分钟复位，对短任务无感。
 func acquireDomainSlot(host string) {
 	slot := getHostSlot(host)
 	slot.mu.Lock()
 	now := time.Now()
+	if now.UnixNano()-slot.lastUsedNano.Load() > int64(5*time.Minute) {
+		slot.consec.Store(0) // 空闲复位：突发抑制只针对持续批量
+	}
+	n := slot.consec.Add(1)
 	base := now
 	if slot.nextAt.After(base) {
 		base = slot.nextAt
 	}
 	wait := base.Sub(now)
-	slot.nextAt = base.Add(time.Duration(getMinIntervalMs())*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
+	slot.nextAt = base.Add(time.Duration(getMinIntervalMs()+politenessExtraMS(n))*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
 	slot.lastUsedNano.Store(now.UnixNano())
 	slot.mu.Unlock()
 	if wait > 0 {
@@ -281,14 +305,28 @@ var robotsClient = &http.Client{
 		// 恶意站点可用 /robots.txt 302 让默认客户端自动请求任意内网地址（SSRF）。
 		return http.ErrUseLastResponse
 	},
-	Transport: &http.Transport{
-		// robots 检查专用客户端：无代理直连（与 TS 版 fetch 一致）
-		Proxy:                 http.ProxyFromEnvironment,
+	Transport: robotsTransport(),
+}
+
+// robotsTransport robots 检查专用传输：直连不读代理环境变量（与引擎其余路径
+// 「未配置代理时严格直连」口径一致，也使 Dialer Control 的直连前提成立）；
+// Task 26-d 起挂载 ssrfDialControl 作 DNS rebinding 最后一道闸。
+func robotsTransport() *http.Transport {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	if !allowPrivate {
+		dialer.Control = ssrfDialControl
+	}
+	return &http.Transport{
+		Proxy:                 nil,
+		DialContext:           dialer.DialContext,
 		MaxIdleConns:          4,
 		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
-	},
+	}
 }
 
 // checkRobots 检查目标 URL 是否被 robots.txt 限制。永不失败、永不阻断 —— 失败时降级为 warning。

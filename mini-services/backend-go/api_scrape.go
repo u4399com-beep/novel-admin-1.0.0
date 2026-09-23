@@ -26,7 +26,9 @@ import (
 	"time"
 )
 
-const scraperProxyOrigin = "http://127.0.0.1:3030"
+// scraperProxyOrigin 引擎代理目标（Task 26-d：与 engineclient 同源可配置，
+// 缺省 http://127.0.0.1:3030 与历史行为一致）
+func scraperProxyOrigin() string { return engineBaseURL() }
 
 var (
 	scrapeProxyGetSubs  = []string{"strategies", "health"} // TS Set 插入序（错误文案依赖）
@@ -104,9 +106,9 @@ func scrapeProxyForward(w http.ResponseWriter, method, path, body string) {
 	var req *http.Request
 	var err error
 	if method == "GET" {
-		req, err = http.NewRequest("GET", scraperProxyOrigin+path, nil)
+		req, err = http.NewRequest("GET", scraperProxyOrigin()+path, nil)
 	} else {
-		req, err = http.NewRequest("POST", scraperProxyOrigin+path, strings.NewReader(body))
+		req, err = http.NewRequest("POST", scraperProxyOrigin()+path, strings.NewReader(body))
 	}
 	if err != nil {
 		scrapeProxyFail(w, err)
@@ -149,7 +151,7 @@ func scrapeProxyFail(w http.ResponseWriter, err error) {
 	out := map[string]any{
 		"error":  "采集服务不可用",
 		"detail": detail,
-		"hint":   "请确认 mini-services/scraper-service 已启动（bun run dev，端口 3030）",
+		"hint":   "请确认 mini-services/scraper-go 引擎已启动（端口 3030，BACKEND_ENGINE_URL 可覆盖）",
 	}
 	if timedOut {
 		out["error"] = "采集服务响应超时"

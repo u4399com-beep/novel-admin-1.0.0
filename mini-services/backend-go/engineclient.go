@@ -28,13 +28,35 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// SCRAPER_BASE 引擎地址
-const SCRAPER_BASE = "http://127.0.0.1:3030"
+// SCRAPER_BASE 引擎地址（Task 26-d 起可经环境变量覆盖，修复旧版三处硬编码：
+// 测试实例/多引擎部署下必然打到生产 3030，且测试 runner 的互监护会误杀生产引擎）。
+//   - BACKEND_ENGINE_URL：完整 base（如 http://127.0.0.1:3131），优先级最高
+//   - BACKEND_ENGINE_PORT：仅端口（如 3131）
+//   - 缺省 http://127.0.0.1:3030（生产默认，与历史行为一致）
+func engineBaseURL() string {
+	if u := strings.TrimSpace(os.Getenv("BACKEND_ENGINE_URL")); u != "" {
+		if p, err := url.Parse(u); err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	if p := strings.TrimSpace(os.Getenv("BACKEND_ENGINE_PORT")); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
+			return fmt.Sprintf("http://127.0.0.1:%d", n)
+		}
+	}
+	return "http://127.0.0.1:3030"
+}
+
+// isDefaultEngineURL 引擎地址是否为生产默认（runner 互监护仅对默认地址执行
+// pkill+拉起——自定义引擎进程的拉起方式未知，杀掉后无法正确重拉）
+func isDefaultEngineURL() bool { return engineBaseURL() == "http://127.0.0.1:3030" }
 
 // ENGINE_TIMEOUT_MS 引擎策略链整体预算 55s，超时须 ≥ 预算否则慢站点会被提前切断
 const ENGINE_TIMEOUT_MS = 60_000
@@ -87,7 +109,7 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 	if err != nil {
 		return engineResult[T]{OK: false, Error: "引擎请求体序列化失败", Warnings: []string{}}
 	}
-	req, err := http.NewRequest("POST", SCRAPER_BASE+path, bytes.NewReader(jb))
+	req, err := http.NewRequest("POST", engineBaseURL()+path, bytes.NewReader(jb))
 	if err != nil {
 		return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
 	}

@@ -222,6 +222,7 @@ func fixLeadingDescendingBlock(refs []ChapterRef, nums []numOpt) reorderRefsResu
 	k := 0
 	blockEnd := 0
 	var prev numOpt
+	overflow := false
 	for i := 0; i < len(nums); i++ {
 		n := nums[i]
 		if !n.ok {
@@ -234,8 +235,16 @@ func fixLeadingDescendingBlock(refs []ChapterRef, nums []numOpt) reorderRefsResu
 		k++
 		blockEnd = i + 1
 		if k > 60 { // 最新块通常 ≤ 60 条；超长倒序块按整本倒序处理，不适用本修复
+			overflow = true
 			break
 		}
+	}
+	// 【Task 26-d 修复】溢出必须整体放弃：旧版 break 后仍以截断的 k=61 执行搬移，
+	// 头块 >60 条时（如 100 条「最新章节」块）只搬前 61 条，头部残留 39 条倒序段，
+	// 重排后反而仍乱（与注释「不适用本修复」的意图相悖）。溢出=整本倒序或超长头块，
+	// 保守起见一律原样返回（无重复序号路径的全局重排不受影响）。
+	if overflow {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}
 	}
 	if k < 2 || blockEnd >= len(nums) {
 		return reorderRefsResult{refs: refs, reordered: false, note: ""}

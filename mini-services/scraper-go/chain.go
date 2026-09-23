@@ -380,8 +380,19 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		}
 	}
 
-	// 整链失败 → 记一次连败（达熔断阈值后后续请求快速失败）
-	noteChainFailure(host)
+	// 整链失败 → 记一次连败（达熔断阈值后后续请求快速失败）。
+	// allNetErr 判定（Task 26-d）：所有真实网络尝试均 status=0（连接层被拒/EOF/超时）且无挑战页
+	// ——此时源站在连接层拒绝本机，hosthealth 会更快熔断+温和退避。
+	// 预算耗尽（budget-exhausted）/策略不可用（unavailable）属引擎自身状态，不计入网络级连败，
+	// 避免把「站点慢」误判成「站点拒绝」而提前熔断。
+	allNetErr := len(attempts) > 0
+	for _, a := range attempts {
+		if a.Status != 0 || a.Blocked || strings.HasPrefix(a.Note, "budget-exhausted") || strings.HasPrefix(a.Note, "unavailable") {
+			allNetErr = false
+			break
+		}
+	}
+	noteChainFailure(host, allNetErr)
 
 	detailParts := make([]string, 0, len(attempts))
 	for _, a := range attempts {

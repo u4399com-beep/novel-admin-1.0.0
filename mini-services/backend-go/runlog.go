@@ -104,9 +104,11 @@ func rowCountOf(res sql.Result) int64 {
 // Flush 写回日志与进度字段；任务记录被删除时返回 false（调用方应停止执行）。
 // 与 isCanceled 的 fail-open 哲学一致：仅「目标行不存在」才判定已删除；
 // 其他错误（如 SQLite 瞬时锁）由 execRetry 短暂退避后重试一次，仍失败不视为删除。
+// Task 26-d：显式触碰 updatedAt（TS 版 Prisma @updatedAt 自动维护；Go 裸 SQL 需手动，
+// 否则列表页「更新时间」对长跑任务永远冻结在创建时刻）。
 func (r *Run) Flush(extra *TaskFlushFields) bool {
-	sets := []string{"log = ?"}
-	args := []any{r.LogText()}
+	sets := []string{"log = ?", "updatedAt = ?"}
+	args := []any{r.LogText(), nowMillis()}
 	if extra != nil {
 		if extra.Done != nil {
 			sets = append(sets, "done = ?")

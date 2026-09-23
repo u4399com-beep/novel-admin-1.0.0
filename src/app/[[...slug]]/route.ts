@@ -5,12 +5,12 @@
  * 迁移至 backend-go（mini-services/backend-go/web.go + web/templates/），本文件把
  * 3000 收到的所有请求原样转发到 Go 层，Next.js 从此只是网络管道。
  *
- * 分流（过渡期双进程拓扑，均读同一 db/custom.db）：
- * - /api/*  → 127.0.0.1:3005（backend-go 主进程：业务 API + 采集 runner，
- *             由 backend-supervisor.ts ensureBackendGo() 看护自愈）
- * - 其余    → 127.0.0.1:3007（backend-go 页面进程：/、/category、/book、/toc、
- *             /chapter、/search、/pseo、/admin、/static、/covers、robots、sitemap）
- * 两进程均为同款二进制不同模式（3005 mode=all / 3007 mode=api），后续可合并单进程。
+ * 拓扑（Task 25 收敛为单进程）：backend-go mode=all 于 :3005 同端口服务
+ * API（/api/*）+ 页面（/、/category、/book、/toc、/chapter、/search、/pseo、
+ * /admin、/static、/covers、robots、sitemap）+ 采集 runner，由
+ * backend-supervisor.ts ensureBackendGo() 看护自愈。历史上页面曾分流到
+ * :3007 独立进程，但该进程无看护者，沙箱重启后无人拉起导致全站 502
+ * （已实证），故默认统一回 3005；如需拆分，设 GO_WEB_ORIGIN 即可覆盖。
  *
  * 契约：路径/查询串/方法/请求头（白名单）/请求体原样透传；响应状态码 + 头 + body
  * 原样回写；超时 65s；后端不可达 → 502 {error, detail}。
@@ -21,7 +21,7 @@ import { ensureBackendGo } from '@/lib/backend-supervisor'
 export const dynamic = 'force-dynamic'
 
 const API_ORIGIN = process.env.GO_API_ORIGIN ?? 'http://127.0.0.1:3005'
-const WEB_ORIGIN = process.env.GO_WEB_ORIGIN ?? 'http://127.0.0.1:3007'
+const WEB_ORIGIN = process.env.GO_WEB_ORIGIN ?? API_ORIGIN
 const PROXY_TIMEOUT_MS = 65_000
 
 const HOP_BY_HOP = new Set([

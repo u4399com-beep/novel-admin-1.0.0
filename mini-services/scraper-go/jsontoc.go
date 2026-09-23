@@ -25,6 +25,7 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,6 +106,27 @@ func pickPath(obj any, path string) any {
 	return cur
 }
 
+// tocTransport JSON 目录接口专用传输（Task 26-d）：与引擎口径一致直连不读代理环境变量，
+// 并挂载 ssrfDialControl 作 DNS rebinding 最后一道闸（同源校验只覆盖 URL 层，
+// 恶意书页可让同源 AJAX 端点 302/解析切换到内网——Control 在 connect 前再查一次 IP）。
+func tocTransport() *http.Transport {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	if !allowPrivate {
+		dialer.Control = ssrfDialControl
+	}
+	return &http.Transport{
+		Proxy:                 nil,
+		DialContext:           dialer.DialContext,
+		MaxIdleConns:          4,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+	}
+}
+
 var tocHTTPClient = &http.Client{
 	Timeout: time.Duration(tocTimeoutMS) * time.Millisecond,
 	CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -112,6 +134,7 @@ var tocHTTPClient = &http.Client{
 		// 恶意接口导向内网/第三方（SSRF）。3xx 一律拒绝并提示。
 		return http.ErrUseLastResponse
 	},
+	Transport: tocTransport(),
 }
 
 // encodeURIComp 等价 JS encodeURIComponent（保留 A-Za-z0-9-_.!~*'()）

@@ -15,6 +15,11 @@ import (
 // execCommand 包装 exec.Command
 func execCommand(name string, args ...string) *exec.Cmd { return exec.Command(name, args...) }
 
+// execCommandContext 包装 exec.CommandContext（ctx 超时自动 kill 子进程）
+func execCommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, name, args...)
+}
+
 func getenv(name string) string { return os.Getenv(name) }
 
 type syncMutex struct {

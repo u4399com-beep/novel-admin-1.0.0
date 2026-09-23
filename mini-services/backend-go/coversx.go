@@ -26,6 +26,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
@@ -40,6 +41,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	xdraw "golang.org/x/image/draw"
@@ -52,6 +54,10 @@ const (
 	COVER_DL_TIMEOUT = 12 * time.Second
 	coverUA          = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 	coverMaxSide     = 512
+	// 解压炸弹防线（Task 26-d）：声明尺寸超限的图在 Decode 前直接拒绝
+	// （40M 像素 ≈ RGBA 全量展开 160MB，远小于原 5MB 压缩输入的潜在放大上限）
+	coverMaxPixels     = 40_000_000
+	coverMaxPixelsSide = 20_000
 )
 
 var (
@@ -197,12 +203,35 @@ func pickCoverProxy(proxy string) string {
 	return ""
 }
 
+// coverDialControl 连接前最后一道 SSRF 校验（Task 26-d 增强，封堵 DNS rebinding TOCTOU）：
+// Control 回调收到的 address 是已解析的 IP 字面量，此处再查一次私网段——DNS 解析后、
+// connect 前的切换窗口被关闭。仅直连路径启用（走代理时 address 是代理地址，
+// 本地代理 127.0.0.1:7890 属合法形态，不能拦）。
+func coverDialControl(network, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("cover dial: 非 IP 字面量地址被拒绝: %s", host)
+	}
+	if isPrivateIp(ip.String()) {
+		return fmt.Errorf("cover dial: 内网地址被拒绝（DNS rebinding 防护）: %s", ip.String())
+	}
+	return nil
+}
+
 // coverTransport 每次下载构建 Transport（代理按规则可变）。
 // Go http.Transport 代理语义与 TS undici ProxyAgent{proxyTunnel:false} 对齐：
 // http 目标以绝对 URI 形式直发代理（非 CONNECT），https 目标走 CONNECT 隧道。
 func coverTransport(proxyURL string) *http.Transport {
+	d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	if proxyURL == "" && os.Getenv("SCRAPER_ALLOW_PRIVATE") != "1" {
+		d.Control = coverDialControl
+	}
 	t := &http.Transport{
-		DialContext:         (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		DialContext:         d.DialContext,
 		TLSHandshakeTimeout: 10 * time.Second,
 		MaxIdleConns:        2,
 		IdleConnTimeout:     30 * time.Second,
@@ -277,7 +306,15 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 		return ""
 	}
 
-	// 解码 + 规范化：解码失败（伪装成图片的 HTML/攻击载荷）在此拒绝
+	// 解码 + 规范化：解码失败（伪装成图片的 HTML/攻击载荷）在此拒绝。
+	// 先 DecodeConfig 读头部校验像素规模（Task 26-d 防解压炸弹：5MB 恶意 PNG 可声明
+	// 数亿像素，直接 image.Decode 会在缩放前分配数 GB RGBA → OOM）
+	cfgImg, _, err := image.DecodeConfig(bytes.NewReader(buf))
+	if err != nil || cfgImg.Width <= 0 || cfgImg.Height <= 0 ||
+		cfgImg.Width > coverMaxPixelsSide || cfgImg.Height > coverMaxPixelsSide ||
+		int64(cfgImg.Width)*int64(cfgImg.Height) > coverMaxPixels {
+		return ""
+	}
 	img, _, err := image.Decode(bytes.NewReader(buf))
 	if err != nil || img == nil {
 		return ""

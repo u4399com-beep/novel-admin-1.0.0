@@ -451,7 +451,17 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 			okStored++
 			fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
 		} else {
-			run.Log("骨架入库失败(" + truncateRunes(row.title, 30) + "): " + truncateRunes(msg, 100))
+			// 冲突失败 ≠ 行不在库：批量路径可能在**更早的分块已插入**部分行（多值 INSERT
+			// 逐块提交，后续块撞唯一约束才退化），这些行逐条重写必撞 (novelId,idx)。
+			// 旧版直接记失败 → 早块行漏进 fillRows → 本轮 Phase 2 不填充（只剩重跑自愈）。
+			// 此处回查 (novelId,title)：行已在库（空骨架）则照常计入填充计划，本轮即补正文。
+			var existID int64
+			if qerr := queryOne("SELECT id FROM Chapter WHERE novelId = ? AND title = ? LIMIT 1",
+				[]any{&existID}, novelID, row.title); qerr == nil {
+				fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
+			} else {
+				run.Log("骨架入库失败(" + truncateRunes(row.title, 30) + "): " + truncateRunes(msg, 100))
+			}
 		}
 	}
 	return SkeletonOutcome{Stored: okStored, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: append(fillRows, resume...)}, nil

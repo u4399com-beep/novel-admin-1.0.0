@@ -7,7 +7,7 @@
     {{/* 信息头 */}}
     <section class="bg-white p-4">
       <div class="flex gap-4 max-[639px]:flex-col">
-        {{if isLocalCover .Novel.cover}}<span class="relative block h-[160px] w-[120px] shrink-0 overflow-hidden shadow-md shadow-black/20"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span></span>
+        {{if isLocalCover .Novel.cover}}<span class="relative block h-[160px] w-[120px] shrink-0 overflow-hidden shadow-md shadow-black/20"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" class="h-full w-full object-cover"><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span></span>
         {{else}}<span class="relative block h-[160px] w-[120px] shrink-0 overflow-hidden shadow-md shadow-black/20 {{gcls .Novel.cover}}"><span class="flex h-full w-full items-center justify-center"><span class="select-none font-bold text-white/90 drop-shadow text-4xl" aria-hidden="true">{{title0 .Novel.title}}</span></span><span class="absolute inset-x-0 bottom-0 bg-black/40 py-[3px] text-center text-[11px] leading-none text-white">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span></span>{{end}}
         <div class="min-w-0 flex-1">
           <h1 class="text-[24px] font-bold leading-tight text-[#555]">{{.Novel.title}}</h1>

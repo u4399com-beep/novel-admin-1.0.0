@@ -20,7 +20,7 @@
     </h2>
 
     <div class="grid gap-4 pt-1 sm:grid-cols-2 lg:grid-cols-3">
-      {{range $i, $n := .Novels}}<div class="group relative flex cursor-pointer items-center gap-3 rounded-[4px] border border-dashed border-[#ccc] p-[10px] transition-colors duration-200 hover:border-[#f50]">
+      {{range $i, $n := .Novels}}<div class="group relative flex min-w-0 cursor-pointer items-center gap-3 rounded-[4px] border border-dashed border-[#ccc] p-[10px] transition-colors duration-200 hover:border-[#f50]">
         <a href="{{bookURL $n.id}}" aria-hidden="true" tabindex="-1" class="absolute left-[10px] top-1/2 grid h-[22px] w-[22px] -translate-y-1/2 place-items-center rounded-[4px] bg-[#56ccb5] text-[12px] font-bold text-[#eee] transition-colors duration-200 group-hover:bg-[#f50]">{{add $i 1}}</a>
         <div class="min-w-0 flex-1 pl-[28px]">
           <h4 class="truncate text-[15px] font-bold text-[#00886d] transition-colors duration-200 group-hover:text-[#f50]">{{$n.title}}</h4>

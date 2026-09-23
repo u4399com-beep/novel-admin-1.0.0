@@ -19,7 +19,7 @@
   <section class="dd-box dd-box-strong mt-2">
     <div class="flex flex-col gap-3 p-[12px] sm:flex-row">
       <div class="relative w-fit flex-none self-start border border-[#a6d3e8] bg-[#e1eced] p-[10px]">
-        {{if isLocalCover .Novel.cover}}<span class="relative block h-[195px] w-[152px] overflow-hidden border border-[#a6d3e8]"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+        {{if isLocalCover .Novel.cover}}<span class="relative block h-[195px] w-[152px] overflow-hidden border border-[#a6d3e8]"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" class="h-full w-full object-cover"></span>
         {{else}}<span class="relative flex h-[195px] w-[152px] items-center justify-center overflow-hidden border border-[#a6d3e8] text-white {{gcls .Novel.cover}}"><span class="dd-hei font-bold tracking-[0.15em] text-[40px] [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
         {{if .Novel.isFeatured}}<span class="absolute right-0 top-0 bg-[#88c6e5] px-1.5 text-[12px] leading-[20px] text-white">强推</span>{{end}}
       </div>

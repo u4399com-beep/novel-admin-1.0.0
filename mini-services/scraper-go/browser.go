@@ -24,7 +24,56 @@ import (
 var (
 	browserProbeOnce   sync.Once
 	browserProbeResult bool
+	browserPythonOnce  sync.Once
+	browserPythonPath  string // 探测可用的 python3 绝对路径（含 playwright 导入验证）
 )
+
+// candidatePythons python3 候选路径（Task 26-d 增强）：沙箱/看护进程拉起的引擎 PATH 常
+// 不含用户级 venv（实证：supervisor 环境 browser=False 而 /home/z/.venv/bin/python3 实际
+// 可用），导致最强的 JS 挑战兜底策略长期误报不可用。PATH 查找 + 常见 venv/系统路径兑底。
+func candidatePythons() []string {
+	out := []string{}
+	if p, err := exec.LookPath("python3"); err == nil {
+		out = append(out, p)
+	}
+	if custom := strings.TrimSpace(os.Getenv("SCRAPER_PYTHON")); custom != "" {
+		out = append(out, custom)
+	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = "/home/z"
+	}
+	out = append(out,
+		filepath.Join(home, ".venv", "bin", "python3"),
+		"/usr/bin/python3",
+		"/usr/local/bin/python3",
+	)
+	seen := map[string]bool{}
+	uniq := []string{}
+	for _, p := range out {
+		if !seen[p] {
+			seen[p] = true
+			uniq = append(uniq, p)
+		}
+	}
+	return uniq
+}
+
+// resolvePython 返回第一个 playwright 可导入的 python3（结果进程级缓存）；全失败返回 ""。
+func resolvePython() string {
+	browserPythonOnce.Do(func() {
+		for _, p := range candidatePythons() {
+			ctx, cancel := contextWithTimeout(10 * time.Second)
+			err := execCommandContext(ctx, p, "-c", "import playwright").Run()
+			cancel()
+			if err == nil {
+				browserPythonPath = p
+				return
+			}
+		}
+	})
+	return browserPythonPath
+}
 
 // probeBrowser 1) Python Playwright 可导入 2) ~/.cache/ms-playwright 存在 chromium 目录
 func probeBrowser() bool {
@@ -35,11 +84,8 @@ func probeBrowser() bool {
 }
 
 func probeBrowserUncached() bool {
-	// python3 -c 'import playwright'
-	ctx, cancel := contextWithTimeout(10 * time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "python3", "-c", "import playwright")
-	if err := cmd.Run(); err != nil {
+	// python3 + playwright 导入验证（多候选路径，见 candidatePythons）
+	if resolvePython() == "" {
 		return false
 	}
 	home, _ := os.UserHomeDir()
@@ -70,6 +116,12 @@ type renderPayload struct {
 // cookie/referer/proxy 走环境变量（cookie 头值可能较长，不适合 argv）。
 func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, explicitReferer, cookieEnv, proxy string) attemptResult {
 	renderPy := resolveRenderPy()
+	pyBin := resolvePython()
+	if pyBin == "" {
+		// 与 probe 不可用一致：优雅跳过（链内后续策略照旧）
+		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
+			warnings: append(*warnings, "Python Playwright 不可用（未找到可导入 playwright 的 python3）"), note: "missing-python"}
+	}
 	env := os.Environ()
 	env = append(env, "PYTHONUNBUFFERED=1")
 	if cookieEnv != "" {
@@ -83,7 +135,7 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
 	}
 	ctx, cancel := contextWithTimeout(time.Duration(timeoutMs+4000) * time.Millisecond)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "python3", renderPy, targetURL, itoa(int(timeoutMs)), chromeUA)
+	cmd := exec.CommandContext(ctx, pyBin, renderPy, targetURL, itoa(int(timeoutMs)), chromeUA)
 	cmd.Env = env
 	stdout, err := cmd.Output()
 	if err != nil {

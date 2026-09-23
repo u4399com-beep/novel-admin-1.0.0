@@ -158,10 +158,12 @@ func replacementRatio(text string) float64 {
 
 const maxReplacementRatio = 0.01
 
-// formatRatio 输出 1 位小数（等价 (ratio*100).toFixed(1)）
+// formatRatio 输出 1 位小数（等价 (ratio*100).toFixed(1)）。
+// Task 26-d 修复：旧实现 v%1000 直接拼字符串，0.023 → "2.300"（应为 "2.3"）。
+// v = round(ratio*100000)，则 v/1000 = 整数百分点、(v%1000)/100 = 十分位。
 func formatRatio(r float64) string {
 	v := uint64(r*100000 + 0.5) // 百分比放大 1000 倍保留 1 位小数
-	return itoa(int(v/1000)) + "." + itoa(int(v%1000))
+	return itoa(int(v/1000)) + "." + itoa(int(v%1000)/100)
 }
 
 func itoa(n int) string {

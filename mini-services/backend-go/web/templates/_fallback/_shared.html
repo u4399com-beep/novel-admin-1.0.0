@@ -1,11 +1,12 @@
 {{/* _fallback 主题共享骨架：模板契约活样例（各主题照此结构实现 _shared.html）。
 数据字段见 web_data.go 头部契约。html/template 自动转义，无需手工 safe 处理。 */}}
-{{define "layout"}}<!doctype html>
+{{define "layout"}}{{$path := .Path}}{{$sn := .Site.siteName}}<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.pageTitle}} | {{.Site.siteName}}</title>
+{{/* title 去重：pageTitle 已含「 - 站名」后缀（book/toc/chapter/search/pseo）则不再追加；首页/分类无后缀才补「 | 站名」 */}}
+<title>{{if eq $path "/"}}{{$sn}} - 免费小说阅读{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" $sn)}}{{if eq $t .pageTitle}}{{$t}} | {{$sn}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
@@ -57,7 +58,7 @@
     </div>
     <nav class="fb-nav" aria-label="小说分类导航">
       <a href="/" class="{{if eq .Path "/"}}on{{end}}">首页</a>
-      {{range .Nav}}<a href="{{catURL .id}}" class="{{if eq .Path (catURL .id)}}on{{end}}">{{.name}}<sup style="font-size:10px"> {{.novelCount}}</sup></a>{{end}}
+      {{range .Nav}}<a href="{{catURL .id}}" class="{{if eq $path (catURL .id)}}on{{end}}">{{.name}}<sup style="font-size:10px"> {{.novelCount}}</sup></a>{{end}}
     </nav>
   </div>
 </header>

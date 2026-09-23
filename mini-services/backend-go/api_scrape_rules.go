@@ -194,6 +194,58 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 		}
 	}
 
+	// ---- 规则三字段（listRule/bookRule/chapterRule）提取与校验 ----
+	// 更新路径语义（Task 26-d 修复）：字段缺失/null → 保留 DB 旧值（部分更新）；
+	// 字段为 JSON 对象 → sanitize 后整体覆盖；字段为其他类型 → 400 拒绝，
+	// 绝不静默置 {}（Task 24-d 实证：PUT 只传 name+notes 会把三条规则连清）。
+	// 新建路径语义不变：缺失 → {}（对齐 TS Prisma 写入）。
+	isUpdate := false
+	if f, isNum := body["id"].(float64); isNum && numIsInt(f) && f > 0 {
+		isUpdate = true
+	}
+	listObj, listProvided, listErr := ruleFieldObj(body["listRule"], "listRule")
+	if listErr != "" {
+		writeJSON(w, 400, map[string]string{"error": listErr})
+		return
+	}
+	bookObj, bookProvided, bookErr := ruleFieldObj(body["bookRule"], "bookRule")
+	if bookErr != "" {
+		writeJSON(w, 400, map[string]string{"error": bookErr})
+		return
+	}
+	chapObj, chapProvided, chapErr := ruleFieldObj(body["chapterRule"], "chapterRule")
+	if chapErr != "" {
+		writeJSON(w, 400, map[string]string{"error": chapErr})
+		return
+	}
+	listJSON, bookJSON, chapJSON := "{}", "{}", "{}"
+	if isUpdate {
+		var oldList, oldBook, oldChap sql.NullString
+		if err := queryOne(`SELECT "listRule","bookRule","chapterRule" FROM "ScrapeRule" WHERE "id" = ?`,
+			[]any{&oldList, &oldBook, &oldChap}, int(body["id"].(float64))); err != nil && !isNoRows(err) {
+			failJSON(w, "服务器错误", firstLineErr(err), 500)
+			return
+		}
+		if !listProvided {
+			listJSON = nonEmptyJSON(oldList.String)
+		}
+		if !bookProvided {
+			bookJSON = nonEmptyJSON(oldBook.String)
+		}
+		if !chapProvided {
+			chapJSON = nonEmptyJSON(oldChap.String)
+		}
+	}
+	if listProvided {
+		listJSON = marshalCompact(sanitizeRuleMap(listObj))
+	}
+	if bookProvided {
+		bookJSON = marshalCompact(sanitizeRuleMap(bookObj))
+	}
+	if chapProvided {
+		chapJSON = marshalCompact(sanitizeRuleMap(chapObj))
+	}
+
 	enabled := true
 	if b, isBool := body["enabled"].(bool); isBool {
 		enabled = b
@@ -213,9 +265,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 		res, err := exec(
 			`UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
 			name, site.value, enabled, charset, proxy.value, insecureTLS,
-			marshalCompact(sanitizeRuleMap(body["listRule"])),
-			marshalCompact(sanitizeRuleMap(body["bookRule"])),
-			marshalCompact(sanitizeRuleMap(body["chapterRule"])),
+			listJSON, bookJSON, chapJSON,
 			truncateRunes(notes, 1000), nowMillis(), id,
 		)
 		if err != nil {
@@ -233,9 +283,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 	newID, err := execReturningID(
 		`INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		name, site.value, enabled, charset, proxy.value, insecureTLS,
-		marshalCompact(sanitizeRuleMap(body["listRule"])),
-		marshalCompact(sanitizeRuleMap(body["bookRule"])),
-		marshalCompact(sanitizeRuleMap(body["chapterRule"])),
+		listJSON, bookJSON, chapJSON,
 		truncateRunes(notes, 1000), nowMillis(), nowMillis(),
 	)
 	if err != nil {
@@ -272,15 +320,58 @@ func handleScrapeRulesDelete(w http.ResponseWriter, r *http.Request, _ map[strin
 
 func handleScrapeRulesPut(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	v, ok := readBodyValue(r)
-	var body map[string]any
-	if scrapeRulesBodyOK(v, ok) {
-		body = bodyMap(v)
+	if !scrapeRulesBodyOK(v, ok) {
+		// TS PUT 非 seed 分支与 POST 同一保存函数，body 缺失时 POST 返回
+		// 400「请求体必须是 JSON 对象」→ PUT 保持同文案（修复旧版落到「name 必填」的文案漂移）
+		writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
+		return
 	}
+	body := bodyMap(v)
 	if jsTruthy(body["seed"]) {
 		handleScrapeRulesSeed(w)
 		return
 	}
 	handleScrapeRulesSaveBody(w, body)
+}
+
+// ruleFieldObj 提取 listRule/bookRule/chapterRule 字段：
+//   - 缺失/JSON null → (nil, false, "")      → 调用方按「未提供」处理（更新保留旧值）
+//   - JSON 对象      → (map, true, "")
+//   - 其他类型（字符串/数字/数组）→ (nil, false, 错误文案) —— 显式 400，
+//     杜绝 Task 24-d 实证事故：listRule 传字符串被静默 sanitize 成 {} 且连清
+//     bookRule/chapterRule，规则被整条清空
+func ruleFieldObj(v any, field string) (map[string]any, bool, string) {
+	if v == nil {
+		return nil, false, ""
+	}
+	if m, ok := v.(map[string]any); ok {
+		return m, true, ""
+	}
+	return nil, false, field + " 必须是 JSON 对象（如 {\"itemSelector\":\"…\"}），收到 " + jsTypeName(v)
+}
+
+func jsTypeName(v any) string {
+	switch v.(type) {
+	case string:
+		return "字符串"
+	case float64:
+		return "数字"
+	case bool:
+		return "布尔"
+	case []any:
+		return "数组"
+	default:
+		return "非对象值"
+	}
+}
+
+// nonEmptyJSON DB 规则 JSON 列兜底：空/损坏 → "{}"（保留旧值路径专用，防写出非法 JSON）
+func nonEmptyJSON(s string) string {
+	t := strings.TrimSpace(s)
+	if t == "" || t[0] != '{' {
+		return "{}"
+	}
+	return t
 }
 
 // jsTruthy TS 真值判定（body?.seed）

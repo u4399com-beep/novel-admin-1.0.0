@@ -364,7 +364,7 @@ func suggestFetchViaEngineStrategy(ctx context.Context, targetURL, strategy stri
 	if err != nil {
 		return nil, fmt.Errorf("采集引擎请求体序列化失败: %s", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, SCRAPER_BASE+"/api/test", bytes.NewReader(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, engineBaseURL()+"/api/test", bytes.NewReader(payloadBytes))
 	if err != nil {
 		return nil, fmt.Errorf("采集引擎请求构造失败: %s", err)
 	}

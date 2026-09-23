@@ -325,6 +325,10 @@ type dnsEntry struct {
 	privateHit bool
 	warning    string
 	negative   bool // 解析失败（fail-open）
+	// publicIP 最近一次成功解析中首个「公网」IP 字面量（v4 优先，v6 兜底）；
+	// 供 curl-impersonate 生成 --resolve 钉死参数，关闭 Go 校验与 curl 二次解析之间的
+	// DNS rebinding TOCTOU 窗口（Task 26-d）
+	publicIP string
 }
 
 var (
@@ -399,6 +403,7 @@ func assertHostPublic(hostname string) hostCheckResult {
 	var lastErr error
 	privateHit := false
 	hitLabel := ""
+	publicIP := ""
 	resolver := net.DefaultResolver
 	addrs4, err4 := resolver.LookupIPAddr(ctx, h)
 	if err4 != nil {
@@ -413,6 +418,9 @@ func assertHostPublic(hostname string) hostCheckResult {
 					hitLabel = ip.String()
 					break
 				}
+				if publicIP == "" {
+					publicIP = v4.String()
+				}
 			} else {
 				groups := ipv6ToGroups(ip)
 				if groups != nil && ipv6IsPrivate(groups) {
@@ -420,11 +428,14 @@ func assertHostPublic(hostname string) hostCheckResult {
 					hitLabel = ip.String()
 					break
 				}
+				if publicIP == "" {
+					publicIP = ip.String()
+				}
 			}
 		}
 	}
 
-	entry := dnsEntry{at: time.Now(), privateHit: privateHit}
+	entry := dnsEntry{at: time.Now(), privateHit: privateHit, publicIP: publicIP}
 	var res hostCheckResult
 	if privateHit {
 		res = hostCheckResult{ok: false, reason: "域名 " + h + " 解析到内网地址 " + hitLabel + "（DNS 层 SSRF 防护）"}
@@ -463,4 +474,34 @@ func ipv6ToGroups(ip net.IP) []uint16 {
 		groups[i] = uint16(b[i*2])<<8 | uint16(b[i*2+1])
 	}
 	return groups
+}
+
+// cachedPublicIP 返回 assertHostPublic 最近一次（未过期）DNS 校验钉住的公网 IP 字面量；
+// 无有效缓存/命中内网/解析失败返回 ""。供 curl-impersonate 策略生成 --resolve 参数：
+// 校验用的解析结果与 curl 实际连接的 IP 强制一致，封堵「校验后、连接前 A 记录切内网」的
+// DNS rebinding TOCTOU 窗口（Task 26-d）。
+func cachedPublicIP(hostname string) string {
+	if allowPrivate {
+		return ""
+	}
+	h := strings.ToLower(strings.TrimSpace(hostname))
+	h = strings.TrimPrefix(h, "[")
+	h = strings.TrimSuffix(h, "]")
+	if h == "" {
+		return ""
+	}
+	dnsCacheMu.Lock()
+	defer dnsCacheMu.Unlock()
+	cached, has := dnsCache[h]
+	if !has || cached.privateHit || cached.publicIP == "" {
+		return ""
+	}
+	ttl := time.Duration(dnsCacheTTLMS) * time.Millisecond
+	if cached.negative {
+		ttl = time.Duration(dnsNegativeExpiry) * time.Millisecond
+	}
+	if time.Since(cached.at) >= ttl {
+		return ""
+	}
+	return cached.publicIP
 }

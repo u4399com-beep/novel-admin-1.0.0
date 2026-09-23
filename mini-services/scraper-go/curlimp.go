@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"math/rand"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -123,6 +124,39 @@ func headerLines(hdrText, name string) []string {
 	return out
 }
 
+var reDotQuadV4 = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$`)
+
+// curlResolvePin 生成 curl --resolve 参数（"host:port:ip"）：把 curl 连接的 IP 钉死为
+// assertHostPublic 校验时缓存的公网 IPv4（Task 26-d，封堵 DNS rebinding TOCTOU）。
+// 主机名本身是 IP 字面量（无需钉）/无有效缓存公网 IPv4（IPv6 结果或解析失败，
+// 维持 fail-open 原行为）时返回 ""。
+func curlResolvePin(tu *url.URL) string {
+	if tu == nil || allowPrivate {
+		return ""
+	}
+	host := tu.Hostname()
+	if host == "" {
+		return ""
+	}
+	// IP 字面量主机：连接目标即校验目标，无二次解析窗口
+	if _, isV4 := parseIpv4TextOk(host); isV4 || strings.Contains(host, ":") {
+		return ""
+	}
+	ip := cachedPublicIP(host)
+	if ip == "" || !reDotQuadV4.MatchString(ip) {
+		return ""
+	}
+	port := tu.Port()
+	if port == "" {
+		if tu.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return host + ":" + port + ":" + ip
+}
+
 var curlImpersonateStrategy = strategyDef{
 	name:         "curl-impersonate",
 	description:  "调用系统 curl_chrome*/curl-impersonate-* 二进制（TLS/JA3 指纹级浏览器伪装，多二进制时轮换指纹），HTTP/2 失败自动降级 --http1.1；需另行安装二进制，检测不到则不可用",
@@ -206,6 +240,12 @@ var curlImpersonateStrategy = strategyDef{
 				}
 				if ctx.proxy != "" {
 					args = append(args, "--proxy", ctx.proxy)
+				} else if pin := curlResolvePin(tu); pin != "" {
+					// DNS rebinding 加固（Task 26-d）：assertHostPublic 的 Go 侧解析与
+					// curl 自身的二次解析之间存在 TOCTOU 窗口（A 记录可在两次解析间
+					// 从公网切到 127.0.0.1）。把 curl 连接 IP 钉死为校验时缓存的公网 IP；
+					// 代理模式下 curl 连接的是代理本身，--resolve 不适用故跳过
+					args = append(args, "--resolve", pin)
 				}
 				if ctx.insecureTLS {
 					args = append(args, "--insecure")

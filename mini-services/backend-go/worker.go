@@ -73,6 +73,17 @@ var (
 	BOOK_CONCURRENCY = envInt("SCRAPE_BOOK_CONCURRENCY", 4)
 	// CHAPTER_CONCURRENCY Phase 2 章节正文并发（过高易触发站点限速；限速由引擎层负责）
 	CHAPTER_CONCURRENCY = envInt("SCRAPE_CHAPTER_CONCURRENCY", 12)
+	// PHASE2_DELAY_MS Phase 1→Phase 2 阶段间休整（源站礼貌间隔：任务 41 实证 Phase 1 猛抓后
+	// 立即爆发性抓正文加速触发封禁，这里给站点一拍喘息；仅延迟不新增请求，合规只减不增）
+	PHASE2_DELAY_MS = envInt("SCRAPE_PHASE2_DELAY_MS", 3000)
+	// PHASE2_FAIL_BREAKER Phase 2 连败熔断阈值：连续失败这么多章且期间零成功 → 判定
+	// 源站封禁/不可达，任务自动转 paused 防烧穿（任务 41 实证熔断打开后引擎快速失败，
+	// 旧版把 46836 章全部烧成 failed；0=禁用）。阈值需显著高于正常散在失败（实证健康站
+	// 连败个位数）又低于「烧穿有价值数据」的量级
+	PHASE2_FAIL_BREAKER = envInt("SCRAPE_FAIL_BREAKER", 60)
+	// PHASE1_BOOK_FAIL_BREAKER Phase 1 无条件连败熔断：不管此前是否成功过，连续失败
+	// 达阈值即提前中止（旧版仅在 okBooks==0 时停，站点中途封禁会把余下书目全部烧完）
+	PHASE1_BOOK_FAIL_BREAKER = envInt("SCRAPE_BOOK_FAIL_BREAKER", 30)
 	// SKELETON_BATCH Phase 2 骨架分批大小
 	SKELETON_BATCH = 200
 	// FLUSH_INTERVAL_MS 进度 flush 最小间隔（防 SQLite 写放大）
@@ -117,29 +128,43 @@ func lastLines(s string, n int) string {
 // 可手动恢复续传）；pending 任务保持不动，新 runner 2s 内会重新领取。配合
 // 「任务可随时暂停/重启」指令，重启不再把长任务（数万章 Phase 2）破坏成 failed。
 // 条件更新（status 仍为 running）保证与 worker 终态写入竞态安全。
+//
+// Task 26-d 修复（createdAt 失配）：旧版把过滤条件放进 SQL（`createdAt < ?` 传 int64），
+// 但库里 DateTime 列存在两种存储类——integer ms（Go/Prisma 主径）与 TEXT
+// （历史工具写入，本库 ScrapeRule.updatedAt 实证存在 'YYYY-MM-DD HH:MM:SS' 文本行）。
+// SQLite 比较规则下 TEXT 恒 > INTEGER，TEXT 行对 `createdAt < 整数` 永远不命中 →
+// 僵尸任务被静默跳过、永不恢复。改为：SQL 只按 status 捞 running，createdAt 读出后
+// 在 Go 侧归一化比较（integer/float/文本多格式解析；无法解析视为 pre-boot 僵尸一并暂停，
+// 因为启动时刻本进程必然没有任何 worker，running 任务本身就是僵尸，宁暂停勿悬挂）。
 func recoverStaleTasks() {
 	type staleRow struct {
-		id   int
-		logv string
+		id        int
+		logv      string
+		createdAt any // integer ms / float / TEXT（ historic 工具写入），由 normalizeMillis 归一
 	}
 	var stale []staleRow
 	err := queryList(
-		"SELECT id, log FROM ScrapeTask WHERE status = 'running' AND createdAt < ? ORDER BY id ASC",
+		"SELECT id, log, createdAt FROM ScrapeTask WHERE status = 'running' ORDER BY id ASC",
 		func(rows *sql.Rows) error {
 			var r staleRow
-			if err := rows.Scan(&r.id, &r.logv); err != nil {
+			if err := rows.Scan(&r.id, &r.logv, &r.createdAt); err != nil {
 				return err
 			}
 			stale = append(stale, r)
 			return nil
-		}, gBootAt)
+		})
 	if err != nil {
-		return // 恢复失败不阻塞启动
+		// 恢复失败不阻塞启动，但必须留痕（旧版静默 return，故障无从排查）
+		log.Printf("[scrape-worker] 服务重启恢复查询失败（本轮未做恢复，running 任务可能悬挂）: %v", err)
+		return
 	}
 	paused := 0
 	for _, t := range stale {
 		if runningHas(t.id) { // 本进程仍在执行（防御性；启动时刻 running 恒为空）
 			continue
+		}
+		if createdMs, ok := normalizeMillis(t.createdAt); ok && createdMs >= gBootAt {
+			continue // 本进程启动之后创建：非僵尸
 		}
 		line := "[" + time.Now().Format("15:04:05") + "] 服务重启，任务中断自动暂停（已采进度保留，可恢复继续采集）"
 		logv := t.logv
@@ -148,15 +173,72 @@ func recoverStaleTasks() {
 		}
 		logv = lastLines(logv+line, MAX_LOG_LINES)
 		res, err := execRetry(
-			"UPDATE ScrapeTask SET status = 'paused', message = '服务重启，任务自动暂停（可恢复继续采集）', log = ? WHERE id = ? AND status = 'running'",
-			logv, t.id)
+			"UPDATE ScrapeTask SET status = 'paused', message = '服务重启，任务自动暂停（可恢复继续采集）', log = ?, updatedAt = ? WHERE id = ? AND status = 'running'",
+			logv, nowMillis(), t.id)
 		if err == nil && rowCountOf(res) > 0 {
 			paused++
+			createdDesc := "<无法解析>"
+			if ms, ok := normalizeMillis(t.createdAt); ok {
+				createdDesc = time.UnixMilli(ms).Format("2006-01-02 15:04:05")
+			}
+			log.Printf("[scrape-worker] 僵尸任务 #%d（createdAt %s）已转 paused", t.id, createdDesc)
 		}
 	}
 	if paused > 0 {
 		log.Printf("[scrape-worker] 服务重启恢复: %d 条运行中任务已自动暂停（可恢复续传）", paused)
 	}
+}
+
+// normalizeMillis DB DateTime 列值 → epoch ms（Task 26-d）。
+// 支持：INTEGER/REAL ms、纯数字文本、ISO（T/Z 形态）、Prisma SQLite 文本
+// （'YYYY-MM-DD HH:MM:SS[.mmm][ ±HH:MM]'）等历史形态；解析失败返回 false。
+func normalizeMillis(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int64:
+		return x, x > 0
+	case int:
+		return int64(x), x > 0
+	case float64:
+		return int64(x), x > 0
+	case []byte:
+		return parseMillisText(string(x))
+	case string:
+		return parseMillisText(x)
+	case nil:
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+// parseMillisText 文本形态时间 → epoch ms（尽力多格式；失败 false）
+func parseMillisText(s string) (int64, bool) {
+	s = trimSpaceStr(s)
+	if s == "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, n > 0
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil && f > 0 {
+		return int64(f), true
+	}
+	layouts := []string{
+		"2006-01-02T15:04:05.000Z07:00", // JS toISOString / Go isoFromMillis
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.000 -07:00", // Prisma Rust 引擎 SQLite 文本形态
+		"2006-01-02 15:04:05.000",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006/01/02 15:04:05",
+	}
+	for _, l := range layouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return t.UnixMilli(), true
+		}
+	}
+	return 0, false
 }
 
 // ==================== 协作式取消与暂停 ====================
@@ -261,16 +343,17 @@ func sqlPlaceholders(n int) string {
 
 // Phase1Outcome Phase 1 结果
 type Phase1Outcome struct {
-	OKBooks       int
-	FailBooks     int
-	StoppedEarly  bool
-	FirstError    string
-	NovelIDs      []int
-	FillMap       map[int]fillPlan // novelId → 填充计划：书页 referer + 待填充 (title,url) 行
-	TotalRefs     int              // 全部有效章节链接数（含已填充跳过）——single 模式进度分母
-	SkippedFilled int              // 其中已有正文而跳过的数量——single 模式进度初值
-	FillTotal     int              // 待填充总行数——list 模式 chaptersTotal 的来源
-	Fatal         error            // TS 语义：store 层非唯一冲突错误向上抛 → 任务按 failed 收尾
+	OKBooks         int
+	FailBooks       int
+	StoppedEarly    bool
+	BookFailBreaker bool // 无条件连败熔断触发（不管此前是否成功过；Task 26-d）
+	FirstError      string
+	NovelIDs        []int
+	FillMap         map[int]fillPlan // novelId → 填充计划：书页 referer + 待填充 (title,url) 行
+	TotalRefs       int              // 全部有效章节链接数（含已填充跳过）——single 模式进度分母
+	SkippedFilled   int              // 其中已有正文而跳过的数量——single 模式进度初值
+	FillTotal       int              // 待填充总行数——list 模式 chaptersTotal 的来源
+	Fatal           error            // TS 语义：store 层非唯一冲突错误向上抛 → 任务按 failed 收尾
 }
 
 // phase1Skeletons 书目骨架（BOOK_CONCURRENCY 有界并发）：抓书页 → 目录二次提取 →
@@ -283,6 +366,7 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 	firstError := ""
 	totalRefs, skippedFilled, fillTotal := 0, 0, 0
 	sawCatalog := 0
+	bookFailBreaker := false
 	var fatal error
 
 	setFirstError := func(msg string) {
@@ -291,7 +375,9 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 		}
 	}
 
-	// 取消/暂停 + 快速终止（连续多本全败且 0 成功 → 判定站点不可达，中止防空转）
+	// 取消/暂停 + 快速终止（连续多本全败且 0 成功 → 判定站点不可达，中止防空转）；
+	// Task 26-d 增加无条件连败熔断（PHASE1_BOOK_FAIL_BREAKER）：站点中途封禁时旧版
+	// （okBooks>0 则永不提前停）会把余下书目全部烧成失败——连败达阈值即中止。
 	shouldStop := throttledCheck(func() bool {
 		if stopState(run.TaskID) != "" {
 			return true
@@ -299,6 +385,10 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 		mu.Lock()
 		defer mu.Unlock()
 		if fatal != nil {
+			return true
+		}
+		if failStreak >= PHASE1_BOOK_FAIL_BREAKER {
+			bookFailBreaker = true
 			return true
 		}
 		return failStreak >= MAX_CONSECUTIVE_BOOK_FAILS && okBooks == 0
@@ -399,7 +489,8 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 	defer mu.Unlock()
 	return Phase1Outcome{
 		OKBooks: okBooks, FailBooks: failBooks, FirstError: firstError,
-		NovelIDs: novelIDs, FillMap: fillMap,
+		BookFailBreaker: bookFailBreaker,
+		NovelIDs:        novelIDs, FillMap: fillMap,
 		TotalRefs: totalRefs, SkippedFilled: skippedFilled, FillTotal: fillTotal,
 		Fatal: fatal,
 	}
@@ -412,6 +503,10 @@ type Phase2Outcome struct {
 	Filled       int
 	Failed       int
 	StoppedEarly bool
+	// FailBreaker 连败熔断触发（Task 26-d）：连续 PHASE2_FAIL_BREAKER 章失败且期间零成功，
+	// 判定源站封禁/不可达 → 任务自动转 paused 而非把全部骨架烧成 failed（任务 41 实证）
+	FailBreaker bool
+	ConsecFails int64 // 触发时的连续失败计数（供终态消息）
 }
 
 // phase2Fill 消费 Phase 1 的填充计划：逐书分批（200/批）拉取 DB 空骨架行（wordCount=0，
@@ -421,8 +516,23 @@ type Phase2Outcome struct {
 func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress func(doneSoFar int) bool) Phase2Outcome {
 	var filledCtr, failedCtr atomic.Int64
 	var warnLogged atomic.Int64
+	// Task 26-d 连败熔断：连续失败计数（成功归零），达阈值置位；书间/批间检查后停手。
+	// 注意熔断打开后引擎对封禁主机快速结构化失败（毫秒级），不加熔断时 12 车道每秒
+	// 可烧数千章（任务 41：46836 章全部 failed）
+	var consecFails atomic.Int64
+	var failBreaker atomic.Bool
 	stoppedEarly := false
+	breakerStopped := false
 	isStopped := throttledCheck(func() bool { return stopState(run.TaskID) != "" })
+
+	noteChapterFail := func() {
+		if PHASE2_FAIL_BREAKER <= 0 {
+			return // 0=禁用
+		}
+		if n := consecFails.Add(1); int(n) >= PHASE2_FAIL_BREAKER && failBreaker.CompareAndSwap(false, true) {
+			run.Log(fmt.Sprintf("正文连续失败 %d 章（期间零成功）：疑似源站封禁或站点不可达，提前停止防烧穿（已采进度保留，可稍后恢复续传）", n))
+		}
+	}
 
 	// TS Map 迭代=插入序（Phase 1 并发完成序）；Go map 无序 → 按 novelId 升序确定性处理
 	ids := make([]int, 0, len(fillMap))
@@ -432,11 +542,15 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 	sort.Ints(ids)
 
 	for _, novelID := range ids {
-		if stoppedEarly {
+		if stoppedEarly || breakerStopped {
 			break
 		}
 		if isStopped() {
 			stoppedEarly = true
+			break
+		}
+		if failBreaker.Load() {
+			breakerStopped = true
 			break
 		}
 		plan := fillMap[novelID]
@@ -489,6 +603,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				if !res.OK {
 					failedCtr.Add(1)
 					bookFailed.Add(1)
+					noteChapterFail()
 					return
 				}
 				cleaned := cleanChapterContent(res.Data.Content)
@@ -496,6 +611,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				if trimSpaceStr(content) == "" {
 					failedCtr.Add(1) // 源站空壳章：保留骨架，重发任务自动重试
 					bookFailed.Add(1)
+					noteChapterFail()
 					return
 				}
 				if len(res.Warnings) > 0 && warnLogged.Load() < 10 {
@@ -516,12 +632,17 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				if uerr == nil && rowCountOf(res2) > 0 {
 					filledCtr.Add(1)
 					bookFilled.Add(1)
+					consecFails.Store(0) // 成功即复位连败计数
 					run.IncChapters()
 				} else {
 					failedCtr.Add(1)
 					bookFailed.Add(1)
+					noteChapterFail()
 				}
-			}, isStopped)
+			}, func() bool { return isStopped() || failBreaker.Load() })
+			if failBreaker.Load() {
+				breakerStopped = true
+			}
 			if !onProgress(int(filledCtr.Load())) {
 				stoppedEarly = true
 				break
@@ -530,11 +651,15 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				stoppedEarly = true
 				break
 			}
+			if breakerStopped {
+				break
+			}
 		}
 		run.Log(fmt.Sprintf("书籍 #%d 正文填充完成：成功 %d / 失败 %d", novelID, bookFilled.Load(), bookFailed.Load()))
 		delete(fillMap, novelID) // 处理完即释放，长任务内存渐减
 	}
-	return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly}
+	return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly,
+		FailBreaker: breakerStopped || failBreaker.Load(), ConsecFails: consecFails.Load()}
 }
 
 // ==================== 字数汇总 ====================
@@ -688,9 +813,17 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 		finalize(run, "failed", msg)
 		return
 	}
+	if p1.BookFailBreaker {
+		// Task 26-d 无条件连败熔断：站点中途封禁/不可达，余下书目不再空烧；
+		// 已入库书目的骨架保留，重启任务可自动续传
+		recalcWordCountsFor(p1.NovelIDs)
+		finalize(run, "partial", fmt.Sprintf("书目连续失败达阈值（%d 本，疑似源站封禁或站点不可达），提前中止：已入库 %d/%d 本，进度保留", PHASE1_BOOK_FAIL_BREAKER, p1.OKBooks, total))
+		return
+	}
 
 	// ---- Phase 2：正文填充 ----
 	run.Log(fmt.Sprintf("━━ 阶段 2/2 正文填充（并发 %d，待填充 %d 章）", CHAPTER_CONCURRENCY, p1.FillTotal))
+	phase2Breather(run)
 	var lastFlush int64
 	p2 := phase2Fill(run, rule, p1.FillMap, func(doneSoFar int) bool {
 		now := nowMillis()
@@ -705,6 +838,12 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 	created, updated, chapters := run.Snapshot()
 	run.Flush(&TaskFlushFields{ChaptersDone: &p2.Filled, Chapters: &chapters, Created: &created, Updated: &updated})
 
+	if p2.FailBreaker && stopState(run.TaskID) == "" {
+		// Task 26-d：连败熔断（疑似源站封禁/不可达）→ 转 paused 而非把数万骨架烧成 failed；
+		// 恢复=PATCH resume 重入队，Phase 2 依空骨架自动续传（每次重试至多再烧阈值内的失败）
+		finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+		return
+	}
 	if p2.StoppedEarly {
 		reason := stopState(run.TaskID)
 		if reason == "" {
@@ -764,6 +903,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 	}
 
 	run.Log(fmt.Sprintf("━━ 阶段 2/2 正文填充（并发 %d，待填充 %d 章）", CHAPTER_CONCURRENCY, p1.FillTotal))
+	phase2Breather(run)
 	var lastFlush int64
 	p2 := phase2Fill(run, rule, p1.FillMap, func(doneSoFar int) bool {
 		now := nowMillis()
@@ -780,6 +920,11 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 	_, _, chapters := run.Snapshot()
 	run.Flush(&TaskFlushFields{Done: &done, ChaptersDone: &done, Chapters: &chapters})
 
+	if p2.FailBreaker && stopState(run.TaskID) == "" {
+		// Task 26-d：连败熔断 → 转 paused（同 runList 注释）
+		finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+		return
+	}
 	if p2.StoppedEarly {
 		reason := stopState(run.TaskID)
 		if reason == "" {
@@ -817,6 +962,22 @@ func finalizeStopped(run *Run, reason, canceledMsg, pausedMsg string) {
 	finalize(run, "canceled", canceledMsg)
 }
 
+// phase2Breather Phase 1→Phase 2 阶段间休整（Task 26-d，源站礼貌间隔）：任务 41 实证
+// Phase 1 猛抓后立即爆发性抓正文会加速触发站点封禁；此处按 SCRAPE_PHASE2_DELAY_MS
+// （默认 3s）小憩一拍。只延迟不新增请求；期间每 200ms 检查暂停/取消，及时让位。
+func phase2Breather(run *Run) {
+	if PHASE2_DELAY_MS <= 0 {
+		return
+	}
+	deadline := nowMillis() + int64(PHASE2_DELAY_MS)
+	for nowMillis() < deadline {
+		if stopState(run.TaskID) != "" {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 // finalize 终态写入：running → 写终态；paused + paused → 暂停确认（保状态刷新 message/log）；
 // 已被取消/暂停/删除的其他情况只保留日志（绝不复活或改写 API 已写入的状态）
 func finalize(run *Run, status, message string) {
@@ -827,14 +988,14 @@ func finalize(run *Run, status, message string) {
 	msg := truncateRunes(message, 500)
 	switch {
 	case cur == "running":
-		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ? WHERE id = ? AND status = 'running'",
-			status, msg, run.LogText(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'running'",
+			status, msg, run.LogText(), nowMillis(), run.TaskID)
 	case cur == "paused" && status == "paused":
 		// 暂停确认：不触碰 status/进度字段 → 恢复后 Phase 1/2 依骨架自动续传
-		_, _ = execRetry("UPDATE ScrapeTask SET message = ?, log = ? WHERE id = ? AND status = 'paused'",
-			msg, run.LogText(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'paused'",
+			msg, run.LogText(), nowMillis(), run.TaskID)
 	default:
-		_, _ = execRetry("UPDATE ScrapeTask SET log = ? WHERE id = ?", run.LogText(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET log = ?, updatedAt = ? WHERE id = ?", run.LogText(), nowMillis(), run.TaskID)
 	}
 }
 

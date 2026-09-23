@@ -457,13 +457,18 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		}
 	}
 	if _, present := body["pages"]; present {
-		p, _, pagesOK := taskPagesParam(map[string]any{"pages": body["pages"]})
+		p, hasPages, pagesOK := taskPagesParam(map[string]any{"pages": body["pages"]})
 		if !pagesOK {
 			writeJSON(w, 400, map[string]string{"error": "pages 需为 1-999 的整数"})
 			return
 		}
-		sets = append(sets, `"pages" = ?`)
-		args = append(args, p)
+		// TS PUT 语义：pages 为 null/'' 时跳过该字段（data.pages 不写入），绝非写 0
+		//（旧版漏判 hasPages，PUT {"pages":null} 会把 pages 置 0，与 POST 的
+		// 「null→缺省 1」口径分裂；pages=0 虽不致崩溃（翻页循环不执行）但违反契约）
+		if hasPages {
+			sets = append(sets, `"pages" = ?`)
+			args = append(args, p)
+		}
 	}
 	if len(sets) == 0 {
 		writeJSON(w, 400, map[string]string{"error": "没有可更新的字段"})
@@ -708,14 +713,26 @@ func handleScrapeTaskDelete(w http.ResponseWriter, r *http.Request, ps map[strin
 		writeJSON(w, 409, map[string]string{"error": "任务执行中，请先取消再删除"})
 		return
 	}
-	// pending/paused 允许删：即便 worker 恰在启动，其 pending→running 条件更新必然 count=0，安全退出
-	res, err := exec(`DELETE FROM "ScrapeTask" WHERE "id" = ?`, id)
+	// pending/paused 允许删。条件更新（status != 'running'）修复 TOCTOU 竞态：
+	// 预检 pending 后、DELETE 前 runner 可能把任务置 running（pending→running 条件更新），
+	// 旧版无条件 DELETE 会删掉执行中任务的记录（worker 靠 stopState 的「记录删除=canceled」
+	// 兜底停手，但 API 层 409 守卫被击穿）。count=0 时回读如实区分 running/已删。
+	res, err := exec(`DELETE FROM "ScrapeTask" WHERE "id" = ? AND "status" != 'running'`, id)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		var fresh string
+		if qerr := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); qerr != nil {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+			return
+		}
+		if fresh == "running" {
+			writeJSON(w, 409, map[string]string{"error": "任务执行中，请先取消再删除"})
+		} else {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		}
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})

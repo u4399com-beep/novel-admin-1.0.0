@@ -14,13 +14,16 @@ package main
 
 import (
 	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -74,6 +77,21 @@ var (
 
 // evalConcat 常量折叠拼接表达式：字符串字面量 + 已知变量 + encodeURIComponent(x) + location.*
 func evalConcat(expr string, assigns map[string]string, currentURL string) string {
+	if out := evalConcatParts(expr, assigns, currentURL); out != "" {
+		return out
+	}
+	// Task 26-d 修复：location.replace(EXPR) 形态被 reJSRedirectAssign 捕获时必然携带一个
+	// 尾随 ")"（正则不消费闭括号），旧实现遇 location.* / 变量 / 字面量与 ")" 相邻时整段
+	// 放弃 → replace() 型挑战跳转永远解析失败（TS 同源缺陷）。剥一层尾随 ")" 后重试一次
+	// （深度 1，无括号配对逻辑；未知函数如 foo(bar) 剥后仍不匹配，安全）。
+	if strings.HasSuffix(expr, ")") {
+		return evalConcatParts(strings.TrimSuffix(expr, ")"), assigns, currentURL)
+	}
+	return ""
+}
+
+// evalConcatParts evalConcat 的单层拼接求值（无尾随括号兼容）
+func evalConcatParts(expr string, assigns map[string]string, currentURL string) string {
 	parts := splitTopLevelPlus(expr)
 	out := strings.Builder{}
 	for _, raw := range parts {
@@ -249,6 +267,37 @@ var (
 	transportPool = map[transportKey]*http.Transport{}
 )
 
+// ssrfDialControl 连接前最后一道 SSRF 校验（Task 26-d 增强，封堵 DNS rebinding TOCTOU）。
+// ssrf.go 的 DNS 尽力校验存在「解析后、连接前」的窗口：攻击域名可在两次解析间把 A 记录
+// 从公网切到 127.0.0.1。net.Dialer.Control 在 TCP connect 前收到**已解析**的 IP 字面量，
+// 此处再查一次私网段即可关闭窗口。仅直连路径启用（走代理时 address 是代理地址，
+// 本地代理 127.0.0.1:7890 属合法形态；SCRAPER_ALLOW_PRIVATE=1 本地调试时全放行）。
+func ssrfDialControl(network, address string, _ syscall.RawConn) error {
+	if allowPrivate {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("ssrf dial control: 非 IP 字面量地址被拒绝: %s", host)
+	}
+	if v4 := ip.To4(); v4 != nil {
+		n := uint32(v4[0])<<24 | uint32(v4[1])<<16 | uint32(v4[2])<<8 | uint32(v4[3])
+		if ipv4IsPrivate(n) {
+			return fmt.Errorf("ssrf dial control: 内网 IPv4 被拒绝（DNS rebinding 防护）: %s", ip.String())
+		}
+		return nil
+	}
+	groups := ipv6ToGroups(ip)
+	if groups == nil || ipv6IsPrivate(groups) {
+		return fmt.Errorf("ssrf dial control: 内网/无法解析的 IPv6 被拒绝（DNS rebinding 防护）: %s", ip.String())
+	}
+	return nil
+}
+
 func transportFor(proxy string, insecure, noH2 bool) (*http.Transport, string) {
 	key := transportKey{proxy: proxy, insecure: insecure, noH2: noH2}
 	transportMu.Lock()
@@ -256,9 +305,17 @@ func transportFor(proxy string, insecure, noH2 bool) (*http.Transport, string) {
 	if tr, ok := transportPool[key]; ok {
 		return tr, ""
 	}
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	if proxy == "" && !allowPrivate {
+		dialer.Control = ssrfDialControl // DNS rebinding 最后一道闸（仅直连路径）
+	}
 	tr := &http.Transport{
 		// TS 版 fetch 不读代理环境变量：未配置代理时严格直连
 		Proxy:                 nil,
+		DialContext:           dialer.DialContext,
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   8,
 		IdleConnTimeout:       90 * time.Second,

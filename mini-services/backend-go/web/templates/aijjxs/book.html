@@ -16,7 +16,7 @@
       <div class="p-3 sm:p-4">
         <div class="grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] lg:grid-cols-[112px_minmax(0,1fr)_235px]">
           <div>
-            {{if isLocalCover .Novel.cover}}<span class="relative block h-[148px] w-[112px] overflow-hidden"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+            {{if isLocalCover .Novel.cover}}<span class="relative block h-[148px] w-[112px] overflow-hidden"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" class="h-full w-full object-cover"></span>
             {{else}}<span class="relative flex h-[148px] w-[112px] items-center justify-center overflow-hidden text-white {{gcls .Novel.cover}}"><span class="font-bold tracking-[0.2em] text-[30px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
             <button type="button" id="aj-fav-btn" data-novel-id="{{.Novel.id}}" aria-label="收藏书籍 {{.Novel.id}}" class="mt-1.5 w-full cursor-pointer rounded-[6px] border border-[#e5dccd] bg-white py-1 text-center text-xs text-[#6b7280] transition-colors hover:border-[#b45309] hover:text-[#b45309]">加入收藏</button>
           </div>
