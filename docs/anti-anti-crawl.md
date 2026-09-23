@@ -4,7 +4,7 @@
 > 结论先行：在本项目（Bun + TypeScript 沙箱、单机部署）中，性价比最高的组合是
 > **「完整浏览器头 fetch（默认） + curl-impersonate（可选 TLS 指纹伪装） + got-scraping（HTTP/2 与真实头） + Playwright 渲染（JS 站兜底）」**
 > 四级策略链，配合 **字符集检测（GBK/GB18030）** 与 **域名级限速 + 指数退避 + robots 提示**。
-> 以上已全部实现在 `mini-services/scraper-service`（端口 3030）。
+> 以上已全部实现在 `mini-services/scraper-service`（端口 3030；历史版本，现行实现见文末 §六 scraper-go）。
 
 ## 一、逐库评估
 
@@ -48,7 +48,7 @@
 # Linux x86_64 示例：下载预编译二进制放入 PATH
 curl -L -o /tmp/curl-impersonate.tar.gz https://github.com/lwthiker/curl-impersonate/releases/download/v0.6.1/curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz
 mkdir -p ~/.local/bin && tar -xzf /tmp/curl-impersonate.tar.gz -C ~/.local/bin
-export PATH=$PATH:~/.local/bin   # 重启 scraper-service 后 GET /api/strategies 自动亮绿
+export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /api/strategies 自动亮绿
 ```
 
 ## 四、合规红线（内置于代码，不可配置绕过）

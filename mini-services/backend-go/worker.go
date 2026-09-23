@@ -796,10 +796,13 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 		return
 	}
 	if reason := stopState(run.TaskID); reason != "" {
-		recalcWordCountsFor(p1.NovelIDs)
 		finalizeStopped(run, reason,
 			fmt.Sprintf("已取消（书目完成 %d/%d 本）", p1.OKBooks, total),
 			fmt.Sprintf("已暂停（书目完成 %d/%d 本，进度保留，可恢复继续）", p1.OKBooks, total))
+		// Task 27-c（重新应用 25-a 修复②）：recalcWordCountsFor 大任务秒级耗时，
+		// 移到 finalizeStopped 之后——「停止检测→终态落库」窗口从秒级压到毫秒级，
+		// 防用户在窗口内 cancel/restart 与 worker 收尾竞态（进度/终态被收尾覆盖）
+		recalcWordCountsFor(p1.NovelIDs)
 		return
 	}
 	created, updated, _ := run.Snapshot()
@@ -891,8 +894,9 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 		return
 	}
 	if reason := stopState(run.TaskID); reason != "" {
-		recalcWordCountsFor(p1.NovelIDs)
 		finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
+		// Task 27-c（重新应用 25-a 修复②）：同 runList——recalc 移到终态落库之后
+		recalcWordCountsFor(p1.NovelIDs)
 		return
 	}
 	totalChapters := p1.TotalRefs
@@ -978,7 +982,8 @@ func phase2Breather(run *Run) {
 	}
 }
 
-// finalize 终态写入：running → 写终态；paused + paused → 暂停确认（保状态刷新 message/log）；
+// finalize 终态写入：running → 写终态；pending + 实际已跑完（success/partial/failed）→
+// 条件领取终态；paused + paused → 暂停确认（保状态刷新 message/log）；
 // 已被取消/暂停/删除的其他情况只保留日志（绝不复活或改写 API 已写入的状态）
 func finalize(run *Run, status, message string) {
 	var cur string
@@ -989,6 +994,15 @@ func finalize(run *Run, status, message string) {
 	switch {
 	case cur == "running":
 		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'running'",
+			status, msg, run.LogText(), nowMillis(), run.TaskID)
+	case cur == "pending" && (status == "success" || status == "partial" || status == "failed"):
+		// Task 27-c（重新应用 25-a 修复①，合并时丢失）：快速 pause→resume 竞态——
+		// 两 API 调用落在 worker 相邻 stopState 检查之间，worker 未感知暂停跑完全程，
+		// 此时状态已被 resume 写回 pending；若不领取，任务永久滞留 pending → runner
+		// 2s 轮询二次分发全量重跑。条件领取（WHERE status='pending'，gRunning 防重
+		// 保证无第二 worker）把实际已跑完的任务落到真终态；canceled 刻意不领取
+		// = 兑现「取消收尾中点重启」重跑语义
+		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'pending'",
 			status, msg, run.LogText(), nowMillis(), run.TaskID)
 	case cur == "paused" && status == "paused":
 		// 暂停确认：不触碰 status/进度字段 → 恢复后 Phase 1/2 依骨架自动续传

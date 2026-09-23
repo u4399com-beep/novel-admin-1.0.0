@@ -1,3 +1,11 @@
+// schema.prisma —— DB 表结构权威参考（Task 27 起 Go 单栈，本文件仍为结构定义的单一事实源）。
+// 说明：
+//   - 运行时 backend-go 用 modernc.org/sqlite 纯 Go 驱动直连同一个 SQLite 库（db/custom.db），
+//     不经过 Prisma Client——本 schema 供人工核对结构与 Go 侧手写 SQL 的字段对照；
+//   - `bun run db:push`（dev 链路建库/同步）按本文件建表，表/列名与 Go 侧 SQL 必须保持一致；
+//   - 新增列需同时改 Go 侧（storex/api_* 的读写语句）与种子（seed/seed.json 如涉及）。
+// 当前模型：Category / Novel / Chapter / SiteSetting / PseoKeyword / ScrapeRule / ScrapeTask（无过期模型）。
+
 generator client {
   provider = "prisma-client-js"
 }

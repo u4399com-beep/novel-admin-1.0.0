@@ -3,11 +3,12 @@
  *
  * 输入：mini-services/backend-go/web-src/tw-input.css
  *   - @import "tailwindcss"
- *   - @source 指向 Go 模板目录（web/templates/**）与静态 JS（web/static/js/**）
+ *   - @source 指向 Go 模板目录（web/templates/**）、静态资源（web/static/**）
+ *     与渐变 token 表（web-src/gradient-tokens.txt，Task 27 起替代已删除的 src/lib/covers.ts）
  *     —— Tailwind v4 扫描这些文本文件里出现的类名生成最终 CSS
  * 输出：mini-services/backend-go/web/static/css/tw.css
  *
- * 运行：bun run build:css（模板或 JS 类名变更后需重新构建）
+ * 运行：bun run build:css（模板或 JS 类名变更后需重新构建；scripts/build-go.sh 已内置本步）
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

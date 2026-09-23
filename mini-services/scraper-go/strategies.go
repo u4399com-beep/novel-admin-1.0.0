@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -23,11 +24,16 @@ type strategyDef struct {
 	selfRetrying bool
 }
 
-// strategyRunCtx 策略 run 的可选上下文
+// strategyRunCtx 策略 run 的可选上下文。
+// hardCtx（Task 27-c，25-a 遗留 c 收紧）：策略链硬时间闸的取消 context——超时后 cancel
+// 会中止 Go 原生 HTTP 在途请求（fetchWithRedirectGuard / gotStrategyRun 经
+// NewRequestWithContext 挂接），消除「硬闸已超时放行、策略 goroutine 仍空转到自身超时」
+// 的有界泄漏；nil = 无取消（保持旧行为）。仅策略 goroutine 自身读写，无跨 goroutine 竞态。
 type strategyRunCtx struct {
 	referer     string
 	proxy       string
 	insecureTLS bool
+	hardCtx     context.Context
 }
 
 // attemptResult 单次尝试结果（对齐 TS AttemptResult；warnings 为策略自持切片）
@@ -66,7 +72,7 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 				s0 := nowMs()
 				// 显式 Referer 只覆盖「带 Referer」画像的来路；无 Referer 变体保持无 Referer（链内多样性保留）
 				hdrs := profile.headers(targetURL, profile.withReferer, ctx.referer)
-				r := fetchWithRedirectGuard(targetURL, hdrs, remaining, &warnings, ctx.proxy, ctx.insecureTLS)
+				r := fetchWithRedirectGuard(targetURL, hdrs, remaining, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
 				a := assess(r.status, r.bytes, r.contentType)
 				ms := nowMs() - s0
 				note := r.note
@@ -141,6 +147,11 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 	var lastRetryAfter *int64
 	lastHTTPStatus := 0
 	explicitReferer := ctx.referer
+	// Task 27-c: 硬时间闸取消 context 挂接（nil → Background，保持旧行为）
+	baseCtx := ctx.hardCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
 	variants := []struct {
 		profile string
 		noH2    bool
@@ -173,7 +184,7 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 			if trWarn != "" {
 				warnings = append(warnings, trWarn)
 			}
-			req, err := http.NewRequest("GET", current, nil)
+			req, err := http.NewRequestWithContext(baseCtx, "GET", current, nil)
 			if err != nil {
 				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "bad-url"})
 				stopVariants = true
@@ -294,13 +305,19 @@ func urlParseHost(raw string) string {
 // runWithHardGate 策略硬时间闸：任何策略都不得挂死整条链。底层库自身超时可能失效，
 // 以「链剩余预算 + 2.5s 余量」为硬上限强制放行。超时后策略 goroutine 继续在后台收尾
 // （仅写自己的局部状态，无共享竞争），结果被丢弃。
-func runWithHardGate(f func() attemptResult, hardMs int64, budgetNoteMs int64) (attemptResult, bool) {
+// Task 27-c（25-a 遗留 c 收紧）：f 接收取消 context——超时分支立即 cancel，挂接该 context
+// 的 Go 原生 HTTP 请求（fetch 系/got-scraping）即刻中止，策略 goroutine 毫秒级退出而非
+// 空转到自身超时；curl 系/browser 桥接为外部进程（自带 --max-time/SIGALRM 看门狗，
+// 残余后台收尾 ≤3s，维持有界）；正常完成路径同样 cancel 释放 context 资源。
+func runWithHardGate(f func(context.Context) attemptResult, hardMs int64, budgetNoteMs int64) (attemptResult, bool) {
 	type out struct {
 		res attemptResult
 	}
+	hctx, hcancel := context.WithCancel(context.Background())
 	done := make(chan out, 1)
 	go func() {
-		done <- out{res: f()}
+		defer hcancel() // 正常完成也释放（幂等，与超时分支的 cancel 不冲突）
+		done <- out{res: f(hctx)}
 	}()
 	timer := time.NewTimer(time.Duration(hardMs) * time.Millisecond)
 	defer timer.Stop()
@@ -308,6 +325,7 @@ func runWithHardGate(f func() attemptResult, hardMs int64, budgetNoteMs int64) (
 	case o := <-done:
 		return o.res, false
 	case <-timer.C:
+		hcancel() // Task 27-c: 通知在途 HTTP 请求立即中止
 		return attemptResult{
 			ok: false, status: 0, bytes: []byte{}, contentType: "",
 			warnings: []string{"策略超过硬性时间闸（" + itoa(int(budgetNoteMs/1000)) + "s），已强制跳过（底层库超时失效保护）"},

@@ -1,3 +1,6 @@
+# 【已废弃·Task 27】Next.js/TS mini-services 构建链路已拆除（全栈 Go 化）。
+# 现行构建：bun run build = scripts/build-go.sh（backend-go.bin + scraper-go.bin + tw.css）。
+# 本脚本保留存档，不再被任何链路引用。
 #!/bin/bash
 
 # 配置项

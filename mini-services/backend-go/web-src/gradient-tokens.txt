@@ -1,0 +1,16 @@
+/* gradient-tokens.txt —— 渐变封面 token 表（g1-g12）的 Tailwind 内容源。
+ * 语义对应 web.go gradientTokenClass 与 web/static/css/cover-gradients.css（双侧同步）。
+ * 原为 src/lib/covers.ts（Task 27 Next.js 拆除后改为本纯文本源，@source 扫描类名字符串）。
+ */
+from-rose-500 to-orange-400
+from-emerald-600 to-teal-400
+from-sky-600 to-cyan-400
+from-amber-600 to-yellow-400
+from-violet-600 to-fuchsia-400
+from-red-700 to-rose-500
+from-teal-700 to-emerald-400
+from-indigo-600 to-sky-400
+from-orange-600 to-amber-400
+from-cyan-700 to-blue-500
+from-fuchsia-600 to-pink-400
+from-lime-600 to-green-400

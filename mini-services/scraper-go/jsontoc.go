@@ -25,6 +25,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -286,7 +287,7 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	return refs
 }
 
-// jsonStr JSON 任意值 → 字符串（对齐 TS String(v ?? ”)：null/undefined 为空串，数字/布尔转文本）
+// jsonStr JSON 任意值 → 字符串（对齐 TS String(v ?? "")：null/undefined 为空串，数字/布尔转文本）
 func jsonStr(v any) string {
 	switch t := v.(type) {
 	case nil:
@@ -294,9 +295,16 @@ func jsonStr(v any) string {
 	case string:
 		return t
 	case float64:
-		// 整数值不带小数点（JS String(1) === "1"）
-		if t == float64(int64(t)) {
+		// Task 27-c（25-a 遗留 d 收尾）：float→int 转换加值域守卫。旧实现
+		// t == float64(int64(t)) 对超出 int64 的极大值（1e300 等）是 Go 规范的
+		// 「实现定义行为」（amd64 得哨兵值 -2^63），幸而比较不相等才未出错，但语义
+		// 悬在未定义边缘；显式按 2^53（整数精度边界）内才走整数路径，NaN/±Inf
+		// 拒绝输出（占位符 {order} 收到空串时 urlJoin 后由 http/https 校验兜底）
+		if t == math.Trunc(t) && math.Abs(t) < 9007199254740992 {
 			return itoa(int(t))
+		}
+		if math.IsInf(t, 0) || math.IsNaN(t) {
+			return ""
 		}
 		return trimTrailingZeros(t)
 	case bool:

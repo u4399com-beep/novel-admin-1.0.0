@@ -13,7 +13,7 @@ pids=""
 cleanup() {
     echo ""
     echo "🛑 正在关闭所有服务..."
-    
+
     # 发送 SIGTERM 信号给所有子进程
     for pid in $pids; do
         if kill -0 "$pid" 2>/dev/null; then
@@ -22,7 +22,7 @@ cleanup() {
             kill -TERM "$pid" 2>/dev/null
         fi
     done
-    
+
     # 等待所有进程退出（最多等待 5 秒）
     sleep 1
     for pid in $pids; do
@@ -34,112 +34,85 @@ cleanup() {
                 timeout=$((timeout - 1))
             done
             # 如果仍然在运行，强制关闭
-            if kill -0 "$pid" 2>/dev/null; then
-                echo "   强制关闭进程 $pid..."
-                kill -KILL "$pid" 2>/dev/null
+            if [ $timeout -eq 0 ]; then
+                if kill -0 "$pid" 2>/dev/null; then
+                    echo "   强制关闭进程 $pid..."
+                    kill -KILL "$pid" 2>/dev/null
+                fi
             fi
         fi
     done
-    
+
     echo "✅ 所有服务已关闭"
     exit 0
 }
 
-echo "🚀 开始启动所有服务..."
+echo "🚀 开始启动所有服务（Go 单栈：backend-go :3000 + scraper-go :3030）..."
 echo ""
 
-# 切换到构建目录
 cd "$BUILD_DIR" || exit 1
 
 ls -lah
 
 DEFAULT_PACKAGED_DB_PATH="/app/db/custom.db"
-DEFAULT_PACKAGED_DATABASE_URL="file:$DEFAULT_PACKAGED_DB_PATH"
+DEFAULT_PACKAGED_DATABASE_PATH="${DATABASE_PATH:-$DEFAULT_PACKAGED_DB_PATH}"
 
-# Python 依赖在构建阶段安装进部署产物，不复用 Sandbox 的 /home/z/.venv。
-# Next.js 及其启动的子进程都会继承这组路径。
+# Python 依赖在构建阶段安装进部署产物（scraper-go render 策略使用）。
 if [ -d "/app/python-runtime/site-packages" ]; then
-    export PYTHONPATH="/app/python-runtime/site-packages:/app/next-service-dist${PYTHONPATH:+:$PYTHONPATH}"
+    export PYTHONPATH="/app/python-runtime/site-packages${PYTHONPATH:+:$PYTHONPATH}"
     export PATH="/app/python-runtime/site-packages/bin:$PATH"
     export PYTHONDONTWRITEBYTECODE=1
     export PYTHONUNBUFFERED=1
     echo "🐍 已启用部署包内 Python runtime: $(python --version 2>&1)"
 fi
 
-# 启动 Next.js 服务器
-if [ -f "./next-service-dist/server.js" ]; then
-    echo "🚀 启动 Next.js 服务器..."
-    cd next-service-dist/ || exit 1
-    
-    # 设置环境变量
-    export NODE_ENV=production
-    export PORT="${PORT:-3000}"
-    export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
+# 数据库守卫：backend-go 启动时空表自动播种（seed go:embed），无需预置数据；
+# 但若外层明确指定 DB 路径则透传。
+export DB_PATH="$DEFAULT_PACKAGED_DATABASE_PATH"
+if [ ! -f "$DB_PATH" ]; then
+    echo "🗄️  数据库文件不存在（$DB_PATH），backend-go 将创建空库并自动播种 15 条规则/9 分类"
+fi
 
-    if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
-        if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
-            echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
-            echo "   为避免生产环境启动到空数据库，启动已终止"
-            exit 1
-        fi
-
-        echo "🗄️  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
-    else
-        echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
-    fi
-    
-    # 后台启动 Next.js
-    bun server.js &
-    NEXT_PID=$!
-    pids="$NEXT_PID"
-    
-    # 等待一小段时间检查进程是否成功启动
-    sleep 1
-    if ! kill -0 "$NEXT_PID" 2>/dev/null; then
-        echo "❌ Next.js 服务器启动失败"
+# 启动 backend-go（页面 SSR + 业务 API + 采集 runner，:3000）
+if [ -f "./backend-go/backend-go.bin" ]; then
+    echo "🚀 启动 backend-go（:3000，mode=all）..."
+    cd backend-go/ || exit 1
+    export BACKEND_PORT="${BACKEND_PORT:-3000}"
+    export BACKEND_MODE="${BACKEND_MODE:-all}"
+    ./backend-go.bin &
+    BACKEND_PID=$!
+    pids="$pids $BACKEND_PID"
+    sleep 2
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        echo "❌ backend-go 启动失败"
         exit 1
-    else
-        echo "✅ Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
     fi
-    
+    echo "✅ backend-go 已启动 (PID: $BACKEND_PID, Port: $BACKEND_PORT)"
     cd ../
 else
-    echo "⚠️  未找到 Next.js 服务器文件: ./next-service-dist/server.js"
+    echo "❌ 未找到 backend-go/backend-go.bin，无法启动主服务"
+    exit 1
 fi
 
-# 启动 mini-services
-if [ -f "./mini-services-start.sh" ]; then
-    echo "🚀 启动 mini-services..."
-    
-    # 运行启动脚本（从根目录运行，脚本内部会处理 mini-services-dist 目录）
-    sh ./mini-services-start.sh &
-    MINI_PID=$!
-    pids="$pids $MINI_PID"
-    
-    # 等待一小段时间检查进程是否成功启动
+# 启动 scraper-go 采集引擎（:3030）
+if [ -f "./scraper-go/scraper-go.bin" ]; then
+    echo "🚀 启动 scraper-go（:3030）..."
+    cd scraper-go/ || exit 1
+    ./scraper-go.bin &
+    ENGINE_PID=$!
+    pids="$pids $ENGINE_PID"
     sleep 1
-    if ! kill -0 "$MINI_PID" 2>/dev/null; then
-        echo "⚠️  mini-services 可能启动失败，但继续运行..."
+    if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+        echo "⚠️  scraper-go 启动失败（backend-go 内置互监护会周期重试拉起）"
     else
-        echo "✅ mini-services 已启动 (PID: $MINI_PID)"
+        echo "✅ scraper-go 已启动 (PID: $ENGINE_PID, Port: 3030)"
     fi
-elif [ -d "./mini-services-dist" ]; then
-    echo "⚠️  未找到 mini-services 启动脚本，但目录存在"
+    cd ../
 else
-    echo "ℹ️  mini-services 目录不存在，跳过"
+    echo "⚠️  未找到 scraper-go/scraper-go.bin（backend-go 互监护会在任务执行时拉起引擎）"
 fi
 
-# 启动 Caddy（如果存在 Caddyfile）
-echo "🚀 启动 Caddy..."
-
-# Caddy 作为前台进程运行（主进程）
-echo "✅ Caddy 已启动（前台运行）"
 echo ""
-echo "🎉 所有服务已启动！"
-echo ""
-echo "💡 按 Ctrl+C 停止所有服务"
-echo ""
-
-# Caddy 作为主进程运行
-exec caddy run --config Caddyfile --adapter caddyfile
+echo "✅ 全部服务启动完成，等待信号..."
+trap cleanup INT TERM
+wait

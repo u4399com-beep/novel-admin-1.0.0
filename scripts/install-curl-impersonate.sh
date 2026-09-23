@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 重装 curl-impersonate 二进制（v0.6.1 x86_64-linux-gnu，21 个）到 ~/.local/bin
-# 背景：沙箱会周期性清理 ~/.local/bin（已发生两次）；引擎侧已有 60s 空结果重探逻辑，
-#      重装后无需重启引擎。用法: bash scripts/install-curl-impersonate.sh
+# 供现行 Go 引擎 scraper-go（:3030）curl-impersonate / fetch-curl 策略调用；
+# 沙箱会周期性清理 ~/.local/bin（已发生两次）；引擎侧已有 60s 空结果重探逻辑，
+# 重装后无需重启引擎。用法: bash scripts/install-curl-impersonate.sh
 set -euo pipefail
 mkdir -p "$HOME/.local/bin"
 curl -sL --max-time 120 -o /tmp/curl-imp.tar.gz \

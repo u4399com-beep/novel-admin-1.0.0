@@ -1,11 +1,11 @@
 {
-  "name": "nextjs_tailwind_shadcn_ts",
-  "version": "0.2.1",
+  "name": "novel-admin-go",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "dev": "bash scripts/dev-go.sh",
+    "build": "bash scripts/build-go.sh",
+    "start": "bash scripts/dev-go.sh",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
@@ -15,18 +15,14 @@
   },
   "dependencies": {
     "@prisma/client": "^6.11.1",
-    "next": "^16.1.1",
-    "prisma": "^6.11.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "prisma": "^6.11.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/node": "26.6.2",
     "eslint": "^9",
-    "eslint-config-next": "^16.1.1",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "description": "novel-admin Go 全栈（Task 27 起 Next.js 已拆除）：dev = backend-go 单进程承载 3000"
 }

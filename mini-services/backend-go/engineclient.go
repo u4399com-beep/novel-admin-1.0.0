@@ -313,6 +313,20 @@ func isSameChapterPagination(base, next string) bool {
 		prefixes = append(prefixes, htmlSuffixRE.ReplaceAllString(prefixes[0], ""))
 	}
 	for _, bp := range prefixes {
+		// Task 27-c（重新应用 25-a 修复⑧①，合并时丢失）：base 为站点根（如 https://x.com）
+		// 时 TrimRight 得空前缀使 HasPrefix 恒真 → 同主机任意路径（/2.html）被误判为
+		// 同章分页，正文串章；空前缀跳过
+		if bp == "" {
+			continue
+		}
+		// Task 27-c（重新应用 25-a 修复⑧②，合并时丢失）：EscapedPath 恒不含 '?'，
+		// 下方 sep=='?' 分支实际不可达（Go 与 JS pathname 同病）；「路径完全相等 +
+		// ?page=N」形态的同章分页（/reader.php?cid=1 → /reader.php?cid=1&page=2）
+		// 需显式判定，否则长章节分页从未被拼接（缺半）。pageParamRE 限定 page 参数
+		// 递增语义，?cid= 等非 page 参数不受影响
+		if np == bp && pageParamRE.MatchString(n.RawQuery) {
+			return true
+		}
 		if !strings.HasPrefix(np, bp) || len(np) == len(bp) {
 			continue
 		}
@@ -342,6 +356,7 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
 	strategy := first.Strategy
 	attempts := first.Attempts
 	visited := map[string]bool{u: true}
+	mergedChars := 0 // Task 27-c: 已合并正文 rune 计（内存护栏用）
 	next := data.NextURL
 	for page := 2; next != "" && page <= MAX_CHAPTER_PAGES+1; page++ {
 		if !isSameChapterPagination(u, next) {
@@ -350,12 +365,19 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
 		if visited[next] { // 引擎 nextUrl 环路防御
 			break
 		}
+		// Task 27-c（重新应用 25-a 修复⑧③，合并时丢失）：分页合并内存护栏——
+		// 已合并内容达 MAX_CONTENT_CHARS×4（同 fetchChapterPaged 上限 5 页 × 单页上限
+		// 的量级）即停，防异常大页 × 多分页 × 12 车道瞬时内存尖峰
+		if mergedChars >= MAX_CONTENT_CHARS*4 {
+			break
+		}
 		visited[next] = true
 		sub := fetchChapter(next, rule, referer)
 		if !sub.OK || strings.TrimSpace(sub.Data.Content) == "" {
 			break
 		}
 		// 合并正文：分页边界按段落直接续接（各页正文已由引擎清洗过）
+		mergedChars += runeLen(sub.Data.Content)
 		data.Content = data.Content + "\n" + sub.Data.Content
 		data.Paragraphs = append(append([]string(nil), data.Paragraphs...), sub.Data.Paragraphs...)
 		data.WordCount += sub.Data.WordCount

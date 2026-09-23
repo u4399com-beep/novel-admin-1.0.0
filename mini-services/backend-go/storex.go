@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -318,6 +319,21 @@ type SkeletonOutcome struct {
 // 由驱动内部分批，此处显式 500/条）
 const skeletonChunk = 500
 
+// skeletonLocks 单本书骨架写入分片锁（Task 27-c，25-a 遗留 a 收尾）：按 novelID 分片 64 把，
+// 无 map 增长/清理负担。旧版并发任务采到同一本书（同名书跨任务/重启重叠窗口）时，
+// 各自读 MAX(idx) 后连续分配——混合 idx 场景下 (novelId,idx) 唯一约束拦不住「同 title 不同 idx」
+// 的插入，产生同名重复行（phase2Fill 兼容填充、靠去重工具收敛，TS 同源设计）。
+// 现以分片锁序列化同书骨架入库（读 existing/MAX(idx) → 批量 INSERT 全程持锁；
+// SQLite 单写者下批内语句原子，进程内锁即已充分——章节写入仅 runner 进程发生），
+// 恢复 TS 单线程事件循环的实际串行语义。
+var skeletonLocks [64]sync.Mutex
+
+func lockNovelSkeleton(novelID int) func() {
+	m := &skeletonLocks[novelID%len(skeletonLocks)]
+	m.Lock()
+	return m.Unlock
+}
+
 // storeChapterSkeletons Phase 1 骨架批量入库：按标题去重（批内 + 与既有章节），
 // idx 从现有最大值连续分配。
 // - 全新标题 → 建骨架（content=”、wordCount=0），title 为空用「第{idx}章」占位
@@ -326,6 +342,10 @@ const skeletonChunk = 500
 // 并发同书建骨架撞 (novelId,idx) 唯一约束时退化为逐条顺延重试（复用 storeChapter）；
 // 非唯一冲突错误返回 error（TS 语义为向上抛 → 任务按 failed 收尾）。
 func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) (SkeletonOutcome, error) {
+	// Task 27-c: 同书骨架入库全程持分片锁（见 skeletonLocks 注释）；defer 兑底释放
+	unlock := lockNovelSkeleton(novelID)
+	defer unlock()
+
 	// 批内按标题去重（同书同名章只保留首个 URL；保持首次出现顺序——idx 分配与 TS Map 序一致）
 	var order []string
 	urlByTitle := map[string]string{}
@@ -446,6 +466,15 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 	fillRows := []refPair{}
 	okStored := 0
 	for _, row := range data {
+		// Task 27-c（25-a 遗留 a 收尾）：逐条路径先按标题查重——行可能已被另一任务
+		//（持锁前提交）以不同 idx 入库；直接走 (novelId,idx) 顺延重试会在空序号上
+		// 再造同名重复行。已存在即照常计入填充计划（同下方失败回查语义）
+		var existID0 int64
+		if qerr := queryOne("SELECT id FROM Chapter WHERE novelId = ? AND title = ? LIMIT 1",
+			[]any{&existID0}, novelID, row.title); qerr == nil {
+			fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
+			continue
+		}
 		_, ok, msg := storeChapter(run, novelID, row.idx, ChapterRow{Title: row.title, Content: "", WordCount: 0})
 		if ok {
 			okStored++

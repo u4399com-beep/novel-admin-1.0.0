@@ -13,6 +13,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -381,7 +382,13 @@ type rawResponse struct {
 
 // fetchWithRedirectGuard 带逐跳 SSRF 校验的 fetch：手动跟随重定向，每一跳都做
 // 文本层 + DNS 尽力校验；重定向跳按目标 host 回放/捕获 cookie 会话，跨域跳逐跳限速。
-func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs int64, warnings *[]string, proxy string, insecureTLS bool) rawResponse {
+// hardCtx（Task 27-c，25-a 遗留 c 收紧）：策略链硬时间闸的取消 context（可为 nil），
+// 挂接后硬闸超时 cancel 即中止在途请求。
+func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs int64, warnings *[]string, proxy string, insecureTLS bool, hardCtx context.Context) rawResponse {
+	baseCtx := hardCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
 	deadline := nowMs() + timeoutMs
 	current := target
 	hops := 0
@@ -433,7 +440,7 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 		if trWarn != "" {
 			*warnings = append(*warnings, trWarn)
 		}
-		req, err := http.NewRequest("GET", current, nil)
+		req, err := http.NewRequestWithContext(baseCtx, "GET", current, nil)
 		if err != nil {
 			return rawResponse{ok: false, status: 0, note: "bad-url", warning: "网络错误: " + err.Error()}
 		}

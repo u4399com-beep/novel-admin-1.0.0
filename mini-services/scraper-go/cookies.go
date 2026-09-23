@@ -49,10 +49,13 @@ type cookieJar struct {
 
 var jar = &cookieJar{hosts: map[string]*cookieBucket{}}
 
-// touchHost 取/建 host 桶并刷新 LRU 淘汰序；返回 nil 表示容量淘汰后仍放不下（极端情况）
-func (j *cookieJar) touchHost(host string) *cookieBucket {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+// touchHostLocked 取/建 host 桶并刷新 LRU 淘汰序；调用方必须已持有 j.mu。
+// Task 27-c（25-a 修复⑥残留竞态补齐）：旧版 touchHost 自持锁取桶、返回后调用方再锁写桶，
+// 两临界区之间并发的另一 host touchHost 可能把本桶从 map 淘汰（跳过自身不跳过他人），
+// 写入孤儿桶静默丢失（>128 hosts 场景）。改为调用方持锁的 touchHostLocked，取桶+写桶
+// 单临界区完成，彻底消除窗口。
+// 返回 nil 表示容量淘汰后仍放不下（极端情况）
+func (j *cookieJar) touchHostLocked(host string) *cookieBucket {
 	b, ok := j.hosts[host]
 	if ok {
 		delete(j.hosts, host)
@@ -61,8 +64,8 @@ func (j *cookieJar) touchHost(host string) *cookieBucket {
 	}
 	j.hosts[host] = b
 	for len(j.hosts) > cookieMaxHosts {
-		// Task 26-d 修复：淘汰候选必须跳过本次触达的 host——map 迭代无序，旧实现可能把
-		// 刚插入/刚触达的 host 自己逐出，返回值指向已不在 map 的孤儿桶，后续写入静默丢失
+		// 淘汰候选必须跳过本次触达的 host——map 迭代无序，可能把刚插入/刚触达的
+		// host 自己逐出，返回值指向已不在 map 的孤儿桶，后续写入静默丢失
 		oldest := ""
 		for k := range j.hosts {
 			if k == host {
@@ -224,10 +227,11 @@ func recordSetCookieLines(host string, lines []string, https bool) int {
 	if host == "" || len(lines) == 0 {
 		return 0
 	}
-	bucket := jar.touchHost(host)
+	// Task 27-c: 单临界区取桶+写桶（见 touchHostLocked 注释）
+	jar.mu.Lock()
+	bucket := jar.touchHostLocked(host)
 	now := nowMs()
 	stored := 0
-	jar.mu.Lock()
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -338,9 +342,10 @@ func recordBridgeCookies(host string, cookies []bridgeCookie) {
 	if host == "" || len(cookies) == 0 {
 		return
 	}
-	bucket := jar.touchHost(host)
-	now := nowMs()
+	// Task 27-c: 单临界区取桶+写桶（见 touchHostLocked 注释）
 	jar.mu.Lock()
+	bucket := jar.touchHostLocked(host)
+	now := nowMs()
 	for _, c := range cookies {
 		if c.Name == "" || c.Value == "" {
 			continue

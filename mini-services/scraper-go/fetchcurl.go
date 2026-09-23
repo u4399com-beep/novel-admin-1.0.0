@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,7 +117,10 @@ var curlPlainStrategy = strategyDef{
 					break
 				}
 				s0 := nowMs()
-				tag := itoa(int(nowMs())) + "-c"
+				// Task 27-c 修复：旧 tag 仅 nowMs+"-c"，同毫秒并发的两次 fetch-curl 请求
+				// 临时文件同名互踩（正文串章/头文件混写/提前删除）；补随机后缀与
+				// curlimp.go 同构。随机位数足够，冲突概率可忽略
+				tag := itoa(int(nowMs())) + "-c-" + strconv.FormatInt(rand.Int63(), 36)
 				tmpOut := filepath.Join(os.TempDir(), "scraper-"+tag+".body")
 				tmpHdr := filepath.Join(os.TempDir(), "scraper-"+tag+".hdr")
 				args := []string{
@@ -130,6 +134,13 @@ var curlPlainStrategy = strategyDef{
 				}
 				if ctx.proxy != "" {
 					args = append(args, "--proxy", ctx.proxy)
+				} else if pin := curlResolvePin(tu); pin != "" {
+					// Task 27-c 补齐（与 curlimp.go 同构）：fetch-curl 此前漏挂 --resolve
+					// DNS rebinding 钉死参数——assertHostPublic 的 Go 侧解析与 curl
+					// 自身二次解析之间存在 TOCTOU 窗口（A 记录可在两次解析间从公网
+					// 切到 127.0.0.1）。代理模式下 curl 连接的是代理本身，--resolve
+					// 不适用故跳过
+					args = append(args, "--resolve", pin)
 				}
 				if ctx.insecureTLS {
 					args = append(args, "--insecure")

@@ -288,11 +288,18 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 			return nil
 		},
 	}
+	// Task 27-c（重新应用 25-a 修复⑤收尾，合并时丢失）：每次下载新建 Transport，用完
+	// CloseIdleConnections 释放空闲连接，防长跑任务连接池驻留累积
+	defer client.CloseIdleConnections()
 	res, err := client.Do(req)
 	if err != nil {
 		return ""
 	}
-	defer res.Body.Close()
+	defer func() {
+		_ = res.Body.Close()
+		// body 关闭后再释放空闲连接（CloseIdleConnections 只关已归还池的连接）
+		client.CloseIdleConnections()
+	}()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		return ""
 	}
@@ -354,7 +361,9 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 		return ""
 	}
 	sum := md5.Sum([]byte(itoa(novelID)))
-	tmpAbs := filepath.Join(dir, "."+hex.EncodeToString(sum[:])[:8]+".tmp")
+	// Task 27-c：tmp 名加 novelID+纳秒时间戳去重——并发同书封面下载（同名书多任务
+	// 各自触发）旧版共用同名 .tmp，并发 WriteFile 同路径可交错写坏后 rename 成坏图
+	tmpAbs := filepath.Join(dir, "."+hex.EncodeToString(sum[:])[:8]+"-"+itoa(novelID)+"-"+strconv.FormatInt(time.Now().UnixNano(), 36)+".tmp")
 	if err := os.WriteFile(tmpAbs, ob.Bytes(), 0o644); err != nil {
 		return ""
 	}

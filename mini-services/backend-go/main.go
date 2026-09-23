@@ -1,8 +1,9 @@
 /**
- * backend-go —— 服务入口（Golang 版业务后端）。
+ * backend-go —— 服务入口（Golang 版业务后端，Task 27 起为全站唯一进程）。
  *
- * 端口: 3005（BACKEND_PORT 可覆盖）。前端经 Next catch-all 代理访问（契约与原
- * src/app/api/* 完全一致），引擎仍走 scraper-go（127.0.0.1:3030）。
+ * 端口: 3000（BACKEND_PORT 可覆盖），直接承载用户预览流量（页面 SSR + 业务 API +
+ * 采集 runner 三合一），Next.js 代理层已拆除。引擎仍为 scraper-go（127.0.0.1:3030）。
+ * 迁移期兼容：BACKEND_PORT=3005 仍可运行（老部署配置不受影响）。
  *
  * 进程模式（BACKEND_MODE 或 -mode）：
  *   api    —— 仅 HTTP API
@@ -35,7 +36,7 @@ func parsePort() int {
 			return n
 		}
 	}
-	return 3005
+	return 3000
 }
 
 func parseMode() string {
@@ -53,13 +54,15 @@ func main() {
 	if _, err := getDB(); err != nil {
 		log.Fatalf("[backend-go] DB 初始化失败: %v", err)
 	}
+	startSeedIfEmpty() // 初始库种子固化（Task 27）：空表自动播种 15 规则/9 分类/homeConfig
 	log.Printf("[backend-go] mode=%s port=%d db=%s", mode, port, dbPath())
 
 	if mode == "runner" || mode == "all" {
 		go startRunner()
 		go startPseoEnrichLoop() // PSEO 书名种子后台富集（12s/种子，见 pseo_book.go）
 	}
-	startDevWatcher() // dev server 看护（BACKEND_WATCH_DEV=1 时启用，见 devwatch.go）
+	// startDevWatcher 已随 Next.js 退役（Task 27）：3000 端口由本进程直接承载，
+	// 看护职责归沙箱 dev 链路 / systemd（见 scripts/dev-go.sh 与 deployment.md）。
 	if mode == "api" || mode == "all" {
 		srv := &http.Server{
 			Addr:              ":" + itoa(port),

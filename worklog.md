@@ -1106,3 +1106,68 @@ Work Log:
 
 Stage Summary:
 - 本轮全部指令闭环：502 根除/数据恢复+快填/多 Agent 幽灵收编/fetch-curl 5165 复活/代码大清理/git 推送
+---
+Task ID: 27-d
+Agent: cleanup-docs
+Task: 文档同步Go终态+scripts清理归档
+
+Work Log:
+- 【deployment.md 全面重写（保持 10 章结构/ASCII 图/表格风格）】①头部口径改 Task 27 Go 单栈终态（Next.js 已彻底拆除，注明 BACKEND_PORT=3005 仅迁移期兼容）②§1.1 拓扑图删 Next 代理层，backend-go :3000 直面浏览器（三职责+播种）③§1.2 组件表删 Next.js 行、backend-go 端口 3005→3000 ④§1.3 看护图收敛为「dev-go 循环+互监护+cron 兜底」，ensureBackendGo supervisor/devwatch.go 标注已退役 ⑤新增 §1.4 种子固化机制（ScrapeRule 空表→15 规则、Category 空表→9 分类、SiteSetting 兜底建行+homeConfig 三区块；COUNT==0 幂等、失败不阻断启动）⑥§2 环境表 Node.js 改「不再必需」⑦§3 步骤 3 环境变量表 BACKEND_PORT 缺省 3000；步骤 4 补「建表后无需预置数据文件，首启自动播种」；步骤 5 CSS @source 口径更新（模板/静态资源/gradient-tokens.txt，covers.ts 已删）；步骤 6 补 bun run build 一键等价；步骤 7 启动改 bun run dev = scripts/dev-go.sh 自愈循环，手动等价命令 BACKEND_PORT=3000；步骤 8 验证补种子播种日志样例 ⑧§4 看护层级表三层收敛 ⑨§5 日志表删 dev.log/Next 行；运维命令巡检端口 3000/3030、重启命令改 dev-go 自愈语义；§5.3 规则维护改种子口径（add-new-rules/dump-rules/check-rules-integrity 移 archive）⑩§7.3 规则重建改「db:push→启动自动播种」为现行流程、历史流程折叠存档 ⑪§8 排查删 Next 502 层与「Next 持旧 inode」条目，新增「规则/分类变空→重启自动回填」⑫§9 生产建议改 systemd 双进程（backend-go:3000 + scraper-go:3030，附两个 unit 示例），反代直指 3000 ⑬§10 目录结构删 src/ 三行、补 seed/seed.json 与 seed.go；脚本清单收敛为活跃 6 项+归档 44 项；package.json scripts 速查全表重写
+- 【docs 其他文档】scrape-rules.md 头部加时效说明（TS 引擎时代存档→现行 scraper-go 8 策略链、15 规则已种子化，指向 anti-anti-crawl §六 与 deployment §5.3）；anti-anti-crawl.md 两处 scraper-service 引用补「历史版本/现行 scraper-go」标注（该文已有 §六 现行权威章节，仅小改）
+- 【scripts/ 清理】归档 2 项：dev-supervisor.sh（next dev 看护循环，Next 已拆失效）、26a-monitor.mjs（Task 26-a 一次性任务监控，硬编码任务 id 26-33）；保留 6 项：dev-go.sh / build-go.sh / ensure-services.sh（头注释均已是 Task 27 口径，核对无需改）、build-web-css.mjs（头注释更新：@source 补 gradient-tokens.txt、注明 covers.ts 已删与 build-go.sh 内置 CSS 步）、install-curl-impersonate.sh（注明供 scraper-go 引擎调用）、engine-rule-test.mjs（原无头注释，补用途/用法/前置说明）
+- 【prisma/schema.prisma】文件头补注释：Go 直连共享库（modernc.org/sqlite），本 schema 为结构权威参考 + db:push 同步用，新增列需同步 Go 侧 SQL 与种子；逐一交叉核对 14 个关键列（isFeatured/isHot/homeConfig/seoConfig/insecureTLS/chaptersDone/chaptersTotal/pageData 等）均被 Go 侧引用，确认无过期模型
+- 【验证】grep docs/ 全文：3005/src/app/next dev/ensureBackendGo/devwatch 等仅存于「已退役/兼容说明」语境；scripts/ 活跃区 6 文件、archive 44 项数目与文档一致；未触碰 mini-services/、package.json、.zscripts/、db/、seed/，无 git 操作
+
+Stage Summary:
+- 更新文件：docs/deployment.md（全量重写 601→约 660 行）、docs/scrape-rules.md、docs/anti-anti-crawl.md、prisma/schema.prisma、scripts/build-web-css.mjs、scripts/engine-rule-test.mjs、scripts/install-curl-impersonate.sh、worklog.md
+- 归档：scripts/dev-supervisor.sh、scripts/26a-monitor.mjs → scripts/archive/（活跃区 8→6）
+- deployment.md 关键变更：3005→3000（含迁移兼容说明）、Next.js 部署链路全删、Go 单栈双进程拓扑、种子固化机制专节（空库自动播种，无需预置数据文件）、systemd 双进程生产方案、脚本清单 6+44
+---
+Task ID: 27-c
+Agent: engine-bug-hunter
+Task: 引擎逐行抓bug（scraper-go全部+backend-go引擎桥接层）+25-a遗留4项收尾
+
+Work Log:
+- 【重大发现：25-a 修复在 25/26 轮合并中部分丢失】git diff+逐行比对 25-a worklog 九项修复与现行源码，实证 worker.go/engineclient.go/runner.go/coversx.go 四文件中 5 处修复（①②⑧①⑧③⑤收尾⑨）未随合并存活（api_scrape_tasks 的③④仍在、ssrfGuardControl⑦仍在）——本轮全部重新应用并新增 engineclient_test.go 回归锁定，以下按修复项列报
+- 【重新应用①P1 worker.go finalize】终态竞态领取分支（cur==pending 且 status∈{success,partial,failed} → 条件领取 WHERE status='pending'）：快速 pause→resume 双 API 落在相邻 stopState 检查之间时任务滞留 pending → runner 2s 轮询二次分发全量重跑；canceled 刻意不领取（兑现「取消收尾中点重启」语义）
+- 【重新应用②P2 worker.go runList/runSingle】停止分支 recalcWordCountsFor（大任务秒级耗时）移到 finalizeStopped 之后——「停止检测→终态落库」窗口从秒级压到毫秒级，防窗口内 cancel/restart 与收尾竞态
+- 【重新应用⑧①P2 engineclient.go isSameChapterPagination】bp=="" 守卫：base 为站点根时 TrimRight 得空前缀使 HasPrefix 恒真 → 同主机任意路径误判同章分页（正文串章）
+- 【重新应用⑧②P2 engineclient.go isSameChapterPagination】「路径完全相等 + pageParamRE 命中」显式分支：EscapedPath 恒不含 '?'（Go 与 JS pathname 同病），sep=='?' 分支不可达 → ?page=N 形态同章分页从未被拼接（长章节缺半）；?cid= 等非 page 参数不受影响
+- 【重新应用⑧③P2 engineclient.go fetchChapterPaged】分页合并内存护栏 mergedChars≥MAX_CONTENT_CHARS×4 即停，防异常大页×5 分页×12 车道瞬时内存尖峰
+- 【重新应用⑤收尾P3 coversx.go fetchAndStoreCover】补回 client.CloseIdleConnections（每次下载新建 Transport 的空闲连接释放；body 关闭后再调用确保连接已归还池）——25-a 声明已修但合并丢失
+- 【重新应用⑨P3 runner.go 注释纠偏】文件头与 startRunner 内「标 failed」两处改为实际语义「转 paused 可恢复续传」（recoverStaleTasks 从不写 failed）
+- 【遗留a修复 P2 storex.go 骨架入库重复行】双管齐下：①skeletonLocks[64] 按 novelID 分片互斥锁序列化 storeChapterSkeletons 全程（读 existing/MAX(idx)→批量 INSERT），根除并发同书「同 title 不同 idx」混合分配窗口（SQLite 单写者+进程内锁即充分——章节写入仅 runner 进程发生），恢复 TS 事件循环的实际串行语义；②逐条退化路径先按 (novelId,title) 查重，已被并发任务以不同 idx 入库的行直接计入 fillRows 不再造重复行。唯一索引属 DB schema 变更（禁改区）不做，列移交
+- 【遗留c收紧 P2 runWithHardGate context 取消传播】f 签名改为 func(context.Context)attemptResult：硬闸超时分支立即 hcancel()，fetch 系/got-scraping 经 strategyRunCtx.hardCtx + http.NewRequestWithContext 挂接（httpguard fetchWithRedirectGuard 增 hardCtx 参数），在途请求毫秒级中止，策略 goroutine 不再空转到自身超时；正常完成路径 defer hcancel 释放；curl 系/browser 为外部进程（自带 --max-time/SIGALRM）残余收尾 ≤3s 维持有界。nil hardCtx→Background 保持旧行为
+- 【遗留d修复 P3 jsontoc.go jsonStr】float64 整数路径加 2^53 值域守卫（旧 t==float64(int64(t)) 对 1e300 级是 Go 规范「实现定义行为」，amd64 哨兵值 -2^63 悬在未定义边缘）+ NaN/±Inf 拒绝输出；非整数路径维持 FormatFloat 'f'（与 JS String() 在 <1e21 域一致）。遗留d之 charsetx formatRatio 复核确认 26-d 已修（0.023→"2.3"，concurrency_test 有回归），未动
+- 【遗留b复核 P0→已解】coversx assertPublicHttpURL Control 钩子：25-a 遗留清单过时——26-d 已落地 coverDialControl+coverTransport 直连路径挂载（含重定向逐跳 CheckRedirect 复验 + socks 语义与引擎口径一致），本轮逐行复核无新增缺口，无需改动
+- 【新发现①P1 chain.go 入口 SSRF 端口误拒】fetchPage 入口 assertHostPublic(hostOf(rawURL)) 传含端口 host——"example.com:8080" 因含 ':' 被 assertHostPublic 按 IPv6 文本解析失败 → fail-closed 永久误拒所有带显式端口站点（功能性阻断；各策略逐跳/robots 均用 Hostname() 唯入口不一致）；改用同次 url.Parse 的 Hostname()
+- 【新发现②P2 cookies.go 孤儿桶竞态收尾】25-a 修复⑥只挡了「淘汰自身」，未挡跨 host 并发互逐：touchHost 自持锁取桶返回后调用方再锁写桶，两临界区之间另一 host 的 touchHost 可能把本桶逐出（map 随机迭代只跳过它自己的 host）→ >128 hosts 时 cookie 写入孤儿桶静默丢失（「首访种 cookie 二访放行」站点失效）；重构 touchHostLocked（调用方持锁）+ recordSetCookieLines/recordBridgeCookies 单临界区取桶写桶
+- 【新发现③P2 fetchcurl.go 三连】①漏挂 curlResolvePin --resolve DNS rebinding 钉死参数（curlimp.go Task 26-d 有、fetch-curl 同构位缺失，SSRF 加固不齐）；②临时文件 tag=nowMs+"-c" 无随机后缀——同毫秒并发两次 fetch-curl 请求 tmpOut/tmpHdr 同名互踩（正文串章/头混写/提前删除，限速排队后并发执行可同 ms 起跑），补 rand.Int63 后缀与 curlimp 同构；③两处均带 // Task 27-c: 定位注释
+- 【新发现④P3 coversx.go 并发封面 tmp 同名互踩】tmp 名=md5(id)[:8]+".tmp"，同名书被两个并发任务各自触发下载时并发 WriteFile 同路径可交错写坏后 rename 成坏图；tmp 名追加 novelID+UnixNano(36) 唯一化
+- 【逐行核对无恙项】ssrf.go IPv4/IPv6 全文本形态+DNS 缓存（负缓存 60s/淘汰）；ratelimit FIFO 预约制+politeness 突发抑制曲线+Retry-After 双形态解析 30s 上限+robots 3 跳重定向逐跳 SSRF+1MB 上限；hosthealth 熔断指数冷却（exp≥59 时 shift 回绕为 0 仍被 clamp 兜住，无病态值）；challenge 四层+可见正文近空守卫；extract 启发式容器选择/同 URL 后位胜/自链接跳过；cleanx 与引擎侧同源规则一致性；pool 有界车道+锁序无环（pool.mu→check 闭包锁无反向边）；runner 僵尸恢复 TEXT 时间归一化；pagination jsEncodeURIComponent 逐字节对齐；categoryx in-flight 去重 close(done) 先写 val 的 happens-before 正确；httpguard 流式 8MB 限量+每跳 cookie 回放含 3xx 种子跳；readBodyCapped Content-Length 超限前置拒绝+流式兜底
+- 【验证】双模块 go build -o /tmp/test27c-{backend,scraper}.bin . 全绿（测完已删）；go vet 双模块 0 输出；go test ./... 全过（backend-go chapterorder/recover/新增 engineclient_test 9 用例、scraper-go concurrency_test 12 用例；两模块 -race 复跑 -count=1 全绿）；gofmt -l 本次改动的 11 文件+新测试全清（chain.go HEAD 版本本身空格缩进被 flag，gofmt -w 归一 tab 后 diff 含全文件缩进归一；engineclient.go/storex.go/worker.go 等 diff 仅实际改动行；web_data.go 历史遗留按指示跳过未动）
+- 【约束遵守】未重启/杀 3005/3030 运行进程；未动 src//prisma/db 数据/seed/seed.json；未改 web.go/api_*.go/main.go/db.go/pseo*.go；未 git commit
+
+Stage Summary:
+- 修复计数 15：P1×2（worker 终态竞态领取重新应用、chain 入口 SSRF 端口误拒）+ P2×7（isSameChapterPagination ①②③处、storex 分片锁+标题查重、runWithHardGate context 收紧、cookie 孤儿桶跨 host 竞态、fetchcurl --resolve+tmp 随机后缀）+ P3×5（fetchChapterPaged 内存护栏、coversx CloseIdleConnections+tmp 唯一化、runner 注释纠偏、jsontoc float64 守卫）——全部带 // Task 27-c: 注释定位
+- 关键发现：25-a 九项修复中 5 项在后续合并中静默丢失（worker/engineclient/runner/coversx），本轮 git 比对逐项找回并加 engineclient_test.go 9 用例回归锁定防再丢；25-a 遗留 4 项全部闭环（a=分片锁修复、b=复核确认 26-d 已解、c=context 取消传播落地、d=jsonStr 守卫+formatRatio 确认已修）
+- 反反爬面结论：策略链重试/降级（affinity 提位、hosthealth 双熔断、Retry-After 尊重、挑战四层检测、cookie 会话逐跳回放）逐行复核无被绕过/误判死角；本轮补齐的两处（入口端口误拒=可用性、fetch-curl 指纹位 SSRF 加固不齐）修复后 curl 系与 Go 原生策略安全语义完全对齐
+- 移交：①建议 DB 层为 Chapter(novelId,title) 加唯一索引作终态守护（schema 变更超辖区，当前以进程内分片锁+查重等效）②curlimp/fetchcurl --compressed 响应解压写盘体积不受 --max-filesize 约束（解压炸弹磁盘面，理论风险、TS 同源行为，重构需改输出管道）③browser resolvePython sync.Once 负结果进程级缓存（python 后装需重启生效，设计取舍非缺陷）④api_scrape_tasks.go 25-a 修复③④复核在位无需动作
+---
+Task ID: 27（主线·main）
+Agent: main (Z.ai Code)
+Task: 用户 6 项指令——①完全摆脱 Next.js 全部 Go 化 ②找回 15 条规则固化初始库 ③待办审查完善 ④多Agent采集+反反爬+逐行抓bug ⑤清理精简 ⑥封面/分类质量
+
+Work Log:
+- 【事故取证】DB 再次被沙箱回收清空（0 规则/0 书/0 章，86KB 空壳；表结构在）——用户"找回 15 条规则固化初始库"诉求的直接根源；Go 工具链同被抹除（重装 go1.22.10 至 /home/z/go-sdk）
+- 【任务2 规则资产找回+固化】git 4cb1619 快照提取 11 条老规则（listRule/bookRule/chapterRule/notes 全量）+ c4dc1a4 提取 4 条新站定义（5165/23uswx/38.34/ixdzs8，含 fetch-curl 突破记录/chapterListApi/insecureTLS）→ 合并 15 条固化为 mini-services/backend-go/seed/seed.json（另含 9 分类：8 核心+其他 id=9999 sort=9999 恒末位、SiteSetting 默认、homeConfig 三区块：小编精选 featured 上移契约位+热门 12+最新上架 12）
+- 【seed.go 新建】go:embed seed/seed.json；启动时 ScrapeRule/Category 空表才导入（COUNT==0 幂等，绝不覆盖用户编辑）+ SiteSetting 兜底建行与空 homeConfig 补默认；main.go 在 DB 初始化后调用；隔离实例实测：空库启动 3s 内自动播种 15 规则/9 分类/三区块，sqlite_sequence 正确（ScrapeRule seq=24）
+- 【任务1 完全摆脱 Next.js】①渐变 token 源迁移：src/lib/covers.ts → web-src/gradient-tokens.txt（@source 指向，tw.css 重建 140.7KB 类名全验证）②devwatch.go 删除（Next 看护失效）③main.go 默认端口 3005→3000（BACKEND_PORT 覆盖保留迁移兼容）④backend-go.bin/scraper-go.bin 重建⑤根 package.json：dev=bash scripts/dev-go.sh（自愈循环启动 backend-go on 3000，含单实例守卫）、build=scripts/build-go.sh（双二进制+CSS）、start 对齐、name/version 更新⑥mini-services/backend-go dev=run-guarded.sh（3000 健康探测防双实例）⑦ensure-services.sh 全部 3005→3000⑧删 src/（4 文件：双 route.ts 代理+backend-supervisor.ts+covers.ts）、next.config.ts、next-env.d.ts、.next/、postcss.config.mjs⑨tsconfig/eslint 重写为 Go 单栈口径（tsc/lint 双绿）⑩依赖精简：删 next/react/react-dom/eslint-config-next/@types/react/@types/react-dom，终态 5 依赖+5 开发依赖⑪.zscripts/build.sh 与 start.sh 重写为 Go 产物模型（双二进制+web 模板目录+run.sh+db 占位；产物校验守卫：二进制+web/templates 缺失即 fail）⑫Caddyfile 无需动（81 反代 3000 不变）
+- 【沙箱收割机制实证与应对】交互会话派生进程跨命令边界必死（sleep 实验：同命令内活、跨命令死；setsid/nohup/bun 链均无效），唯沙箱启动序列进程长存（bun 1315→scraper-go 1340 存活实证）→ 应对：dev-go.sh 经沙箱 dev.sh 链路（bun run dev）成为基础设施进程；切换当次以单命令内「启动+全链路验证」完成：14/14 路由 200（/、/admin、/api/health、/api/scrape-rules、/api/categories、/api/settings、/static/css/tw.css、cover-gradients.css、app.js、/robots.txt、/sitemap.xml、/category/1、/category/9999、/search?q=剑），种子 15 规则/9 分类在库确认——**用户刷新预览面板/新会话后 Go 版本将以基础设施身份稳定上线**
+- 【多 Agent 分派】27-c 引擎 bug 猎手（完成：15 修复，含重大发现 25-a 五处修复在历史合并中静默丢失并全部找回+engineclient_test.go 9 用例锁定）；27-d 清理文档（完成：deployment.md 全量重写 660 行 Go 终态、scripts 归档 2 项、prisma schema 头注、docs 三文同步）；27-b 数据面（Task API 三波超时，幽灵定式核实实际在岗：t27b_* 痕迹+420 书入库+13 任务运行中）
+- 【二进制收编】27-c 修复后双模块重建（backend-go 18.8MB/scraper-go 10.5MB）
+
+Stage Summary:
+- 架构终态：**Next.js 零残留**（仓库无 src/、无 next 依赖），backend-go :3000 单进程全栈（页面 SSR+API+runner+种子播种），scraper-go :3030 引擎；启动链 bun run dev → scripts/dev-go.sh（自愈循环+守卫）→ backend-go
+- 任务 2 达成：15 条校准规则固化进二进制（seed/seed.json go:embed），空库自动播种——沙箱再回收也能秒级恢复规则资产
+- 遗留观察：沙箱收割器使交互会话无法长期孵化服务，Go 版预览需用户刷新预览面板触发 dev.sh 链路；27-b 幽灵在岗待收编

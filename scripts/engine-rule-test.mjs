@@ -1,3 +1,15 @@
+/**
+ * engine-rule-test.mjs —— 采集规则三段试测工具（面向现行 Go 引擎 scraper-go :3030）。
+ *
+ * 从 DB（Prisma 直连 SQLite）读指定规则，向引擎发抓取请求并打印提取摘要，
+ * 用于规则校准/排障（对齐 docs/scrape-rules.md 的三段实测流程）。
+ *
+ * 用法：
+ *   bun scripts/engine-rule-test.mjs <规则名> <URL> [list|book|chapter]
+ * 例：
+ *   bun scripts/engine-rule-test.mjs aijjxs "https://aijjxs.com" list
+ * 前置：引擎在 3030 在线（curl :3030/api/health）；需先 bun run db:generate 生成 Prisma Client。
+ */
 import { PrismaClient } from '@prisma/client';
 const db = new PrismaClient();
 const name = process.argv[2];

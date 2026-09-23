@@ -2,7 +2,8 @@
  * backend-go —— 采集编排 runner（逐行移植 scripts/worker-runner.ts）。
  *
  * 职责：
- * - 启动时僵尸任务回收（worker.recoverStaleTasks：把本进程启动前仍 pending/running 的任务标 failed）
+ * - 启动时僵尸任务回收（worker.recoverStaleTasks：把本进程启动前仍 running 的任务转 paused
+ *   可恢复续传，进度保留——非 failed，Task 27-c 注释纠偏）
  * - 每 2s 轮询 status=pending 的 ScrapeTask → triggerScrapeTask（worker 内 running Set 防重）
  * - 每轮刷新心跳文件 /tmp/scrape-runner-heartbeat（scrape API 判断 runner 存活的依据，路径不变）
  * - 每 15 轮（≈30s）探测引擎 127.0.0.1:3030/api/strategies；不可达则拉起 scraper-go
@@ -52,19 +53,34 @@ func killTSScrapeRunner() {
 var runnerHTTPClient = &http.Client{Timeout: 8 * time.Second}
 
 // recategorizeOne 未分类书慢速归类（每轮 0-1 本）。返回是否处理了一本。
+// Task 27-b 收编修复：LLM 失败（冷却/401）时旧实现 LIMIT 1 无轮转 → 永久卡死在同一本
+// 无关键词书上，后续书全部饿死。改为 OFFSET 轮转：失败也推进游标，LLM 恢复后自然收敛。
+var recatOffset int
+
 func recategorizeOne() bool {
 	var bookID int
 	var title, description string
 	err := queryOne(
 		`SELECT n.id, n.title, n.description FROM Novel n
                  JOIN Category c ON n.categoryId = c.id
-                 WHERE c.name = ? ORDER BY n.id LIMIT 1`,
+                 WHERE c.name = ? ORDER BY n.id LIMIT 1 OFFSET ?`,
 		[]any{&bookID, &title, &description},
-		FALLBACK_CATEGORY,
+		FALLBACK_CATEGORY, recatOffset,
 	)
 	if err != nil {
-		return false // 未分类类不存在或无书
+		recatOffset = 0 // 游标越界（表缩小/全处理）：回到队首
+		err = queryOne(
+			`SELECT n.id, n.title, n.description FROM Novel n
+                 JOIN Category c ON n.categoryId = c.id
+                 WHERE c.name = ? ORDER BY n.id LIMIT 1`,
+			[]any{&bookID, &title, &description},
+			FALLBACK_CATEGORY,
+		)
+		if err != nil {
+			return false // 未分类类不存在或无书
+		}
 	}
+	recatOffset++
 	canon := canonicalCategoryWithHint("", title, description)
 	if canon == FALLBACK_CATEGORY || canon == "" {
 		return false // LLM 冷却中/推断未果：本轮跳过
@@ -90,6 +106,9 @@ func recategorizeOne() bool {
 	}
 	if _, err := exec(`UPDATE Novel SET categoryId = ?, updatedAt = ? WHERE id = ?`, catID, nowMillis(), bookID); err != nil {
 		return false
+	}
+	if recatOffset > 0 {
+		recatOffset-- // 成功离队：游标回退一格，下轮从同位置继续（队列已前移）
 	}
 	log.Printf("[backend-go-runner] recategorize 《%s》→ %s", truncateRunes(title, 24), canon)
 	return true
@@ -137,8 +156,9 @@ func runBash(cmd string) error {
 func startRunner() {
 	log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
 
-	// 僵尸任务回收（worker.ts recoverStaleTasks 语义：Go runner 是唯一任务执行方，
-	// 启动时把遗留 pending/running 一次性标 failed）
+	// 僵尸任务回收（recoverStaleTasks 语义：Go runner 是唯一任务执行方，启动时把本进程
+	// 启动前仍 running 的任务一次性转 paused 可恢复续传；Task 27-c 注释纠偏：旧文案
+	// 「标 failed」与实际行为不符）
 	recoverStaleTasks()
 
 	// TS runner 防复活护栏：启动即清一次，之后每 runnerTSKillEvery 轮（≈5 分钟）再清

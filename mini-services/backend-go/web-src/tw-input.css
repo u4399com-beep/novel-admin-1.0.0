@@ -6,4 +6,4 @@
 @import "tailwindcss";
 @source "../web/templates";
 @source "../web/static";
-@source "../../../src/lib/covers.ts";
+@source "gradient-tokens.txt";
