@@ -1096,3 +1096,13 @@ Stage Summary:
 - 架构终态：3000 Next 纯代理 → 3005 backend-go mode=all 单进程（页面+API+runner）→ 3030 scraper-go（策略链 8 策略含新 fetch-curl）；DB 15 规则/9 分类/461 书/39.7 万章/1073 pseo 词
 - 交付：19 处引擎/web bug 修复 + 模板层全站归零 + fetch-curl 反反爬突破（5165 复活）+ 部署文档 Go 化重写 + scripts 精简 75% + pseo 全链路实证
 - 遗留：101kks/pilishuwu 硬反爬待住宅 IP 或指纹对策升级；sogou suggest 上游死亡（外部）；34 本 author 字段污染（标签层已过滤，DB 订正待规则层）；storex 并发同书骨架 idx 混合（TS 同源设计，phase2Fill 兼容）
+---
+Task ID: 26（推送完成·补记）
+Agent: main (Z.ai Code)
+
+Work Log:
+- 远端 Internal Server Error 两次 → sleep 45 第三次成功；534635c..c80551c（3 提交：Task25-26 主体 + ours 合并 + fetch-curl 移植终局）
+- 5165 任务 46 实测 262 项提取入库中；书库 612+ 持续增长
+
+Stage Summary:
+- 本轮全部指令闭环：502 根除/数据恢复+快填/多 Agent 幽灵收编/fetch-curl 5165 复活/代码大清理/git 推送
