@@ -1,5 +1,6 @@
 # 反反爬技术选型报告（scrapling / cloakBrowser / BrowserAct / invisible-playwright / MediaCrawler / curl-impersonate / aiohttp / Dokobot / Trafilatura / Obscura）
 
+> ⚠️ 时效说明：本篇为 TS 引擎（scraper-service）时代的选型报告，结论与思路仍有效；**引擎已退役为 Go 版 scraper-go（:3030，逐行移植 + 增强），现行策略链现状见文末「Go 引擎下策略链现状」章节**。
 > 结论先行：在本项目（Bun + TypeScript 沙箱、单机部署）中，性价比最高的组合是
 > **「完整浏览器头 fetch（默认） + curl-impersonate（可选 TLS 指纹伪装） + got-scraping（HTTP/2 与真实头） + Playwright 渲染（JS 站兜底）」**
 > 四级策略链，配合 **字符集检测（GBK/GB18030）** 与 **域名级限速 + 指数退避 + robots 提示**。
@@ -62,3 +63,46 @@ export PATH=$PATH:~/.local/bin   # 重启 scraper-service 后 GET /api/strategie
 基于对目标站点的结构分析，主站 `采集中心` 内置了 4 组 CMS 家族规则模板
 （笔趣阁系 / 顶点系(GBK) / ShipSay / 现代卡片式），一键种子入库后可在规则编辑器里
 按站点微调选择器，用「测试」面板实时验证提取效果（列表/书籍/正文三类规则）。
+
+---
+
+## 六、Go 引擎下策略链现状（Task 24/25，现行权威）
+
+> TS 版 scraper-service 已退役（仅作回滚备份，严禁与 Go runner 并存运行）；现行引擎为 `mini-services/scraper-go`（:3030，go1.22），策略链/提取器/清洗链逐行移植自 TS 版并做下列增强。本节为现行权威描述，上文一至五节保留作选型存档。
+
+### 6.1 现行策略链（7 级，顺序与 TS 版一致、中间扩容）
+
+```
+请求 → SSRF 逐跳校验 → 熔断检查 → robots 检查(warn-only) → 主机限流退避
+     → 策略链（55s 整体时间预算，逐级降级直到成功）：
+        1) fetch-browser    完整 Chrome 头 fetch（默认首选）
+        2) fetch-ua-rotate  UA 轮换
+        3) fetch-mobile     移动端画像
+        4) fetch-spider     爬虫画像
+        5) curl-impersonate TLS/JA3 指纹伪装（探测 ~/.local/bin 二进制才启用，多指纹轮换）
+        6) got-scraping     header-generator + HTTP/2
+        7) browser          Playwright 渲染兜底（检测到 Chromium 才启用）
+     → 按主机策略亲和提位（recordStrategySuccess：命中策略置首，重启失忆自动重走全链）
+     → 字符集解码（HTTP 头 → meta → 字节嗅探，GBK/GB2312/GB18030/BIG5）
+     → 全败返回结构化 502（含 attempts 逐次明细：状态/耗时/画像/挑战页标记）
+```
+
+### 6.2 相对 TS 版的增强
+
+| 能力 | 说明 |
+|------|------|
+| 站点级代理池轮换 | 规则 `proxy` 支持出口代理；站级游标原子轮换（Go race 实证修复） |
+| `insecureTLS` 规则级开关 | 跳过目标站证书校验（自签/裸 IP 站，如 38.34.172.127），全策略链生效 |
+| 挑战页误报修复 | `challenge-platform`/`cdn-cgi/challenge` 从强特征降级为「近空正文才判定」弱特征——CF Bot Fight Mode 会在正常页面注入前置脚本（101kks 实测复现） |
+| 互监护 | backend-go runner 每 ≈30s 探活 :3030，不可达杀残留托孤拉起（见 deployment.md §4） |
+| JSON 目录接口 | `bookRule.chapterListApi`：书页不内嵌全目录时走 POST 接口拉目录（ixdzs8 实战） |
+
+### 6.3 实测遗留问题（截至 24-d 审计）
+
+- **101kks**：系统 curl 200、引擎全策略 challenge-page——引擎传输指纹被站点针对性识别（非 CF IP 封锁），待指纹对策升级；listRule 已校准 `/last`。
+- **pilishuwu**：CF 对数据中心 IP 全 TLS 指纹 403（curl_chrome116/ff117/edge101、Playwright 真浏览器均 403），需住宅 IP。
+- **77shuku**：TCP 层不可达疑关停，策略链无解。
+
+### 6.4 合规红线（Go 版逐条继承，不可配置绕过）
+
+1. 默认每域名 ≥1.2 秒间隔，禁止并发轰炸；2. robots.txt 解析并对 Disallow 路径返回 warning（warn-only）；3. 不实现、不预留任何验证码破解、登录态伪造、付费内容绕过逻辑；4. 仅抓取规则中显式配置的公开页面。

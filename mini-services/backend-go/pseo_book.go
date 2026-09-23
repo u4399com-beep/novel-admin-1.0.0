@@ -23,6 +23,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"regexp"
 	"time"
 )
 
@@ -90,9 +91,16 @@ func enrichOneBookSeed() {
 		truncateRunes(keyword, 30), added, nowMillis()-started, generated)
 }
 
+// Task 25-e: 章节标题形态作者词防御——部分站点列表规则把「最新章节标题」误提取为作者
+// （2026-09-22 实测库内 34 本，如 #229《开局签到荒古圣体》author="第2章 惊动十八祖，…"、
+// #159《一剑霸天》author="第2章 必斩他"）。该类「作者」此前会渲染成无意义标签并生成
+// /pseo/第2章… 实时聚合页（SEO 噪声）。凡以「第N章/节/回/卷/篇」开头的作者词不再作为标签
+// （数据源头修复属采集规则辖区，见 Task 25-e 报告；此处仅保证 pseo 标签面不输出噪声）。
+var chapterTitleKwRe = regexp.MustCompile(`^第\s*[0-9０-９〇零一二两三四五六七八九十百千万]+\s*[章节回卷篇]`)
+
 // novelPseoTags 书籍页「相关标签」（前端渲染在简介下方，点击进入对应 PSEO 聚合页）：
 //  1. 书名种子词（必有——聚合页按书名 LIKE 命中本书；未生成时 [kw] 聚合页实时计算兜底）
-//  2. 作者词（聚合页命中该作者全部作品；佚名不作为标签）
+//  2. 作者词（聚合页命中该作者全部作品；佚名/章节标题形态不作为标签）
 //  3. 搜索引擎下拉词（用户指令「书籍页标签加入搜索引擎下拉词，pseo 词的链接」）：
 //     含书名的已生成长尾词（如「XX全文阅读」「XX笔趣阁」），其中本书书名种子的下拉词
 //     （source='book'）排最前，其他引擎来源（baidu/bing/duckduckgo…）含书名词按词长升序靠后，
@@ -112,7 +120,8 @@ func novelPseoTags(title, author string) []string {
 	kwTitle := sanitizeKeyword(title)
 	kwAuthor := sanitizeKeyword(author)
 	add(kwTitle)
-	if kwAuthor != "" && kwAuthor != "佚名" {
+	// Task 25-e: 佚名与章节标题形态（规则误提取）作者词均不输出为标签
+	if kwAuthor != "" && kwAuthor != "佚名" && !chapterTitleKwRe.MatchString(kwAuthor) {
 		add(kwAuthor)
 	}
 	if kwTitle != "" {

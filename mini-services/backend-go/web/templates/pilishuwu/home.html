@@ -42,7 +42,7 @@ HomeCustomBlocks 契约：首页无分类板块，置于首个主体内容区（
                 <span class="truncate text-sm font-bold text-[#3366BB] group-hover:text-[#FF6600]">{{$n.title}}</span>
                 <span class="mt-0.5 truncate text-[11px] text-[#999]">{{$n.author}} · {{$n.categoryName}} · {{if eq $n.status "finished"}}完本{{else}}连载{{end}}</span>
                 <span class="mt-1 line-clamp-4 text-xs leading-5 text-[#666]">{{$n.description}}</span>
-                <span class="mt-auto pt-1 text-[11px] text-[#CC0000]">{{wcFmt $n.wordCount}} · {{$n.clicks}}点击</span>
+                <span class="mt-auto pt-1 text-[11px] text-[#CC0000]">{{wcFmt $n.wordCount}} · {{cntFmt $n.clicks}}点击</span>
               </span>
             </a>{{end}}{{else}}<p class="py-6 text-center text-xs text-[#999]">暂无数据</p>{{end}}
           </div>

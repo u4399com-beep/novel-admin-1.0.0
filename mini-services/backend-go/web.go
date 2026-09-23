@@ -83,6 +83,20 @@ func webFuncMap() template.FuncMap {
 			}
 			return strconv.FormatInt(n, 10) + "字"
 		},
+		// cntFmt 点击数格式化（React 万单位语义对齐）：12345 → 1.2万；890 → 890
+		"cntFmt": func(v any) string {
+			n := toInt64(v)
+			if n <= 0 {
+				return "0"
+			}
+			if n >= 10000 {
+				w := float64(n) / 10000.0
+				s := strconv.FormatFloat(w, 'f', 1, 64)
+				s = strings.TrimSuffix(s, ".0")
+				return s + "万"
+			}
+			return strconv.FormatInt(n, 10)
+		},
 		// dateFmt 毫秒时间戳 → MM-DD（零值返回空串）
 		"dateFmt": func(v any) string {
 			ms := toInt64(v)
@@ -248,14 +262,25 @@ func loadPageTemplate(theme, page string) *template.Template {
 // 主题模板缺失或渲染失败 → _fallback 兜底 → 极简错误页
 func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[string]any) {
 	theme, _ := data["theme"].(string)
+	themeFixed := theme != "" // Task 25-b: 固定主题页（admin）不允许被 ?theme= 覆盖
 	if theme == "" {
 		if s := loadWebSettings(); s != nil {
 			theme = s.ActiveTheme
 		}
 	}
+	// Task 25-b: 设置层主题名防御校验——activeTheme 来自 DB（历史脏数据/异常写入），
+	// 此前直接 filepath.Join(templatesRoot, theme) 存在目录穿越面；非白名单一律降级兜底。
+	// 注意 admin 页主题 "admin" 与兜底 "_fallback" 为保留名。
+	if theme != "admin" && theme != fallbackTheme && !isKnownTheme(theme) {
+		theme = fallbackTheme
+	}
 	// ?theme= 主题预览（仅白名单内主题生效；后台切换/逐主题核查用）
-	if q := r.URL.Query().Get("theme"); q != "" && isKnownTheme(q) {
-		theme = q
+	// Task 25-b: 固定主题页（admin）不再被 ?theme= 覆盖——旧逻辑下 /admin?theme=xx
+	// 会因 xx 主题无 admin.html 双双 miss 而降级到极简错误页
+	if !themeFixed {
+		if q := r.URL.Query().Get("theme"); q != "" && isKnownTheme(q) {
+			theme = q
+		}
 	}
 	data["theme"] = theme
 
@@ -272,6 +297,9 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 		} else if th == theme {
 			log.Printf("[web] 模板渲染失败 %s/%s: %v（降级 _fallback）", theme, page, err)
 			continue
+		} else {
+			// Task 25-b: 兜底主题渲染也失败时必须留痕（此前静默落极简页，排障无据）
+			log.Printf("[web] 兜底模板渲染失败 _fallback/%s: %v（降级极简页）", page, err)
 		}
 	}
 	// 最终兜底：极简 HTML（绝不 500 白屏）
@@ -339,34 +367,60 @@ func handleCovers(w http.ResponseWriter, r *http.Request) {
 
 // ---------- SEO：robots / sitemap ----------
 
-func handleRobots(w http.ResponseWriter, _ *http.Request) {
+// siteAbsURL Task 25-b: 由请求推导站点绝对地址（sitemap/robots 协议要求绝对 URL；
+// 经 Caddy:81 代理时以 X-Forwarded-Proto 为准）。Host 为空（畸形请求）返回空串，
+// 调用方回退相对路径保持旧行为。
+func siteAbsURL(r *http.Request) string {
+	if r == nil || r.Host == "" {
+		return ""
+	}
+	scheme := "http"
+	if p := r.Header.Get("X-Forwarded-Proto"); p == "https" || p == "http" {
+		scheme = p
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func handleRobots(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("User-agent: *\nAllow: /\nDisallow: /admin\n\nSitemap: /sitemap.xml\n"))
+	// Task 25-b: Sitemap 行协议要求绝对 URL（相对路径部分爬虫忽略）
+	sm := "/sitemap.xml"
+	if base := siteAbsURL(r); base != "" {
+		sm = base + sm
+	}
+	_, _ = w.Write([]byte("User-agent: *\nAllow: /\nDisallow: /admin\n\nSitemap: " + sm + "\n"))
 }
 
 // handleSitemap 首页 + 分类 + 书籍（上限 5000）+ pseo 关键词聚合页
-func handleSitemap(w http.ResponseWriter, _ *http.Request) {
+func handleSitemap(w http.ResponseWriter, r *http.Request) {
 	var b strings.Builder
+	// Task 25-b: <loc> 协议要求绝对 URL；Host 缺失时保留旧的相对路径行为
+	locPrefix := ""
+	if base := siteAbsURL(r); base != "" {
+		locPrefix = base
+	}
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n")
-	b.WriteString("  <url><loc>/</loc></url>\n")
+	b.WriteString("  <url><loc>" + locPrefix + "/</loc></url>\n")
 	_ = queryList(`SELECT "id" FROM "Category" ORDER BY "sort" ASC LIMIT 200`, func(rows *sql.Rows) error {
 		var id int64
 		if err := rows.Scan(&id); err == nil {
-			fmt.Fprintf(&b, "  <url><loc>/category/%d</loc></url>\n", id)
+			fmt.Fprintf(&b, "  <url><loc>%s/category/%d</loc></url>\n", locPrefix, id)
 		}
 		return nil
 	})
 	_ = queryList(`SELECT "id" FROM "Novel" ORDER BY "updatedAt" DESC LIMIT 5000`, func(rows *sql.Rows) error {
 		var id int64
 		if err := rows.Scan(&id); err == nil {
-			fmt.Fprintf(&b, "  <url><loc>/book/%d</loc></url>\n", id)
+			fmt.Fprintf(&b, "  <url><loc>%s/book/%d</loc></url>\n", locPrefix, id)
 		}
 		return nil
 	})
 	_ = queryList(`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' LIMIT 2000`, func(rows *sql.Rows) error {
 		var kw string
 		if err := rows.Scan(&kw); err == nil {
-			fmt.Fprintf(&b, "  <url><loc>/pseo/%s</loc></url>\n", url.PathEscape(kw))
+			fmt.Fprintf(&b, "  <url><loc>%s/pseo/%s</loc></url>\n", locPrefix, url.PathEscape(kw))
 		}
 		return nil
 	})

@@ -92,7 +92,7 @@ React board=hot??rankings.clicks → Go 以 .RankClicks 承载；最近更新 .L
           <li class="flex h-[25px] items-center border-b border-dotted border-[#F2F2F2] text-[12px] last:border-b-0">
             <span class="w-[20px] shrink-0 text-right text-[#999]">{{add $i 1}}.</span>
             <a href="{{bookURL $n.id}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$n.title}}</a>
-            <span class="ml-1 shrink-0 text-[11px] text-[#FF6600]">{{$n.clicks}}</span>
+            <span class="ml-1 shrink-0 text-[11px] text-[#FF6600]">{{cntFmt $n.clicks}}</span>
           </li>
           {{else}}<li><p class="px-2 py-4 text-center text-[12px] text-[#999]">暂无数据</p></li>{{end}}
         </ol>

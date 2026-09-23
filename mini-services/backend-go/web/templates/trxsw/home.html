@@ -73,7 +73,7 @@ Go 契约 .Latest 上限 14（TSX 最新更新表取 30）、.RankClicks 上限 
             {{range $i, $n := .RankClicks}}<li class="flex items-center gap-1.5 border-b border-dotted border-[#a6d3e8] py-[4px] text-xs last:border-b-0">
               <span class="w-4 shrink-0 text-center font-bold {{if lt $i 3}}text-[#FF3300]{{else}}text-[#BBB]{{end}}">{{add $i 1}}</span>
               <a href="{{bookURL $n.id}}" title="{{$n.title}}" class="min-w-0 flex-1 cursor-pointer truncate text-left text-[#6f78a7] hover:text-[#FF6600] hover:underline">{{$n.title}}</a>
-              <span class="shrink-0 text-[10px] text-[#999]">{{$n.clicks}}</span>
+              <span class="shrink-0 text-[10px] text-[#999]">{{cntFmt $n.clicks}}</span>
             </li>{{else}}<li><p class="py-4 text-center text-xs text-[#999]">暂无数据</p></li>{{end}}
           </ol>
         </div>

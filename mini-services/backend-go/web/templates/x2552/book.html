@@ -34,7 +34,7 @@ h1 全文阅读 → 属性表格+封面 → 按钮排（.btnlinks）→ 内容�
                 <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">章节</th>
                 <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{.ChaptersTotal}} 章</td>
                 <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">总点击</th>
-                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{.Novel.clicks}}</td>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{cntFmt .Novel.clicks}}</td>
               </tr>
               <tr>
                 <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">最新</th>

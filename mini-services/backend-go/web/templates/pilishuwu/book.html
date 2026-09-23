@@ -22,7 +22,7 @@ Go 契约 .Chapters 为最早 12 章预览（TSX 最新章节取全量末 12 条
         <ul class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-[#666] sm:grid-cols-3">
           <li>字数：{{wcFmt .Novel.wordCount}}</li>
           <li>章节：共 {{.ChaptersTotal}} 章</li>
-          <li>点击：{{.Novel.clicks}}</li>
+          <li>点击：{{cntFmt .Novel.clicks}}</li>
           <li>更新：{{fullFmt .Novel.updatedAt}}</li>
           <li class="sm:col-span-2">最新：{{if .LastChapter}}<a href="{{chapterURL .LastChapter.id}}" class="cursor-pointer text-[#3366BB] hover:text-[#FF6600] hover:underline">{{.LastChapter.title}}</a>{{else}}<span class="text-[#999]">暂无</span>{{end}}</li>
         </ul>

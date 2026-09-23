@@ -291,6 +291,11 @@ func isSameChapterPagination(base, next string) bool {
 		prefixes = append(prefixes, htmlSuffixRE.ReplaceAllString(prefixes[0], ""))
 	}
 	for _, bp := range prefixes {
+		if bp == "" {
+			// Task 25-a: base 为站点根（EscapedPath="/"）时 TrimRight 得空串，
+			// HasPrefix(np, "") 恒真 → 同主机任意路径都会被误判为同章分页（正文串章）。
+			continue
+		}
 		if !strings.HasPrefix(np, bp) || len(np) == len(bp) {
 			continue
 		}
@@ -302,6 +307,13 @@ func isSameChapterPagination(base, next string) bool {
 			// ?page=2 形态：要求 page 参数递增语义存在（JS 检测 n.search；Go 用 RawQuery 等价）
 			return pageParamRE.MatchString(n.RawQuery)
 		}
+		return true
+	}
+	// Task 25-a: 同路径 + ?page=N 查询形态的同章分页补齐。Go EscapedPath 不含 ?，原
+	// 前缀分支的 sep=='?' 死分支对 JS pathname 语义同样不可达（TS 版同缺陷，仅前缀续写
+	// 形态能命中）——这里以「路径完全相等 + page 参数存在」显式补齐 /read.html?page=2
+	// 这类纯分页形态；?cid= 等非 page 参数不受影响（pageParamRE 白名单）。
+	if np != "" && np == strings.TrimRight(b.EscapedPath(), "/") && pageParamRE.MatchString(n.RawQuery) {
 		return true
 	}
 	return false
@@ -326,6 +338,12 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
 			break
 		}
 		if visited[next] { // 引擎 nextUrl 环路防御
+			break
+		}
+		// Task 25-a: 合并内存护栏——单页正文受引擎 8MB HTML 上限约束，5 页拼接最坏
+		// 40MB/章 × CHAPTER_CONCURRENCY 车道为可观的瞬时尖峰；已合并正文超过入库
+		// 上限（MAX_CONTENT_CHARS）的 4 倍即停翻，继续拼接只会被调用方截断成浪费。
+		if runeLen(data.Content) > 4*MAX_CONTENT_CHARS {
 			break
 		}
 		visited[next] = true

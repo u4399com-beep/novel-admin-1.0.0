@@ -28,8 +28,8 @@
         <span class="min-w-0 truncate">综合检索“{{.Q}}” 的搜索结果</span>
         {{if gt .Total 0}}<span class="ml-1 shrink-0 text-[11px] font-normal text-[#999]">共 {{.Total}} 条</span>{{end}}
       </h2>
-      <div class="mt-1">
-        <table class="w-full table-fixed border-collapse border border-[#E4E4E4] bg-white text-[12px]">
+      <div class="mt-1 overflow-x-auto">
+        <table class="w-full min-w-[640px] table-fixed border-collapse border border-[#E4E4E4] bg-white text-[12px]">
           <thead>
             <tr class="bg-[#F2F2F2]">
               <th class="w-[18%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">文章名称</th>

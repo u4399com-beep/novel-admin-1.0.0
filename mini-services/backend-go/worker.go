@@ -671,10 +671,12 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 		return
 	}
 	if reason := stopState(run.TaskID); reason != "" {
-		recalcWordCountsFor(p1.NovelIDs)
+		// Task 25-a: 先 finalize 落状态再做慢速字数重算——把「停止检测→终态落库」窗口从
+		// 秒级（大任务重算耗时）压缩到毫秒级，防用户在窗口内 cancel/restart 与 worker 收尾竞态。
 		finalizeStopped(run, reason,
 			fmt.Sprintf("已取消（书目完成 %d/%d 本）", p1.OKBooks, total),
 			fmt.Sprintf("已暂停（书目完成 %d/%d 本，进度保留，可恢复继续）", p1.OKBooks, total))
+		recalcWordCountsFor(p1.NovelIDs)
 		return
 	}
 	created, updated, _ := run.Snapshot()
@@ -752,8 +754,9 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 		return
 	}
 	if reason := stopState(run.TaskID); reason != "" {
-		recalcWordCountsFor(p1.NovelIDs)
+		// Task 25-a: 同 runList——先 finalize 再重算，缩小收尾竞态窗口。
 		finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
+		recalcWordCountsFor(p1.NovelIDs)
 		return
 	}
 	totalChapters := p1.TotalRefs
@@ -833,12 +836,22 @@ func finalize(run *Run, status, message string) {
 		// 暂停确认：不触碰 status/进度字段 → 恢复后 Phase 1/2 依骨架自动续传
 		_, _ = execRetry("UPDATE ScrapeTask SET message = ?, log = ? WHERE id = ? AND status = 'paused'",
 			msg, run.LogText(), run.TaskID)
+	case cur == "pending" && (status == "success" || status == "partial" || status == "failed"):
+		// Task 25-a: 快速 pause→resume 竞态（两个 API 调用落在 worker 相邻两次 stopState
+		// 检查之间，worker 从未感知暂停并跑完全程）下任务仍是 pending——若只写日志，runner
+		// 2s 轮询会把已完成任务二次分发、全量重跑一遍。这里由 worker 条件领取终态
+		//（WHERE status='pending' 保证不覆盖 cancel/restart 等其他 API 已写入状态；
+		// gRunning 防重保证此刻无第二个 worker 在跑）。canceled 不领取：留 pending 由
+		// runner 重新入队，恰好兑现「取消收尾中点重启」的重跑语义。
+		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ? WHERE id = ? AND status = 'pending'",
+			status, msg, run.LogText(), run.TaskID)
 	default:
 		_, _ = execRetry("UPDATE ScrapeTask SET log = ? WHERE id = ?", run.LogText(), run.TaskID)
 	}
 }
 
-// runTask 任务执行主链路（pending → running 条件更新 → 分模式执行 → 终态）
+// runTask 任务执行主链路（pending → running 条件更新 → 分模式执行 → 终态；终态写入
+// 均为条件更新，绝不覆盖/复活 API 侧已写入的 pending/paused/canceled 状态）
 func runTask(taskID int) {
 	run := NewRun(taskID)
 	defer func() {

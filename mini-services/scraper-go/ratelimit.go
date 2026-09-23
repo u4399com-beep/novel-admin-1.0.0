@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -281,14 +282,34 @@ var robotsClient = &http.Client{
 		// 恶意站点可用 /robots.txt 302 让默认客户端自动请求任意内网地址（SSRF）。
 		return http.ErrUseLastResponse
 	},
-	Transport: &http.Transport{
-		// robots 检查专用客户端：无代理直连（与 TS 版 fetch 一致）
+	Transport: robotsTransport(),
+}
+
+// robotsTransport robots 检查专用传输层（无代理语义与 TS 版 fetch 一致）。
+// Task 25-a: 加连接层 SSRF 兑底（DNS rebinding TOCTOU 封堵）；环境已配置代理时
+// 拨号对象是代理自身，不套用目标站内网拦截（robots 仅 warn-only，失败也只降级为提示）。
+func robotsTransport() *http.Transport {
+	tr := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		MaxIdleConns:          4,
 		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
-	},
+	}
+	if !proxyEnvPresent() {
+		tr.DialContext = ssrfGuardDialer().DialContext
+	}
+	return tr
+}
+
+// proxyEnvPresent 环境是否配置了 HTTP(S)_PROXY（Go http.ProxyFromEnvironment 读取的键全集）
+func proxyEnvPresent() bool {
+	for _, k := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"} {
+		if os.Getenv(k) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // checkRobots 检查目标 URL 是否被 robots.txt 限制。永不失败、永不阻断 —— 失败时降级为 warning。

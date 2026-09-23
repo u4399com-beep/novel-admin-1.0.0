@@ -259,6 +259,7 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 			return nil
 		},
 	}
+	defer client.CloseIdleConnections() // Task 25-a: 每次下载新建 Transport，用完立即释放空闲连接（防累积）
 	res, err := client.Do(req)
 	if err != nil {
 		return ""
@@ -274,6 +275,17 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 
 	buf, err := coverReadBody(res.Body, MAX_COVER_BYTES)
 	if err != nil || len(buf) == 0 {
+		return ""
+	}
+
+	// Task 25-a: 解压炸弹防护——先 DecodeConfig 只读图像头（不解码像素），超大尺寸直接拒绝。
+	// 5MB JPEG 可声明 30000×30000（全量解码需 ~3.6GB RGBA），原实现直接 image.Decode 会让
+	// 单个恶意封面把进程内存打爆。限 8192 边长 / 1600 万像素（约为 512px 封面输出的合理上界）。
+	cfg, _, cerr := image.DecodeConfig(bytes.NewReader(buf))
+	if cerr != nil {
+		return ""
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 8192 || cfg.Height > 8192 || cfg.Width*cfg.Height > 16_000_000 {
 		return ""
 	}
 

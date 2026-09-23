@@ -105,8 +105,18 @@ func pickPath(obj any, path string) any {
 	return cur
 }
 
+// tocHTTPClient JSON 目录接口专用客户端：手动重定向（同源校验仅覆盖首跳，3xx 一律拒绝）。
+// Task 25-a: 原 http.DefaultTransport 会读代理环境变量且无连接层 SSRF 兑底——改为显式
+// 直连传输层 + ssrfGuardDialer（DNS rebinding TOCTOU 封堵），与策略层 fetch 语义对齐。
 var tocHTTPClient = &http.Client{
 	Timeout: time.Duration(tocTimeoutMS) * time.Millisecond,
+	Transport: &http.Transport{
+		Proxy:               nil,
+		MaxIdleConns:        8,
+		IdleConnTimeout:     60 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DialContext:         ssrfGuardDialer().DialContext,
+	},
 	CheckRedirect: func(*http.Request, []*http.Request) error {
 		// 禁用自动跟随：同源校验只对首个 URL 做过，默认客户端跟随 302 可被
 		// 恶意接口导向内网/第三方（SSRF）。3xx 一律拒绝并提示。

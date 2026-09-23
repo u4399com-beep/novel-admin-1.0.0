@@ -1,7 +1,8 @@
 # 采集规则分析报告（11 站点 × 实测结论）
 
-> Task 3 产出 · 2026-09 实测。规则已落库（/api/scrape-rules，11 条）。
-> 引擎：mini-services/scraper-service（:3030）策略链 fetch-browser → fetch-ua-rotate → fetch-mobile → fetch-spider → curl-impersonate → got-scraping → browser(Playwright 兜底)。
+> ⚠️ 本篇为 Task 3 时代（11 站首测）的历史版本，实测结论仍有效但部分站点已改版/降级；**最新结论（15 规则总表 + 24-d 校准与审计）见文末「Task 24-d/25 快填实测」章节**。引擎已由 TS scraper-service 退役为 Go scraper-go（同为 ：3030，策略链同名扩至 7 级）。
+> Task 3 产出 · 2026-09 实测。规则已落库（/api/scrape-rules，当时 11 条）。
+> 引擎：mini-services/scraper-service（:3030，已退役，现为 scraper-go）策略链 fetch-browser → fetch-ua-rotate → fetch-mobile → fetch-spider → curl-impersonate → got-scraping → browser(Playwright 兜底)。
 
 ## 结果总览
 
@@ -36,4 +37,40 @@ x2552 list 模式任务（pages=1）：30 本书被发现、逐章采集稳定�
 
 - 101kks 命中 curl-impersonate 后亲和缓存会将其置首；若引擎重启后失忆，策略链会自动重走全链恢复。
 - 引擎合规约束不变：域名限速 ≥1.2s、robots warn-only、SSRF 逐跳校验、禁验证码破解/账号伪装/付费内容。
-- 列表页 URL 速查：aijjxs=首页、ddyueshu=首页、23qb=首页、huangjinwu=首页、ggd66=`/sort/{cid}/{page}/`、xinjianpan=`/rank/lastupdate/?page=N`、101kks=`/novels/class/0_{page}.html`、x2552=`/list/{cid}_{page}.html`。
+- 列表页 URL 速查：aijjxs=首页、ddyueshu=首页、23qb=首页、huangjinwu=首页、ggd66=`/sort/{cid}/{page}/`、xinjianpan=`/rank/lastupdate/?page=N`、101kks=`/last`（24-d 改版校准：原 /novels/class/0_{page}.html 已下线，首页改为书单聚合）、x2552=`/list/{cid}_{page}.html`。
+
+---
+
+## Task 24-d/25 快填实测（2026-09-22，最新结论）
+
+> 库曾被清空后从 git 历史快照恢复 11 旧站规则，逐站实采审计（本地样本 4 本 240 章零噪声 + 串行快填实采），并幂等重建 4 新站规则（scripts/add-new-rules.ts），当前共 **15 条规则**。审计结论已逐条落档规则 notes（`[噪声审计 2026-09-22]` 字样）。
+
+### 15 规则总表
+
+| id | 站点 | 规则名 | 列表页 URL | 状态（24-d 审计） | 结论摘要 |
+|----|------|--------|-----------|------------------|----------|
+| 10 | aijjxs.com | aijjxs | 首页 | ✅ 可用 | 本地样本 4 本 240 章零噪声，清洗链健康 |
+| 11 | ddyueshu.cc | ddyueshu | 首页 | ✅ 可用 | 本地样本零噪声（GBK 顶点系） |
+| 12 | 23qb.net | 23qb | 首页 | ✅ 可用 | 16 本实采正常 |
+| 13 | huangjinwu.org | huangjinwu | 首页 | ✅ 可用 | 24 本实采正常（一次瞬时全策略超时后重试成功） |
+| 14 | ggd66.com | ggd66 | `/sort/{cid}/{page}/` | ✅ 可用（24-d 校准） | 首页改版 listRule 失效 → 校准 `#gengxin ul li` 五段式（.s2 书名/.s4 作者），30 本验证通过 |
+| 15 | xinjianpan.com | xinjianpan | `/rank/lastupdate/?page=N` | ✅ 可用 | 30 本实采正常 |
+| 16 | 101kks.com | 101kks | `/last`（24-d 校准） | ❌ **硬反爬** | 站点改版校准 `/last` + `.newnovels2 ul li`；重试仍 challenge-page 全策略拦截——系统 curl 可过、引擎传输指纹被针对识别（Task 22-c 同诊断），待指纹对策 |
+| 17 | x2552.com | x2552 | `/list/{cid}_{page}.html` | ✅ 可用（24-d 校准） | listRule 校准 `#centeri ul.update li`（p.ul1 a.poptext 书名/p:last-child 作者），35 本验证通过 |
+| 18 | trxsw.com | trxsw | `/lastupdate/` | ✅ 可用 | 50 本 Phase 1 正常（经站点级代理出口，直连 TCP 被重置） |
+| 19 | pilishuwu.com | pilishuwu | 首页 | ❌ **硬反爬** | CF 对数据中心 IP 全 TLS 指纹 403（curl_chrome116/ff117/edge101、Playwright 真浏览器均 403），需住宅 IP |
+| 20 | 77shuku.info | 77shuku | 首页 | ⚠️ **不可达** | TCP 层超时/网络错误，疑站点关停；全策略失败 |
+| 21 | 5165.org | 大悟读书网(5165) | 首页板块 | ✅ 新站·可用 | WordPress 结构；Task 25 新增引擎 `fetch-curl` 策略（普通 curl + 浏览器 UA，针对「拦已知爬虫指纹但放行 curl」的 WAF）后突破：全策略 403 → 262 本提取成功 |
+| 22 | 23uswx.la | 顶点小说(23uswx) | 首页 `#newscontent .l` | ✅ 新站·可用 | 杰奇结构五段式；Task 25 快填 30 本骨架成功、正文持续填充 |
+| 23 | 38.34.172.127 | 夜伴书屋(38.34.172.127) | 首页 `/index.html` | 🚫 新站·草稿停用（enabled=false） | 裸 IP 自签证书（insecureTLS 旁路）；首页列表规则可用，但书页/分类页源站一律 403，无采集价值 |
+| 24 | ixdzs8.com | 爱下电子书(ixdzs8) | 首页最新更新模块 | ✅ 新站·可用 | 现代 CMS + JSON 目录接口 chapterListApi（POST /novel/clist/）；Task 25 快填 15 本骨架成功 |
+
+**汇总：11 可用（8 旧站含 2 现场校准 + 3 新站实证）· 2 硬反爬（101kks、pilishuwu）· 1 不可达（77shuku）· 1 新站草稿停用（38.34 裸 IP，无采集价值）。**
+
+### 维护提示（增量）
+
+- 规则编辑接口为**全字段覆盖** PUT：改单字段也必须带全量 listRule/bookRule/chapterRule 对象，否则未传部分被清空（24-d 实训教训）。
+- 101kks 的 `/last` 改版校准已落库但引擎仍拦截：区别于 CF IP 封锁（pilishuwu），101kks 是「系统 curl 200、引擎全策略 challenge」的传输指纹识别，恢复依赖引擎指纹对策升级。
+- **Task 25 反反爬新增 `fetch-curl` 策略**（链位：curl-impersonate → fetch-curl → got-scraping）：普通系统 curl + 浏览器 UA 轮换，专攻「拦已知爬虫 JA3 指纹但放行普通 curl」的 WAF（5165.org 实证突破）；5165 恢复后也印证 101kks 属同类指纹识别，待该策略亲和验证是否同样受益。
+- 4 新站规则可用 `bun scripts/add-new-rules.ts` 幂等重建（按 name upsert，任务关联不受影响）。
+- 可用站快填节奏：pages=2 起步（约 40-60 本/站），Phase 1 建骨架 + Phase 2 骨架续传填正文，失败/暂停任务用后台「重启/恢复」无损续采。

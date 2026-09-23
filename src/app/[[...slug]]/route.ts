@@ -5,12 +5,10 @@
  * 迁移至 backend-go（mini-services/backend-go/web.go + web/templates/），本文件把
  * 3000 收到的所有请求原样转发到 Go 层，Next.js 从此只是网络管道。
  *
- * 分流（过渡期双进程拓扑，均读同一 db/custom.db）：
- * - /api/*  → 127.0.0.1:3005（backend-go 主进程：业务 API + 采集 runner，
- *             由 backend-supervisor.ts ensureBackendGo() 看护自愈）
- * - 其余    → 127.0.0.1:3007（backend-go 页面进程：/、/category、/book、/toc、
- *             /chapter、/search、/pseo、/admin、/static、/covers、robots、sitemap）
- * 两进程均为同款二进制不同模式（3005 mode=all / 3007 mode=api），后续可合并单进程。
+ * 拓扑（Task 25 合并单进程）：全部流量 → 127.0.0.1:3005（backend-go mode=all：
+ * 页面渲染 + 业务 API + 采集 runner，由 backend-supervisor.ts ensureBackendGo()
+ * 看护自愈）。此前的 3007 mode=api「页面双保险」进程因沙箱会回收 bash 派生进程
+ * 且 supervisor 只看护 3005，反复死亡导致页面 502，已裁撤——单进程即唯一真身。
  *
  * 契约：路径/查询串/方法/请求头（白名单）/请求体原样透传；响应状态码 + 头 + body
  * 原样回写；超时 65s；后端不可达 → 502 {error, detail}。
@@ -21,7 +19,6 @@ import { ensureBackendGo } from '@/lib/backend-supervisor'
 export const dynamic = 'force-dynamic'
 
 const API_ORIGIN = process.env.GO_API_ORIGIN ?? 'http://127.0.0.1:3005'
-const WEB_ORIGIN = process.env.GO_WEB_ORIGIN ?? 'http://127.0.0.1:3007'
 const PROXY_TIMEOUT_MS = 65_000
 
 const HOP_BY_HOP = new Set([
@@ -32,8 +29,7 @@ const HOP_BY_HOP = new Set([
 async function proxy(req: NextRequest): Promise<NextResponse> {
   ensureBackendGo()
   const url = new URL(req.url)
-  const origin = url.pathname === '/api' || url.pathname.startsWith('/api/') ? API_ORIGIN : WEB_ORIGIN
-  const target = `${origin}${url.pathname}${url.search}`
+  const target = `${API_ORIGIN}${url.pathname}${url.search}`
 
   const headers: Record<string, string> = {}
   req.headers.forEach((value, key) => {

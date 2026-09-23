@@ -49,10 +49,12 @@ type cookieJar struct {
 
 var jar = &cookieJar{hosts: map[string]*cookieBucket{}}
 
-// touchHost 取/建 host 桶并刷新 LRU 淘汰序；返回 nil 表示容量淘汰后仍放不下（极端情况）
-func (j *cookieJar) touchHost(host string) *cookieBucket {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+// touchHostLocked 取/建 host 桶并刷新 LRU 淘汰序（调用方必须已持 jar.mu）。
+// Task 25-a: 原 touchHost 在锁内取桶、锁外返回指针，调用方随后再锁写 —— 两段临界区之间
+// 该 host 可能被并发 touchHost 容量淘汰（hosts > 128 时删任意桶），导致 cookie 写进已被
+// 驱逐的孤儿桶（会话静默丢失，「首访种 cookie、二访放行」站点失效）。改为调用方持锁下
+// 取桶 + 写桶单临界区，杜绝桶指针脱离锁生存期。
+func (j *cookieJar) touchHostLocked(host string) *cookieBucket {
 	b, ok := j.hosts[host]
 	if ok {
 		delete(j.hosts, host)
@@ -66,8 +68,8 @@ func (j *cookieJar) touchHost(host string) *cookieBucket {
 			oldest = k
 			break // map 迭代无序，但只需任一淘汰（TS 版淘汰最旧；Go 版近似）
 		}
-		if oldest == "" {
-			break
+		if oldest == "" || oldest == host {
+			break // Task 25-a: 不驱逐当前 host（否则本次写入又将成孤儿）
 		}
 		delete(j.hosts, oldest)
 	}
@@ -219,10 +221,10 @@ func recordSetCookieLines(host string, lines []string, https bool) int {
 	if host == "" || len(lines) == 0 {
 		return 0
 	}
-	bucket := jar.touchHost(host)
 	now := nowMs()
 	stored := 0
-	jar.mu.Lock()
+	jar.mu.Lock() // Task 25-a: 取桶与写桶合并进同一临界区（见 touchHostLocked 注释）
+	bucket := jar.touchHostLocked(host)
 	for _, line := range lines {
 		if line == "" {
 			continue
@@ -333,9 +335,9 @@ func recordBridgeCookies(host string, cookies []bridgeCookie) {
 	if host == "" || len(cookies) == 0 {
 		return
 	}
-	bucket := jar.touchHost(host)
 	now := nowMs()
-	jar.mu.Lock()
+	jar.mu.Lock() // Task 25-a: 取桶与写桶合并进同一临界区（见 touchHostLocked 注释）
+	bucket := jar.touchHostLocked(host)
 	for _, c := range cookies {
 		if c.Name == "" || c.Value == "" {
 			continue

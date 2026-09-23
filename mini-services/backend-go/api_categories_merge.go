@@ -132,6 +132,12 @@ func handleCategoriesMergePost(w http.ResponseWriter, r *http.Request, _ map[str
 
 	// 目标定位/创建放在事务外：创建目标分类是幂等友好的独立动作（即使后续迁移失败回滚，
 	// 留下的也是规范分类空壳，ensureCategory 之后会复用，无害）
+	// Task 25-b: 兜底类「其他」禁止作为合并源——与 GET 建议口径对齐。此前 POST 漏防，
+	// 可把「其他」下全部书迁走并删除兜底分类，破坏「其他恒在/导航最后」的不变量。
+	if fromName == FALLBACK_CATEGORY {
+		writeJSON(w, 400, map[string]string{"error": "兜底分类「其他」不能作为合并源"})
+		return
+	}
 	var targetID int64
 	var targetName string
 	if hasToID {

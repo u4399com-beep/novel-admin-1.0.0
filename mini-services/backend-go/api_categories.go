@@ -189,6 +189,13 @@ func handleCategoryDelete(w http.ResponseWriter, r *http.Request, ps map[string]
 		writeJSON(w, 400, map[string]string{"error": "该分类下还有 " + itoa(int(count)) + " 本小说，无法删除"})
 		return
 	}
+	// Task 25-b: 兜底类「其他」禁止删除——「其他恒在」是归并/导航的不变量
+	// （canonicalCategory 兜底目标、导航排序最后）；此前空「其他」可被 DELETE 清掉。
+	var delName string
+	if err := queryOne(`SELECT "name" FROM "Category" WHERE "id" = ?`, []any{&delName}, cid); err == nil && delName == FALLBACK_CATEGORY {
+		writeJSON(w, 400, map[string]string{"error": "兜底分类「其他」不可删除"})
+		return
+	}
 	res, err := exec(`DELETE FROM "Category" WHERE "id" = ?`, cid)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "分类不存在"})

@@ -27,6 +27,7 @@ var allStrategies = []strategyDef{
 	fetchMobileStrategy,
 	fetchSpiderStrategy,
 	curlImpersonateStrategy,
+	curlPlainStrategy, // Task 25: 普通 curl 诚实客户端策略（针对拦截已知爬虫指纹但放行 curl 的 WAF，5165.org 实证）
 	gotScrapingStrategy,
 	browserStrategy,
 }

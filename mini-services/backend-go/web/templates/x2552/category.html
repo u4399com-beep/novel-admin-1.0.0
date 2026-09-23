@@ -26,7 +26,7 @@
               <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
               <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
               <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-neutral-600">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</span>
-              <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+              <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{cntFmt .clicks}}点击</span>
             </span>
           </a>{{end}}
         </div>
@@ -51,9 +51,9 @@
       {{end}}
     </div>
 
-    {{/* 6 列数据表（分类/搜索共用 NovelTable：表头 #F2F2F2，行点线分隔） */}}
-    <div class="mt-1">
-      <table class="w-full table-fixed border-collapse border border-[#E4E4E4] bg-white text-[12px]">
+    {{/* 6 列数据表（分类/搜索共用 NovelTable：表头 #F2F2F2，行点线分隔；移动端横向滚动） */}}
+    <div class="mt-1 overflow-x-auto">
+      <table class="w-full min-w-[640px] table-fixed border-collapse border border-[#E4E4E4] bg-white text-[12px]">
         <thead>
           <tr class="bg-[#F2F2F2]">
             <th class="w-[18%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">文章名称</th>

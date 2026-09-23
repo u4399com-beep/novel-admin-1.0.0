@@ -41,7 +41,7 @@
           <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
           <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
           <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-neutral-600">{{excerpt .description 50}}</span>
-          <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+          <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{cntFmt .clicks}}点击</span>
         </span>
       </a>{{end}}{{end}}
     </div>

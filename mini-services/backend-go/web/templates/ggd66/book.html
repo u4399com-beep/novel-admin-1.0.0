@@ -26,7 +26,7 @@ Go 契约书页仅带 12 章预览（TSX 内嵌全部章节目录），完整目
         <div class="mt-2 flex flex-wrap gap-2">
           <a href="{{searchURL .Novel.author}}" class="cursor-pointer rounded-[3px] border border-[#ffb0b4] px-2 py-[1px] text-[12px] leading-[18px] text-[#bf2c24] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]">作者：{{.Novel.author}}</a>
           <span class="rounded-[3px] border border-[#89d4ff] px-2 py-[1px] text-[12px] leading-[18px] text-[#3f5a93]">字数：{{wcFmt .Novel.wordCount}}</span>
-          <span class="rounded-[3px] border border-[#89d4ff] px-2 py-[1px] text-[12px] leading-[18px] text-[#3f5a93]">阅读：{{.Novel.clicks}}人次</span>
+          <span class="rounded-[3px] border border-[#89d4ff] px-2 py-[1px] text-[12px] leading-[18px] text-[#3f5a93]">阅读：{{cntFmt .Novel.clicks}}人次</span>
           <span class="rounded-[3px] border border-[#ffb0b4] px-2 py-[1px] text-[12px] leading-[18px] text-[#bf2c24]">{{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}</span>
         </div>
         <p class="mt-3 h-[110px] overflow-hidden text-[14px] leading-[1.7] text-[#888]">{{if .Novel.description}}{{.Novel.description}}{{else}}暂无简介{{end}}</p>

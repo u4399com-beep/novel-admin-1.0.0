@@ -5,17 +5,20 @@
  * - IPv6：::1 / ::、fc00::/7（ULA）、fe80::/10（链路本地）、::ffff:0:0/96（IPv4-mapped 递归检查）、
  *   ::/96（IPv4-compatible 递归检查）、64:ff9b::/96（NAT64 递归检查）；无法解析的 IPv6 文本 fail-closed；
  * - 主机名：文本层（localhost/.localhost/.local/.internal）+ DNS 尽力解析（fail-open，3s 超时）。
- * 已知局限（与 TS 版一致）：DNS 解析与实际连接之间存在 TOCTOU 窗口（DNS rebinding 完整防护
- * 需自定义 socket 层，超出本服务范围）。
+ * Task 25-a：已加连接层兑底 ssrfGuardControl（net.Dialer.Control 检查实际拨号对端 IP，
+ * 覆盖无代理直连的 fetch/got-scraping/robots/JSON 目录路径），封堵 DNS rebinding TOCTOU；
+ * curl-impersonate / browser 桥接为外部进程，仍维持「逐跳 assertHostPublic + 文档声明局限」。
  */
 package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -463,4 +466,52 @@ func ipv6ToGroups(ip net.IP) []uint16 {
 		groups[i] = uint16(b[i*2])<<8 | uint16(b[i*2+1])
 	}
 	return groups
+}
+
+// ==================== 连接层 SSRF 兑底（Task 25-a：封堵 DNS rebinding TOCTOU） ====================
+
+// assertHostPublic 的 DNS 校验只覆盖「解析时」的 IP；「校验通过 → 实际连接」之间攻击者
+// 可借低 TTL DNS rebinding 把同一域名二次解析到内网地址（文本层 + DNS 层都拦不住）。
+// ssrfGuardControl 返回 net.Dialer.Control 钩子：在 TCP 连接建立前检查内核实际选中的
+// 对端 IP，命中内网段（复用 ipv4IsPrivate/ipv6IsPrivate 同一套语义）直接拒绝拨号。
+// SCRAPER_ALLOW_PRIVATE=1（本地调试）时返回 nil（不加钩子）。
+// 仅用于无代理直连传输层：配置了出口代理时拨号对象是代理自身（是否内网由部署方决定），
+// 不应套用目标站 SSRF 规则。
+func ssrfGuardControl() func(network, address string, c syscall.RawConn) error {
+	if allowPrivate {
+		return nil
+	}
+	return func(_ string, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return fmt.Errorf("ssrf-guard: 无法解析拨号地址 %q", address)
+		}
+		ip := net.ParseIP(host)
+		if ip == nil {
+			return fmt.Errorf("ssrf-guard: 非法对端地址 %q", host)
+		}
+		blocked := ""
+		if v4 := ip.To4(); v4 != nil {
+			n := uint32(v4[0])<<24 | uint32(v4[1])<<16 | uint32(v4[2])<<8 | uint32(v4[3])
+			if ipv4IsPrivate(n) {
+				blocked = host
+			}
+		} else if groups := ipv6ToGroups(ip); groups != nil && ipv6IsPrivate(groups) {
+			blocked = host
+		}
+		if blocked != "" {
+			return fmt.Errorf("ssrf-guard: 连接目标解析到内网地址 %s（连接层 SSRF 防护）", blocked)
+		}
+		return nil
+	}
+}
+
+// ssrfGuardDialer 构建带连接层 SSRF 钩子的拨号器（不做额外超时约束——既有路径由
+// 各 client.Timeout / 硬时间闸兜底，保持拨号行为不变）
+func ssrfGuardDialer() *net.Dialer {
+	d := &net.Dialer{KeepAlive: 30 * time.Second}
+	if c := ssrfGuardControl(); c != nil {
+		d.Control = c
+	}
+	return d
 }

@@ -267,6 +267,12 @@ func transportFor(proxy string, insecure, noH2 bool) (*http.Transport, string) {
 		ForceAttemptHTTP2:     !noH2,
 		DisableCompression:    false,
 	}
+	if proxy == "" {
+		// Task 25-a: 连接层 SSRF 兑底（DNS rebinding TOCTOU 封堵）——仅直连时启用；
+		// 配置代理时拨号对象是代理自身，不套用目标站规则。Control 钩子不影响
+		// ForceAttemptHTTP2 的 h2 升级。
+		tr.DialContext = ssrfGuardDialer().DialContext
+	}
 	if tr.ForceAttemptHTTP2 == false && noH2 {
 		// 显式禁用 HTTP/2（got-scraping http1.1 降级画像）
 		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}

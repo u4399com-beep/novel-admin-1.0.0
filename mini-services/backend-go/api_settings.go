@@ -276,7 +276,15 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 		}
 	}
 	if s, ok2 := body["activeTheme"].(string); ok2 {
-		if t := trimSpaceStr(s); t != "" {
+		t := trimSpaceStr(s)
+		// Task 25-b: activeTheme 白名单校验——该值会流入 renderPage 的模板目录拼接
+		// （templatesRoot/{theme}），此前接受任意 ≤50 字符串：脏值/恶意值（含 ../）
+		// 会让全站页面降级兜底甚至探测模板目录外文件。非白名单主题 → 400 拒绝。
+		if t != "" && !isKnownTheme(t) {
+			writeJSON(w, 400, map[string]string{"error": "未知主题： " + truncateRunes(t, 50)})
+			return
+		}
+		if t != "" {
 			sets = append(sets, `"activeTheme" = ?`)
 			args = append(args, truncateRunes(t, 50))
 		}

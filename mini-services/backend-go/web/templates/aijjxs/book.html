@@ -26,7 +26,7 @@
               <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">分类</dt><dd class="min-w-0 text-[#1f2937]"><a class="text-[#115e59] underline-offset-2 hover:text-[#0f766e] hover:underline" href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a></dd></div>
               <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">写作进度</dt><dd class="min-w-0 text-[#1f2937]">{{if eq .Novel.status "finished"}}<span class="aj-pill aj-pill-done">已完结</span>{{else}}<span class="aj-pill aj-pill-serial">连载中</span>{{end}}</dd></div>
               <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">总字数</dt><dd class="min-w-0 text-[#1f2937]">{{wcFmt .Novel.wordCount}}</dd></div>
-              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">总点击</dt><dd class="min-w-0 text-[#1f2937]">{{.Novel.clicks}}</dd></div>
+              <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">总点击</dt><dd class="min-w-0 text-[#1f2937]">{{cntFmt .Novel.clicks}}</dd></div>
               <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">章节</dt><dd class="min-w-0 text-[#1f2937]">{{.ChaptersTotal}} 章</dd></div>
               <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">更新时间</dt><dd class="min-w-0 text-[#1f2937]">{{fullFmt .Novel.updatedAt}}</dd></div>
               <div class="flex gap-2 py-[3px]"><dt class="w-16 flex-none text-[#6b7280]">下载方式</dt><dd class="min-w-0 text-[#1f2937]">在线阅读 / TXT下载（演示）</dd></div>
@@ -135,7 +135,7 @@
           <li><a class="aj-row py-[5px]" href="{{bookURL $n.id}}">
             <span class="w-5 flex-none text-center text-[13px] font-bold tabular-nums {{if lt $i 3}}text-[#9a3412]{{else}}text-[#c2854f]{{end}}">{{add $i 1}}</span>
             <span class="aj-row-title min-w-0 flex-1">{{$n.title}}</span>
-            <span class="flex-none text-[11px] tabular-nums text-[#9ca3af]">{{$n.clicks}}</span>
+            <span class="flex-none text-[11px] tabular-nums text-[#9ca3af]">{{cntFmt $n.clicks}}</span>
           </a></li>
           {{end}}
         </ol>

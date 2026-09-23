@@ -23,7 +23,7 @@
           <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
           <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
           <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-neutral-600">{{excerpt .description 50}}</span>
-          <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+          <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{cntFmt .clicks}}点击</span>
         </span>
       </a>{{end}}{{end}}
     </div>
@@ -54,7 +54,7 @@
         <a href="{{bookURL $n.id}}" aria-hidden="true" tabindex="-1" class="absolute left-[10px] top-1/2 grid h-[22px] w-[22px] -translate-y-1/2 place-items-center rounded-[4px] bg-[#56ccb5] text-[12px] font-bold text-[#eee] transition-colors duration-200 group-hover:bg-[#f50]">{{add $i 1}}</a>
         <div class="min-w-0 flex-1 pl-[28px]">
           <h4 class="truncate text-[15px] font-bold text-[#00886d] transition-colors duration-200 group-hover:text-[#f50]">{{$n.title}}</h4>
-          <p class="mt-1 truncate text-[12px] text-[#999]">作者：{{$n.author}} · 字数：{{wcFmt $n.wordCount}} · 阅读量：{{$n.clicks}}人次</p>
+          <p class="mt-1 truncate text-[12px] text-[#999]">作者：{{$n.author}} · 字数：{{wcFmt $n.wordCount}} · 阅读量：{{cntFmt $n.clicks}}人次</p>
           <p class="mt-0.5 truncate text-[12px] text-[#999]">更新到：<span class="text-[#00886d]">{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}暂无章节{{end}}</span></p>
           <p class="mt-1 line-clamp-3 text-[13px] text-[#888]">{{if $n.description}}{{$n.description}}{{else}}暂无简介{{end}}</p>
         </div>

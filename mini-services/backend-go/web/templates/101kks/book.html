@@ -23,7 +23,7 @@
             {{if isLocalCover .Novel.cover}}<span class="relative block h-[240px] w-[180px] overflow-hidden rounded-[3px] shadow-[0_4px_12px_rgba(0,0,0,.25)]"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
             {{else}}<span class="relative flex h-[240px] w-[180px] items-center justify-center overflow-hidden rounded-[3px] shadow-[0_4px_12px_rgba(0,0,0,.25)] {{gcls .Novel.cover}}"><span class="font-bold text-white/90 drop-shadow text-6xl" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
             <span class="absolute left-0 top-2 w-[69px] bg-[#1f6cb2] py-1 text-center text-xs text-white">{{if eq .Novel.status "finished"}}完結{{else}}連載{{end}}</span>
-            <span class="absolute inset-x-0 bottom-0 rounded-b-[3px] bg-black/70 py-1 text-center text-xs text-white">推薦 {{.Novel.clicks}}</span>
+            <span class="absolute inset-x-0 bottom-0 rounded-b-[3px] bg-black/70 py-1 text-center text-xs text-white">推薦 {{cntFmt .Novel.clicks}}</span>
           </div>
           {{/* 信息列 */}}
           <div class="min-w-0 flex-1">

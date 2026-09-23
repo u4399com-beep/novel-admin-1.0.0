@@ -361,6 +361,11 @@ func scanNovelListItem(rows *sql.Rows) (map[string]any, error) {
 func queryNovelList(whereSQL, orderSQL string, args []any, limit, offset int) ([]map[string]any, error) {
 	q := "SELECT " + novelListCols + novelListFrom + whereSQL + orderSQL + " LIMIT ? OFFSET ?"
 	all := make([]map[string]any, 0)
+	// Task 25-b: 显式拷贝 args 再追加 limit/offset——append 可能写入调用方切片的
+	// 备用容量，若调用方复用同一 args（如先 count 后 list）会产生参数串位隐患
+	fullArgs := make([]any, 0, len(args)+2)
+	fullArgs = append(fullArgs, args...)
+	fullArgs = append(fullArgs, limit, offset)
 	err := queryList(q, func(rows *sql.Rows) error {
 		item, err := scanNovelListItem(rows)
 		if err != nil {
@@ -368,7 +373,7 @@ func queryNovelList(whereSQL, orderSQL string, args []any, limit, offset int) ([
 		}
 		all = append(all, item)
 		return nil
-	}, append(args, limit, offset)...)
+	}, fullArgs...)
 	if err != nil {
 		return nil, err
 	}

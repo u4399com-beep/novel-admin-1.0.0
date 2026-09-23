@@ -25,7 +25,7 @@
   <ul class="fb-rank">
     {{range $i, $n := .HotBlock}}<li><span style="color:#a3a3a3">{{$i}}</span>
       <a class="fb-novel-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
-      <span class="fb-novel-meta">{{$n.author}} · 点击 {{$n.clicks}}</span></li>{{end}}
+      <span class="fb-novel-meta">{{$n.author}} · 点击 {{cntFmt $n.clicks}}</span></li>{{end}}
   </ul>
 </div>
 {{end}}

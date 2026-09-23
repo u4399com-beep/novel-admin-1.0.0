@@ -12,7 +12,7 @@
       <span class="flex-none text-[#b3b3b3]">&gt;</span>
       <span class="truncate text-[#667788]">{{.Novel.title}}最新章节列表</span>
     </div>
-    <span class="hidden flex-none text-[12px] text-[#999] sm:block">字数 {{wcFmt .Novel.wordCount}} · 点击 {{.Novel.clicks}}</span>
+    <span class="hidden flex-none text-[12px] text-[#999] sm:block">字数 {{wcFmt .Novel.wordCount}} · 点击 {{cntFmt .Novel.clicks}}</span>
   </div>
 
   {{/* 信息区 */}}
@@ -36,7 +36,7 @@
             <span class="text-[#999]">状态：</span>
             {{if eq .Novel.status "finished"}}<span class="text-[#085308]">已完本</span>{{else}}<span class="dd-hottext">连载中</span>{{end}}
             <span class="ml-3 text-[#999]">字数：</span>{{wcFmt .Novel.wordCount}}
-            <span class="ml-3 text-[#999]">点击：</span>{{.Novel.clicks}}
+            <span class="ml-3 text-[#999]">点击：</span>{{cntFmt .Novel.clicks}}
             <span class="ml-3 text-[#999]">章节：</span>共 {{.ChaptersTotal}} 章
           </p>
           <p class="min-w-0">

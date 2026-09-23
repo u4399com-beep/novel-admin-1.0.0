@@ -457,13 +457,18 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 		}
 	}
 	if _, present := body["pages"]; present {
-		p, _, pagesOK := taskPagesParam(map[string]any{"pages": body["pages"]})
+		// Task 25-a: taskPagesParam 对 pages=null/"" 返回 (0,false,true)——原代码忽略 has
+		// 标志，把「未提供语义」写成 pages=0（与 POST 创建的 pages=1 口径冲突，且破坏
+		// runList 翻页语义）。改为 has=false 跳过该字段，非法值仍 400。
+		p, has, pagesOK := taskPagesParam(map[string]any{"pages": body["pages"]})
 		if !pagesOK {
 			writeJSON(w, 400, map[string]string{"error": "pages 需为 1-999 的整数"})
 			return
 		}
-		sets = append(sets, `"pages" = ?`)
-		args = append(args, p)
+		if has {
+			sets = append(sets, `"pages" = ?`)
+			args = append(args, p)
+		}
 	}
 	if len(sets) == 0 {
 		writeJSON(w, 400, map[string]string{"error": "没有可更新的字段"})
@@ -708,14 +713,26 @@ func handleScrapeTaskDelete(w http.ResponseWriter, r *http.Request, ps map[strin
 		writeJSON(w, 409, map[string]string{"error": "任务执行中，请先取消再删除"})
 		return
 	}
-	// pending/paused 允许删：即便 worker 恰在启动，其 pending→running 条件更新必然 count=0，安全退出
-	res, err := exec(`DELETE FROM "ScrapeTask" WHERE "id" = ?`, id)
+	// pending/paused 允许删：即便 worker 恰在启动，其 pending→running 条件更新必然 count=0，安全退出。
+	// Task 25-a: 预检与 DELETE 之间存在竞态窗口——runner 可能把 pending 置 running（runTask
+	// 条件更新先到），无条件 DELETE 会把执行中任务整行删除（worker 只能靠 Flush=false 自愈
+	// 停机，且 409 预检形同虚设）。改条件删除：仅非 running 可删，count=0 回读如实反馈。
+	res, err := exec(`DELETE FROM "ScrapeTask" WHERE "id" = ? AND "status" != 'running'`, id)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		var fresh string
+		if qerr := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); qerr != nil {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+			return
+		}
+		if fresh == "running" {
+			writeJSON(w, 409, map[string]string{"error": "任务执行中，请先取消再删除"})
+		} else {
+			writeJSON(w, 404, map[string]string{"error": "任务不存在"})
+		}
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})

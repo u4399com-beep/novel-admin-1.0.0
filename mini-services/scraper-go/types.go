@@ -5,7 +5,7 @@
  * 移植原则：
  * - 对外 API 契约（路由/字段名/错误结构/CORS/状态码）与 TS 版完全一致，主站 engine-client.ts 零改动；
  * - 策略名与策略链顺序保持一致（fetch-browser → fetch-ua-rotate → fetch-mobile → fetch-spider →
- *   curl-impersonate → got-scraping → browser），策略亲和/主机健康度/Cookie 会话语义一致；
+ *   curl-impersonate → fetch-curl → got-scraping → browser），策略亲和/主机健康度/Cookie 会话语义一致；
  * - 合规红线（不可移除）：仅公开内容、robots.txt warn-only、默认限速 ≥1.2s/域名、
  *   SSRF 逐跳校验、不含验证码破解/账号伪装/登录态伪造；
  * - 已知运行时差异（行为等价性说明，见各文件头注）：

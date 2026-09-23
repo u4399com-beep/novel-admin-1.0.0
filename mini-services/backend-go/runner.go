@@ -132,8 +132,8 @@ func runBash(cmd string) error {
 func startRunner() {
 	log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
 
-	// 僵尸任务回收（worker.ts recoverStaleTasks 语义：Go runner 是唯一任务执行方，
-	// 启动时把遗留 pending/running 一次性标 failed）
+	// 僵尸任务回收（Task 23 暂停语义：启动前遗留的 running 任务一次性转 paused——
+	// 进度保留可手动恢复续传；pending 不受影响，2s 内被本 runner 重新领取）
 	recoverStaleTasks()
 
 	// TS runner 防复活护栏：启动即清一次，之后每 runnerTSKillEvery 轮（≈5 分钟）再清
