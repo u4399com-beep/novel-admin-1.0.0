@@ -507,6 +507,9 @@ type Phase2Outcome struct {
 	// 判定源站封禁/不可达 → 任务自动转 paused 而非把全部骨架烧成 failed（任务 41 实证）
 	FailBreaker bool
 	ConsecFails int64 // 触发时的连续失败计数（供终态消息）
+	// BreakerRateLimit Task 29: 熔断原因分类=true 表示失败形态呈限流特征（429/503/rate），
+	// 终态消息据此给出「等窗口恢复」而非「疑似封禁」的处置建议
+	BreakerRateLimit bool
 }
 
 // phase2Fill 消费 Phase 1 的填充计划：逐书分批（200/批）拉取 DB 空骨架行（wordCount=0，
@@ -521,15 +524,37 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 	// 可烧数千章（任务 41：46836 章全部 failed）
 	var consecFails atomic.Int64
 	var failBreaker atomic.Bool
+	// Task 29: 熔断触发瞬间的连败数快照。consecFails 会被并发车道成功复位（Store(0)），
+	// 若 Outcome 直读 consecFails.Load() 会产出「正文连续失败 0 章却已暂停」的矛盾消息
+	// （实证 task1：日志行 60 章 vs 终态 message 0 章）。
+	var breakerConsec atomic.Int64
+	// Task 29: 限流感知——失败 Error 采样（最近一次）+ 熔断原因分类。
+	// 源站 429/503 限流与真封禁/不可达对用户的处置建议不同（限流等窗口恢复即可，
+	// 不可达需查站点状态），resume 抖动循环时消息必须能区分两者。
+	var lastFailErr atomic.Pointer[string]
+	breakerKindLimit := false
 	stoppedEarly := false
 	breakerStopped := false
 	isStopped := throttledCheck(func() bool { return stopState(run.TaskID) != "" })
+
+	isRateLimitErr := func(err string) bool {
+		if err == "" {
+			return false
+		}
+		low := strings.ToLower(err)
+		return strings.Contains(low, "429") || strings.Contains(low, "503") ||
+			strings.Contains(low, "限流") || strings.Contains(low, "rate")
+	}
 
 	noteChapterFail := func() {
 		if PHASE2_FAIL_BREAKER <= 0 {
 			return // 0=禁用
 		}
 		if n := consecFails.Add(1); int(n) >= PHASE2_FAIL_BREAKER && failBreaker.CompareAndSwap(false, true) {
+			breakerConsec.Store(n) // Task 29: 快照（CAS 赢家独写，无竞态）
+			if e := lastFailErr.Load(); e != nil && isRateLimitErr(*e) {
+				breakerKindLimit = true // CAS 赢家独写，无竞态
+			}
 			run.Log(fmt.Sprintf("正文连续失败 %d 章（期间零成功）：疑似源站封禁或站点不可达，提前停止防烧穿（已采进度保留，可稍后恢复续传）", n))
 		}
 	}
@@ -603,6 +628,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				if !res.OK {
 					failedCtr.Add(1)
 					bookFailed.Add(1)
+					e := res.Error // Task 29: 采样最近失败原因供熔断分类
+					lastFailErr.Store(&e)
 					noteChapterFail()
 					return
 				}
@@ -659,7 +686,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 		delete(fillMap, novelID) // 处理完即释放，长任务内存渐减
 	}
 	return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly,
-		FailBreaker: breakerStopped || failBreaker.Load(), ConsecFails: consecFails.Load()}
+		FailBreaker: breakerStopped || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照
+		BreakerRateLimit: breakerKindLimit}
 }
 
 // ==================== 字数汇总 ====================
@@ -844,7 +872,12 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 	if p2.FailBreaker && stopState(run.TaskID) == "" {
 		// Task 26-d：连败熔断（疑似源站封禁/不可达）→ 转 paused 而非把数万骨架烧成 failed；
 		// 恢复=PATCH resume 重入队，Phase 2 依空骨架自动续传（每次重试至多再烧阈值内的失败）
-		finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+		// Task 29: 限流形态区分处置建议
+		if p2.BreakerRateLimit {
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流 429/503，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎将自动放缓节奏）", p2.ConsecFails, p2.Filled))
+		} else {
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+		}
 		return
 	}
 	if p2.StoppedEarly {
@@ -926,7 +959,12 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 
 	if p2.FailBreaker && stopState(run.TaskID) == "" {
 		// Task 26-d：连败熔断 → 转 paused（同 runList 注释）
-		finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+		// Task 29: 限流形态区分处置建议
+		if p2.BreakerRateLimit {
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流 429/503，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎将自动放缓节奏）", p2.ConsecFails, p2.Filled))
+		} else {
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+		}
 		return
 	}
 	if p2.StoppedEarly {

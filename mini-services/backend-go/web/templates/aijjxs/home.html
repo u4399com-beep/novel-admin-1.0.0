@@ -161,19 +161,19 @@
         <div class="p-3">
           {{with index . 0}}
           <a class="mb-2 flex gap-3 rounded-[10px] bg-white/70 p-2 transition-shadow hover:shadow-md" href="{{bookURL .id}}">
-            {{if isLocalCover .cover}}<span class="relative h-[86px] w-[64px] flex-none overflow-hidden rounded-[6px]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
-            {{else}}<span class="relative flex h-[86px] w-[64px] flex-none items-center justify-center overflow-hidden rounded-[6px] text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[20px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+            {{if isLocalCover .cover}}<span class="relative h-[106px] w-[78px] flex-none overflow-hidden"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative flex h-[106px] w-[78px] flex-none items-center justify-center overflow-hidden text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[20px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
             <span class="block min-w-0 flex-1">
-              <span class="block truncate text-[14px] font-bold text-[#9a3412]">{{.title}}</span>
+              <span class="block truncate text-[15px] font-bold text-[#115e59]">{{.title}}</span>{{/* Task 29-a-2: 榜首卡标题对齐源站 .book_r h4 15px #115e59 */}}
               <span class="mt-0.5 block truncate text-xs text-[#6b7280]">{{.author}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
-              <span class="mt-1 line-clamp-2 text-xs leading-[1.6] text-[#8a7a63]">{{.description}}</span>
+              <span class="mt-1 line-clamp-2 text-[13px] leading-[1.55] text-[#6b7280]">{{.description}}</span>{{/* Task 29-a-2: 榜首卡简介对齐源站 .desc 13px #6b7280 */}}
             </span>
           </a>
           {{end}}
           <ol class="mt-1">
             {{range $i, $n := .}}
             <li><a class="aj-row py-[5px]" href="{{bookURL $n.id}}">
-              <span class="w-5 flex-none text-center text-[13px] font-bold tabular-nums {{if lt $i 3}}text-[#9a3412]{{else}}text-[#c2854f]{{end}}">{{add $i 1}}</span>
+              <span class="w-5 flex-none text-center text-[16px] font-bold tabular-nums text-[#9a3412]">{{add $i 1}}</span>{{/* Task 29-a-2: 序号对齐源站 .no 16px #9a3412 全列同色 */}}
               <span class="aj-row-title min-w-0 flex-1">{{$n.title}}</span>
               <span class="flex-none text-[11px] tabular-nums text-[#9ca3af]">{{$n.clicks}}</span>
             </a></li>
@@ -195,19 +195,19 @@
         <div class="p-3">
           {{with index . 0}}
           <a class="mb-2 flex gap-3 rounded-[10px] bg-white/70 p-2 transition-shadow hover:shadow-md" href="{{bookURL .id}}">
-            {{if isLocalCover .cover}}<span class="relative h-[86px] w-[64px] flex-none overflow-hidden rounded-[6px]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
-            {{else}}<span class="relative flex h-[86px] w-[64px] flex-none items-center justify-center overflow-hidden rounded-[6px] text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[20px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+            {{if isLocalCover .cover}}<span class="relative h-[106px] w-[78px] flex-none overflow-hidden"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+            {{else}}<span class="relative flex h-[106px] w-[78px] flex-none items-center justify-center overflow-hidden text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[20px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
             <span class="block min-w-0 flex-1">
-              <span class="block truncate text-[14px] font-bold text-[#9a3412]">{{.title}}</span>
+              <span class="block truncate text-[15px] font-bold text-[#115e59]">{{.title}}</span>{{/* Task 29-a-2: 榜首卡标题对齐源站 .book_r h4 15px #115e59 */}}
               <span class="mt-0.5 block truncate text-xs text-[#6b7280]">{{.author}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
-              <span class="mt-1 line-clamp-2 text-xs leading-[1.6] text-[#8a7a63]">{{.description}}</span>
+              <span class="mt-1 line-clamp-2 text-[13px] leading-[1.55] text-[#6b7280]">{{.description}}</span>{{/* Task 29-a-2: 榜首卡简介对齐源站 .desc 13px #6b7280 */}}
             </span>
           </a>
           {{end}}
           <ol class="mt-1">
             {{range $i, $n := .}}
             <li><a class="aj-row py-[5px]" href="{{bookURL $n.id}}">
-              <span class="w-5 flex-none text-center text-[13px] font-bold tabular-nums {{if lt $i 3}}text-[#9a3412]{{else}}text-[#c2854f]{{end}}">{{add $i 1}}</span>
+              <span class="w-5 flex-none text-center text-[16px] font-bold tabular-nums text-[#9a3412]">{{add $i 1}}</span>{{/* Task 29-a-2: 序号对齐源站 .no 16px #9a3412 全列同色 */}}
               <span class="aj-row-title min-w-0 flex-1">{{$n.title}}</span>
               <span class="flex-none text-[11px] tabular-nums text-[#9ca3af]">{{$n.clicks}}</span>
             </a></li>

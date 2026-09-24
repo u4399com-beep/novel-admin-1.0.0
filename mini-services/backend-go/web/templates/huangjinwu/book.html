@@ -56,7 +56,8 @@
     <div class="mt-4 flex flex-wrap items-center gap-2">
       <span class="text-[13px] text-[#94a3b8]">小说标签：</span>
       <a href="{{catURL .Novel.categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{.Novel.categoryName}}</a>
-      <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq .Novel.status "finished"}}完本{{else}}连载中{{end}}</span>
+      <!-- Task 29-a: 状态徽章文字对齐源站 #1e293b -->
+      <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#1e293b]">{{if eq .Novel.status "finished"}}完本{{else}}连载中{{end}}</span>
       {{if .Novel.wordCount}}<span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{wcFmt .Novel.wordCount}}</span>{{end}}{{/* Task 28-c: wordCount=0 隐藏徽章（相邻状态徽章已表达） */}}
     </div>
   </section>

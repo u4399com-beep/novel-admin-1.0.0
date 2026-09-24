@@ -19,7 +19,8 @@
         <p class="mt-2 line-clamp-2 min-h-[40px] text-[14px] leading-5 text-[#64748b]"><a href="{{bookURL $n.id}}">{{if $n.description}}{{$n.description}}{{else}}暂无简介{{end}}</a></p>
         <div class="mt-3 flex flex-wrap gap-2">
           <a href="{{catURL $n.categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{$n.categoryName}}</a>
-          <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq $n.status "finished"}}完本{{else}}连载中{{end}}</span>
+      <!-- Task 29-a: 状态徽章文字对齐源站 #1e293b -->
+      <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#1e293b]">{{if eq $n.status "finished"}}完本{{else}}连载中{{end}}</span>
           <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{if $n.wordCount}}{{wcFmt $n.wordCount}}{{else}}—{{end}}</span>
         </div>
       </article>
@@ -81,7 +82,8 @@
         <p class="mt-2 line-clamp-2 min-h-[40px] text-[14px] leading-5 text-[#64748b]"><a href="{{bookURL .id}}">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</a></p>
         <div class="mt-3 flex flex-wrap gap-2">
           <a href="{{catURL .categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{.categoryName}}</a>
-          <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq .status "finished"}}完本{{else}}连载中{{end}}</span>
+      <!-- Task 29-a: 状态徽章文字对齐源站 #1e293b -->
+      <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#1e293b]">{{if eq .status "finished"}}完本{{else}}连载中{{end}}</span>
           <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
         </div>
       </article>

@@ -77,8 +77,9 @@
   text-decoration: underline;
 }
 .aj-row-title {
-  font-size: 14px;
-  color: var(--aj-ink);
+  /* Task 29-a-2: 对齐源站列表行标题 16px #115e59（原 14px 墨色偏小偏暗） */
+  font-size: 16px;
+  color: var(--aj-brand-dark);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -101,6 +102,12 @@
 .aj-root .aj-chip {
   background: #eef9f7;
 }
+/* Task 29-a-2: 书页主标题对齐源站 h1 22px #7c2d12（源站书名用深棕红而非面板青绿） */
+.aj-book-title {
+  font-size: 22px;
+  color: #7c2d12;
+}
+
 .aj-badge {
   display: inline-flex;
   align-items: center;

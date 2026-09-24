@@ -68,18 +68,19 @@
       {{end}}
 
       {{/* 全量列表（无分页，服务端按 updatedAt DESC 注入；data-* 供筛选） */}}
-      <div class="space-y-3 p-3 sm:p-4" id="aj-cat-list" data-empty="该条件下暂无小说，换个筛选试试。">
+      {{/* Task 29-a-2: 对齐源站 .catalog .listbg 平铺行（无卡片底/圆角，1px #ecdcc6 底线分隔） */}}
+      <div class="px-3 pb-3 sm:px-4" id="aj-cat-list" data-empty="该条件下暂无小说，换个筛选试试。">
         {{range .Novels}}
-        <article data-words="{{.wordCount}}" data-clicks="{{.clicks}}" data-featured="{{if .isFeatured}}1{{else}}0{{end}}" data-status="{{.status}}" class="group flex gap-4 rounded-[14px] border border-[#e5dccd] bg-gradient-to-b from-[#fffdf8] to-[#f8f2e4] p-3.5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg sm:p-4">
-          {{if isLocalCover .cover}}<a href="{{bookURL .id}}" class="relative h-[128px] w-[92px] flex-none overflow-hidden rounded-[6px]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>
-          {{else}}<a href="{{bookURL .id}}" class="relative flex h-[128px] w-[92px] flex-none items-center justify-center overflow-hidden rounded-[6px] text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[26px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></a>{{end}}
+        <article data-words="{{.wordCount}}" data-clicks="{{.clicks}}" data-featured="{{if .isFeatured}}1{{else}}0{{end}}" data-status="{{.status}}" class="group flex gap-4 border-b border-[#ecdcc6] py-4">
+          {{if isLocalCover .cover}}<a href="{{bookURL .id}}" class="relative h-[124px] w-[88px] flex-none overflow-hidden"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>
+          {{else}}<a href="{{bookURL .id}}" class="relative flex h-[124px] w-[88px] flex-none items-center justify-center overflow-hidden text-white {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[26px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></a>{{end}}
           <div class="flex min-w-0 flex-1 flex-col">
             <div class="flex items-center gap-2">
-              <h3 class="min-w-0 truncate text-[17px] font-bold text-[#155e4b] transition-colors group-hover:text-[#0f766e] sm:text-[18px]"><a href="{{bookURL .id}}">{{.title}}</a></h3>
+              <h3 class="min-w-0 truncate text-[17px] font-bold text-[#0b3b2e] transition-colors group-hover:text-[#0f766e] sm:text-[18px]"><a href="{{bookURL .id}}">{{.title}}</a></h3>{{/* Task 29-a-2: 标题色对齐源站 .listbg .title #0b3b2e */}}
               {{if .isFeatured}}<span class="aj-badge">荐</span>{{end}}
-              <span class="ml-auto hidden flex-none text-xs text-[#9ca3af] sm:block">上传 {{dateFmt .updatedAt}}</span>
+              <span class="ml-auto hidden flex-none text-xs text-[#ff0033] sm:block">上传 {{dateFmt .updatedAt}}</span>{{/* Task 29-a-2: 上传时间对齐源站 .new 红色 12px */}}
             </div>
-            <p class="mt-1 line-clamp-2 text-[13px] leading-[1.65] text-[#6b7280]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</p>
+            <p class="mt-1 line-clamp-2 text-[14px] leading-[1.8] text-[#555555]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</p>{{/* Task 29-a-2: 简介对齐源站 14px #555/1.8 */}}
             <div class="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs text-[#8a7a5c]">
               <span>作者：{{.author}}</span>
               <span>{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>

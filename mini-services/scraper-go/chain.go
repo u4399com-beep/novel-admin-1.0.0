@@ -395,14 +395,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	// ——此时源站在连接层拒绝本机，hosthealth 会更快熔断+温和退避。
 	// 预算耗尽（budget-exhausted）/策略不可用（unavailable）属引擎自身状态，不计入网络级连败，
 	// 避免把「站点慢」误判成「站点拒绝」而提前熔断。
-	allNetErr := len(attempts) > 0
-	for _, a := range attempts {
-		if a.Status != 0 || a.Blocked || strings.HasPrefix(a.Note, "budget-exhausted") || strings.HasPrefix(a.Note, "unavailable") {
-			allNetErr = false
-			break
-		}
-	}
-	noteChainFailure(host, allNetErr)
+	noteChainFailure(host, allAttemptsNetErr(attempts))
 
 	detailParts := make([]string, 0, len(attempts))
 	for _, a := range attempts {
@@ -452,6 +445,43 @@ func safeStrategyRun(s *strategyDef, targetURL string, timeoutMs int64, ctx *str
 		}
 	}()
 	return s.run(targetURL, timeoutMs, ctx)
+}
+
+// isEngineStateNote 判定一条尝试备注是否为「引擎自身状态」而非目标站的网络级行为。
+// 这些形态 status 恒为 0 且不产生任何真实到达目标站的网络证据：
+//   - "hard-timeout"：策略链硬时间闸强制放行（Task 27-c 引入的引擎侧看门狗，站点只是慢/挂起）；
+//   - "timeout-budget"：策略内部画像梯子的自身预算耗尽（fetch 系/got/curl 系子尝试）；
+//   - "budget-exhausted"：整链时间预算耗尽（Task 26-d 已排除）；
+//   - "unavailable"：策略探测失败未发起请求（Task 26-d 已排除）；
+//   - "missing-*"：二进制/桥接缺失（missing-binary/missing-curl/missing-python，probe 竞态残余）；
+//   - "internal-error"：策略内部 panic（代码缺陷非站点行为）。
+//
+// Task 29-b 修复：旧实现只排除 budget-exhausted/unavailable 两种前缀——策略内部预算子尝试
+// （timeout-budget）与硬时间闸（hard-timeout）按 status=0 落入网络级失败。站点整体挂起
+// （连接成功但响应停滞）时所有策略都被硬闸放行，两轮即触发 netBreakerStrikes=2 的
+// 「源站连接层拒绝本机」快速熔断+网络级退避——把「站点慢」误判成「站点拒绝本机」，
+// 与 Task 26-d 注释声明的意图（引擎自身状态不计入网络级连败）相悖。
+func isEngineStateNote(note string) bool {
+	return note == "hard-timeout" || note == "internal-error" ||
+		strings.HasPrefix(note, "budget-exhausted") ||
+		strings.HasPrefix(note, "unavailable") ||
+		strings.HasPrefix(note, "timeout-budget") ||
+		strings.HasPrefix(note, "missing-")
+}
+
+// allAttemptsNetErr 本次链上所有尝试是否全部为「网络级失败」（status=0、非挑战页、
+// 非引擎自身状态）。空尝试（全链未发起任何请求）返回 false。纯函数，表驱动测试见
+// chain_test.go（Task 29-b 自 fetchPage 内联判定抽出，便于回归锁定）。
+func allAttemptsNetErr(attempts []AttemptSummary) bool {
+	if len(attempts) == 0 {
+		return false
+	}
+	for _, a := range attempts {
+		if a.Status != 0 || a.Blocked || isEngineStateNote(a.Note) {
+			return false
+		}
+	}
+	return true
 }
 
 func containsStr(arr []string, v string) bool {

@@ -41,43 +41,60 @@ type cookieBucket struct {
 	order []string // 插入序（LRU 淘汰用）
 }
 
-// cookieJar host（含端口）→ 桶；读写均刷新 LRU 淘汰序
+// cookieJar host（含端口）→ 桶；读写均刷新 LRU 淘汰序。
+// order 为 host 级 LRU 序（尾部=最近触达）。Task 29-b 修复：旧实现只有 map 没有序，
+// touchHostLocked 的「淘汰」实为 map 随机迭代取第一个非自身 host（Go map 迭代无序），
+// 文件头宣称的 LRU 退化为随机淘汰——>128 hosts 时热 host 的会话可被冷 host 挤掉
+// （「首访种 cookie、二访放行」站点三访丢会话）。现以 order 切片维护真实 LRU：
+// 读写触达均移到尾部，容量触顶淘汰队首（最久未触达；本次触达的 host 刚移到尾部，
+// 结构性保证不会被自逐，Task 27-c「不逐自身」不变式由结构保持而非循环内特判）。
 type cookieJar struct {
 	mu    sync.Mutex
 	hosts map[string]*cookieBucket
+	order []string
 }
 
 var jar = &cookieJar{hosts: map[string]*cookieBucket{}}
+
+// touchOrderLocked 把 host 刷到 LRU 尾部（调用方必须已持有 j.mu；不建桶不淘汰）。
+// Task 29-b：读路径（cookieHeaderFor/cookiesForPlaywright）此前只读不刷新，与函数头
+// 「读取也刷新 LRU 淘汰序」的声明不符——只回放不种新 cookie 的活跃 host 会被误淘汰。
+func (j *cookieJar) touchOrderLocked(host string) {
+	for i, n := range j.order {
+		if n == host {
+			j.order = append(j.order[:i], j.order[i+1:]...)
+			break
+		}
+	}
+	j.order = append(j.order, host)
+}
 
 // touchHostLocked 取/建 host 桶并刷新 LRU 淘汰序；调用方必须已持有 j.mu。
 // Task 27-c（25-a 修复⑥残留竞态补齐）：旧版 touchHost 自持锁取桶、返回后调用方再锁写桶，
 // 两临界区之间并发的另一 host touchHost 可能把本桶从 map 淘汰（跳过自身不跳过他人），
 // 写入孤儿桶静默丢失（>128 hosts 场景）。改为调用方持锁的 touchHostLocked，取桶+写桶
 // 单临界区完成，彻底消除窗口。
+// Task 29-b：淘汰序由 map 随机迭代改为真实 LRU（见 cookieJar.order 注释）；host 刷新到
+// 尾部后淘汰恒取队首，结构性排除「逐出本次触达 host」。
 // 返回 nil 表示容量淘汰后仍放不下（极端情况）
 func (j *cookieJar) touchHostLocked(host string) *cookieBucket {
 	b, ok := j.hosts[host]
-	if ok {
-		delete(j.hosts, host)
-	} else {
+	if !ok {
 		b = &cookieBucket{m: map[string]storedCookie{}}
+		j.hosts[host] = b
 	}
-	j.hosts[host] = b
+	j.touchOrderLocked(host)
 	for len(j.hosts) > cookieMaxHosts {
-		// 淘汰候选必须跳过本次触达的 host——map 迭代无序，可能把刚插入/刚触达的
-		// host 自己逐出，返回值指向已不在 map 的孤儿桶，后续写入静默丢失
-		oldest := ""
-		for k := range j.hosts {
-			if k == host {
-				continue
-			}
-			oldest = k
+		if len(j.order) == 0 {
 			break
 		}
-		if oldest == "" {
-			break
+		oldest := j.order[0]
+		j.order = j.order[1:]
+		if _, exists := j.hosts[oldest]; exists {
+			delete(j.hosts, oldest)
 		}
-		delete(j.hosts, oldest)
+		// order 可能含陈旧条目（测试直接替换 hosts 等非常规路径）：队首是陈旧条目时
+		// 只弹序不删桶，继续下一轮直至淘汰到真实桶
 	}
 	return b
 }
@@ -265,7 +282,7 @@ func recordResponseCookies(host string, res *http.Response, https bool) {
 }
 
 // cookieHeaderFor 为某 host 构造回放用的 Cookie 头值（如 "a=1; b=2"）；无可回放 cookie 返回 ""。
-// 过期条目顺手清除；Secure cookie 仅在 https 请求上回放；读取也刷新 LRU 淘汰序。
+// 过期条目顺手清除；Secure cookie 仅在 https 请求上回放；读取也刷新 LRU 淘汰序（Task 29-b 落地）。
 func cookieHeaderFor(host string, https bool) string {
 	jar.mu.Lock()
 	bucket, ok := jar.hosts[host]
@@ -273,6 +290,7 @@ func cookieHeaderFor(host string, https bool) string {
 		jar.mu.Unlock()
 		return ""
 	}
+	jar.touchOrderLocked(host)
 	now := nowMs()
 	parts := []string{}
 	for _, name := range append([]string{}, bucket.order...) {
@@ -313,6 +331,7 @@ func cookiesForPlaywright(host string, https bool) []playwrightCookie {
 	if !ok || len(bucket.m) == 0 {
 		return []playwrightCookie{}
 	}
+	jar.touchOrderLocked(host)
 	now := nowMs()
 	scheme := "http"
 	if https {

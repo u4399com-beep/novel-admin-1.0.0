@@ -34,11 +34,14 @@ func TestCookieJarConcurrent(t *testing.T) {
 func TestCookieJarNoSelfEvict(t *testing.T) {
 	jar.mu.Lock()
 	savedHosts := jar.hosts
+	savedOrder := jar.order
 	jar.hosts = map[string]*cookieBucket{}
+	jar.order = nil
 	jar.mu.Unlock()
 	defer func() {
 		jar.mu.Lock()
 		jar.hosts = savedHosts
+		jar.order = savedOrder
 		jar.mu.Unlock()
 	}()
 	for i := 0; i < cookieMaxHosts+5; i++ {
@@ -47,6 +50,49 @@ func TestCookieJarNoSelfEvict(t *testing.T) {
 		if cookieHeaderFor(host, false) == "" {
 			t.Fatalf("host %s 刚写入即不可见：touchHost 把自身桶淘汰了", host)
 		}
+	}
+}
+
+// TestCookieJarLRU 真实 LRU 淘汰序回归（Task 29-b 修复锁定）：
+// ①容量触顶淘汰的必须是「最久未触达」的 host，而非 map 随机迭代撞到的倒霉蛋；
+// ②读路径（cookieHeaderFor）刷新 LRU 位——刚被读取的 host 不会被后续写入淘汰。
+// 旧实现（无 order 序、随机淘汰+读不刷新）在本用例下确定性失败。
+func TestCookieJarLRU(t *testing.T) {
+	jar.mu.Lock()
+	savedHosts := jar.hosts
+	savedOrder := jar.order
+	jar.hosts = map[string]*cookieBucket{}
+	jar.order = nil
+	jar.mu.Unlock()
+	defer func() {
+		jar.mu.Lock()
+		jar.hosts = savedHosts
+		jar.order = savedOrder
+		jar.mu.Unlock()
+	}()
+	// 灌满容量
+	for i := 0; i < cookieMaxHosts; i++ {
+		recordSetCookieLines("lru"+itoa(i)+".test", []string{"k=v"}, false)
+	}
+	// 触达最老的 lru0（读刷新 → 移到 LRU 尾部）
+	if cookieHeaderFor("lru0.test", false) == "" {
+		t.Fatalf("lru0 刚写入应有可回放 cookie")
+	}
+	// 再写 1 个新 host 触发一次淘汰：应淘汰 lru1（当前最久未触达）
+	recordSetCookieLines("lru-new.test", []string{"k=v"}, false)
+	jar.mu.Lock()
+	_, ok0 := jar.hosts["lru0.test"]
+	_, ok1 := jar.hosts["lru1.test"]
+	_, okNew := jar.hosts["lru-new.test"]
+	jar.mu.Unlock()
+	if !okNew {
+		t.Fatalf("新 host 未入 jar")
+	}
+	if !ok0 {
+		t.Fatalf("刚被读取刷新的 lru0 被淘汰：读路径未刷新 LRU 位")
+	}
+	if ok1 {
+		t.Fatalf("容量触顶应淘汰最久未触达的 lru1（真实 LRU），lru1 却仍存活")
 	}
 }
 

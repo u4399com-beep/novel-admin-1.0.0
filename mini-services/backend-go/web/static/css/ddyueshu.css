@@ -12,7 +12,7 @@
   --dd-titlebar: #f6f8fe;
   --dd-link: #6f78a7;
   --dd-ink: #555;
-  --dd-title: #333;
+  --dd-title: #555; /* Task 29-a: 对齐源站 h2 标题色 rgb(85,85,85)（原 #333 偏深） */
   --dd-gray: #b3b3b3;
   --dd-green: #085308;
   --dd-friend: #548161;

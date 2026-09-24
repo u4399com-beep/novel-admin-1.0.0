@@ -8,7 +8,7 @@
     <section class="aj-card overflow-hidden">
       <header class="aj-panel-head">
         <span class="aj-panel-bar" aria-hidden="true"></span>
-        <h1 class="aj-panel-title">{{.Novel.title}}</h1>
+        <h1 class="aj-panel-title aj-book-title">{{.Novel.title}}</h1>{{/* Task 29-a-2: 书名对齐源站 h1 22px #7c2d12 */}}
         <div class="ml-auto">
           {{if eq .Novel.status "finished"}}<span class="aj-pill aj-pill-done">已完结</span>{{else}}<span class="aj-pill aj-pill-serial">连载中</span>{{end}}
         </div>

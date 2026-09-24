@@ -31,7 +31,7 @@
 
     {{/* 横向分类导航（桌面） */}}
     <nav aria-label="小说分类导航" class="no-scrollbar hidden min-w-0 flex-1 items-center gap-6 overflow-x-auto lg:flex xl:gap-7">
-      {{range .Nav}}<a href="{{catURL .id}}" class="relative shrink-0 cursor-pointer py-2 text-base font-bold transition-colors {{if eq $path (catURL .id)}}text-[#ff2a14]{{else}}text-[#282828] hover:text-[#ff2a14]{{end}}">{{.name}}{{if eq $path (catURL .id)}}<span aria-hidden="true" class="absolute inset-x-1/2 bottom-0 h-1 w-[35%] -translate-x-1/2 rounded-full bg-gradient-to-r from-[#ff9800] to-[#ff2a14]"></span>{{end}}</a>{{end}}
+      {{range .Nav}}<a href="{{catURL .id}}" class="relative shrink-0 cursor-pointer py-2 text-base transition-colors {{if eq $path (catURL .id)}}font-bold text-[#ff2a14]{{else}}text-[#282828] hover:text-[#ff2a14]{{end}}">{{.name}}{{if eq $path (catURL .id)}}<span aria-hidden="true" class="absolute inset-x-1/2 bottom-0 h-1 w-[35%] -translate-x-1/2 rounded-full bg-gradient-to-r from-[#ff9800] to-[#ff2a14]"></span>{{end}}</a>{{end}}{{/* Task 29-a-2: 导航字重对齐源站（默认 400，仅选中项加粗） */}}
     </nav>
 
     <div class="ml-auto flex items-center gap-2 lg:ml-0">
