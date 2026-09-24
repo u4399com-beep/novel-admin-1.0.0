@@ -33,6 +33,7 @@ package main
 import (
         "database/sql"
         "encoding/json"
+        "net"
         "net/http"
         "strconv"
         "strings"
@@ -71,9 +72,67 @@ func loadWebSettings() *webSettings {
         return &s
 }
 
+// ---------- 站群 Host 匹配（Task 30-a「站群模式」：一库多站按 Host 分站点渲染） ----------
+
+// requestHost 请求 Host 归一化：去端口（含 IPv6 括号形态）+ 小写；空返回空串。
+// SiteSite.host 存储口径与此一致（api_sites.go 写入时同样归一化），保证精确匹配闭环。
+func requestHost(r *http.Request) string {
+        h := strings.TrimSpace(r.Host)
+        if h == "" {
+                return ""
+        }
+        if host, _, err := net.SplitHostPort(h); err == nil {
+                h = host
+        }
+        return strings.ToLower(strings.Trim(h, "[]"))
+}
+
+// resolveSite 站群 Host 匹配：请求 Host（去端口小写）在 SiteSite（enabled=1）中精确命中
+// 则返回该站点档案（siteName/activeTheme/notice/seoConfig/footerConfig/homeConfig 全量
+// 覆盖默认站点渲染数据），未命中/空表/表未建/查询故障一律回落 SiteSetting 单例——
+// 默认站点行为完全不变（fail-open，绝不因站群层故障 500）。host 不做 * 通配/后缀匹配，
+// 兑底语义即默认站点（SiteSetting）。空表 = 纯默认站点（seed 不预置站点行）。
+func resolveSite(r *http.Request) *webSettings {
+        if r != nil {
+                if host := requestHost(r); host != "" {
+                        var s webSettings
+                        var seoBlob, footerBlob sql.NullString
+                        err := queryOne(
+                                `SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig" FROM "SiteSite" WHERE "host" = ? AND "enabled" = 1`,
+                                []any{&s.SiteName, &s.ActiveTheme, &s.Notice, &seoBlob, &footerBlob, &s.HomeConfigRaw},
+                                host,
+                        )
+                        if err == nil {
+                                s.SeoConfig = map[string]any{}
+                                s.FooterConfig = map[string]any{}
+                                if seoBlob.Valid && seoBlob.String != "" {
+                                        _ = json.Unmarshal([]byte(seoBlob.String), &s.SeoConfig)
+                                }
+                                if footerBlob.Valid && footerBlob.String != "" {
+                                        _ = json.Unmarshal([]byte(footerBlob.String), &s.FooterConfig)
+                                }
+                                return &s
+                        }
+                }
+        }
+        return loadWebSettings()
+}
+
+// settingsFromData 取 webCommon 已解析的站点档案（data["siteSettings"]）；无该键（非标准
+// 路径直调）回落 SiteSetting 单例。Task 30-a：applyWebTDK/applyWebKeywords/gatherHomeBlocks
+// 由「各自 loadWebSettings」改为经此取站点口径——同一次请求内 Site/TDK/页脚/首页区块同源。
+func settingsFromData(data map[string]any) *webSettings {
+        if data != nil {
+                if s, ok := data["siteSettings"].(*webSettings); ok && s != nil {
+                        return s
+                }
+        }
+        return loadWebSettings()
+}
+
 // webCommon 组装所有页面共享的 Site/Nav/Path 数据块
 func webCommon(r *http.Request) map[string]any {
-        s := loadWebSettings()
+        s := resolveSite(r) // Task 30-a: 站群 Host 匹配（未命中=默认站点，行为不变）
         if s == nil {
                 s = &webSettings{SiteName: "青阅文学", ActiveTheme: fallbackTheme, Notice: ""}
         }
@@ -105,6 +164,11 @@ func webCommon(r *http.Request) map[string]any {
                         if m, ok := l.(map[string]any); ok {
                                 label, _ := m["label"].(string)
                                 u, _ := m["url"].(string)
+                                if u == "" {
+                                        // Task 30-a: 兼容 sanitizeFooterConfig 落库的 href 键（后台页脚 JSON
+                                        // 形态为 {"links":[{"label","href"}]}，旧读取只认 url 键导致链接永不渲染）
+                                        u, _ = m["href"].(string)
+                                }
                                 if label != "" && u != "" {
                                         footerLinks = append(footerLinks, map[string]any{"label": label, "url": u})
                                 }
@@ -112,7 +176,10 @@ func webCommon(r *http.Request) map[string]any {
                 }
         }
 
-        return map[string]any{
+        // Task 30-a: 站点档案透传——applyWebTDK/applyWebKeywords/gatherHomeBlocks 经
+        // settingsFromData 取此解析结果（保证同请求内 Site/TDK/页脚/区块口径一致）；
+        // theme 由站点档案决定（renderPage 据此选模板；admin handler 随后覆盖为 "admin"）
+        data := map[string]any{
                 "Site": map[string]any{
                         "siteName":       s.SiteName,
                         "notice":         s.Notice,
@@ -123,9 +190,14 @@ func webCommon(r *http.Request) map[string]any {
                         "footerExtra":    footerExtra,
                         "footerLinks":    footerLinks,
                 },
-                "Nav":  nav,
-                "Path": r.URL.Path,
+                "Nav":          nav,
+                "Path":         r.URL.Path,
+                "siteSettings": s,
         }
+        if t := trimSpaceStr(s.ActiveTheme); t != "" {
+                data["theme"] = t
+        }
+        return data
 }
 
 // gatherHomeStats 首页/分类页共用的统计块
@@ -165,7 +237,7 @@ func applyWebTDK(data map[string]any, titleKey, descKey string, vars map[string]
         if vars == nil {
                 vars = map[string]string{}
         }
-        s := loadWebSettings()
+        s := settingsFromData(data) // Task 30-a: 站群——TDK 模板按请求站点档案（默认站点行为不变）
         seo := sanitizeSeoConfig(nil) // 无设置行 → 全默认模板
         if s != nil {
                 seo = sanitizeSeoConfig(s.SeoConfig)
@@ -195,7 +267,7 @@ func applyWebKeywords(data map[string]any, key string, vars map[string]string, f
         if vars == nil {
                 vars = map[string]string{}
         }
-        s := loadWebSettings()
+        s := settingsFromData(data) // Task 30-a: 站群——keywords 模板按请求站点档案（默认站点行为不变）
         seo := sanitizeSeoConfig(nil)
         if s != nil {
                 seo = sanitizeSeoConfig(s.SeoConfig)
@@ -227,9 +299,9 @@ func handleWebHome(w http.ResponseWriter, r *http.Request) {
         data["RankUpdates"] = rankUpdates
         data["RankFinished"] = rankFinished
         data["Stats"] = gatherHomeStats()
-        data["HomeBlocks"] = gatherHomeBlocks()
+        data["HomeBlocks"] = gatherHomeBlocks(data) // Task 30-a: homeConfig 按请求站点档案
 
-        s := loadWebSettings()
+        s := settingsFromData(data)
         siteName := "青阅文学"
         if s != nil && s.SiteName != "" {
                 siteName = s.SiteName
@@ -245,8 +317,9 @@ func handleWebHome(w http.ResponseWriter, r *http.Request) {
 
 // gatherHomeBlocks 按后台 homeConfig 渲染自定义图文区块（小编精选等）。
 // 白名单语义与 home-blocks.ts / api_settings.go sanitizeHomeConfig 一致。
-func gatherHomeBlocks() []map[string]any {
-        s := loadWebSettings()
+// Task 30-a: homeConfig 按请求站点档案（站群站点可自定义首页区块；默认站点行为不变）。
+func gatherHomeBlocks(data map[string]any) []map[string]any {
+        s := settingsFromData(data)
         if s == nil || !s.HomeConfigRaw.Valid || s.HomeConfigRaw.String == "" {
                 return []map[string]any{}
         }

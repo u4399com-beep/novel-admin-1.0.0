@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -57,9 +58,38 @@ func getDB() (*sql.DB, error) {
 			return
 		}
 		gDB = db
+		// Task 30-a fix(30 main): 站群站点档案表幂等建表 —— 必须在 once 回调内用局部 db 直接建表。
+		// 旧版在 once 外调 ensureSiteSiteTable()→exec→getDB→再次 ensureSiteSiteTable，
+		// siteSiteOnce.Do 未完成时重入 → sync.Once 递归自锁（panic dump 实证：goroutine 卡
+		// doSlow 双栈）；任何首次 getDB 的路径都会死锁（含生产启动）。
+		if _, err := db.Exec(siteSiteDDL); err != nil {
+			log.Printf("[db] SiteSite 建表失败（站群功能不可用，默认站点不受影响）: %v", err)
+		}
 	})
 	return gDB, gDBError
 }
+
+// siteSiteDDL 站群站点档案表（Task 30-a「站群模式」：一库多站按 Host 分站点渲染）。
+//
+// 该表不在 Prisma schema 管辖内（db:push 不感知），由 Go 侧运行时幂等建表：
+//   - CREATE TABLE IF NOT EXISTS：重复启动/隔离实例安全；
+//   - 列风格对齐 SiteSetting（siteName/activeTheme/notice + seoConfig/footerConfig/homeConfig
+//     三列 JSON 文本 + enabled 开关），时间戳为毫秒 INTEGER（nowMillis 口径）；
+//   - host 唯一（精确匹配键，resolveSite 唯一查询路径），空串/带协议端口由 api_sites.go 写入校验拦截；
+//   - 建表失败仅告警不阻断启动（resolveSite 查询失败自动回落 SiteSetting 默认站点，fail-open）。
+const siteSiteDDL = `CREATE TABLE IF NOT EXISTS "SiteSite" (
+        "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+        "host" TEXT NOT NULL UNIQUE,
+        "siteName" TEXT NOT NULL DEFAULT '',
+        "activeTheme" TEXT NOT NULL DEFAULT 'aijjxs',
+        "notice" TEXT NOT NULL DEFAULT '',
+        "seoConfig" TEXT NOT NULL DEFAULT '{}',
+        "footerConfig" TEXT NOT NULL DEFAULT '{}',
+        "homeConfig" TEXT NOT NULL DEFAULT '{}',
+        "enabled" INTEGER NOT NULL DEFAULT 1,
+        "createdAt" INTEGER NOT NULL DEFAULT 0,
+        "updatedAt" INTEGER NOT NULL DEFAULT 0
+)`
 
 // isUniqueConflict SQLite unique 冲突（modernc 驱动错误消息含 UNIQUE constraint failed）。
 // ⚠ 只认 "unique"：宽泛匹配 "constraint" 会把 FOREIGN KEY constraint failed / CHECK constraint

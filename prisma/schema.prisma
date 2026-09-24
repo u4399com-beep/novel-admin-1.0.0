@@ -4,7 +4,7 @@
 //     不经过 Prisma Client——本 schema 供人工核对结构与 Go 侧手写 SQL 的字段对照；
 //   - `bun run db:push`（dev 链路建库/同步）按本文件建表，表/列名与 Go 侧 SQL 必须保持一致；
 //   - 新增列需同时改 Go 侧（storex/api_* 的读写语句）与种子（seed/seed.json 如涉及）。
-// 当前模型：Category / Novel / Chapter / SiteSetting / PseoKeyword / ScrapeRule / ScrapeTask（无过期模型）。
+// 当前模型：Category / Novel / Chapter / SiteSetting / SiteSite / PseoKeyword / ScrapeRule / ScrapeTask（无过期模型）。
 
 generator client {
   provider = "prisma-client-js"
@@ -64,7 +64,7 @@ model Chapter {
   @@index([novelId])
 }
 
-// 站点设置（单例行 id=1）
+// 站点设置（单例行 id=1，默认站点档案；站群命中 SiteSite 后按站点覆盖渲染）
 model SiteSetting {
   id           Int    @id @default(1)
   siteName     String @default("青阅文学")
@@ -73,6 +73,22 @@ model SiteSetting {
   seoConfig    String @default("{}") // JSON: SEO TDK 模板配置
   footerConfig String @default("{}") // JSON: 页面底部（页脚）配置 {text,extra,links}
   homeConfig   String @default("{}") // JSON: 首页自定义图文区块配置 {blocks:[{id,title,source,count}]}
+}
+
+// 站群站点档案（Task 30-a 一库多站：按 host 精确匹配分站点渲染，未命中走 SiteSetting 默认站点。
+// 该表由 backend-go db.go ensureSiteSiteTable 幂等建表运行时管理，此处为结构对照文档）
+model SiteSite {
+  id           Int     @id @default(autoincrement())
+  host         String  @unique // 纯域名（小写，不带协议/路径/端口），如 novel.example.com
+  siteName     String
+  activeTheme  String  @default("aijjxs")
+  notice       String  @default("")
+  seoConfig    String  @default("{}") // JSON: 站点级 SEO TDK 模板（键集同 SiteSetting.seoConfig 白名单）
+  footerConfig String  @default("{}") // JSON: 站点级页脚 {text,extra,links}
+  homeConfig   String  @default("{}") // JSON: 站点级首页区块 {blocks:[…]}
+  enabled      Boolean @default(true) // 停用后该 Host 立即回落默认站点
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
 }
 
 // PSEO 关键词（来自搜索引擎下拉词）

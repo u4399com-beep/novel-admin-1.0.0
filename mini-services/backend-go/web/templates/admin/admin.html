@@ -33,6 +33,7 @@
     <button type="button" data-tab="categories" class="adm-tab">分类管理</button>
     <button type="button" data-tab="pseo" class="adm-tab">PSEO</button>
     <button type="button" data-tab="settings" class="adm-tab">站点设置</button>
+    <button type="button" data-tab="sites" class="adm-tab">站群管理</button>
   </nav>
 </header>
 
@@ -233,7 +234,11 @@
               <td class="whitespace-nowrap tabular-nums">{{wcFmt .wordCount}}</td>
               <td class="tabular-nums">{{.chapterCount}}</td>
               <td class="whitespace-nowrap text-neutral-400">{{fullFmt .updatedAt}}</td>
-              <td class="text-right"><button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="{{.id}}" data-title="{{.title}}">删除</button></td>
+              <td class="text-right whitespace-nowrap">
+                <button type="button" class="adm-btn-xs" data-act="novel-edit" data-id="{{.id}}">编辑</button>
+                <button type="button" class="adm-btn-xs" data-act="novel-chapters" data-id="{{.id}}" data-title="{{.title}}">章节</button>
+                <button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="{{.id}}" data-title="{{.title}}">删除</button>
+              </td>
             </tr>{{else}}<tr><td colspan="8" class="adm-empty">暂无书籍</td></tr>{{end}}
           </tbody>
         </table>
@@ -333,25 +338,176 @@
 
     <div class="adm-card">
       <div class="flex items-center justify-between">
-        <h2 class="adm-h2 !mb-0">页脚配置 footerConfig（JSON）</h2>
-        <button type="button" class="adm-btn-xs" data-act="json-fmt" data-target="adm-set-footer">格式化 JSON</button>
+        <h2 class="adm-h2 !mb-0">页脚配置</h2>
+        <span class="text-[11px] text-neutral-400">填文本即可，无需写 JSON</span>
       </div>
-      <textarea id="adm-set-footer" class="adm-input adm-mono mt-1" rows="6" placeholder='{"text":"Copyright © 2026 …","extra":"免责声明…","links":[{"label":"示例","href":"https://…"}]}'></textarea>
+      <div class="mt-2 grid gap-2">
+        <label class="adm-field block">版权文字（页脚第一行）<input id="adm-footer-text" class="adm-input" maxlength="300" placeholder="Copyright © 2026 青阅文学 版权所有"></label>
+        <label class="adm-field block">附加说明（免责声明等，可留空）<textarea id="adm-footer-extra" class="adm-input" rows="2" maxlength="300" placeholder="本站所有小说仅供学习演示使用…"></textarea></label>
+      </div>
+      <div class="mt-2">
+        <div class="flex items-center justify-between"><span class="text-[13px] font-medium">页脚链接（最多 10 个）</span>
+          <button type="button" id="adm-footer-link-add" class="adm-btn-xs">+ 添加链接</button></div>
+        <div id="adm-footer-links" class="mt-1 space-y-1.5"></div>
+      </div>
       <div class="mt-2 flex justify-end"><button type="button" id="adm-set-footer-save" class="adm-btn adm-btn-primary">保存页脚</button></div>
     </div>
 
     <div class="adm-card">
       <div class="flex items-center justify-between">
-        <h2 class="adm-h2 !mb-0">SEO 配置 seoConfig（JSON）</h2>
-        <button type="button" class="adm-btn-xs" data-act="json-fmt" data-target="adm-set-seo">格式化 JSON</button>
+        <h2 class="adm-h2 !mb-0">SEO 配置（TDK 模板）</h2>
+        <span class="text-[11px] text-neutral-400">逐项填写，变量如 {siteName} 自动替换，留空用默认</span>
       </div>
-      <textarea id="adm-set-seo" class="adm-input adm-mono mt-1" rows="10" placeholder="加载中…"></textarea>
+      <label class="mt-2 flex items-center gap-2 text-[13px]"><input type="checkbox" id="adm-seo-auto" class="h-4 w-4"> 根据内容自动补充 TDK（autoFromContent）</label>
+      <div class="mt-2 grid gap-x-4 gap-y-1 md:grid-cols-2">
+        <div class="adm-field md:col-span-2 !mt-0 text-[12px] font-semibold text-neutral-600">首页（变量：{siteName}）</div>
+        <label class="adm-field">首页标题 <input id="adm-seo-homeTitle" class="adm-input" placeholder="{siteName} - 免费小说在线阅读_原创小说网站"></label>
+        <label class="adm-field">首页关键词 <input id="adm-seo-homeKeywords" class="adm-input" placeholder="小说,免费小说,{siteName}"></label>
+        <label class="adm-field md:col-span-2">首页描述 <textarea id="adm-seo-homeDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">分类页（变量：{siteName} {categoryName}）</div>
+        <label class="adm-field">分类标题 <input id="adm-seo-categoryTitle" class="adm-input"></label>
+        <label class="adm-field">分类关键词 <input id="adm-seo-categoryDescription" class="adm-input"></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">书籍页（变量：{siteName} {novelTitle} {author} {statusText} {descShort} {categoryName}）</div>
+        <label class="adm-field">书籍标题 <input id="adm-seo-bookTitle" class="adm-input"></label>
+        <label class="adm-field">书籍关键词 <input id="adm-seo-bookKeywords" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">书籍描述 <textarea id="adm-seo-bookDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">目录页（变量：{siteName} {novelTitle}）</div>
+        <label class="adm-field">目录标题 <input id="adm-seo-tocTitle" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">目录描述 <textarea id="adm-seo-tocDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">章节页（变量：{siteName} {novelTitle} {chapterTitle} {idx} {author}）</div>
+        <label class="adm-field">章节标题 <input id="adm-seo-chapterTitle" class="adm-input"></label>
+        <label class="adm-field">章节关键词 <input id="adm-seo-chapterKeywords" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">章节描述 <textarea id="adm-seo-chapterDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">搜索页（变量：{siteName} {query}）</div>
+        <label class="adm-field">搜索标题 <input id="adm-seo-searchTitle" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">搜索描述 <textarea id="adm-seo-searchDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">PSEO 聚合页（变量：{siteName} {keyword} {count}）</div>
+        <label class="adm-field">PSEO 标题 <input id="adm-seo-pseoTitle" class="adm-input"></label>
+        <label class="adm-field">PSEO 关键词 <input id="adm-seo-pseoKeywords" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">PSEO 描述 <textarea id="adm-seo-pseoDescription" class="adm-input" rows="2"></textarea></label>
+      </div>
+      <p class="mt-1 text-[11px] text-neutral-400">留空的项保存时自动用默认模板；每个字段最长 1000 字。</p>
       <div class="mt-2 flex justify-end"><button type="button" id="adm-set-seo-save" class="adm-btn adm-btn-primary">保存 SEO</button></div>
+    </div>
+  </section>
+
+  <!-- ============ 站群管理（Task 30-a 站群模式：一库多站按 Host 分站点渲染；交互逻辑在 admin-fleet.js） ============ -->
+  <section id="tab-sites" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">站点列表（<span id="adm-site-count">0</span>）</h2>
+        <button type="button" id="adm-site-refresh" class="adm-btn-xs">刷新</button>
+      </div>
+      <p class="mb-2 text-[11px] text-neutral-400">一库多站：访问 Host 与下方档案精确匹配（enabled）时，前台按该站点的名称/主题/公告/SEO/页脚/首页区块渲染；未配置的 Host 一律走「站点设置」的默认站点。Host 需解析/反代到本服务。</p>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>Host</th><th>站点名称</th><th>主题</th><th>状态</th><th>更新时间</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-sites-tbody">
+            <tr><td colspan="7" class="adm-empty">加载中…（首次打开本页签时拉取）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">新建站点</h2>
+      <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        <label class="adm-field">Host *（纯域名，不带协议/路径/端口）<input id="adm-site-host" class="adm-input adm-mono" placeholder="novel.example.com"></label>
+        <label class="adm-field">站点名称 *（≤50 字）<input id="adm-site-name" class="adm-input" placeholder="如：青阅小说站"></label>
+        <label class="adm-field">主题
+          <select id="adm-site-theme" class="adm-input">
+            {{range .Themes}}<option value="{{.}}">{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="adm-field">站点公告（留空继承默认行为：部分主题首页展示）<input id="adm-site-notice" class="adm-input" placeholder="可选"></label>
+      </div>
+      <div class="mt-2 flex justify-end"><button type="button" id="adm-site-create" class="adm-btn adm-btn-primary">创建站点</button></div>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">匹配语义说明</h2>
+      <ul class="list-disc space-y-1 pl-5 text-[11px] leading-5 text-neutral-500">
+        <li>命中即整站覆盖：站点名称、激活主题、公告、SEO TDK 模板、页脚、首页图文区块全部取站点档案；</li>
+        <li>未命中（含停用/已删除）→ 默认站点（「站点设置」页配置的那份），行为与站群功能上线前完全一致；</li>
+        <li>host 不做通配/后缀匹配；带端口请求会先去端口再匹配（如 novel.example.com:8080 → novel.example.com）；</li>
+        <li>编辑弹层中的 SEO/页脚/首页区块为 JSON 高级形态，键集与「站点设置」页一致（保存时白名单清洗）。</li>
+      </ul>
     </div>
   </section>
 </main>
 
 <div id="adm-toast-wrap" class="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2"></div>
+
+<!-- 书籍编辑弹层（Task 30 主线：书名/作者/分类/状态/精选/简介） -->
+<div id="adm-modal-novel" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+  <div class="adm-card max-h-[88vh] w-full max-w-xl overflow-y-auto">
+    <div class="mb-2 flex items-center justify-between"><h2 class="adm-h2 !mb-0">编辑书籍 <span id="adm-novel-edit-id" class="text-neutral-400"></span></h2>
+      <button type="button" class="adm-btn-xs" data-modal-close="adm-modal-novel">关闭</button></div>
+    <div class="grid gap-2">
+      <label class="adm-field block">书名 *<input id="adm-novel-f-title" class="adm-input" maxlength="120"></label>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="adm-field block">作者<input id="adm-novel-f-author" class="adm-input" maxlength="60"></label>
+        <label class="adm-field block">分类<select id="adm-novel-f-category" class="adm-input"></select></label>
+      </div>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="adm-field block">状态<select id="adm-novel-f-status" class="adm-input"><option value="serial">连载中</option><option value="finished">已完结</option></select></label>
+        <label class="adm-field block">小编精选<input type="checkbox" id="adm-novel-f-featured" class="h-4 w-4"></label>
+      </div>
+      <label class="adm-field block">简介<textarea id="adm-novel-f-desc" class="adm-input" rows="5"></textarea></label>
+    </div>
+    <div class="mt-3 flex justify-end gap-2">
+      <button type="button" class="adm-btn" data-modal-close="adm-modal-novel">取消</button>
+      <button type="button" id="adm-novel-edit-save" class="adm-btn adm-btn-primary">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- 章节管理弹层（Task 30 主线：列表/搜索/编辑标题与正文） -->
+<div id="adm-modal-chapters" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+  <div class="adm-card flex max-h-[88vh] w-full max-w-3xl flex-col">
+    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="adm-h2 !mb-0">章节管理 <span id="adm-chapters-title" class="text-[13px] text-neutral-400"></span></h2>
+      <div class="flex items-center gap-1.5">
+        <input id="adm-chapters-q" class="adm-input w-40" placeholder="搜索章节标题">
+        <button type="button" class="adm-btn-xs" data-modal-close="adm-modal-chapters">关闭</button>
+      </div>
+    </div>
+    <div class="flex items-center justify-between text-[11px] text-neutral-400">
+      <span id="adm-chapters-count"></span>
+      <span class="flex items-center gap-1">
+        <button type="button" id="adm-chapters-prev" class="adm-btn-xs">上一页</button>
+        <span id="adm-chapters-page" class="tabular-nums">1 / 1</span>
+        <button type="button" id="adm-chapters-next" class="adm-btn-xs">下一页</button>
+      </span>
+    </div>
+    <div class="adm-table-wrap mt-1 min-h-0 flex-1"><table class="adm-table">
+      <thead><tr><th>序</th><th>标题</th><th>字数</th><th class="text-right">操作</th></tr></thead>
+      <tbody id="adm-chapters-tbody"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- 章节编辑弹层（Task 30 主线） -->
+<div id="adm-modal-chapter-edit" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="adm-card flex max-h-[90vh] w-full max-w-2xl flex-col">
+    <div class="mb-2 flex items-center justify-between"><h2 class="adm-h2 !mb-0">编辑章节</h2>
+      <button type="button" class="adm-btn-xs" data-modal-close="adm-modal-chapter-edit">关闭</button></div>
+    <label class="adm-field block">章节标题<input id="adm-chapter-f-title" class="adm-input" maxlength="120"></label>
+    <label class="adm-field mt-2 block flex-1">正文<span class="text-[11px] text-neutral-400">（保存后自动重算字数）</span>
+      <textarea id="adm-chapter-f-content" class="adm-input min-h-[45vh] font-mono text-[13px] leading-6" rows="14"></textarea></label>
+    <div class="mt-3 flex justify-end gap-2">
+      <button type="button" class="adm-btn" data-modal-close="adm-modal-chapter-edit">取消</button>
+      <button type="button" id="adm-chapter-edit-save" class="adm-btn adm-btn-primary">保存章节</button>
+    </div>
+  </div>
+</div>
+<script src="/static/js/admin-fleet.js" defer></script>
 </body></html>
 {{end}}
 

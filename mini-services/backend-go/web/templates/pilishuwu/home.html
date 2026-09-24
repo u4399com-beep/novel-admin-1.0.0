@@ -33,7 +33,7 @@ HomeCustomBlocks 契约：首页无分类板块，置于首个主体内容区（
           <div class="text-[11px] text-[#999]"><span>编辑每日精选</span></div>
         </header>
         <div class="p-2.5">
-          <div class="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
             {{range $i, $n := .Featured}}{{if lt $i 4}}<a href="{{bookURL $n.id}}" class="group flex cursor-pointer gap-3 border border-transparent p-1 text-left transition-colors hover:border-[#BFD8EA] hover:bg-[#F7FBFF]">
               <span aria-hidden="true" class="relative flex h-[150px] w-[120px] shrink-0 select-none items-center justify-center overflow-hidden {{gcls $n.cover}}">
                 {{if isLocalCover $n.cover}}<img src="{{$n.cover}}" alt="{{$n.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="font-serif font-bold text-white/90 drop-shadow-sm text-5xl">{{title0 $n.title}}</span>{{end}}

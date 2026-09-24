@@ -77,8 +77,13 @@ func cleanContainer(el *goquery.Selection) cleanedContent {
 	})
 
 	// 4) 段落收割：<br> 与块级元素边界 → \n
+	// Task 30-b 修复：边界表缺 td/th/tr/center——表格布局正文容器（老式杰奇/书站 CMS
+	// 常见 <table><tr><td>段落…）里相邻单元格文本经 Text() 直接粘连成一行（实测探针：
+	// 三段并一段），且粘连行超 100 字后同时绕过 reWatermarkLine 节点级(≤80)与行级(≤100)
+	// 短行闸——水印行与正文粘连后无法被行级清洗剔除，直接污染入库正文。center 为旧站
+	// 常用块级容器（HTML4 deprecated 但仍是块级语义），一并补齐。
 	clone.Find("br").ReplaceWithHtml("\n")
-	clone.Find("p,div,dd,li,section,article,h1,h2,h3,h4").AfterHtml("\n")
+	clone.Find("p,div,dd,li,section,article,h1,h2,h3,h4,td,th,tr,center").AfterHtml("\n")
 	raw := clone.Text()
 
 	paragraphs := []string{}

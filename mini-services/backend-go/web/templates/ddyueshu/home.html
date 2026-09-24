@@ -7,7 +7,7 @@
   <section class="mt-1 flex flex-col gap-2 lg:flex-row">
     <div class="dd-box lg:w-[695px]">
       <div class="dd-box-title bg-[#e1eced]">本周强推</div>
-      <div class="grid gap-3 p-[10px] sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 p-[10px] sm:grid-cols-2">
         {{range $i, $n := .Featured}}{{if lt $i 4}}
         <article class="flex gap-2.5">
           {{if isLocalCover $n.cover}}<a href="{{bookURL $n.id}}" class="relative block h-[150px] w-[120px] flex-none overflow-hidden border border-[#a6d3e8]"><img src="{{$n.cover}}" alt="{{$n.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>

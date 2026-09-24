@@ -509,7 +509,10 @@
       '<td class="whitespace-nowrap tabular-nums">' + escapeHtml(fmtWords(n.wordCount)) + '</td>' +
       '<td class="tabular-nums">' + escapeHtml(n.chapterCount) + '</td>' +
       '<td class="whitespace-nowrap text-neutral-400">' + fmtTs(n.updatedAt) + '</td>' +
-      '<td class="text-right"><button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">删除</button></td></tr>';
+      '<td class="text-right whitespace-nowrap">' +
+      '<button type="button" class="adm-btn-xs" data-act="novel-edit" data-id="' + escapeHtml(n.id) + '">编辑</button> ' +
+      '<button type="button" class="adm-btn-xs" data-act="novel-chapters" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">章节</button> ' +
+      '<button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">删除</button></td></tr>';
   }
 
   async function refreshNovels() {
@@ -536,6 +539,157 @@
     });
     $('#adm-novel-prev').addEventListener('click', function () { if (novelsPage > 1) { novelsPage--; refreshNovels(); } });
     $('#adm-novel-next').addEventListener('click', function () { if (novelsPage < novelsTotalPages) { novelsPage++; refreshNovels(); } });
+    // Task 30 主线：书籍编辑/章节管理弹层
+    $('#adm-novel-edit-save').addEventListener('click', saveNovelEdit);
+    $('#adm-chapter-edit-save').addEventListener('click', function () { saveChapterEdit(this); });
+    $('#adm-chapters-q').addEventListener('input', function () {
+      chaptersQ = this.value.trim();
+      chaptersPage = 1;
+      renderChapters();
+    });
+    $('#adm-chapters-prev').addEventListener('click', function () { if (chaptersPage > 1) { chaptersPage--; renderChapters(); } });
+    $('#adm-chapters-next').addEventListener('click', function () {
+      var totalPages = Math.max(1, Math.ceil((chaptersQ ? chaptersAll.filter(function (c) { return (c.title || '').indexOf(chaptersQ) >= 0; }) : chaptersAll).length / CHAPTERS_PAGE_SIZE));
+      if (chaptersPage < totalPages) { chaptersPage++; renderChapters(); }
+    });
+    // ESC 关闭最上层弹层
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      ['adm-modal-chapter-edit', 'adm-modal-chapters', 'adm-modal-novel'].some(function (id) {
+        var m = $('#' + id);
+        if (m && !m.classList.contains('hidden')) { closeModal(id); return true; }
+        return false;
+      });
+    });
+  }
+
+  /* ==================== 弹层与书籍/章节编辑（Task 30 主线） ==================== */
+
+  function openModal(id) {
+    var m = $('#' + id);
+    if (!m) return;
+    m.classList.remove('hidden');
+    m.classList.add('flex');
+  }
+  function closeModal(id) {
+    var m = $('#' + id);
+    if (!m) return;
+    m.classList.add('hidden');
+    m.classList.remove('flex');
+  }
+
+  var novelEditId = 0;
+
+  function fillCategorySelect(sel, selectedId) {
+    sel.innerHTML = '<option value="">— 未分类 —</option>' + categoriesCache.map(function (c) {
+      return '<option value="' + escapeHtml(c.id) + '"' + (Number(c.id) === Number(selectedId) ? ' selected' : '') + '>' + escapeHtml(c.name) + '</option>';
+    }).join('');
+  }
+
+  async function openNovelEdit(id) {
+    novelEditId = Number(id);
+    try {
+      var n = await api('GET', '/api/novels/' + id);
+      $('#adm-novel-edit-id').textContent = '#' + id;
+      $('#adm-novel-f-title').value = n.title || '';
+      $('#adm-novel-f-author').value = n.author || '';
+      $('#adm-novel-f-desc').value = n.description || '';
+      $('#adm-novel-f-status').value = (n.status === 'finished') ? 'finished' : 'serial';
+      $('#adm-novel-f-featured').checked = !!n.isFeatured;
+      if (!categoriesCache.length) {
+        try { categoriesCache = await api('GET', '/api/categories') || []; } catch (e2) { /* 下拉留空 */ }
+      }
+      fillCategorySelect($('#adm-novel-f-category'), n.categoryId);
+      openModal('adm-modal-novel');
+    } catch (e) { handleErr(e); }
+  }
+
+  async function saveNovelEdit() {
+    var title = $('#adm-novel-f-title').value.trim();
+    if (!title) return toast('书名不能为空', 'err');
+    var body = {
+      title: title,
+      author: $('#adm-novel-f-author').value.trim(),
+      description: $('#adm-novel-f-desc').value,
+      status: $('#adm-novel-f-status').value,
+      isFeatured: $('#adm-novel-f-featured').checked
+    };
+    var cid = $('#adm-novel-f-category').value;
+    if (cid) body.categoryId = Number(cid);
+    try {
+      await api('PUT', '/api/novels/' + novelEditId, body);
+      toast('书籍已保存', 'ok');
+      closeModal('adm-modal-novel');
+      refreshNovels();
+    } catch (e) { handleErr(e); }
+  }
+
+  /* ---- 章节管理（列表/搜索/分页/编辑正文） ---- */
+
+  var chaptersNovelId = 0;
+  var chaptersAll = [];
+  var chaptersQ = '';
+  var chaptersPage = 1;
+  var CHAPTERS_PAGE_SIZE = 20;
+
+  async function openChapters(novelId, title) {
+    chaptersNovelId = Number(novelId);
+    chaptersQ = '';
+    chaptersPage = 1;
+    $('#adm-chapters-q').value = '';
+    $('#adm-chapters-title').textContent = title ? '《' + title + '》' : '';
+    $('#adm-chapters-tbody').innerHTML = '<tr><td colspan="4" class="adm-empty">加载中…</td></tr>';
+    openModal('adm-modal-chapters');
+    try {
+      chaptersAll = (await api('GET', '/api/novels/' + novelId + '/chapters')) || [];
+      renderChapters();
+    } catch (e) {
+      handleErr(e);
+      $('#adm-chapters-tbody').innerHTML = '<tr><td colspan="4" class="adm-empty">加载失败</td></tr>';
+    }
+  }
+
+  function renderChapters() {
+    var list = chaptersQ ? chaptersAll.filter(function (c) { return (c.title || '').indexOf(chaptersQ) >= 0; }) : chaptersAll;
+    var totalPages = Math.max(1, Math.ceil(list.length / CHAPTERS_PAGE_SIZE));
+    if (chaptersPage > totalPages) chaptersPage = totalPages;
+    var start = (chaptersPage - 1) * CHAPTERS_PAGE_SIZE;
+    var pageList = list.slice(start, start + CHAPTERS_PAGE_SIZE);
+    $('#adm-chapters-count').textContent = '共 ' + list.length + ' 章' + (chaptersQ ? '（过滤自 ' + chaptersAll.length + ' 章）' : '');
+    $('#adm-chapters-page').textContent = chaptersPage + ' / ' + totalPages;
+    $('#adm-chapters-tbody').innerHTML = pageList.length ? pageList.map(function (c) {
+      return '<tr>' +
+        '<td class="tabular-nums text-neutral-500">' + escapeHtml(c.idx) + '</td>' +
+        '<td class="max-w-0 truncate font-medium" title="' + escapeHtml(c.title) + '">' + escapeHtml(c.title) + '</td>' +
+        '<td class="tabular-nums whitespace-nowrap">' + escapeHtml(fmtWords(c.wordCount)) + '</td>' +
+        '<td class="text-right"><button type="button" class="adm-btn-xs" data-act="chapter-edit" data-id="' + escapeHtml(c.id) + '">编辑</button></td></tr>';
+    }).join('') : '<tr><td colspan="4" class="adm-empty">无匹配章节</td></tr>';
+  }
+
+  async function openChapterEdit(chapterId) {
+    try {
+      var c = await api('GET', '/api/chapters/' + chapterId);
+      $('#adm-chapter-f-title').value = c.title || '';
+      $('#adm-chapter-f-content').value = c.content || '';
+      $('#adm-chapter-edit-save').dataset.id = chapterId;
+      openModal('adm-modal-chapter-edit');
+    } catch (e) { handleErr(e); }
+  }
+
+  async function saveChapterEdit(btn) {
+    var title = $('#adm-chapter-f-title').value.trim();
+    if (!title) return toast('章节标题不能为空', 'err');
+    try {
+      await api('PUT', '/api/chapters/' + btn.dataset.id, { title: title, content: $('#adm-chapter-f-content').value });
+      toast('章节已保存（字数已重算）', 'ok');
+      closeModal('adm-modal-chapter-edit');
+      if (chaptersNovelId) {
+        try {
+          chaptersAll = (await api('GET', '/api/novels/' + chaptersNovelId + '/chapters')) || [];
+          renderChapters();
+        } catch (e2) { /* 列表刷新失败不阻断 */ }
+      }
+    } catch (e) { handleErr(e); }
   }
 
   /* ==================== 分类管理 ==================== */
@@ -660,8 +814,8 @@
       $('#adm-set-name').value = s.siteName || '';
       $('#adm-set-notice').value = s.notice || '';
       if (s.activeTheme) $('#adm-set-theme').value = s.activeTheme;
-      $('#adm-set-footer').value = JSON.stringify(s.footer || {}, null, 2);
-      $('#adm-set-seo').value = JSON.stringify(s.seo || {}, null, 2);
+      renderFooterForm(s.footer || {}); // Task 30 主线：表单化（告别 JSON）
+      renderSeoForm(s.seo || {});
       homeBlocks = (s.home && s.home.blocks) || [];
       renderHomeBlocks();
     } catch (e) {
@@ -718,12 +872,70 @@
     return { blocks: out };
   }
 
-  function parseJsonTextarea(taId) {
-    var raw = $('#' + taId).value.trim();
-    if (!raw) return {};
-    var v = JSON.parse(raw);
-    if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new Error('内容必须是 JSON 对象');
-    return v;
+  /* parseJsonTextarea 已删（Task 30 主线）：页脚/SEO 改表单化后无引用 */
+
+  /* ==================== 页脚/SEO 表单化（Task 30 主线：用户无需写 JSON） ==================== */
+
+  // 与后端 seoStringKeys 一致（api_settings.go），新增键需同步
+  var SEO_KEYS = ['homeTitle', 'homeDescription', 'homeKeywords',
+    'categoryTitle', 'categoryDescription',
+    'bookTitle', 'bookDescription', 'bookKeywords',
+    'tocTitle', 'tocDescription',
+    'chapterTitle', 'chapterDescription', 'chapterKeywords',
+    'searchTitle', 'searchDescription',
+    'pseoTitle', 'pseoDescription', 'pseoKeywords'];
+  var seoLoaded = {};
+
+  function renderFooterForm(f) {
+    $('#adm-footer-text').value = f.text || '';
+    $('#adm-footer-extra').value = f.extra || '';
+    var box = $('#adm-footer-links');
+    box.innerHTML = (f.links || []).map(function (l) {
+      return footerLinkRowHtml(l.label || '', l.href || '');
+    }).join('');
+  }
+
+  function footerLinkRowHtml(label, href) {
+    return '<div class="adm-footer-link flex items-center gap-1.5">' +
+      '<input class="adm-input adm-fl-label w-32" placeholder="文字" maxlength="20" value="' + escapeHtml(label) + '">' +
+      '<input class="adm-input adm-fl-href flex-1" placeholder="https://…" value="' + escapeHtml(href) + '">' +
+      '<button type="button" class="adm-btn-xs adm-danger" data-act="footer-link-del">删除</button></div>';
+  }
+
+  function readFooterForm() {
+    var obj = {
+      text: $('#adm-footer-text').value.trim(),
+      extra: $('#adm-footer-extra').value.trim(),
+      links: []
+    };
+    var rows = $all('#adm-footer-links .adm-footer-link');
+    for (var i = 0; i < rows.length && obj.links.length < 10; i++) { // 后端 footerLinkCount=10
+      var row = rows[i];
+      var label = row.querySelector('.adm-fl-label').value.trim();
+      var href = row.querySelector('.adm-fl-href').value.trim();
+      if (label && href) obj.links.push({ label: label, href: href });
+    }
+    return obj;
+  }
+
+  function renderSeoForm(seo) {
+    seoLoaded = seo || {};
+    SEO_KEYS.forEach(function (k) {
+      var el = $('#adm-seo-' + k);
+      if (el) el.value = seoLoaded[k] || '';
+    });
+    $('#adm-seo-auto').checked = seoLoaded.autoFromContent !== false; // 后端默认 true
+  }
+
+  function readSeoForm() {
+    var obj = {};
+    SEO_KEYS.forEach(function (k) {
+      var el = $('#adm-seo-' + k);
+      if (el) obj[k] = el.value.trim(); // 空串也显式提交：后端 sanitize 落空串，applyWebTDK 空模板自动回落内置默认
+    });
+    obj.autoFromContent = $('#adm-seo-auto').checked;
+    if (seoLoaded && seoLoaded.pseo) obj.pseo = seoLoaded.pseo; // pseo 子对象表单不展示，原样保留防丢
+    return obj;
   }
 
   function initSettings() {
@@ -741,21 +953,21 @@
     });
 
     $('#adm-set-footer-save').addEventListener('click', async function () {
-      var obj;
-      try { obj = parseJsonTextarea('adm-set-footer'); }
-      catch (e) { return toast('footerConfig JSON 无效：' + e.message, 'err'); }
       try {
-        await api('PATCH', '/api/settings', { footer: obj });
+        await api('PATCH', '/api/settings', { footer: readFooterForm() });
         toast('页脚配置已保存', 'ok');
       } catch (e) { handleErr(e); }
     });
 
+    $('#adm-footer-link-add').addEventListener('click', function () {
+      var box = $('#adm-footer-links');
+      if (box.children.length >= 10) return toast('页脚链接最多 10 个', 'err');
+      box.insertAdjacentHTML('beforeend', footerLinkRowHtml('', ''));
+    });
+
     $('#adm-set-seo-save').addEventListener('click', async function () {
-      var obj;
-      try { obj = parseJsonTextarea('adm-set-seo'); }
-      catch (e) { return toast('seoConfig JSON 无效：' + e.message, 'err'); }
       try {
-        await api('PATCH', '/api/settings', { seo: obj });
+        await api('PATCH', '/api/settings', { seo: readSeoForm() });
         toast('SEO 配置已保存', 'ok');
       } catch (e) { handleErr(e); }
     });
@@ -876,6 +1088,17 @@
         } catch (err) { handleErr(err); }
 
       // ---- 书籍 ----
+      } else if (act === 'novel-edit') {
+        openNovelEdit(id);
+      } else if (act === 'novel-chapters') {
+        openChapters(id, btn.dataset.title || '');
+      } else if (act === 'chapter-edit') {
+        openChapterEdit(id);
+      } else if (act === 'modal-close') {
+        closeModal(btn.dataset.modalClose);
+      } else if (act === 'footer-link-del') {
+        var fl = btn.closest('.adm-footer-link');
+        if (fl) fl.remove();
       } else if (act === 'novel-del') {
         if (!window.confirm('确认删除书籍「' + btn.dataset.title + '」？其章节将一并删除，不可恢复。')) return;
         try {

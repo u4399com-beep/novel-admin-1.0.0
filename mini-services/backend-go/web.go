@@ -282,7 +282,9 @@ func loadPageTemplate(theme, page string) *template.Template {
 func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[string]any) {
         theme, _ := data["theme"].(string)
         if theme == "" {
-                if s := loadWebSettings(); s != nil {
+                // Task 30-a: 主题解析走站群 Host 匹配（站点档案决定 theme；未命中回落默认站点）。
+                // tplCache key 仍为 theme+"/"+page——主题隔离天然成立，无需改 key。
+                if s := resolveSite(r); s != nil && s.ActiveTheme != "" {
                         theme = s.ActiveTheme
                 }
         }

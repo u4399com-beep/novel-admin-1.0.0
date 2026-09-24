@@ -152,6 +152,10 @@ func bodyObjectOK(v any, ok bool) bool {
 }
 
 // taskRuleIDParam 提取可选 ruleId（undefined/null/” 均视为未提供）
+// Task 30-b 修复：巨大数值（如 1e20）原路径 parsePositiveInt 内 int64(f) 转换是 Go 规范的
+// 「实现定义行为」（amd64 溢出得哨兵值 MinInt64，负值穿透后续判定）——与 Task 27-c
+// jsontoc jsonStr 同一类转换风险。改为 float 域先做 2^53 上限判定再转换（合法规则 id
+// 远小于该界，判定不影响任何真实输入；超界值与 TS 版行为对齐为「查不到规则」拒绝路径）。
 func taskRuleIDParam(body map[string]any) (int64, bool, bool) {
 	val, present := body["ruleId"]
 	if !present || val == nil {
@@ -160,14 +164,18 @@ func taskRuleIDParam(body map[string]any) (int64, bool, bool) {
 	if s, isStr := val.(string); isStr && s == "" {
 		return 0, false, true
 	}
-	rid, ok := parsePositiveInt(val)
-	if !ok {
+	f := jsNumber(val)
+	if !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
 		return 0, false, false
 	}
-	return rid, true, true
+	return int64(f), true, true
 }
 
 // taskPagesParam 提取可选 pages（undefined/null/” 视为未提供）
+// Task 30-b 修复：pages=1e20 时 parsePositiveInt 的 int64(f) 转换溢出为负（实现定义行为），
+// 负值绕过旧版「p > 999」上限检查 → 负 pages 任务照常创建（runner 空转 0 页假成功）；
+// TS 版在 float 域比较 p > 999 会直接 400。改为 float 域全部判定后再转换（与 TS 逐字对齐，
+// 超界值恢复 400 拒绝语义）。
 func taskPagesParam(body map[string]any) (int, bool, bool) {
 	val, present := body["pages"]
 	if !present || val == nil {
@@ -176,11 +184,11 @@ func taskPagesParam(body map[string]any) (int, bool, bool) {
 	if s, isStr := val.(string); isStr && s == "" {
 		return 0, false, true
 	}
-	p, ok := parsePositiveInt(val)
-	if !ok || p > 999 {
+	f := jsNumber(val)
+	if !numIsInt(f) || f <= 0 || f > 999 {
 		return 0, false, false
 	}
-	return int(p), true, true
+	return int(f), true, true
 }
 
 // ruleExists 校验采集规则存在

@@ -58,7 +58,7 @@
   {{/* ② 全宽强推区（#C8D4E1 描边 + 封面卡三列，FeaturedBlock 6 本） */}}
   <section class="dd-box dd-box-c8 mt-2">
     <div class="dd-box-title bg-[#e1eced]">{{$cn := printf "%v" .Category.name}}{{if eq (trimSuffixStr $cn "小说") $cn}}{{$cn}}小说{{else}}{{$cn}}{{end}}精选强推</div>
-    <div class="grid gap-3 p-[10px] sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid grid-cols-1 gap-3 p-[10px] sm:grid-cols-2 lg:grid-cols-3">
       {{range .FeaturedBlock}}
       <article class="flex gap-2.5">
         {{if isLocalCover .cover}}<a href="{{bookURL .id}}" class="relative block h-[150px] w-[120px] flex-none overflow-hidden border border-[#a6d3e8]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>

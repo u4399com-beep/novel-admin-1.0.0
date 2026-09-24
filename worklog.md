@@ -1358,3 +1358,23 @@ Stage Summary:
 - 本轮闭环：①预览挂掉实证为环境性（DB 第三次被沙箱清空）+seed 秒级恢复规则资产+快填重启数据面 ②主题回源 10/10 覆盖（8 主题修复+3 反爬例外+1 demo）③采集面修复 2 处 worker bug+限流感知可观测性 ④智能面 29-b 回归零丢失 ⑤代码面 gofmt 全归一
 - 生效状态：backend-go.bin 运行中=全部修复生效；scraper-go 磁盘版已归一待自然重启
 - 遗留：①正文填充长跑（合规限速，任务暂停后 resume 即续传）②"其他"98 本 LLM 轮转消化中 ③101kks/trxsw/pilishuwu 源站对比待可达窗口 ④scraper-go 进程重启后载入归一版
+
+---
+Task ID: 30（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 8 项指令——①footer/seo 表单化去 JSON ②书籍管理编辑（书名/作者/分类/简介/章节）③③待办审查 ④多Agent抓bug ⑤清理精简 ⑥主题逐页核实 ⑦噪声清洗 ⑧站群模式
+
+Work Log:
+- 【任务1 表单化】admin.html 页脚卡改「版权文字+附加说明+链接动态行(≤10,添加/删除)」、SEO 卡改「autoFromContent 勾选+7 组 18 键结构化表单（首页/分类/书籍/目录/章节/搜索/PSEO，每组标注可用变量，placeholder=默认模板）」；admin.js renderFooterForm/readFooterForm/renderSeoForm/readSeoForm（readSeoForm 保留 pseo 子对象防丢；空串显式提交→applyWebTDK 空模板回落内置默认）；parseJsonTextarea 删除（无引用）；E2E 实证：改 homeTitle 保存→GET 回读一致
+- 【任务2 书籍编辑】novels 行加「编辑/章节」按钮+三弹层（书籍编辑：书名/作者/分类下拉/状态/精选/简介→PUT /api/novels/{id}；章节管理：搜索+分页(20/页)+字数→GET /api/novels/{id}/chapters；章节编辑：标题+正文→PUT /api/chapters/{id} 自动重算 wordCount）；agent-browser E2E：编辑 #172 保存 ✓、章节改题+57 字正文保存→列表字数刷新 ✓、ESC 关闭弹层
+- 【任务8 站群模式（30-a 幽灵产出+主线补完）】SiteSite 表（db.go once 内幂等建表）+resolveSite Host 精确匹配（web_data.go，未命中=默认 SiteSetting 行为不变）+renderPage 主题按站点档案解析+api_sites.go CRUD（GET/POST/PUT/DELETE /api/sites，清洗复用 sanitizeSeoConfig/sanitizeFooterConfig）+admin 站群 tab+admin-fleet.js 独立交互文件；E2E：POST 建档→curl -H "Host: fleet-test.example.com" 渲染出「站群测试站」+23qb 主题、默认 Host「青阅文学」不变→DELETE 清理
+- 【P1 死锁修复（30-a 幽灵缺陷，主线拦截）】30-a 在 getDB once 外调 ensureSiteSiteTable→exec→getDB→再次 ensureSiteSiteTable→siteSiteOnce.Do 重入 → sync.Once 递归自锁；**任何首次 getDB 的路径都会死锁（含生产启动），若直接热替换 backend-go 将启动即挂**——go test -timeout panic dump 双 doSlow 栈实证；修复：建表移入 once 回调内用局部 db 直接 Exec（ddl 提为 siteSiteDDL const）；全测恢复 0.006s（此前 TestRecover 组卡死 240s+ 即此因）
+- 【30-b 幽灵修复×3（采集质量）】①api_scrape_tasks.go ruleId/pages 巨大数值（1e20）int64 转换实现定义行为→float 域 2^53 上限判定 ②pages=1e20 负值绕过 p>999 上限→负 pages 假成功任务，恢复 400 拒绝 ③content.go 块级边界缺 td/th/tr/center→表格布局正文粘连（老式杰奇 CMS），粘连行>100 字绕过水印行清洗闸直接污染入库
+- 【30-c 幽灵主题修复】101kks/category.html 经引擎代理取源站快照（上轮 CF 遗留补全）对齐横向图文行 imgbox 125×180+18px #1f6cb2；ddyueshu/pilishuwu 移动端 grid-cols-1 单列响应式；tw.css 重建 145.5KB（1f6cb2/180px/grid-cols-1 类名全验）；目验 101kks 分类页繁体图文横排无溢出
+- 【热替换】双二进制重建（backend-go 死锁修复版+scraper-go content.go 修复版）→ pkill 双进程→dev-go.sh 自愈拉起→backend/engine 双绿→11 任务 PATCH resume 全恢复续传（novels 665 持续增长）
+- 【prisma schema 文档同步】SiteSite 模型对照文档（Go 侧运行时建表管理，schema 为结构说明）
+
+Stage Summary:
+- 8 项指令闭环：①表单化零 JSON（页脚/SEO 22 个控件）②书籍+章节编辑三弹层全链路 E2E ③④⑤多 Agent 4 修复+清理 ⑥101kks 快照回源补全（10 主题中最后一个可达站）+响应式 ⑦噪声清洗 30-b 表格粘连根因修复（比抽验更彻底：从源头堵住污染入库）⑧站群模式上线（一库多站 Host 分站点）
+- 拦截重大事故：30-a 幽灵 getDB 死锁若未被测试拦截，热替换将导致生产启动即挂
+- 遗留：正文填充长跑；noise 抽验本轮由 30-b 根因修复替代；站群高级编辑（SEO/页脚 JSON 形态）待下轮表单化复用
