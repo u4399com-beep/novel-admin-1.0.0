@@ -49,7 +49,7 @@
         </div>
         <div id="ss-ch-meta" class="mt-1.5 flex flex-wrap gap-3 text-[12px] text-[#969BA3]">
           <a class="cursor-pointer transition-colors hover:text-[#ED4259]" href="{{bookURL .Novel.id}}">{{.Novel.title}}</a>
-          <span>{{wcFmt .Chapter.wordCount}}</span>
+          {{if .Chapter.wordCount}}<span>{{wcFmt .Chapter.wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
           <span class="max-[639px]:hidden">键盘 ← → 翻章 · 回车回目录</span>
         </div>
         <article id="fb-chapter-content" class="mt-5 space-y-1 text-justify"

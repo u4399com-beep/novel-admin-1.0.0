@@ -14,20 +14,20 @@
   {{/* 图文推荐（theme-extras 中性样式：精选优先横向大图卡 ×3） */}}
   {{if .FeaturedBlock}}
   <section class="mt-2" aria-label="图文推荐">
-    <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 bg-white pl-2.5">
-      <span class="text-neutral-700" aria-hidden="true">✦</span>
-      <h2 class="text-base font-bold tracking-wide text-neutral-900">图文推荐</h2>
+    <div class="mb-3 flex items-center gap-2 border-l-4 border-[#88c6e5] bg-white pl-2.5">
+      <span class="text-[#88c6e5]" aria-hidden="true">✦</span>
+      <h2 class="text-base font-bold tracking-wide text-[#333]">图文推荐</h2>
     </div>
     <div class="grid gap-3 md:grid-cols-3">
       {{range .FeaturedBlock}}
-      <a class="group flex gap-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md" href="{{bookURL .id}}">
-        {{if isLocalCover .cover}}<span class="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
-        {{else}}<span class="relative h-28 w-20 shrink-0 overflow-hidden rounded-lg {{gcls .cover}}"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+      <a class="group flex gap-3 rounded-none border border-[#c8d4e1] bg-white p-3 text-left transition-colors duration-200 hover:border-[#459df5]" href="{{bookURL .id}}">
+        {{if isLocalCover .cover}}<span class="relative h-28 w-20 shrink-0 overflow-hidden"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+        {{else}}<span class="relative h-28 w-20 shrink-0 overflow-hidden {{gcls .cover}}"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
         <span class="block min-w-0 flex-1 py-0.5">
-          <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
-          <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
-          <span class="mt-1.5 line-clamp-2 text-xs leading-relaxed text-neutral-600">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</span>
-          <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+          <span class="block truncate text-sm font-semibold text-[#667788] group-hover:text-[#459df5]">{{.title}}</span>
+          <span class="mt-0.5 block truncate text-xs text-[#999]">{{.author}} · {{.categoryName}}</span>
+          <span class="mt-1.5 line-clamp-2 text-xs leading-relaxed text-[#666]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</span>
+          <span class="mt-1.5 block text-[11px] text-[#b3b3b3]">{{.chapterCount}}章 · {{.clicks}}点击</span>
         </span>
       </a>
       {{end}}
@@ -38,17 +38,17 @@
   {{/* 热门书籍（点击榜网格小卡 ×8） */}}
   {{if .HotBlock}}
   <section class="mt-2" aria-label="热门书籍">
-    <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 bg-white pl-2.5">
+    <div class="mb-3 flex items-center gap-2 border-l-4 border-[#88c6e5] bg-white pl-2.5">
       <span class="text-neutral-700" aria-hidden="true">↗</span>
-      <h2 class="text-base font-bold tracking-wide text-neutral-900">热门书籍</h2>
+      <h2 class="text-base font-bold tracking-wide text-[#333]">热门书籍</h2>
     </div>
     <div class="grid grid-cols-2 gap-3 bg-white p-2 sm:grid-cols-4">
       {{range .HotBlock}}
-      <a class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md" href="{{bookURL .id}}">
+      <a class="group flex flex-col rounded-none border border-[#c8d4e1] bg-white p-2 text-left transition-colors duration-200 hover:border-[#459df5]" href="{{bookURL .id}}">
         {{if isLocalCover .cover}}<span class="relative block w-full overflow-hidden rounded-lg" style="aspect-ratio:3/4"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
         {{else}}<span class="relative block w-full overflow-hidden rounded-lg {{gcls .cover}}" style="aspect-ratio:3/4"><span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
-        <span class="mt-2 block truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
-        <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+        <span class="mt-2 block truncate text-xs font-semibold text-[#667788] group-hover:text-[#459df5]">{{.title}}</span>
+        <span class="truncate text-[11px] text-[#999]">{{.author}}</span>
       </a>
       {{end}}
     </div>

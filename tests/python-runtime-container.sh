@@ -1,4 +1,6 @@
 #!/bin/bash
+# 注（Task 28 主线）: next-service-dist 为历史命名（python render 策略的部署构建目录名），
+# 与 Next.js 无功能依赖（Next.js 已于 Task 27 拆除）；render 不可用时引擎优雅降级。
 
 set -euo pipefail
 

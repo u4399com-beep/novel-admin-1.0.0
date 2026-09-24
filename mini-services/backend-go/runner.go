@@ -81,7 +81,15 @@ func recategorizeOne() bool {
 		}
 	}
 	recatOffset++
-	canon := canonicalCategoryWithHint("", title, description)
+	// Task 28-b: 改走非缓存归类路径。旧代码 canonicalCategoryWithHint 会把 LLM 失败期
+	// （401/冷却）的 FALLBACK 结果永久写入 hint 缓存（catCache 无过期机制），LLM 凭证
+	// 恢复后这批书仍命中缓存 → 永远 return false，队列空转不收敛。改为：本地关键词
+	// （标题+简介 240 字）优先，残余直接 llmClassifyBook（串行+30s 冷却治理在 llm.go），
+	// 负结果不落缓存，LLM 恢复后下一轮即可自然归类。
+	canon := classifyBookLocal(title, description)
+	if canon == "" {
+		canon = llmClassifyBook(title, description)
+	}
 	if canon == FALLBACK_CATEGORY || canon == "" {
 		return false // LLM 冷却中/推断未果：本轮跳过
 	}

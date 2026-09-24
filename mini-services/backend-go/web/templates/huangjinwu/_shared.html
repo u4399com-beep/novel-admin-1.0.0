@@ -9,10 +9,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 </head>
-<body class="min-h-screen bg-gradient-to-b from-[#f5f8ff] to-[#eef3fb] text-[16px] text-[#1e293b]">
+<body class="flex min-h-screen flex-col bg-gradient-to-b from-[#f5f8ff] to-[#eef3fb] text-[16px] text-[#1e293b]">{{/* Task 28-c: flex-col 使页脚 sticky */}}
 
 {{/* 顶部毛玻璃导航条 */}}
 <header class="sticky top-0 z-40 border-b border-[#dbe4f0] bg-white/90 backdrop-blur-[12px]">
@@ -59,7 +60,7 @@
   {{end}}
 </header>
 
-<main>{{template "content" .}}</main>
+<main class="min-w-0 flex-1">{{template "content" .}}</main>
 
 {{/* 页脚 */}}
 <footer class="mt-12 border-t border-[#dbe4f0] bg-[#e2eaf5] py-10 text-[14px] text-[#64748b]">
@@ -130,6 +131,6 @@
   <div class="mt-3 flex flex-wrap gap-2">
     <a href="{{catURL .categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{.categoryName}}</a>
     <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq .status "finished"}}完本{{else}}连载中{{end}}</span>
-    <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{wcFmt .wordCount}}</span>
+    <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
   </div>
 </article>{{end}}

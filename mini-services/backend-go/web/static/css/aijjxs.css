@@ -97,6 +97,10 @@
   padding: 4px 9px;
   white-space: nowrap;
 }
+/* Task 28-c: 热搜胶囊底色对齐源站 --chip #eef9f7（原 #e8f7f4 偏色） */
+.aj-root .aj-chip {
+  background: #eef9f7;
+}
 .aj-badge {
   display: inline-flex;
   align-items: center;
@@ -190,7 +194,9 @@
   font-weight: 700;
 }
 
-/* ---------- 固定顶条：深酒红毛玻璃（源站为三段竖向渐变 #550F1C→#3C0814→#26040C） ---------- */
+/* ---------- 固定顶条：深酒红毛玻璃（源站最终态为三段竖向渐变 #550F1C→#3C0814→#26040C !important 覆盖链）
+   Task 28-c: 边线/阴影/交互态按源站最终层对齐：border rgba(20,5,10,.55)、
+   box-shadow 0 8px 24px rgba(60,10,20,.28)、hover/active 白色叠加+内阴影胶囊 ---------- */
 .aj-topbar {
   background: linear-gradient(
     180deg,
@@ -198,9 +204,10 @@
     rgba(60, 8, 20, 0.94) 50%,
     rgba(38, 4, 12, 0.96) 100%
   );
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 214, 224, 0.28);
+  backdrop-filter: blur(12px) saturate(145%);
+  -webkit-backdrop-filter: blur(12px) saturate(145%);
+  border-bottom: 1px solid rgba(20, 5, 10, 0.55);
+  box-shadow: 0 8px 24px rgba(60, 10, 20, 0.28);
 }
 .aj-toplink {
   display: inline-flex;
@@ -217,10 +224,17 @@
   transition: background 0.15s ease;
 }
 .aj-toplink:hover {
-  background: rgba(255, 214, 226, 0.28);
+  background: rgba(255, 255, 255, 0.26);
+  border-radius: 8px;
 }
 .aj-toplink[data-active='true'] {
-  background: rgba(255, 255, 255, 0.26);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+    0 1px 3px rgba(0, 0, 0, 0.18);
+  color: #fff;
+  font-weight: 700;
 }
 
 /* ---------- 站名标题（琥珀渐变下划线） ---------- */

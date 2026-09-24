@@ -30,20 +30,20 @@
 
       {{/* 图文推荐区块（CategoryFeaturedBlock 同构：3 张横向大图卡） */}}
       {{if .FeaturedBlock}}<section class="mb-6" aria-label="图文推荐">
-        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
-          <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span>
-          <h3 class="text-base font-bold tracking-wide text-neutral-900">图文推荐</h3>
+        <div class="mb-3 flex items-center gap-2 border-l-4 border-[#3366bb] pl-2.5">
+          <span aria-hidden="true" class="text-[#3366bb]"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span>
+          <h3 class="text-base font-bold tracking-wide text-[#333]">图文推荐</h3>
         </div>
         <div class="grid gap-3 md:grid-cols-3">
-          {{range $i, $n := .FeaturedBlock}}{{if lt $i 3}}<a href="{{bookURL .id}}" class="group flex gap-3 rounded-xl border border-neutral-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
-            <span class="relative block h-28 w-20 shrink-0 overflow-hidden rounded-lg {{gcls .cover}}">
+          {{range $i, $n := .FeaturedBlock}}{{if lt $i 3}}<a href="{{bookURL .id}}" class="group flex gap-3 rounded-none border border-[#bfd8ea] bg-[#f7fbff] p-3 text-left transition-colors duration-200 hover:border-[#ff6600] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff6600]/40">
+            <span class="relative block h-28 w-20 shrink-0 overflow-hidden {{gcls .cover}}">
               {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
             </span>
             <span class="block min-w-0 flex-1 py-0.5">
-              <span class="block truncate text-sm font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
-              <span class="mt-0.5 block truncate text-xs text-neutral-500">{{.author}} · {{.categoryName}}</span>
-              <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-neutral-600">{{excerpt .description 50}}</span>
-              <span class="mt-1.5 block text-[11px] text-neutral-400">{{.chapterCount}}章 · {{.clicks}}点击</span>
+              <span class="block truncate text-sm font-semibold text-[#3366bb] group-hover:text-[#ff6600]">{{.title}}</span>
+              <span class="mt-0.5 block truncate text-xs text-[#999]">{{.author}} · {{.categoryName}}</span>
+              <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-[#666]">{{excerpt .description 50}}</span>
+              <span class="mt-1.5 block text-[11px] text-[#999]">{{.chapterCount}}章 · {{.clicks}}点击</span>
             </span>
           </a>{{end}}{{end}}
         </div>
@@ -51,17 +51,17 @@
 
       {{/* 热门书籍区块（CategoryHotBlock 同构：点击榜网格小卡） */}}
       {{if .HotBlock}}<section class="mb-6" aria-label="热门书籍">
-        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
-          <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
-          <h3 class="text-base font-bold tracking-wide text-neutral-900">热门书籍</h3>
+        <div class="mb-3 flex items-center gap-2 border-l-4 border-[#3366bb] pl-2.5">
+          <span aria-hidden="true" class="text-[#3366bb]"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+          <h3 class="text-base font-bold tracking-wide text-[#333]">热门书籍</h3>
         </div>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {{range $i, $n := .HotBlock}}{{if lt $i 8}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
-            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden rounded-lg {{gcls .cover}}">
+          {{range $i, $n := .HotBlock}}{{if lt $i 8}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-none border border-[#bfd8ea] bg-[#f7fbff] p-2 text-left transition-colors duration-200 hover:border-[#ff6600] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff6600]/40">
+            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden {{gcls .cover}}">
               {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
             </span>
-            <span class="mt-2 truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
-            <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+            <span class="mt-2 truncate text-xs font-semibold text-[#3366bb] group-hover:text-[#ff6600]">{{.title}}</span>
+            <span class="truncate text-[11px] text-[#999]">{{.author}}</span>
           </a>{{end}}{{end}}
         </div>
       </section>{{end}}
@@ -71,7 +71,7 @@
         <span class="truncate font-medium text-[#3366BB]">{{.title}}</span>
         <span class="hidden truncate text-[#888] md:block">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}—{{end}}</span>
         <span class="hidden truncate text-[#999] md:block">{{.author}}</span>
-        <span class="hidden text-right text-[#999] md:block">{{wcFmt .wordCount}}</span>
+        <span class="hidden text-right text-[#999] md:block">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
         <span class="truncate text-right text-[#999] md:text-left">{{fullFmt .updatedAt}}</span>
         <span class="hidden text-center md:block {{if eq .status "finished"}}text-[#2E8B57]{{else}}text-[#CC0000]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span>
       </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">该分类下暂无小说，换个条件试试～</p>{{end}}

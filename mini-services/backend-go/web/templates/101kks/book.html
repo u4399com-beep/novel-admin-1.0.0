@@ -31,7 +31,7 @@
             <ul class="mt-3 space-y-1.5 text-[15px] text-[#757575]">
               <li>作者：<a href="{{searchURL (printf "%v" .Novel.author)}}" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">{{.Novel.author}}</a></li>
               <li>分類：<a href="{{catURL .Novel.categoryId}}" class="cursor-pointer text-[#1f6cb2] hover:text-[#06c]">{{.Novel.categoryName}}</a></li>
-              <li>字數：{{wcFmt .Novel.wordCount}}</li>
+              {{if .Novel.wordCount}}<li>字數：{{wcFmt .Novel.wordCount}}</li>{{end}}{{/* Task 28-c: wordCount=0 隐藏（狀態列已表达完結/連載） */}}
               <li>狀態：{{if eq .Novel.status "finished"}}完結{{else}}連載{{end}}</li>
               <li>更新：{{fullFmt .Novel.updatedAt}}</li>
             </ul>
@@ -77,7 +77,7 @@
         <div data-panel="toc" class="mt-1">
           {{range .Chapters}}<div class="flex items-center justify-between gap-3 border-b border-black/5">
             <a href="{{chapterURL .id}}" class="min-w-0 flex-1 cursor-pointer truncate py-2.5 text-left text-[15px] text-[#333] transition-colors hover:text-[#06c]">{{.title}}</a>
-            <span class="shrink-0 text-xs text-[#888]">{{wcFmt .wordCount}}</span>
+            {{if .wordCount}}<span class="shrink-0 text-xs text-[#888]">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
           </div>{{else}}<p class="py-8 text-center text-sm text-[#888]">暫無章節</p>{{end}}
           <div class="mt-4 text-center">
             <a href="{{tocURL .Novel.id}}" class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-[5px] bg-[#1f6cb2] px-3 text-[13px] text-white transition-all hover:bg-[#06c] hover:shadow-[0_2px_6px_rgba(0,0,0,.2)]">完整目錄（{{.ChaptersTotal}} 章）</a>
@@ -88,7 +88,7 @@
         <div data-panel="intro" hidden class="mt-4">
           <div class="grid grid-cols-2 rounded-[8px] bg-[#f4f4f4] py-3 text-center">
             <div>
-              <p class="text-lg font-bold text-[#333]">{{wcFmt .Novel.wordCount}}</p>
+              <p class="text-lg font-bold text-[#333]">{{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}{{if eq .Novel.status "finished"}}完結{{else}}連載中{{end}}{{end}}{{/* Task 28-c: wordCount=0 显示状态文字而非「—」 */}}</p>
               <p class="text-xs text-[#888]">總字數</p>
             </div>
             <div>
@@ -99,7 +99,7 @@
           <p class="mt-4 whitespace-pre-line text-[15px] leading-relaxed text-[#333]">{{if .Novel.description}}{{.Novel.description}}{{else}}（作者還未填寫簡介）{{end}}</p>
           {{if .Tags}}
           <div class="mt-3 flex flex-wrap items-center gap-1.5">
-            {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看標籤「{{.}}」相關小說聚合頁" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+            {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看標籤「{{.}}」相關小說聚合頁" class="cursor-pointer rounded-full border border-[#dcecfa] bg-[#e8f4ff] px-2.5 py-0.5 text-xs leading-5 text-[#1f6cb2] transition-colors hover:border-[#1f6cb2] hover:bg-[#dcecfa]">{{.}}</a>{{end}}
           </div>
           {{end}}
         </div>
@@ -143,7 +143,7 @@
             <span class="min-w-0 flex-1">
               <span class="line-clamp-2 block font-bold text-[#333] transition-colors group-hover:text-[#06c]">{{.title}}</span>
               <span class="mt-2 block text-xs text-[#888]">{{.author}}</span>
-              <span class="mt-1 block text-xs text-[#757575]">{{.categoryName}} · {{wcFmt .wordCount}}</span>
+              <span class="mt-1 block text-xs text-[#757575]">{{.categoryName}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</span>{{/* Task 28-c: wordCount=0 隐藏字数段而非「—」 */}}
             </span>
           </a>{{end}}
           {{/* 其余纯文字行（序号 2..N，前两号红） */}}

@@ -9,17 +9,15 @@ HomeCustomBlocks 契约：首页无分类板块，置于首个主体内容区（
   <div class="mt-3">
     {{if .HomeBlocks}}<div class="mx-auto w-full max-w-6xl px-4">
       {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
-        <div class="mb-3 flex items-center gap-2 border-l-4 border-neutral-800 pl-2.5">
-          <span aria-hidden="true" class="text-neutral-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
-          <h2 class="text-base font-bold tracking-wide text-neutral-900">{{.title}}</h2>
-        </div>
+        {{/* Task 28-c: 区块标题/卡片风格对齐源站 h2（#333 底线）与直角 #ccc 盒风 */}}
+        <h2 class="mb-3 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">{{.title}}</h2>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {{range .novels}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
-            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden rounded-lg {{gcls .cover}}">
+          {{range .novels}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-[4px] border border-[#ccc] bg-white p-2 text-left transition-colors duration-200 hover:border-[#f50]">
+            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden {{gcls .cover}}">
               {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
             </span>
-            <span class="mt-2 truncate text-xs font-semibold text-neutral-900 group-hover:underline">{{.title}}</span>
-            <span class="truncate text-[11px] text-neutral-500">{{.author}}</span>
+            <span class="mt-2 truncate text-[13px] font-bold text-[#00886d] group-hover:text-[#f50]">{{.title}}</span>
+            <span class="truncate text-[11px] text-[#888]">{{.author}}</span>
           </a>{{else}}<p class="py-6 text-center text-xs text-[#999]">暂无数据</p>{{end}}
         </div>
       </section>{{end}}
@@ -52,7 +50,7 @@ HomeCustomBlocks 契约：首页无分类板块，置于首个主体内容区（
     {{/* 第一行右：搜索框 + 阅读排行榜 */}}
     <aside>
       <form action="/search" method="get" role="search" class="flex h-[38px] overflow-hidden rounded-[5px] border-2 border-[#56ccb5] bg-white">
-        <input type="search" name="q" placeholder="输入关键词" aria-label="搜索小说" class="min-w-0 flex-[4] px-3 text-[14px] text-[#333] outline-none placeholder:text-[#bbb]">
+        <input type="search" name="q" placeholder="输入关键词" aria-label="搜索小说" class="min-w-0 flex-[4] bg-[#f9f9f9] px-3 text-[14px] text-[#56ccb5] outline-none placeholder:text-[#bbb]">{{/* Task 28-c: 输入框底色/字色对齐源站 .search input（bg #f9f9f9 + color #56ccb5） */}}
         <button type="submit" class="flex-[1] cursor-pointer bg-[#56ccb5] text-[13px] text-white transition-colors duration-200 hover:bg-[#48b9a2]">搜索</button>
       </form>
       <h2 class="mb-2 mt-4 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">阅读排行榜</h2>
@@ -63,7 +61,7 @@ HomeCustomBlocks 契约：首页无分类板块，置于首个主体内容区（
           <span class="shrink-0 text-[12px] text-[#999]">{{.author}}</span>
         </div>{{else}}<p class="py-6 text-center text-[13px] text-[#999]">暂无数据</p>{{end}}
       </div>
-    </section>
+    </aside>
 
     {{/* 第二行左：最近更新（五列字段表，Go 契约 .Latest 容量 14） */}}
     <section>

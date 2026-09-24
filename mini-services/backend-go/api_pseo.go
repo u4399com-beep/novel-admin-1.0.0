@@ -361,7 +361,8 @@ func runSeedBatch(seeds []string, cfg pseoRunnerConfig, level int) []seedOutcome
 					return
 				}
 				seed := seeds[i]
-				// 批量场景种子/引擎叠加并发更高，引擎超时放宽到 6s（单发 suggest 仍为 4s）
+				// 批量场景种子/引擎叠加并发更高；引擎聚合超时与单发一致取 8s
+				// （Task 28-b: 旧注释「放宽到 6s/单发 4s」与实际值 8000ms 不符，已纠正）
 				agg := fetchSuggestionsMulti(seed, cfg.Sources, 8000)
 				words := agg.Words
 				if len(words) > cfg.PerSeedLimit {

@@ -130,11 +130,20 @@ func loadRule(ruleID *int) LoadedRule {
 	}
 }
 
-// mapNovelStatus 源站连载状态 → serial|finished
-var novelStatusRE = regexp.MustCompile(`(?i)完|fin`)
+// mapNovelStatus 源站连载状态 → serial|finished。
+// Task 28-b: 否定/进行时词先行判定——旧正则 `完|fin` 会让「未完结」「连载未完」因含单字
+// 「完」被误判完结；英文 Completed（无 fin 字样）则被误判连载。负向词表先命中（含繁体
+// 「連載中」与停更系），完结词表补 compl；裸「连载」不含完结词本就落 serial，无需进负向表
+// （否则「连载完结」这类合成词会被先行误判）。
+var novelStatusOngoingRE = regexp.MustCompile(`(?i)未完|暂停|停更|断更|太监|连载中|連載中|ongoing`)
+
+var novelStatusFinishedRE = regexp.MustCompile(`(?i)完|fin|compl`)
 
 func mapNovelStatus(raw string) string {
-	if novelStatusRE.MatchString(raw) {
+	if novelStatusOngoingRE.MatchString(raw) {
+		return "serial"
+	}
+	if novelStatusFinishedRE.MatchString(raw) {
 		return "finished"
 	}
 	return "serial"

@@ -9,6 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.pageTitle}}</title>
 {{if .pageDescription}}<meta name="description" content="{{.pageDescription}}">{{end}}
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 <style>
@@ -16,7 +17,7 @@
 .no-scrollbar::-webkit-scrollbar{display:none}
 </style>
 </head>
-<body class="min-h-screen bg-[#f8f9f9] text-[#282828]">
+<body class="flex min-h-screen flex-col bg-[#f8f9f9] text-[#282828]">{{/* Task 28-c: flex-col 使页脚 sticky */}}
 
 {{/* 固定 70px 顶栏：首页初始透明，滚动后毛玻璃（data-qb-header 供 JS 切换） */}}
 <header id="qb-header" data-qb-header data-qb-home="{{if eq .Path "/"}}1{{else}}0{{end}}" class="fixed inset-x-0 top-0 z-50 transition-[background-color,box-shadow] duration-300 {{if eq .Path "/"}}bg-transparent{{else}}bg-[#eaedf1]/95 shadow-[0_2px_12px_rgba(149,157,165,.18)] backdrop-blur-[10px]{{end}}">
@@ -98,7 +99,7 @@
 </div>
 
 {{/* 首页顶栏悬浮在头图上：无占位 padding */}}
-<main class="{{if ne .Path "/"}}pt-[70px]{{end}}">{{template "content" .}}</main>
+<main class="min-w-0 flex-1{{if ne .Path "/"}} pt-[70px]{{end}}">{{template "content" .}}</main>
 
 {{/* 页脚 */}}
 <footer class="mt-12 bg-[#f3f5f7]">

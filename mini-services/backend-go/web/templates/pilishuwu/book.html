@@ -20,7 +20,7 @@ Go 契约 .Chapters 为最早 12 章预览（TSX 最新章节取全量末 12 条
         <h1 class="text-xl font-bold leading-snug text-[#333]">{{.Novel.title}}</h1>
         <p class="mt-1 text-xs text-[#999]">作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</p>
         <ul class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-[#666] sm:grid-cols-3">
-          <li>字数：{{wcFmt .Novel.wordCount}}</li>
+          <li>字数：{{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}{{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}{{end}}{{/* Task 28-c: wordCount=0 显示状态文字而非「—」 */}}</li>
           <li>章节：共 {{.ChaptersTotal}} 章</li>
           <li>点击：{{.Novel.clicks}}</li>
           <li>更新：{{fullFmt .Novel.updatedAt}}</li>
@@ -45,7 +45,7 @@ Go 契约 .Chapters 为最早 12 章预览（TSX 最新章节取全量末 12 条
       <p class="indent-[2em] text-sm leading-7 text-[#666]">{{if .Novel.description}}{{.Novel.description}}{{else}}作者尚未填写简介。{{end}}</p>
       {{if .Tags}}<div class="mt-3 flex flex-wrap items-center gap-1.5">
         <span class="text-xs font-medium text-neutral-500">相关标签：</span>
-        {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+        {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-none border border-[#bfd8ea] bg-[#eaf3fb] px-2.5 py-0.5 text-xs leading-5 text-[#3366bb] transition-colors hover:border-[#ff6600] hover:text-[#ff6600]">{{.}}</a>{{end}}
       </div>{{end}}
     </div>
   </section>
@@ -60,7 +60,7 @@ Go 契约 .Chapters 为最早 12 章预览（TSX 最新章节取全量末 12 条
       <div class="grid gap-x-8 md:grid-cols-2">
         {{range .Chapters}}<a href="{{chapterURL .id}}" class="flex cursor-pointer items-center justify-between gap-3 border-b border-dotted border-[#D5E6F3] py-[7px] text-xs hover:bg-[#F7FBFF]">
           <span class="truncate text-[#3366BB] hover:text-[#FF6600]">{{.title}}</span>
-          <span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt .wordCount}}</span>
+          {{if .wordCount}}<span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
         </a>{{else}}<p class="py-10 text-center text-sm text-[#999] md:col-span-2">暂无章节</p>{{end}}
       </div>
     </div>

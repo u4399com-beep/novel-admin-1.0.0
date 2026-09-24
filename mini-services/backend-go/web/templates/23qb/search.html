@@ -17,7 +17,7 @@
         <div class="transition-all duration-300 group-hover:-translate-y-1 group-hover:drop-shadow-[0_10px_18px_rgba(149,157,165,.45)]">
           <div class="relative overflow-hidden rounded-[5px] {{gcls .cover}}">
             {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<div class="flex aspect-[5/7] items-center justify-center"><span class="text-5xl font-bold text-white/90 drop-shadow-md">{{title0 .title}}</span></div>{{end}}
-            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6"><p class="truncate text-[11px] text-white/85">{{.categoryName}} · {{wcFmt .wordCount}}</p></div>
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6"><p class="truncate text-[11px] text-white/85">{{.categoryName}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</p></div>
           </div>
         </div>
         <p class="mt-2 truncate text-center text-[15px] font-semibold text-[#282828] transition-colors group-hover:text-[#ff2a14]">{{.title}}</p>

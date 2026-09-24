@@ -25,7 +25,7 @@ Go 契约书页仅带 12 章预览（TSX 内嵌全部章节目录），完整目
         <h1 class="text-[22px] font-bold text-[#56ccb5]">{{.Novel.title}}</h1>
         <div class="mt-2 flex flex-wrap gap-2">
           <a href="{{searchURL .Novel.author}}" class="cursor-pointer rounded-[3px] border border-[#ffb0b4] px-2 py-[1px] text-[12px] leading-[18px] text-[#bf2c24] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]">作者：{{.Novel.author}}</a>
-          <span class="rounded-[3px] border border-[#89d4ff] px-2 py-[1px] text-[12px] leading-[18px] text-[#3f5a93]">字数：{{wcFmt .Novel.wordCount}}</span>
+          {{if .Novel.wordCount}}<span class="rounded-[3px] border border-[#89d4ff] px-2 py-[1px] text-[12px] leading-[18px] text-[#3f5a93]">字数：{{wcFmt .Novel.wordCount}}</span>{{end}}{{/* Task 28-c: wordCount=0 隐藏徽章（相邻状态徽章已表达连载中/已完本） */}}
           <span class="rounded-[3px] border border-[#89d4ff] px-2 py-[1px] text-[12px] leading-[18px] text-[#3f5a93]">阅读：{{.Novel.clicks}}人次</span>
           <span class="rounded-[3px] border border-[#ffb0b4] px-2 py-[1px] text-[12px] leading-[18px] text-[#bf2c24]">{{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}</span>
         </div>
@@ -33,7 +33,7 @@ Go 契约书页仅带 12 章预览（TSX 内嵌全部章节目录），完整目
         {{/* 小说标签：书名+作者+pseo 下拉词 */}}
         {{if .Tags}}<div class="mt-2 flex flex-wrap items-center gap-1.5">
           <span class="text-xs font-medium text-neutral-500">相关标签：</span>
-          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-[4px] border border-[#ccc] bg-[#f9f9f9] px-2.5 py-0.5 text-xs leading-5 text-[#00886d] transition-colors hover:border-[#f50] hover:text-[#f50]">{{.}}</a>{{end}}
         </div>{{end}}
         <p class="mt-2 text-[13px] text-[#888]">最新章节：{{if .LastChapter}}<a href="{{chapterURL .LastChapter.id}}" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.LastChapter.title}}</a>{{else}}<span class="text-[#999]">暂无章节</span>{{end}}</p>
         <p class="mt-1 text-[13px] text-[#999]">更新时间：{{fullFmt .Novel.updatedAt}}</p>

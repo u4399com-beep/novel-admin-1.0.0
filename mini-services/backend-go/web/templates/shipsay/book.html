@@ -16,7 +16,7 @@
           </div>
           <div class="mt-2 flex flex-wrap gap-1.5">
             <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{.Novel.categoryName}}</span>
-            <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{wcFmt .Novel.wordCount}}</span>
+            {{if .Novel.wordCount}}<span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{wcFmt .Novel.wordCount}}</span>{{end}}{{/* Task 28-c: wordCount=0 隐藏徽章（相邻状态徽章已表达完本/连载） */}}
             <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</span>
             <span class="rounded-sm border border-[#CCC] px-1.5 py-0.5 text-[12px] leading-none text-[#666]">{{.ChaptersTotal}} 章</span>
           </div>
@@ -46,7 +46,7 @@
         {{if .Tags}}
         <div class="mt-3 flex flex-wrap items-center gap-1.5">
           <span class="text-xs font-medium text-neutral-500">相关标签：</span>
-          {{range .Tags}}<a class="rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
+          {{range .Tags}}<a class="rounded-full border border-[#e6e6e6] bg-[#fbfbfb] px-2.5 py-0.5 text-xs leading-5 text-[#969ba3] transition-colors hover:border-[#ed4259] hover:text-[#ed4259]" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
         </div>
         {{end}}
       </section>

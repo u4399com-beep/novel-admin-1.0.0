@@ -35,7 +35,7 @@
 
       {{/* 居中标题 + 元信息 */}}
       <h1 id="kks-ch-title" class="mt-3 text-center text-xl font-bold text-[#333]">{{.Chapter.title}}</h1>
-      <p id="kks-ch-meta" class="mt-2 text-center text-sm text-[#888]">{{.Novel.title}} · {{wcFmt .Chapter.wordCount}} · 第 {{.Chapter.idx}} 章</p>
+      <p id="kks-ch-meta" class="mt-2 text-center text-sm text-[#888]">{{.Novel.title}}{{if .Chapter.wordCount}} · {{wcFmt .Chapter.wordCount}}{{end}} · 第 {{.Chapter.idx}} 章{{/* Task 28-c: 骨架章节不显示「0字」 */}}</p>
       <p id="kks-ch-hint" class="mt-1 text-center text-xs text-[#888]">打開章節時自動記錄閱讀進度</p>
 
       {{/* 正文：行高可调、段首两格缩进、字号/字体可调（公共契约容器） */}}

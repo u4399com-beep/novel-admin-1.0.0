@@ -37,7 +37,7 @@ Go 契约：/search 仅在有 q 时返回 .Novels/.Total；空关键词无热榜
                 <a class="min-w-0 truncate" href="{{bookURL .id}}">{{.title}}</a>
                 {{if .isHot}}<span class="aj-badge">新</span>{{end}}
               </h3>
-              <p class="mt-1 truncate text-xs text-[#6b7280]">{{.categoryName}} · {{.author}} · {{wcFmt .wordCount}}</p>
+              <p class="mt-1 truncate text-xs text-[#6b7280]">{{.categoryName}} · {{.author}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</p>
               <p class="mt-1.5 line-clamp-3 text-[13px] leading-[1.6] text-[#6b7280]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</p>
             </div>
           </article>

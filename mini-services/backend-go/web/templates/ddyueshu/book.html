@@ -12,7 +12,7 @@
       <span class="flex-none text-[#b3b3b3]">&gt;</span>
       <span class="truncate text-[#667788]">{{.Novel.title}}最新章节列表</span>
     </div>
-    <span class="hidden flex-none text-[12px] text-[#999] sm:block">字数 {{wcFmt .Novel.wordCount}} · 点击 {{.Novel.clicks}}</span>
+    <span class="hidden flex-none text-[12px] text-[#999] sm:block">字数 {{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}{{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}{{end}} · 点击 {{.Novel.clicks}}</span>{{/* Task 28-c: wordCount=0 显示状态文字而非「—」 */}}
   </div>
 
   {{/* 信息区 */}}
@@ -35,7 +35,7 @@
           <p>
             <span class="text-[#999]">状态：</span>
             {{if eq .Novel.status "finished"}}<span class="text-[#085308]">已完本</span>{{else}}<span class="dd-hottext">连载中</span>{{end}}
-            <span class="ml-3 text-[#999]">字数：</span>{{wcFmt .Novel.wordCount}}
+            {{if .Novel.wordCount}}<span class="ml-3 text-[#999]">字数：</span>{{wcFmt .Novel.wordCount}}{{end}}{{/* Task 28-c: wordCount=0 隐藏（左侧状态已表达已完本/连载中） */}}
             <span class="ml-3 text-[#999]">点击：</span>{{.Novel.clicks}}
             <span class="ml-3 text-[#999]">章节：</span>共 {{.ChaptersTotal}} 章
           </p>
@@ -55,7 +55,7 @@
     {{if .Tags}}
     <div class="mx-3 flex flex-wrap items-center gap-1.5 pb-2">
       <span class="text-xs font-medium text-neutral-500">相关标签：</span>
-      {{range .Tags}}<a class="rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
+      {{range .Tags}}<a class="rounded-none border border-[#c8d4e1] bg-white px-2.5 py-0.5 text-xs leading-5 text-[#667788] transition-colors hover:border-[#459df5] hover:text-[#459df5]" href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
     </div>
     {{end}}
   </section>

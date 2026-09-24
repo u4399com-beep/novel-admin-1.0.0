@@ -18,7 +18,7 @@
   <section class="dd-box dd-box-mid mt-2 flex flex-wrap items-center justify-between gap-2 px-3 py-2">
     <div class="min-w-0">
       <h1 class="dd-hei truncate text-[22px] font-bold leading-[30px] text-[#333]">《{{.Novel.title}}》章节目录</h1>
-      <p class="mt-0.5 truncate text-[12px] text-[#999]">作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}} · {{wcFmt .Novel.wordCount}}</p>
+      <p class="mt-0.5 truncate text-[12px] text-[#999]">作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}} · {{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}—{{end}}</p>
     </div>
     <div class="flex flex-none items-center gap-3 text-[13px]">
       <a class="dd-greenlink" href="{{bookURL .Novel.id}}">返回书页</a>

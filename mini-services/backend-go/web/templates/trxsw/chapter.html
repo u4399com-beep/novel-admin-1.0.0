@@ -49,7 +49,7 @@ TSX 的书架/推荐按钮行保留为 trxsw.js 驱动；章尾「热门推荐�
         <div id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}"{{if .Prev}} data-prev-url="{{chapterURL .Prev.id}}"{{end}}{{if .Next}} data-next-url="{{chapterURL .Next.id}}"{{end}}>
           {{range .Paragraphs}}<p class="indent-[2em]">{{.}}</p>{{else}}<p class="py-6 text-center text-sm text-[#8FA6C0]">本章内容为空</p>{{end}}
         </div>
-        <p class="mt-6 text-center text-[11px] text-[#8FA6C0]">本章约 {{.Chapter.wordCount}} 字 · 键盘 ← / → 也可翻章</p>
+        <p class="mt-6 text-center text-[11px] text-[#8FA6C0]">{{if .Chapter.wordCount}}本章约 {{.Chapter.wordCount}} 字 · {{end}}键盘 ← / → 也可翻章{{/* Task 28-c: 骨架章节不显示「本章约 0 字」 */}}</p>
       </div>
     </article>
 

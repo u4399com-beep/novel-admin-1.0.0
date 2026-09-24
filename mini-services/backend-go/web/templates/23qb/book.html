@@ -12,7 +12,7 @@ Go 契约 .Chapters 为最早 12 章预览，标题按数据语义标注为「�
         <div class="mt-4 flex flex-wrap items-center gap-2 text-sm">
           <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#fef0e5] px-3 text-[#c25705]">作者：{{.Novel.author}}</span>
           <a href="{{catURL .Novel.categoryId}}" class="inline-flex h-[30px] cursor-pointer items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60 transition-colors hover:text-[#ff2a14]">{{.Novel.categoryName}}</a>
-          <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{wcFmt .Novel.wordCount}}</span>
+          {{if .Novel.wordCount}}<span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{wcFmt .Novel.wordCount}}</span>{{end}}{{/* Task 28-c: wordCount=0 隐藏字数药丸（右侧状态药丸已表达连载中/完本） */}}
           <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{if eq .Novel.status "finished"}}完本{{else}}连载中{{end}}</span>
           <span class="inline-flex h-[30px] items-center rounded-[10px] bg-[#eaedf1] px-3 text-black/60">{{.ChaptersTotal}} 章</span>
         </div>
@@ -20,7 +20,7 @@ Go 契约 .Chapters 为最早 12 章预览，标题按数据语义标注为「�
         {{/* 小说标签：书名+作者+pseo 下拉词 */}}
         {{if .Tags}}<div class="mt-3 flex flex-wrap items-center gap-1.5">
           <span class="text-xs font-medium text-neutral-500">相关标签：</span>
-          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-[#eaedf1] bg-[#f3f5f7] px-2.5 py-0.5 text-xs leading-5 text-[#666] transition-colors hover:border-[#ff2a14] hover:text-[#ff2a14]">{{.}}</a>{{end}}
         </div>{{end}}
         {{/* 按钮行 */}}
         <div class="mt-6 flex flex-wrap items-center gap-3">
@@ -55,7 +55,7 @@ Go 契约 .Chapters 为最早 12 章预览，标题按数据语义标注为「�
       {{range .Chapters}}<a href="{{chapterURL .id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
         <span class="flex-1 truncate">{{.title}}</span>
-        <span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>
+        {{if .wordCount}}<span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
       </a>{{else}}<p class="py-8 text-center text-sm text-black/40">本书暂无章节</p>{{end}}
     </div>
     <div class="mt-5 border-t border-[#f5f5f5] pt-5 text-center">
@@ -71,7 +71,7 @@ Go 契约 .Chapters 为最早 12 章预览，标题按数据语义标注为「�
         <div class="transition-all duration-300 group-hover:-translate-y-1 group-hover:drop-shadow-[0_10px_18px_rgba(149,157,165,.45)]">
           <div class="relative overflow-hidden rounded-[5px] {{gcls .cover}}">
             {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<div class="flex aspect-[5/7] items-center justify-center"><span class="text-5xl font-bold text-white/90 drop-shadow-md">{{title0 .title}}</span></div>{{end}}
-            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6"><p class="truncate text-[11px] text-white/85">{{.categoryName}} · {{wcFmt .wordCount}}</p></div>
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-6"><p class="truncate text-[11px] text-white/85">{{.categoryName}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</p>{{/* Task 28-c: wordCount=0 隐藏字数段而非「—」 */}}</div>
           </div>
         </div>
         <p class="mt-2 truncate text-center text-[15px] font-semibold text-[#282828] transition-colors group-hover:text-[#ff2a14]">{{.title}}</p>

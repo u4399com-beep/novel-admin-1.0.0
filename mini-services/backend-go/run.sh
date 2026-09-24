@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # backend-go 启动脚本：构建（增量，go build 缓存）+ 前台运行。
-# 端口默认 3005（BACKEND_PORT 可覆盖）；模式默认 all（BACKEND_MODE=api|runner|all）。
+# 端口默认 3000（BACKEND_PORT 可覆盖，3005 仅为 Task 24-26 迁移期兼容值）；
+# 模式默认 all（BACKEND_MODE=api|runner|all）。
 set -euo pipefail
 cd "$(dirname "$0")"
 

@@ -11,7 +11,7 @@
         </a>
         <span class="min-w-0 truncate">《{{.Novel.title}}》完整目录</span>
       </h1>
-      <span class="shrink-0 text-[12px] text-[#969BA3]">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}} · {{wcFmt .Novel.wordCount}} · 共 {{len .Chapters}} 章（升序）</span>
+      <span class="shrink-0 text-[12px] text-[#969BA3]">{{if eq .Novel.status "finished"}}完本{{else}}连载{{end}} · {{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}—{{end}} · 共 {{len .Chapters}} 章（升序）</span>
     </div>
 
     {{if .Chapters}}

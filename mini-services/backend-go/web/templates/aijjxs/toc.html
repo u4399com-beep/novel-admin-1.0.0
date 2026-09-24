@@ -15,7 +15,7 @@
     <span>作者：<a class="cursor-pointer text-[#0f766e] hover:underline" href="{{searchURL (printf "%v" .Novel.author)}}">{{.Novel.author}}</a></span>
     <span>分类：{{.Novel.categoryName}}</span>
     <span>共 {{len .Chapters}} 章</span>
-    <span>{{wcFmt .Novel.wordCount}}</span>
+    <span>{{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}—{{end}}</span>
     <span>更新：{{fullFmt .Novel.updatedAt}}</span>
   </div>
 

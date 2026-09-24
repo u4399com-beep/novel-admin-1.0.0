@@ -94,7 +94,7 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | 站点级代理池轮换 | 规则 `proxy` 支持出口代理；站级游标原子轮换（Go race 实证修复） |
 | `insecureTLS` 规则级开关 | 跳过目标站证书校验（自签/裸 IP 站，如 38.34.172.127），全策略链生效 |
 | 挑战页误报修复 | `challenge-platform`/`cdn-cgi/challenge` 从强特征降级为「近空正文才判定」弱特征——CF Bot Fight Mode 会在正常页面注入前置脚本（101kks 实测复现） |
-| 互监护 | backend-go runner 每 ≈30s 探活 :3030，不可达杀残留托孤拉起（见 deployment.md §4） |
+| 互监护 | backend-go runner 每 ≈30s 探活 :3030，不可达杀残留托孤拉起（见 deployment.md §7.1 与 §1.3 看护关系图） |
 | JSON 目录接口 | `bookRule.chapterListApi`：书页不内嵌全目录时走 POST 接口拉目录（ixdzs8 实战） |
 
 ### 6.3 实测遗留问题（截至 24-d 审计）

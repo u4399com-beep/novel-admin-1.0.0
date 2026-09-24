@@ -4,7 +4,7 @@
   <ul class="fb-rank">
     {{range .Novels}}<li>
       <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
-      <span class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{wcFmt .wordCount}} · {{.lastChapterTitle}}</span>
+      <span class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}} · {{.lastChapterTitle}}</span>
     </li>{{else}}<li>{{if .Q}}未找到与"{{.Q}}"相关的书籍{{else}}请输入关键词搜索书名或作者{{end}}</li>{{end}}
   </ul>
 </div>

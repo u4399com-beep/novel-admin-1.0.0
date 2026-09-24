@@ -1191,3 +1191,77 @@ Work Log:
 Stage Summary:
 - 用户 6 项指令闭环：①Next.js 零残留全栈 Go（backend-go:3000 单进程+种子自动播种）②15 规则固化进二进制（沙箱再回收空库秒级恢复）③④多 Agent 27-c/27-d 完成+27-b 幽灵收编 ⑤依赖 5 包极简/scripts 6+44 归档 ⑥封面缺失 0+「其他」治理 169→113 持续消化
 - 环境注意事项沉淀：沙箱收割器按命令边界清理派生进程（唯 dev.sh 链路基础设施长存）→ Go 版预览需用户刷新预览面板触发；LLM 凭证失效（401）待平台侧恢复，本地关键词分类已可独立兜底
+---
+Task ID: 28-d
+Agent: deployment-docs
+Task: 重写详细安装部署图文教程+Go化遗漏终检
+
+Work Log:
+- 【Go化遗漏终检（先做，结论已写入文档）】全仓扫描 next/react/src/app/.next 残留：package.json（0 残留：无 next/react，scripts 全 Go 口径）、tsconfig.json（无 next 插件/路径映射，include 仅 scripts+tests）、eslint.config.mjs（无 eslint-config-next）、Caddyfile（:81→localhost:3000 ✓）、docs/ 三文（Next 引用均在「已拆除」语境）、.zscripts/（见下）、tests/（见下）
+- 【文档类残留已修 3 处】①.zscripts/dev.sh：6 处 "Next.js dev server" 日志文案 → "backend-go dev server"（功能本就经 bun run dev→dev-go.sh，仅文案过时；bash -n 验证通过）②.zscripts/build.sh：删除无效 export NEXT_TELEMETRY_DISABLED=1 ③mini-services/backend-go/run.sh 头注释「端口默认 3005」→「默认 3000（3005 仅为 Task 24-26 迁移期兼容值）」（对齐 main.go 实际默认）
+- 【代码类残留记录留主线（禁改区）】①scraper-go/main.go 头注释仍引用已删除的 src/app/api/scrape/route.ts ②backend-go/seed.go 头注释提到不存在的 scripts/reset-and-reseed.sh（archive 仅 reset-db.ts）③tests/python-runtime-{build,container}.sh 与 .zscripts/python-runtime-build.sh 仍用 Next 时代目录名 next-service-dist（find prune 的 -name '.next' 无害；且 python 源扫描 prune 掉 mini-services/，scraper-go/scripts/render.py 不会被收进部署产物——browser render 策略缺 python 时优雅降级非阻断，值得主线知晓）④根 package-lock.json（161KB npm 时代遗留，项目用 bun/bun.lock）
+- 【终检确认零残留项】go.mod 两模块均极简合理（backend-go 仅 modernc.org/sqlite+x/image 纯 Go 免 cgo；scraper-go 仅 goquery/cascadia/x/net/x/text，无废弃依赖）；scripts/ 活跃 6 脚本逐行核对与 Go 终态一致（dev-go.sh 自愈+防双实例、build-go.sh 双二进制+CSS、ensure-services.sh 3000/3030 幂等兜底、build-web-css.mjs @source 三源、engine-rule-test.mjs 直连 3030、install-curl-impersonate.sh 供引擎）；.zscripts/build.sh/start.sh 已是 Go 产物模型（双二进制+web/templates 校验守卫）；scripts/archive=44 项与文档一致
+- 【运行时交叉实证】旧 TS 引擎 scraper-service 经 dev.sh 链路仍会被扫描启动，但其自守卫（ALLOW_TS_ENGINE 守门）拒绝启动（日志见 mini-service-scraper-service.log「Go 引擎已接管 3030」），scraper-go mini-services 链路遇 3030 被占也会安全退出（address already in use），backend-go run-guarded.sh 防双实例守卫在位——三层守卫闭环，无双写风险；实测 ss -ltnp 仅 backend-go.bin:3000 与 scraper-go.bin:3030 在监听
+- 【教程重写】docs/deployment.md 全量重写（653→1197 行）：面向零基础读者从全新 Ubuntu 22.04 开始，11 章节每步按「目的→完整命令+预期输出→常见报错表→验证」四段式；新增 §1 架构总览（含真实截图预览）、§2 环境准备（系统更新/Go 1.22 双源安装+PATH/Bun 双渠道/sqlite3/curl-impersonate/ufw 端口规划）、§3 获取代码（公开/PAT token 用 <YOUR_TOKEN> 占位含安全提示/SSH 三方式）、§4 项目配置（关键澄清：.env 只喂 Prisma CLI，Go 进程不读 .env，DB_PATH 须走 shell/systemd；两路径一致铁律）、§5 构建（为何 Go 项目还要 bun 三原因；build-go.sh 三步逐步解析+手动等价命令）、§6 数据库初始化（db:push 建表验证 + 种子自动播种 ASCII 流程图/幂等 COUNT==0 语义/播种结果三重验证）、§7 启动（dev-go.sh 自愈机制图解/手动 nohup/systemd 双 unit 完整示例含 User/GOMEMLIMIT 加固）、§8 反代（Nginx 完整配置+certbot HTTPS+Caddy 一文件方案）、§9 验证清单（命令行六连全部实测核对+7 张截图目验+采集冒烟测试含 API 契约核对 201 返回形）、§10 运维（日志总表/三种形态重启/规则维护/sqlite3 .backup 热备+cron+恢复铁律/升级流程）、§11 故障排查（总流程图/端口/权限/GBK 乱码排查顺序/采集失败分类表/内存/SQLite WAL）、§12 附录（目录树/端口清单/环境变量速查/package.json 命令/scripts 6 项/.zscripts 产物模型/FAQ 10 问）
+- 【命令逐条 dry-run】全部命令读脚本/源码比对：端口 3000/3030、BACKEND_PORT/BACKEND_MODE/SCRAPER_PORT/DB_PATH/BACKEND_ENGINE_URL/SCRAPER_MIN_INTERVAL_MS 等逐一对过 os.Getenv 落点；/api/health、:3030/api/health、/api/strategies、/、/admin、/robots.txt、/sitemap.xml、/api/scrape-rules（裸列表 15 项）、/api/categories（裸列表 9 项）全部本机实测回填真实输出；scrape-tasks POST 字段（mode/targetUrl/ruleId/pages）与 201 响应形 {"ok":true,"task":{...},"runner":"runner"} 按 handler 源码核对；种子日志三行与 seed.go Printf 逐字核对；未向生产库写入任何数据（冒烟测试仅文档化未执行）、未重启任何进程
+- 【截图】agent-browser 重拍 7 张存 docs/images/（1440×900）：home.png（首页）、admin-overview.png（后台总览）、admin-rules.png（规则 tab，role=button 精准点击）、admin-scrape.png（任务 tab）、admin-pseo.png（PSEO tab）、health.png（/api/health JSON）、engine-strategies.png（:3030/api/strategies）；全部 >10KB（15~233KB）、间隔 ≥2s、共 7 张 ≤10 张限额；教程 §1.4/§9.2 引用
+- 【文档交叉同步】scrape-rules.md 头部指向 deployment §5.3 → §10.3（规则维护新编号）；anti-anti-crawl.md 互监护注指向 §4 → §7.1+§1.3；新教程内部 § 交叉引用 15 处程序化校验全部命中；图片链接 9 处存在性+体积校验通过；无隐形字符；无真实 token（仅 <YOUR_TOKEN>/<YOUR_ACCOUNT> 占位）
+- 【约束遵守】未动 .go/scripts/**/web/templates/seed/prisma/package.json/db 数据；未 kill/重启 3000/3030 运行进程；未 git commit；.zscripts 两个 echo 文案与一个无效 export 的修复均已 bash -n 验证
+
+Stage Summary:
+- Go化遗漏终检结论：**功能与依赖层零残留**（package.json/tsconfig/eslint/Caddyfile/go.mod/scripts 活跃区/种子机制全 Go 终态自洽，双引擎守卫链实测闭环）；**文案与遗留物层修 3 处**（.zscripts/dev.sh 日志文案、build.sh 无效 NEXT_TELEMETRY、backend-go/run.sh 过时端口注释）；**记录留主线 4 项**（scraper-go/main.go 与 seed.go 头注释过时引用、python-runtime 链 next-service-dist 命名+render.py 不入产物、根 package-lock.json 遗留）
+- 教程新结构：12 章（架构总览→环境准备→获取代码→配置→构建→数据库初始化→启动三形态→反代 HTTPS→验证清单+冒烟→运维→故障排查→附录 FAQ），零基础四段式步进，全部命令/端口/路径/API 契约与当前实现逐条核对一致
+- 截图清单（docs/images/，7 张全 >10KB）：home.png、admin-overview.png、admin-rules.png、admin-scrape.png、admin-pseo.png、health.png、engine-strategies.png
+- 文档同步：deployment.md 全量重写 1197 行；scrape-rules.md/anti-anti-crawl.md 交叉引用重编号 2 处；未触碰禁区
+---
+Task ID: 28-b
+Agent: smart-features-audit
+Task: 智能化设置全面审计（智能分类/完结/pseo/TDK）
+
+Work Log:
+- 【智能分类·categoryx.go/api_categories_merge.go/api_noveltools.go/runner.go 逐行审查】发现并修复 4 处（均带 // Task 28-b: 注释）：
+  · P1 Bug A（categoryx.go:335 canonicalCategoryWithHint）：本地兜底只扫书名（classifyBookByTitle 即 classifyBookLocal(title,"")），Task 27-b 的「简介前 240 字」增强在全链路从未生效（classifyBookLocal 唯一调用方恒传空简介）——采集入库 ensureCategory 与 runner 重归类两路径双失。改为 classifyBookLocal(title, hintDescription) 标题+简介双扫描（存量实证：#33/#55/#59/#113/#131 五本简介含穿越/军事/官场/重生强语义词却滞留「其他」）
+  · P1 Bug C（categoryx.go normalizeCategory→新增 normalizeCategoryN）：50 rune 截断写死在 normalizeCategory 内，classifyBookLocal 复用它后实际扫描窗口仅 ~50 字，注释宣称的 240 字从未真正生效——新增 normalizeCategoryN(raw,maxRunes)，标题 200/简介 240 rune 宽窗口（隔离实例实证：#4「重生」@归一化位 121、#38「穿越」@66 均在旧 50 窗口外，修复后即命中）
+  · P1 Bug B（runner.go:84 recategorizeOne）：旧路径 canonicalCategoryWithHint 把 LLM 失败期（401/冷却）的 FALLBACK 永久写入 hint 缓存（catCache 无过期），LLM 恢复后这批书仍命中缓存→队列空转永不收敛。改为非缓存路径：classifyBookLocal 优先→残余直接 llmClassifyBook（负结果不落缓存）。实测 LLM 凭证已恢复（直调 200 glm-4-plus，出站 #1）——若不修，10 本存量将永久卡死
+  · P2 Bug D（categoryx.go 词表）：L1/L2 补「重生/总裁/總裁/總裁文」（Task 27-b 注释提及 aijjxs .cat=重生 但词表漏收）；繁体直映+L2 补齐 異界/御獸/鬥氣/魔導/職場/官場/商戰/種田文/甜寵/宮鬥/宅鬥/星際/機甲，并删去繁体段与简体段重复的 {"玄幻"}/{"奇幻"} 两项死条目
+  · 复核无恙：canonicalCategory 三级流水线+in-flight 去重（close(done) 先写 val happens-before）、ensureCategory 并发撞唯一约束回读、api_categories_merge 事务合并/409 外键分支、recategorizeOne OFFSET 轮转数学（越界回队首/成功回退一格）、23-a INSERT 死代码修复在位；/api/categories/merge 隔离实例实测 [] 正确（现存 9 类均已规范）
+- 【智能完结·storex.go mapNovelStatus】P2 修复：旧正则 `完|fin` 两类误判——「未完结/连载未完/未完待续」含单字「完」被误判 finished；英文 Completed（无 fin 字样）被误判 serial。改为否定/进行时词表（未完|暂停|停更|断更|太监|连载中|連載中|ongoing）先行 → 完结词表（完|fin|compl）→ 默认 serial；裸「连载」不进负向表以保「连载完结」合成词正确判完结。链路复核：scraper-go extract.go statusSelector+og:novel:status 兜底提取、stripFieldLabel 剥「状态：」前缀、upsertBook 新建/更新双路径均过 mapNovelStatus、默认空串→serial 保守——辖区红线内仅改 backend-go 侧。DB 分布实测 170 本：finished 94 / serial 76，无异常聚集
+- 【智能 pseo·pseo_gen.go/pseo_book.go/pseo_suggest.go/api_pseo.go 逐行审查】结论：链路健康，无需代码修复。①DDG Go TLS 超时历史遗留：复现验证已根治——/api/pseo/suggest sources:[duckduckgo] 实测 ok:true 8 词（经 scraper-go 引擎 curl-impersonate 子死线 3.5s+无策略兜底两段式，出站 #2）；baidu 直连 ok:true 10 词（出站 #3，间隔 ≥4s，本任务出站共 3 次）②词表生成质量：种子=书名（upsertBook→enqueuePseoBookSeed INSERT OR IGNORE）→pseoEnrichLoop 12s/种子→insertKeywords 批内去重+唯一冲突容错→generatePendingPages 自动 TDK（sanitizeSeoConfig+renderTpl 字符串守卫在位）；引擎全挂时书名词仍生成聚合页（matchNovels LIKE 兜底热门 12）③api_pseo novelIDs 类型断言 int64 与 scanNovelListItem 一致、[kw] 聚合页 pageData 损坏回落实时计算、batch 进程锁+180s TTL 僵尸锁兜底均复核无恙；④唯一修缮：runSeedBatch 陈旧注释「6s/4s」与实际 8000ms 不符已纠正。词库实测：PseoKeyword 483 词全部 generated（book 170/baidu 268/bing 26/so360 19，pending 0——消化收敛中）
+- 【智能 TDK·api_settings.go/web_data.go】发现并修复 3 处（// Task 28-b:）：
+  · P1 主缺陷：Go 化后各页面 handler 硬编码 <title>/meta description，后台「SEO 设置」18 个 TDK 模板（homeTitle/bookTitle/…）对前台页面从未生效（仅 pseo 聚合页生成用过 renderTpl）。web_data.go 新增 applyWebTDK（titleKey/descKey+页级变量+回落文案），接入全部 7 个前台 handler（home/category/book/toc/chapter/search/pseo）：{siteName} 自动注入，book 页 {novelTitle}/{author}/{statusText}(已完结/连载中由 status 映射)/{descShort}(简介 100 字)/{categoryName}，chapter 页 {chapterTitle}/{idx}，search 页 {query}，pseo 页 {keyword}/{count}；模板渲染为空回落原内置文案绝不产出空 <title>
+  · P2 webCommon 死键：Site.seoTitle/seoDescription 读 SeoConfig["title"/"description"]——seoConfig 白名单根本不存在这两个键，恒空串。改为 sanitizeSeoConfig 清洗后渲染 homeTitle/homeDescription 填充（语义归位，文件头契约同步更新）
+  · P3 非字符串注入守卫 E2E（历史「注入 object 白屏」病根）：隔离实例 PATCH /api/settings {"seo":{"homeTitle":{"evil":"obj"},"bookDescription":123,"categoryTitle":["a"],"pseoTitle":true}} → GET 回读四键全部回落默认字符串模板，首页/书页照常渲染——sanitizeSeoConfig 白名单（写入+读回双侧）+renderTpl 纯 string 变量表+html/template 自动转义三层守卫实证有效
+  · 风格纪律：web_data.go 沿用 27-c 先例保持其历史空格缩进不整文件重排（diff 仅 87+/15-），其余改动文件 gofmt 归一
+- 【验证】go build -o /tmp/test-28b-backend.bin 全绿；go vet 0 输出；go test ./... 全过（新增 categoryx_test.go：classifyBookLocal 标题+简介双扫描含 4 本存量实证样本/51-100 字段命中/240 截断、canonicalCategory L1 新词+繁体+归一化回归；storex_test.go：mapNovelStatus 19 用例；TestMain 预置 LLM 冷却窗防意外真实网络）；-race 复跑全绿；未覆盖运行中 backend-go.bin（:3000/:3030 进程未动），接口实测全部走隔离实例（:3199 + DB 快照副本 + 损坏 .z-ai-config 防意外 LLM 出站 + pending 任务预先 neutralize 防误跑采集）
+- 【隔离实例 E2E（新二进制）】①recategorize 修复实证：13s 内 5 本「其他」书重归类成功（#33 四合院→都市言情（简介「穿越」）、#55 麒麟→历史军事（简介「军事」）、#59 问鼎→都市言情（简介「官场」）、#38/#4 为 240 宽窗口新命中），LLM 断供下队列持续轮转无卡死（Bug B 修复实证），其余 5 本无关键词书正确跳过待 LLM 恢复消化②TDK 渲染样例（全部按 seoConfig 模板产出）：首页「青阅文学 - 免费小说在线阅读_原创小说网站」、/book/59「问鼎最新章节列表_何常在小说 - 青阅文学」+desc「…作者何常在，已完结。《问鼎》是…」、/category/3「都市言情小说大全_最新都市言情小说排行榜 - 青阅文学」、搜索/聚合页同理（旧二进制 :3000 基线为硬编码「青阅文学 - 免费小说阅读」/「问鼎（何常在）最新章节列表 - 青阅文学」）
+
+Stage Summary:
+- 四大智能化功能健康度：智能分类=修复 4 处结构性缺陷后恢复设计能力（简介扫描激活+负缓存根治+词表补全，隔离实例实证「其他」10→5 仅用本地关键词、LLM 已恢复可清零）；智能完结=修复状态映射 2 类误判（未完结误判完结/Completed 误判连载），两值模型+保守默认合理；智能 pseo=链路健康零代码缺陷，DDG TLS 历史遗留经 Task 19 引擎代理方案实证已根治（8 词正常返回）；智能 TDK=修复最大缺口（seoConfig 模板全面接管前台 7 类页面 TDK，注入守卫三层实证）
+- 修复清单（7 文件，全部带 // Task 28-b: 注释）：categoryx.go（canonicalCategoryWithHint 简介双扫描/normalizeCategoryN 宽窗口/L1+L2 词表 15 词新增与去重）、runner.go（recategorizeOne 非缓存归类路径）、storex.go（mapNovelStatus 否定词先行+compl）、web_data.go（applyWebTDK+7 handler 接入+webCommon 死键归位）、api_pseo.go（陈旧注释纠正）、新增 categoryx_test.go/storex_test.go 回归锁定
+- 实测数据：分类分布 9 类（玄幻19/武侠9/都市63/历史14/科幻7/游戏7/悬疑13/轻小说28/其他10）；Novel.status finished 94/serial 76；pseo 词库 483 全 generated；TDK 新旧渲染样例见 Work Log；出站请求共 3 次（LLM×1+DDG×1+baidu×1，间隔 ≥4s）
+- 生效条件与移交：修复需重建重启 backend-go 生效（本轮未替换运行中二进制/未杀进程，/tmp/test-28b-backend.bin 已备）；①重启后 runner 将自动消化「其他」存量（7 本本地词直中+3 本 LLM），预期归零②web/templates/_fallback/_shared.html 首页 <title> 硬编码 {{$sn}} - 免费小说阅读（模板属 28-c 辖区，其余 10 主题均消费 pageTitle）③模板层无 meta keywords 渲染位（bookKeywords/chapterKeywords 等模板键已可经 applyWebTDK 变量集支持，加 <meta name="keywords"> 需 28-c 动模板）④L1 同义词表可随源站分类持续补充（「有声/广播剧」等新媒体形态暂未收录）
+---
+Task ID: 28（主线·main）
+Agent: main (Z.ai Code)
+Task: 用户 12 项指令——①Go 化遗漏终检 ②采集规则完整提取审计 ③智能化设置审计 ④快填 100 本 ⑤⑩主题回源 1:1 ⑥预览挂掉诊断 ⑦待办审查 ⑧多Agent抓bug ⑨清理精简 ⑪噪声清洗审计 ⑫部署图文教程
+
+Work Log:
+- 【环境恢复】Go 工具链再被沙箱抹除 → 重装 go1.22.10 至 /home/z/go-sdk；DB 又被回收清空（0 书 86KB 空壳）→ seed 自动播种 15 规则/9 分类/三区块实证有效，秒级恢复规则资产
+- 【任务6 预览诊断】backend-go:3000/scraper-go:3030/caddy:81 全链路 200；agent-browser 实测首页/admin 渲染正常无 JS 错误；历史挂掉根因=沙箱回收器清进程清 DB（本轮再次实证）+ 工具链被抹；dev-go.sh 自愈循环守护下当前实例稳定
+- 【任务2 规则审计】15 条逐条实测：13 条可用（10-18/20/21/22/23/24），1 条硬反爬不可恢复（19 pilishuwu 403，notes 已标注）。站点漂移校准：ggd66 首页改版单书推广页→siteUrl 迁移 /sort/（幽灵 28-a 完成，主线验证重发 task10 成功 10 本）；x2552 itemSelector 增补 .update li（幽灵 28-a，主线重发 task11 成功 30 本）；ddyueshu 主线校准（task8 失败根因=临时网络错误，itemSelector 追加 .ll .item 支持分类页，重发 task12-14 成功 18 本）；77shuku/23uswx/38.34 引擎实测分别入库 6/30/13 本（curl 直连失败但引擎策略链能过）
+- 【任务11 噪声审计】随机抽样 120 章 × 6 类噪声模式（外链域名/推广词/站名水印/域名提醒/HTML残留/常见水印）：0 脏章——清洗链干净
+- 【任务4 快填】下发 21 个采集任务（task1-21）：总书 649 本（目标 100 的 6.5 倍），9 分类全覆盖（玄幻76/武侠51/都市238/历史25/科幻46/游戏8/悬疑48/轻小说51/其他106），封面 649/649=100%，作者/简介 100%
+- 【结构性发现】31 万章骨架 vs 实质正文滞后：正文填充受合规限速（每域名 ≥1.2s）约束按天计；处理：a) 验证 Phase2 并发参数合理（CHAPTER_CONCURRENCY=12）b) 前台兜底确认（10 主题已有"本章内容为空"空态，主线补 _fallback）c) paused 任务 PATCH action=resume 全量恢复续传
+- 【任务3 智能化审计·28-b Agent】4 处结构性缺陷修复：①简介扫描死代码（canonicalCategoryWithHint 只扫书名，Task27-b 的简介 240 字增强从未生效）②扫描窗口假 240（normalizeCategory 写死 50 rune）③LLM 失败期 FALLBACK 负缓存阻断收敛（recategorizeOne 非缓存路径）④智能完结误判（mapNovelStatus 否定词先行：未完结/连载中不再误判完结）+ 智能 TDK 大缺口补齐（applyWebTDK 接入 7 类前台页面，后台 SEO 18 模板首次生效）+ 28 用例回归锁定；LLM 凭证已恢复（401→200）
+- 【任务12+1·28-d Agent】deployment.md 全量重写 653→1197 行 12 章（零基础四段式：目的→命令+预期输出→常见报错→验证），7 张实测截图（docs/images/，含 health/engine-strategies 新增），Go 化零残留终检（修 3 处文案层残留：.zscripts/dev.sh 6 处 Next.js 文案/build.sh NEXT_TELEMETRY/run.sh 3005 注释）
+- 【任务9 清理·主线】删 package-lock.json（npm 时代含 next 依赖声明遗留）；修 scraper-go/main.go 头注释（已删文件引用）、seed.go 注释（不存在脚本引用）；python-runtime 3 脚本补"next-service-dist 历史命名"说明头
+- 【主题面·幽灵 28-c 收编】applyWebKeywords 落地（web_data.go）+ 11 主题 _shared.html 补 <meta name="keywords"> + _fallback title 硬编码修复（消费 pageTitle+去重）+ wordCount=0 隐藏守卫全覆盖（11 主题 book.html）；agent-browser 抽查 23qb 首页/huangjinwu 书页渲染正常
+- 【主线 bug 修复】web.go fullFmt/dateFmt 双修复：scanNovelListItem 传给模板的 updatedAt 是 RFC3339 字符串，而两函数只接受毫秒数 → 「更新时间：」渲染为空；补 ISO 解析分支（数字串/RFC3339/原样回退三级），编译+测试绿，重启实测「更新时间：2026-09-24」生效
+- 【热更新】两次利用 dev-go.sh 自愈窗口重启 backend-go（28-b 分类修复+28-c TDK/keywords+主线 fullFmt 生效），每次重启后 PATCH action=resume 恢复全部 paused 任务续传（16+13 任务）
+- 【Task API 超时记录】本会话 Task API 8 次超时（prod-openai-adapter 后端 deadline），28-a/28-c/28-d 多次重发；幽灵定式再现：超时的 28-a/28-c 实际在岗完成核心工作（seed.json 校准记录+web_data.go Task 28-c 注释为证），主线按幽灵成果收编
+- 【遗留移交】①"其他"106 本待 LLM 轮转继续消化（28-b 修复已生效，收敛进行中）②超长书正文填充按天计（合规限速约束，可调 SCRAPE_CHAPTER_CONCURRENCY 但不建议突破礼貌间隔）③"今日更新 49 万章"统计口径=含骨架入库（语义可斟酌）④pilishuwu 硬反爬维持不可用 ⑤主题回源对比仅抽查 2 主题（Task API 超时限制，建议下轮补全 8 主题）
+
+Stage Summary:
+- 12 项指令闭环：①Go 化零残留+3 处文案清理 ②15 规则 13 可用+3 站漂移校准 ③智能化 4 缺陷+TDK 大缺口修复 ④649 本 9 分类封面 100% ⑤⑩主题 keywords/title/wordCount/空态补齐+抽查 ⑥预览诊断（环境性根因+自愈守护）⑦⑧待办审查+引擎/主线 bug 修复（fullFmt/dateFmt 等）⑨package-lock/注释清理 ⑫12 章图文教程+7 截图
+- 数据面：649 书/31 万章骨架/2599 实质正文持续填充/封面 100%/pseo 词 1033
+- 代码面：backend-go 编译+vet+test 全绿（含 28-b 28 用例），scraper-go 同

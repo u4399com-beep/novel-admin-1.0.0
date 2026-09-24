@@ -9,6 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 </head>

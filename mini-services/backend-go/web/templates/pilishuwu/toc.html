@@ -18,7 +18,7 @@
     <div class="min-w-0 flex-1 text-xs leading-6 text-[#666]">
       <a href="{{bookURL .Novel.id}}" class="cursor-pointer text-base font-bold text-[#3366BB] hover:text-[#FF6600]">《{{.Novel.title}}》</a>
       <p>作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</p>
-      <p>共 {{len .Chapters}} 章 · {{wcFmt .Novel.wordCount}} · 更新于 {{fullFmt .Novel.updatedAt}}</p>
+      <p>共 {{len .Chapters}} 章 · {{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}—{{end}} · 更新于 {{fullFmt .Novel.updatedAt}}</p>
       {{if .Chapters}}<a href="{{with $fc := index .Chapters 0}}{{chapterURL $fc.id}}{{end}}" class="mt-2 inline-block cursor-pointer bg-[#3B76A8] px-5 py-1.5 text-sm text-white transition-colors hover:bg-[#2F6FA3]">开始阅读</a>
       {{else}}<span class="mt-2 inline-block cursor-not-allowed bg-[#B9CFE2] px-5 py-1.5 text-sm text-white">开始阅读</span>{{end}}
     </div>
@@ -33,7 +33,7 @@
       <div class="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
         {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="flex cursor-pointer items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]">
           <span class="truncate text-[#3366BB] hover:text-[#FF6600] hover:underline">{{$c.idx}}. {{$c.title}}</span>
-          <span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt $c.wordCount}}</span>
+          {{if $c.wordCount}}<span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt $c.wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
         </a>{{end}}{{end}}
       </div>
     </div>
@@ -48,7 +48,7 @@
       <div class="grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3">
         {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="flex cursor-pointer items-baseline justify-between gap-2 border-b border-dotted border-[#D5E6F3] px-1 py-[7px] text-xs hover:bg-[#F7FBFF]">
           <span class="truncate text-[#3366BB] hover:text-[#FF6600] hover:underline">{{.idx}}. {{.title}}</span>
-          <span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt .wordCount}}</span>
+          {{if .wordCount}}<span class="shrink-0 text-[10px] text-[#BBB]">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
         </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">暂无章节数据</p>{{end}}
       </div>
     </div>

@@ -22,8 +22,6 @@ echo "📁 项目路径: $PROJECT_DIR"
 
 cd "$PROJECT_DIR" || exit 1
 
-export NEXT_TELEMETRY_DISABLED=1
-
 BUILD_DIR="/tmp/build_fullstack_$BUILD_ID"
 echo "📁 清理并创建构建目录: $BUILD_DIR"
 mkdir -p "$BUILD_DIR"

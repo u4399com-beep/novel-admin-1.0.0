@@ -99,6 +99,13 @@ var CATEGORY_SYNONYMS = map[string]string{
 	// Task 27-b(主线收编): 女频年代/宅斗向高频词（存量「其他」抽样实证：九零年代文、古言宅斗占大头）
 	"九零": "都市言情", "九零年": "都市言情", "年代文": "都市言情", "古言": "都市言情",
 	"宅斗": "都市言情", "宫斗": "都市言情", "甜宠": "都市言情", "种田文": "都市言情",
+	// Task 28-b: 重生/总裁（Task 27-b 注释提及 aijjxs .cat=重生 但词表漏收——存量实证
+	// 「攻略那个校草[重生]」「重生后发现了男友的真面目」等滞留「其他」）；总裁系同归女频言情主流
+	"重生": "都市言情", "重生小说": "都市言情", "总裁": "都市言情", "總裁": "都市言情", "總裁文": "都市言情",
+	// Task 28-b: 繁体直映补全（对照简体表逐一核对，101kks 等繁体站实际会输出的形态）
+	"異界": "玄幻奇幻", "禦獸": "玄幻奇幻", "鬥氣": "玄幻奇幻", "魔導": "玄幻奇幻",
+	"職場": "都市言情", "官場": "都市言情", "商戰": "都市言情", "種田文": "都市言情",
+	"甜寵": "都市言情", "宮鬥": "都市言情", "宅鬥": "都市言情", "星際": "科幻未来", "機甲": "科幻未来",
 	// 兜底类名直接命中（「未分类」历史输入也归到「其他」，消灭「未分类」残留）
 	"未分类": FALLBACK_CATEGORY, "其他": FALLBACK_CATEGORY, "其他小说": FALLBACK_CATEGORY,
 	"unknown": FALLBACK_CATEGORY,
@@ -108,6 +115,8 @@ var CATEGORY_SYNONYMS = map[string]string{
 var CATEGORY_KEYWORDS = [][2]string{
 	{"玄幻", "玄幻奇幻"}, {"奇幻", "玄幻奇幻"}, {"魔法", "玄幻奇幻"}, {"异界", "玄幻奇幻"},
 	{"御兽", "玄幻奇幻"}, {"魔导", "玄幻奇幻"}, {"斗气", "玄幻奇幻"}, {"武魂", "玄幻奇幻"},
+	// Task 28-b: 重生/总裁与 L1 同步补齐（存量实证 2 本重生文滞留「其他」）
+	{"重生", "都市言情"}, {"总裁", "都市言情"},
 	{"仙侠", "武侠仙侠"}, {"武侠", "武侠仙侠"}, {"修真", "武侠仙侠"}, {"修仙", "武侠仙侠"}, {"洪荒", "武侠仙侠"}, {"长生", "武侠仙侠"},
 	{"言情", "都市言情"}, {"都市", "都市言情"}, {"现实", "都市言情"}, {"官场", "都市言情"}, {"商战", "都市言情"}, {"职场", "都市言情"},
 	{"官道", "都市言情"}, {"七零", "都市言情"}, {"八零", "都市言情"}, {"神豪", "都市言情"}, {"美食", "都市言情"}, {"种田", "都市言情"}, {"婚恋", "都市言情"}, {"竹马", "都市言情"},
@@ -121,11 +130,16 @@ var CATEGORY_KEYWORDS = [][2]string{
 	{"轻小说", "轻小说"}, {"二次元", "轻小说"}, {"同人", "轻小说"}, {"动漫", "轻小说"}, {"人外", "轻小说"}, {"次元", "轻小说"},
 	// Task 27-b(主线收编): 女频年代/宅斗向（与 L1 同步）
 	{"九零", "都市言情"}, {"年代", "都市言情"}, {"古言", "都市言情"}, {"宅斗", "都市言情"}, {"宫斗", "都市言情"}, {"甜宠", "都市言情"},
-	// Task 27-b: 繁体关键词兜底（101kks 等站 og:novel:category 输出繁体，简体关键词不命中）
-	{"玄幻", "玄幻奇幻"}, {"奇幻", "玄幻奇幻"}, {"仙俠", "武侠仙侠"}, {"武俠", "武侠仙侠"},
+	// Task 27-b: 繁体关键词兜底（101kks 等站 og:novel:category 输出繁体，简体关键词不命中）。
+	// Task 28-b: 删去与上方简体表重复的 {"玄幻"}/{"奇幻"} 两项（简体词在表首已命中，繁体段只留真繁体词），
+	// 并补齐 異界/御獸/鬥氣/魔導/職場/官場/商戰/種田/甜寵/宮鬥/宅鬥/星際 与 L1 同步
+	{"仙俠", "武侠仙侠"}, {"武俠", "武侠仙侠"},
 	{"歷史", "历史军事"}, {"軍事", "历史军事"}, {"機甲", "科幻未来"}, {"遊戲", "游戏竞技"},
 	{"網遊", "游戏竞技"}, {"電競", "游戏竞技"}, {"體育", "游戏竞技"}, {"懸疑", "悬疑灵异"},
 	{"靈異", "悬疑灵异"}, {"驚悚", "悬疑灵异"}, {"偵探", "悬疑灵异"}, {"盜墓", "悬疑灵异"}, {"輕小說", "轻小说"},
+	{"異界", "玄幻奇幻"}, {"御獸", "玄幻奇幻"}, {"鬥氣", "玄幻奇幻"}, {"魔導", "玄幻奇幻"},
+	{"職場", "都市言情"}, {"官場", "都市言情"}, {"商戰", "都市言情"}, {"種田", "都市言情"},
+	{"甜寵", "都市言情"}, {"宮鬥", "都市言情"}, {"宅鬥", "都市言情"}, {"星際", "科幻未来"},
 }
 
 var (
@@ -137,6 +151,14 @@ var (
 
 // normalizeCategory 归一化：去空白与常见分隔符、全角转半角、小写（截断 50 rune）
 func normalizeCategory(raw string) string {
+	return normalizeCategoryN(raw, 50)
+}
+
+// normalizeCategoryN 归一化（截断上限可调）。
+// Task 28-b: 旧版把 50 rune 截断写死在 normalizeCategory 内——分类名场景合理，但
+// classifyBookLocal 的标题/简介扫描复用它后，实际扫描窗口被压到 50 字（注释宣称的
+// 「简介前 240 字」从未真正生效）。长文本路径改用本函数按需放宽窗口。
+func normalizeCategoryN(raw string, maxRunes int) string {
 	s := raw
 	s = catWSRe.ReplaceAllString(s, "")
 	s = catPunctRe.ReplaceAllString(s, "")
@@ -145,7 +167,7 @@ func normalizeCategory(raw string) string {
 		return string(rune(r[0] - 0xFEE0))
 	})
 	s = strings.ToLower(s)
-	return truncateRunes(s, 50)
+	return truncateRunes(s, maxRunes)
 }
 
 // ==================== 进程内缓存与 in-flight 去重 ====================
@@ -277,7 +299,10 @@ func classifyBookByTitle(title string) string {
 // 年代/宅斗/修仙等强语义词）大量滞留「其他」。简介截前 descScanChars 字符参与
 // 同表匹配——关键词均为强语义词（九零/宅斗/修真/末世等），误伤面可控。
 func classifyBookLocal(title, description string) string {
-	norm := normalizeCategory(title)
+	// Task 28-b: 标题/简介改用 normalizeCategoryN 宽窗口（标题 200/简介 240 rune，
+	// 与 maxTitleChars 及「简介前 240 字」设计意图对齐）——旧路径复用 50 rune 截断的
+	// normalizeCategory，实际只能扫到前 ~50 字
+	norm := normalizeCategoryN(title, 200)
 	if norm != "" {
 		for _, kv := range CATEGORY_KEYWORDS {
 			if strings.Contains(norm, kv[0]) {
@@ -291,7 +316,7 @@ func classifyBookLocal(title, description string) string {
 		if len(runes) > 240 {
 			runes = runes[:240]
 		}
-		dnorm := normalizeCategory(string(runes))
+		dnorm := normalizeCategoryN(string(runes), 240)
 		if dnorm != "" {
 			for _, kv := range CATEGORY_KEYWORDS {
 				if strings.Contains(dnorm, kv[0]) {
@@ -318,8 +343,11 @@ func canonicalCategoryWithHint(rawName, hintTitle, hintDescription string) strin
 	if cached := catCacheGet(key); cached != "" {
 		return cached
 	}
-	// 先书名关键词本地匹配（零成本），残余才走 LLM
-	if local := classifyBookByTitle(title); local != "" {
+	// Task 28-b: 本地匹配改走「标题+简介」双扫描——旧代码只扫书名（classifyBookByTitle 即
+	// classifyBookLocal(title, "")），Task 27-b 的「简介前 240 字」增强在全链路从未生效
+	// （classifyBookLocal 唯一调用方恒传空简介），简介含「穿越/官场/军事」等强语义词的书
+	// 在分类名/书名双失时被误送 LLM 或滞留「其他」（存量实证 #33/#55/#59/#113/#131）
+	if local := classifyBookLocal(title, hintDescription); local != "" {
 		catCacheSet(key, local)
 		return local
 	}

@@ -13,7 +13,7 @@ TSX 章尾「热门推荐」行依赖首页点击榜数据，Go 章节页契约�
 
   <div class="mt-3 border border-[#BFD8EA] bg-white px-4 py-6 transition-colors sm:px-8">
     <h1 class="text-center text-xl font-bold text-[#333]">{{.Chapter.title}}</h1>
-    <p class="mt-1 text-center text-xs text-[#999]">第 {{.Chapter.idx}} 章 · 约 {{.Chapter.wordCount}} 字</p>
+    <p class="mt-1 text-center text-xs text-[#999]">第 {{.Chapter.idx}} 章{{if .Chapter.wordCount}} · 约 {{.Chapter.wordCount}} 字{{end}}{{/* Task 28-c: 骨架章节不显示「约 0 字」 */}}</p>
 
     {{/* 章首导航 */}}
     <div class="mt-4 flex items-center justify-center gap-3">

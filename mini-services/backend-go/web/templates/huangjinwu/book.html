@@ -25,7 +25,7 @@
         <span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>作者：{{.Novel.author}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>
         <span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>分类：{{.Novel.categoryName}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>
         <span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>状态：{{if eq .Novel.status "finished"}}完本{{else}}连载中{{end}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>
-        <span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>字数：{{wcFmt .Novel.wordCount}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>
+        {{if .Novel.wordCount}}<span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>字数：{{wcFmt .Novel.wordCount}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>{{end}}{{/* Task 28-c: wordCount=0 隐藏字数项（左侧状态项已表达连载中/完本） */}}
         <span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>点击：{{.Novel.clicks}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>
         <span class="relative flex items-center pr-5"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>更新时间：{{fullFmt .Novel.updatedAt}}<span class="absolute right-0 top-1/2 h-4 w-px -translate-y-1/2 bg-[#dbe4f0]" aria-hidden="true"></span></span>
         <span class="relative flex items-center"><span class="mr-2 inline-block size-2 shrink-0 rounded-full bg-[#2563eb]" aria-hidden="true"></span>共 {{.ChaptersTotal}} 章</span>
@@ -50,14 +50,14 @@
     </div>
     {{if .Tags}}
     <div class="mt-3 flex flex-wrap items-center gap-1.5">
-      {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+      {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-0.5 text-xs leading-5 text-[#1d4ed8] transition-colors hover:border-[#2563eb] hover:bg-[#dbe4f0]">{{.}}</a>{{end}}
     </div>
     {{end}}
     <div class="mt-4 flex flex-wrap items-center gap-2">
       <span class="text-[13px] text-[#94a3b8]">小说标签：</span>
       <a href="{{catURL .Novel.categoryId}}" class="cursor-pointer rounded-full bg-[#2563eb] px-2.5 py-[3px] text-[12px] leading-4 text-white transition-colors duration-200 hover:bg-[#1d4ed8]">{{.Novel.categoryName}}</a>
       <span class="rounded-full border border-[#dbe4f0] bg-[#e8f1ff] px-2.5 py-[3px] text-[12px] leading-4 text-[#2563eb]">{{if eq .Novel.status "finished"}}完本{{else}}连载中{{end}}</span>
-      <span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{wcFmt .Novel.wordCount}}</span>
+      {{if .Novel.wordCount}}<span class="rounded-full border border-[#dbe4f0] bg-transparent px-2.5 py-[3px] text-[12px] leading-4 text-[#64748b]">{{wcFmt .Novel.wordCount}}</span>{{end}}{{/* Task 28-c: wordCount=0 隐藏徽章（相邻状态徽章已表达） */}}
     </div>
   </section>
 

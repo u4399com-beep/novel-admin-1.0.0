@@ -12,6 +12,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 </head>
@@ -28,10 +29,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 </head>
-<body class="min-h-screen bg-[#f2f3f4] text-[#333]">
+<body class="flex min-h-screen flex-col bg-[#f2f3f4] text-[#333]">
 
 {{/* 固定宝蓝顶栏 */}}
 <header class="fixed inset-x-0 top-0 z-50 h-[50px] bg-[#1f6cb2] text-white lg:h-[75px]">
@@ -121,7 +123,7 @@
 </div>
 
 {{/* 域名公告条 + 主体（顶栏占位） */}}
-<div class="pt-[50px] lg:pt-[75px]">
+<div class="min-w-0 flex-1 pt-[50px] lg:pt-[75px]">{{/* Task 28-c: flex-1 使页脚 sticky（body flex-col） */}}
   {{if .Site.notice}}
   <div class="flex h-[30px] items-center justify-center overflow-hidden bg-[#fff2df] px-3 text-xs text-[#8a6d3b] lg:h-[40px] lg:text-[13px]">
     <p class="truncate">

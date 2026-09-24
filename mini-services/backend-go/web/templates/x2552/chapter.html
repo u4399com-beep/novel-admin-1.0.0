@@ -24,7 +24,7 @@
     <header class="px-3 pt-1">
       {{/* 源站 h1：20px 居中，line-height 65px / height 70px */}}
       <h1 id="x25-ch-title" class="h-[70px] text-center text-[20px] font-bold leading-[65px] text-[#333333]">{{.Chapter.title}}</h1>
-      <p id="x25-ch-meta" class="pb-1 text-center text-[11px] text-[#999999]">第 {{.Chapter.idx}} 章 · 约 {{wcFmt .Chapter.wordCount}}</p>
+      <p id="x25-ch-meta" class="pb-1 text-center text-[11px] text-[#999999]">第 {{.Chapter.idx}} 章{{if .Chapter.wordCount}} · 约 {{wcFmt .Chapter.wordCount}}{{end}}{{/* Task 28-c: 骨架章节不显示「约 0字」 */}}</p>
 
       {{/* 章首导航行（上一页 | 返回目录 | 下一页，杰奇阅读页同款文案） */}}
       <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 border-t border-dotted py-2 text-[14px]" style="border-color:#E4E4E4">

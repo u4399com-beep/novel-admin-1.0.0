@@ -28,7 +28,7 @@
           <span class="mt-1.5 line-clamp-2 flex-1 text-justify indent-[2em] text-[12px] leading-[1.7] text-[#999]">{{if .description}}{{.description}}{{else}}（暂无简介）{{end}}</span>
           <span class="mt-auto flex items-center gap-1.5 text-[11px]">
             <span class="min-w-0 truncate text-[#969BA3]">{{.author}}</span>
-            <span class="ml-auto shrink-0 rounded-sm border border-[#F0643A]/50 px-1 py-px leading-none text-[#F0643A]">{{wcFmt .wordCount}}</span>
+            <span class="ml-auto shrink-0 rounded-sm border border-[#F0643A]/50 px-1 py-px leading-none text-[#F0643A]">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
             <span class="shrink-0 rounded-sm border border-[#4284ED]/50 px-1 py-px leading-none text-[#4284ED]">{{dateFmt .updatedAt}}</span>
           </span>
         </span>

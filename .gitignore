@@ -56,3 +56,5 @@ server.log
 db/custom.db
 public/covers/
 tool-results/
+db/custom.db-shm
+db/custom.db-wal

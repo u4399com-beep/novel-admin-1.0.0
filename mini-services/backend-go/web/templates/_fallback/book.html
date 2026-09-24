@@ -5,7 +5,7 @@
     {{if isLocalCover .Novel.cover}}<span class="fb-cover"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面" style="width:100%;height:100%;object-fit:cover"></span>
     {{else}}<span class="fb-cover {{gcls .Novel.cover}}" style="width:120px;height:160px;font-size:36px">{{title0 .Novel.title}}</span>{{end}}
     <div style="flex:1;min-width:220px">
-      <p class="fb-novel-meta">作者：{{.Novel.author}} · 分类：{{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}} · {{wcFmt .Novel.wordCount}} · 点击 {{.Novel.clicks}}</p>
+      <p class="fb-novel-meta">作者：{{.Novel.author}} · 分类：{{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}{{if .Novel.wordCount}} · {{wcFmt .Novel.wordCount}}{{end}} · 点击 {{.Novel.clicks}}</p>{{/* Task 28-c: wordCount=0 隐藏字数段（状态已表达） */}}
       <p class="fb-novel-desc" style="font-size:14px;line-height:1.8">{{.Novel.description}}</p>
       <p style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
         {{if .LastChapter}}<a class="fb-pager-btn" href="{{chapterURL .LastChapter.id}}">立即阅读</a>{{end}}
@@ -29,7 +29,7 @@
   <h2 class="fb-h2">章节预览<a class="fb-more" href="{{tocURL .Novel.id}}">共 {{.ChaptersTotal}} 章 · 查看完整目录</a></h2>
   <ul class="fb-rank">
     {{range .Chapters}}<li><a class="fb-novel-title" href="{{chapterURL .id}}">{{.title}}</a>
-      <span class="fb-novel-meta">{{wcFmt .wordCount}}</span></li>{{else}}<li>暂无章节</li>{{end}}
+      {{if .wordCount}}<span class="fb-novel-meta">{{wcFmt .wordCount}}</span>{{end}}</li>{{else}}<li>暂无章节</li>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
   </ul>
 </div>
 

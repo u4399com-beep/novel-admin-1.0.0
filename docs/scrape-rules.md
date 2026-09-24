@@ -1,6 +1,6 @@
 # 采集规则分析报告（11 站点 × 实测结论）
 
-> ⚠️ 时效说明：本篇为 Task 3 首轮实测存档（TS 引擎时代的命中策略记录）；**现行引擎为 Go 版 scraper-go（:3030，8 策略链）**，规则已扩充至 15 条（11 老站 + 4 新站）并固化为内嵌种子（`mini-services/backend-go/seed/seed.json`，空库自动播种）。最新 15 站可行性与反反爬结论见 [anti-anti-crawl.md](anti-anti-crawl.md) §六 与 [deployment.md](deployment.md) §5.3。
+> ⚠️ 时效说明：本篇为 Task 3 首轮实测存档（TS 引擎时代的命中策略记录）；**现行引擎为 Go 版 scraper-go（:3030，8 策略链）**，规则已扩充至 15 条（11 老站 + 4 新站）并固化为内嵌种子（`mini-services/backend-go/seed/seed.json`，空库自动播种）。最新 15 站可行性与反反爬结论见 [anti-anti-crawl.md](anti-anti-crawl.md) §六 与 [deployment.md](deployment.md) §10.3。
 > Task 3 产出 · 2026-09 实测。规则当时已落库（/api/scrape-rules，11 条）。
 > 引擎（当时）：mini-services/scraper-service → 现行 scraper-go 策略链 fetch-browser → ua-rotate → mobile → spider → curl-impersonate → fetch-curl → got-scraping → browser(Playwright 兜底)。
 

@@ -30,7 +30,7 @@ TSX 的 搜书名/搜作者 字段级过滤依赖 zustand 本地态，Go 契约�
         <span class="truncate font-medium text-[#6f78a7]">{{.title}}</span>
         <span class="hidden truncate text-[#666] md:block">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}—{{end}}</span>
         <span class="hidden truncate text-[#666] md:block">{{.author}}</span>
-        <span class="hidden text-right text-[#999] md:block">{{wcFmt .wordCount}}</span>
+        <span class="hidden text-right text-[#999] md:block">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
         <span class="truncate text-right text-[#999] md:text-left">{{dateFmt .updatedAt}}</span>
         <span class="hidden text-center md:block {{if eq .status "finished"}}text-[#FF6600]{{else}}text-[#999]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span>
       </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">{{if .Q}}未找到相关小说，换个关键词试试～{{else}}请输入书名或作者关键词搜索{{end}}</p>{{end}}

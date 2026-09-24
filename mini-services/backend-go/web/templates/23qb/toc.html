@@ -20,7 +20,7 @@
       {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
         <span class="flex-1 truncate">{{$c.title}}</span>
-        <span class="shrink-0 text-xs text-black/35">{{wcFmt $c.wordCount}}</span>
+        {{if $c.wordCount}}<span class="shrink-0 text-xs text-black/35">{{wcFmt $c.wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
       </a>{{end}}{{end}}
     </div>
   </section>{{end}}
@@ -31,7 +31,7 @@
       {{range .Chapters}}<a href="{{chapterURL .id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
         <span class="flex-1 truncate">{{.title}}</span>
-        <span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>
+        {{if .wordCount}}<span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
       </a>{{else}}<p class="py-8 text-center text-sm text-black/40">暂无章节</p>{{end}}
     </div>
   </section>

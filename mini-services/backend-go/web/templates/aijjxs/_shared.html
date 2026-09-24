@@ -8,6 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 <link rel="stylesheet" href="/static/css/aijjxs.css">
@@ -16,7 +17,7 @@
 {{/* 固定顶条：深酒红毛玻璃（源站 #550F1C→#26040C 三段渐变） */}}
 <div class="aj-topbar fixed inset-x-0 top-0 z-40">
   <div class="mx-auto flex h-[58px] w-full max-w-[1220px] items-center gap-1.5 px-3 sm:px-4">
-    <a href="/" class="aj-toplink flex-none text-[15px] font-bold tracking-wide">{{.Site.siteName}}</a>
+    <a href="/" class="aj-toplink flex-none text-[15px] font-bold tracking-wide text-[#dbe7f3] sm:text-[18px]">{{.Site.siteName}}</a>{{/* Task 28-c: 站名字号/色对齐源站 .top-float .site（桌面 18px #dbe7f3，≤680px 15px） */}}
     <nav class="hidden min-w-0 flex-1 overflow-x-auto no-scrollbar lg:block" aria-label="分类导航">
       <div class="flex items-center gap-1 py-3">
         <a class="aj-toplink" data-active="{{if eq .Path "/"}}true{{end}}" href="/">首页</a>

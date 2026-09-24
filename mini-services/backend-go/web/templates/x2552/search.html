@@ -46,7 +46,7 @@
               <td class="px-1 py-[6px]"><a href="{{bookURL .id}}" class="inline-block w-full cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.title}}</a></td>
               <td class="px-1 py-[6px]"><a href="{{bookURL .id}}" class="inline-block w-full cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}暂无章节{{end}}</a></td>
               <td class="truncate px-1 py-[6px] text-[#666]">{{.author}}</td>
-              <td class="px-1 py-[6px] text-center">{{wcFmt .wordCount}}</td>
+              <td class="px-1 py-[6px] text-center">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</td>
               <td class="px-1 py-[6px] text-center text-[#999]">{{dateFmt .updatedAt}}</td>
               <td class="px-1 py-[6px] text-center {{if eq .status "finished"}}text-[#FF6600]{{else}}text-[#999]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</td>
             </tr>

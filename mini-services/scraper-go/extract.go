@@ -99,12 +99,20 @@ func cleanBookTitle(t string) string {
 // cleanDescription 简介清洗：剥模板前缀「关于《书名》：/内容简介：/简介：」与首尾空白
 var reDescPrefix = regexp.MustCompile(`^(?:关于[《〈]?.{1,40}?[》〉]?|内容简介|内容提要|作品简介|简介)[:：]\s*`)
 
+// Task 28-a: 尾部 SEO 样板清洗——部分站点（实测 ggd66.com）在简介末尾拼接
+// 「《书名》是某某作者精心创作的某某分类，某某站实时更新《书名》最新章节……」固定模板段，
+// 长度 60-200 字且总在末尾；命中「《X》是Y精心创作」锚点即截断到末尾（锚点要求书名号+是+人名+精心创作，
+// 正常叙事文本几乎不可能命中）。不加 (?s)：pickText 已 collapse 为单行文本，无需跨行匹配。
+var reDescBoilerplate = regexp.MustCompile(`《[^》]{1,50}》是.{1,25}精心创作.{0,300}$`)
+
 func cleanDescription(t string) string {
-	return trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
+	t = trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
+	return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }
 
-// stripFieldLabel 分类/状态字段清洗：剥「小说分类：/分类：/类型：/频道：」等标签前缀
-var reFieldLabel = regexp.MustCompile(`^(?:小说)?(?:分类|类型|频道|状态)[:：]\s*`)
+// stripFieldLabel 分类/状态字段清洗：剥「小说分类：/书籍分类：/分类：/类型：/频道：」等标签前缀
+// Task 28-a: 补「书籍」前缀（实测 aijjxs.com 书页输出「书籍分类：穿越小说」，旧正则剥不掉）
+var reFieldLabel = regexp.MustCompile(`^(?:(?:小说|书籍))?(?:分类|类型|频道|状态)[:：]\s*`)
 
 func stripFieldLabel(t string) string { return trimJSSpace(reFieldLabel.ReplaceAllString(t, "")) }
 
@@ -112,6 +120,9 @@ func stripFieldLabel(t string) string { return trimJSSpace(reFieldLabel.ReplaceA
 var reAuthorLabel = regexp.MustCompile(`(?i)^(?:(?:书籍)?作\s*者\s*[:：]?\s*|(?:author|writer)\s*[:：]?\s*)`)
 
 func stripAuthorLabel(t string) string { return trimJSSpace(reAuthorLabel.ReplaceAllString(t, "")) }
+
+// Task 28-a: 占位封面 URL 特征（URL 任意段含这些 token 即视为占位图，不做网络探测）
+var rePlaceholderCover = regexp.MustCompile(`(?i)(?:nocover|no_cover|nopic|no-img|noimage|no_image|placeholder|zanwu|wufengmian)`)
 
 // removeExcluded 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），
 // 多备用逗号分隔。extractBook 与 extractChapter 各自的入口只调一次。
@@ -225,6 +236,9 @@ func extractList(doc *goquery.Document, rule map[string]string, baseURL string, 
 // ==================== Book 提取 ====================
 
 // 杰奇 CMS 等老牌小说站普遍输出 og:novel:* meta，是高价值的默认回退
+// Task 28-a: og:description 插到 meta[name=description] 之前——小说站 meta[name=description]
+// 多为 SEO 样板（实测 x2552.com 目录页 name=description=「书名最新章节及全本内容…」而
+// og:description 是真实简介）；og:description 走开放图谱协议、内容向，作为回退质量更稳。
 var bookFieldFallbacks = map[string][]string{
 	"title": {"meta[property=\"og:novel:book_name\"]@content", "h1", "#title", ".book-title", ".bookTitle", "title"},
 	"author": {
@@ -232,8 +246,8 @@ var bookFieldFallbacks = map[string][]string{
 		"#info p:nth-of-type(1)", "span:contains(作者：)", "p:contains(作者：)",
 	},
 	"description": {
-		"meta[property=\"og:novel:description\"]@content", "meta[name=\"description\"]@content",
-		"#intro", ".intro", ".book-desc", ".description", "#content dd", ".bookintro",
+		"meta[property=\"og:novel:description\"]@content", "meta[property=\"og:description\"]@content",
+		"meta[name=\"description\"]@content", "#intro", ".intro", ".book-desc", ".description", "#content dd", ".bookintro",
 	},
 	"cover": {
 		"meta[property=\"og:image\"]@content", "#fmimg img@src", ".book-img img@src",
@@ -414,7 +428,16 @@ func extractBook(doc *goquery.Document, rule map[string]string, baseURL string, 
 		coverSels = append(coverSels, splitAlternatives(cs)...)
 	}
 	coverSels = append(coverSels, bookFieldFallbacks["cover"]...)
-	cover := pickHref(root, coverSels, baseURL)
+	// Task 28-a: 占位封面过滤——部分站点给所有无封面的书统一返回 nocover.svg 类占位图
+	// （实测 huangjinwu.org /public/nocover.svg）。照单全收会把占位图当真封面入库；
+	// 逐候选跳过占位 URL，全部占位时返回空串，由主站落「确定性渐变封面」兜底。
+	cover := ""
+	for _, sel := range coverSels {
+		if u := pickHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) {
+			cover = u
+			break
+		}
+	}
 
 	chapters := extractChapterRefs(doc, rule, baseURL, warnings)
 
@@ -577,6 +600,18 @@ func extractChapter(doc *goquery.Document, rule map[string]string, baseURL strin
 			best = cleanedContent{paragraphs: splitLines(stats.Text), text: stats.Text}
 		} else {
 			best = cleanedContent{paragraphs: []string{}, text: ""}
+		}
+	}
+
+	// Task 28-a: 首段=章题去重——部分 CMS（实测 ggd66.com / 101kks.com）把章节标题
+	// 作为正文第一段重复输出（#rtext 内首行 <p>第N章 标题</p>）。与标题去空白后全等、
+	// 且段落多于 1 段（防止单段章节被清空）时丢弃首段。
+	if title != "" && len(best.paragraphs) > 1 {
+		compactTitle := reJSWhitespace.ReplaceAllString(title, "")
+		first := reJSWhitespace.ReplaceAllString(best.paragraphs[0], "")
+		if first != "" && first == compactTitle {
+			best.paragraphs = best.paragraphs[1:]
+			best.text = joinLines(best.paragraphs)
 		}
 	}
 

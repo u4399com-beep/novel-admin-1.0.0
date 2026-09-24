@@ -62,7 +62,7 @@
   <article id="hj-paper" class="rounded-[10px] border px-6 py-8 transition-colors sm:px-8" style="background:#f8fafc;border-color:#d8e3f0">
     <h1 id="hj-ch-title" class="mb-12 mt-8 text-center text-[24px] font-semibold text-[#1e293b]">
       {{.Chapter.title}}
-      <span class="mt-2 block text-[13px] font-normal text-[#94a3b8]">第 {{.Chapter.idx}} 章 · 约 {{wcFmt .Chapter.wordCount}}</span>
+      <span class="mt-2 block text-[13px] font-normal text-[#94a3b8]">第 {{.Chapter.idx}} 章{{if .Chapter.wordCount}} · 约 {{wcFmt .Chapter.wordCount}}{{end}}{{/* Task 28-c: 骨架章节不显示「约 0字」 */}}</span>
     </h1>
     <div id="fb-chapter-content" class="break-words" style="font-size:18px;line-height:1.8;color:#1e293b"
       data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"

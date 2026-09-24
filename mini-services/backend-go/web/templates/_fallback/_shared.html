@@ -5,13 +5,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{{/* title 去重：pageTitle 已含「 - 站名」后缀（book/toc/chapter/search/pseo）则不再追加；首页/分类无后缀才补「 | 站名」 */}}
-<title>{{if eq $path "/"}}{{$sn}} - 免费小说阅读{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" $sn)}}{{if eq $t .pageTitle}}{{$t}} | {{$sn}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
+{{/* title 去重：pageTitle 已含「 - 站名」后缀（book/toc/chapter/search/pseo）则不再追加；首页/分类无后缀才补「 | 站名」。
+Task 28-c: 首页分支原硬编码「{{$sn}} - 免费小说阅读」，改为消费 pageTitle（applyWebTDK 按 seoConfig homeTitle 渲染，回落文案语义一致） */}}
+<title>{{if eq $path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" $sn)}}{{if eq $t .pageTitle}}{{$t}} | {{$sn}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <link rel="stylesheet" href="/static/css/tw.css">
 <link rel="stylesheet" href="/static/css/cover-gradients.css">
 <style>
-.fb-body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#fafafa;color:#262626;margin:0}
+/* Task 28-c: 主体 flex 拉伸使页脚 sticky（短页面页脚不悬空中） */
+.fb-body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#fafafa;color:#262626;margin:0;display:flex;flex-direction:column;min-height:100vh}
+.fb-body>main{flex:1 0 auto}
 .fb-wrap{max-width:1080px;margin:0 auto;padding:0 16px}
 .fb-header{background:#fff;border-bottom:1px solid #e5e5e5}
 .fb-topbar{display:flex;align-items:center;gap:16px;padding:14px 0;flex-wrap:wrap}

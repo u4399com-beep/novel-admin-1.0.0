@@ -11,7 +11,7 @@
   </div>
   <hr style="border:0;border-top:1px solid #e5e5e5">
   <div class="fb-content" id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}">
-    {{range .Paragraphs}}<p>{{.}}</p>{{end}}
+    {{range .Paragraphs}}<p>{{.}}</p>{{else}}<p class="py-8 text-center text-sm opacity-70">本章内容为空，正文正在后台采集中，请稍后返回阅读。</p>{{end}}
   </div>
   <div class="fb-chapter-nav">
     {{if .Prev}}<a class="fb-pager-btn" href="{{chapterURL .Prev.id}}">上一章</a>{{else}}<span class="fb-pager-btn" style="opacity:.4">上一章</span>{{end}}

@@ -21,7 +21,7 @@
     <div class="min-w-0 flex-1 text-xs leading-6 text-[#666]">
       <a href="{{bookURL .Novel.id}}" class="cursor-pointer text-base font-bold text-[#6f78a7] hover:text-[#FF6600]">《{{.Novel.title}}》</a>
       <p>作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}完本{{else}}连载{{end}}</p>
-      <p>共 {{len .Chapters}} 章 · {{wcFmt .Novel.wordCount}} · 更新于 {{fullFmt .Novel.updatedAt}}</p>
+      <p>共 {{len .Chapters}} 章 · {{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}—{{end}} · 更新于 {{fullFmt .Novel.updatedAt}}</p>
     </div>
   </div>
 

@@ -19,7 +19,7 @@
         <span class="truncate font-medium text-[#3366BB]">{{.title}}</span>
         <span class="hidden truncate text-[#888] md:block">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}—{{end}}</span>
         <span class="hidden truncate text-[#999] md:block">{{.author}}</span>
-        <span class="hidden text-right text-[#999] md:block">{{wcFmt .wordCount}}</span>
+        <span class="hidden text-right text-[#999] md:block">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
         <span class="truncate text-right text-[#999] md:text-left">{{fullFmt .updatedAt}}</span>
         <span class="hidden text-center md:block {{if eq .status "finished"}}text-[#2E8B57]{{else}}text-[#CC0000]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span>
       </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">{{if .Q}}未找到相关小说，换个关键词试试～{{else}}请输入书名或作者关键词搜索{{end}}</p>{{end}}

@@ -4,7 +4,7 @@
   <ul class="fb-rank">
     {{range .Chapters}}<li style="display:flex;justify-content:space-between;align-items:center">
       <a class="fb-novel-title" href="{{chapterURL .id}}">{{.title}}</a>
-      <span class="fb-novel-meta">{{wcFmt .wordCount}}</span>
+      {{if .wordCount}}<span class="fb-novel-meta">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
     </li>{{else}}<li>暂无章节</li>{{end}}
   </ul>
 </div>

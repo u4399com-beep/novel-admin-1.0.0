@@ -30,7 +30,7 @@ h1 全文阅读 → 属性表格+封面 → 按钮排（.btnlinks）→ 内容�
               </tr>
               <tr>
                 <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">字数</th>
-                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{wcFmt .Novel.wordCount}}</td>
+                <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}{{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}{{end}}{{/* Task 28-c: wordCount=0 显示状态文字而非「—」 */}}</td>
                 <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">章节</th>
                 <td class="border border-[#E4E4E4] px-1.5 py-[5px] text-[#666]">{{.ChaptersTotal}} 章</td>
                 <th class="border border-[#E4E4E4] bg-[#F2F2F2] px-1.5 py-[5px] text-left font-bold text-[#333]">总点击</th>
@@ -64,7 +64,7 @@ h1 全文阅读 → 属性表格+封面 → 按钮排（.btnlinks）→ 内容�
         <p class="indent-[2em] px-3 py-2 text-[12px] leading-[1.8] text-[#666]">{{if .Novel.description}}{{.Novel.description}}{{else}}（暂无简介）{{end}}</p>
         {{if .Tags}}
         <div class="flex flex-wrap items-center gap-1.5 px-3 pb-2">
-          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-full border border-neutral-300 bg-neutral-100/80 px-2.5 py-0.5 text-xs leading-5 text-neutral-700 transition-colors hover:border-neutral-400 hover:bg-neutral-200">{{.}}</a>{{end}}
+          {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-none border border-[#cccccc] bg-[#f2f2f2] px-2.5 py-0.5 text-xs leading-5 text-[#2f468f] transition-colors hover:border-[#ff6600] hover:text-[#ff6600]">{{.}}</a>{{end}}
         </div>
         {{end}}
         <div class="border-t border-dotted border-[#E4E4E4] px-3 py-1.5 text-[12px] text-[#999]">
