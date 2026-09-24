@@ -63,7 +63,7 @@ func route(w http.ResponseWriter, r *http.Request) {
 	if method == "GET" && path == "/" {
 		writeJSON(w, 200, map[string]any{
 			"ok": true, "service": "scraper-service", "version": serviceVersion, "runtime": serviceRuntime,
-			"endpoints": []string{"GET /api/strategies", "GET /api/health", "POST /api/test", "POST /api/chapter"},
+			"endpoints": []string{"GET /api/strategies", "GET /api/health", "GET /api/host-health", "POST /api/test", "POST /api/chapter"},
 		})
 		return
 	}
@@ -78,6 +78,12 @@ func route(w http.ResponseWriter, r *http.Request) {
 
 	if method == "GET" && path == "/api/strategies" {
 		handleStrategies(w, r)
+		return
+	}
+
+	// Task 31-b: 主机健康/AIMD 自适应限速可观测端点
+	if method == "GET" && path == "/api/host-health" {
+		handleHostHealth(w, r)
 		return
 	}
 
@@ -101,7 +107,7 @@ func route(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	failJSON(w, "Not Found", "未知路由 "+method+" "+path+"。可用: GET /api/strategies, GET /api/health, POST /api/test, POST /api/chapter", 404)
+	failJSON(w, "Not Found", "未知路由 "+method+" "+path+"。可用: GET /api/strategies, GET /api/health, GET /api/host-health, POST /api/test, POST /api/chapter", 404)
 }
 
 func main() {

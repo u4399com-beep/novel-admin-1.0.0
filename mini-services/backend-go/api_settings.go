@@ -276,9 +276,13 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 		}
 	}
 	if s, ok2 := body["activeTheme"].(string); ok2 {
-		if t := trimSpaceStr(s); t != "" {
+		// Task 31-d: 主题白名单校验（对齐 ?theme= 预览与 api_sites.go 写入侧同款防线）。
+		// 旧版任意 ≤50 字符串直接入库 → renderPage→loadPageTemplate(templatesRoot, theme)
+		// 的 filepath.Join 存在路径穿越面（templates/../../etc 等），且非法主题会让全站
+		// 模板缺失整体降级 _fallback。非白名单值与空串同款「忽略不写」（PATCH 宽松语义）。
+		if t := trimSpaceStr(s); t != "" && isKnownTheme(t) {
 			sets = append(sets, `"activeTheme" = ?`)
-			args = append(args, truncateRunes(t, 50))
+			args = append(args, t)
 		}
 	}
 	if s, ok2 := body["notice"].(string); ok2 {

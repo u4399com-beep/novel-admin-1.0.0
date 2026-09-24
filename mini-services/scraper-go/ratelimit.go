@@ -33,6 +33,17 @@ const (
 	hostSlotIdleMS       = 10 * 60 * 1000
 )
 
+// Task 31-b: AIMD 自适应限速参数（ixdzs8 实证：12 车道高频下 429/503 + 200 空壳窗口，
+// 成功 2/失败 69 后熔断停摆——需要「被限流→自动慢下来→恢复→缓慢提速」的内建行为而非靠熔断停摆）。
+// 合规边界：自适应只会拉长间隔（≥ 基础间隔 1.2s，乘性上界 8s；Retry-After 采纳值受
+// parseRetryAfterMs 的 30s 上限约束），绝不缩短基础礼貌间隔。
+const (
+	// aimdMaxIntervalMS 乘性增大的上界（任务书：上限 8s）
+	aimdMaxIntervalMS = 8_000
+	// aimdDecayStepMS 每次成功后的加性回落步长（任务书：每次成功 -0.05s）
+	aimdDecayStepMS = 50
+)
+
 func getMinIntervalMs() int64 {
 	raw := getenv("SCRAPER_MIN_INTERVAL_MS")
 	if raw == "" {
@@ -59,6 +70,11 @@ type hostSlot struct {
 	// consec 同主机连续请求计数（Task 26-d 突发抑制）：持续大批量请求时温和拉长间隔，
 	// 空闲 ≥5 分钟复位。槽位跨任务共享 → 多任务打同一站点时天然累计（单站限速共享）
 	consec atomic.Int64
+	// Task 31-b: AIMD 自适应间隔毫秒（0 = 未进入自适应态，用基础间隔）。
+	// 429/503/Retry-After → 乘性增大或直接采纳；连续成功 → 加性回落；空闲 ≥5 分钟复位。
+	aimdMs atomic.Int64
+	// Task 31-b: 自适应态下的连续成功计数（加性回落按每次成功逐步进行）
+	aimdOKStreak atomic.Int64
 }
 
 var (
@@ -87,6 +103,109 @@ func getHostSlot(host string) *hostSlot {
 	return slot
 }
 
+// aimdMulStep 乘性增大一步：cur×1.5，上界 aimdMaxIntervalMS，下界不低于 floor（基础礼貌间隔）。
+// 纯函数（表驱动测试见 aimd_test.go，Task 31-b）。
+func aimdMulStep(cur, floor int64) int64 {
+	if cur < floor {
+		cur = floor
+	}
+	next := cur * 3 / 2
+	if next < cur { // 溢出防护（int64 乘法不会溢出在 8s 量级，防御式保留）
+		next = cur
+	}
+	if next > aimdMaxIntervalMS {
+		next = aimdMaxIntervalMS
+	}
+	return next
+}
+
+// aimdAddStep 加性回落一步：cur-aimdDecayStepMS，下界 floor（不低于基础礼貌间隔）。
+// 纯函数（表驱动测试见 aimd_test.go，Task 31-b）。
+func aimdAddStep(cur, floor int64) int64 {
+	if cur <= floor {
+		return floor
+	}
+	next := cur - aimdDecayStepMS
+	if next < floor {
+		next = floor
+	}
+	return next
+}
+
+// noteAdaptiveRateLimited Task 31-b AIMD「乘性增大」入口：该主机收到 429/503 时调用。
+// 带 Retry-After 时直接采纳其值（仍受 parseRetryAfterMs 的 30s 解析上限约束，且不高于
+// 既有值时取较大者——站点给的窗口优先于本地推断）；无 Retry-After 时 ×1.5 逐步放大。
+// 同时清零连续成功计数（回落序列重新开始）。
+func noteAdaptiveRateLimited(host string, retryAfterMs *int64) {
+	if host == "" {
+		return
+	}
+	slot := getHostSlot(host)
+	cur := slot.aimdMs.Load()
+	floor := getMinIntervalMs()
+	var next int64
+	if retryAfterMs != nil && *retryAfterMs > 0 {
+		next = *retryAfterMs
+		if next < floor {
+			next = floor // 合规下限：自适应间隔不得低于基础礼貌间隔
+		}
+		if cur > next {
+			next = cur // 已在更高退避位时只升不降（限流窗口叠加）
+		}
+	} else {
+		next = aimdMulStep(cur, floor)
+	}
+	slot.aimdMs.Store(next)
+	slot.aimdOKStreak.Store(0)
+}
+
+// noteAdaptiveSuccess Task 31-b AIMD「加性回落」入口：该主机一次成功抓取后调用。
+// 处于自适应态（aimdMs>基础间隔）时每次成功回落 aimdDecayStepMS（50ms），到达基础间隔后
+// 归零自适应态（aimdMs=0 → 后续直接用基础间隔）。
+func noteAdaptiveSuccess(host string) {
+	if host == "" {
+		return
+	}
+	slot := getHostSlot(host)
+	cur := slot.aimdMs.Load()
+	if cur <= 0 {
+		return // 未进入自适应态
+	}
+	floor := getMinIntervalMs()
+	next := aimdAddStep(cur, floor)
+	if next <= floor {
+		next = 0 // 已回到基础间隔：退出自适应态
+	}
+	slot.aimdMs.Store(next)
+	slot.aimdOKStreak.Add(1)
+}
+
+// hostAdaptiveIntervalMs Task 31-b: 当前主机的自适应间隔毫秒（0 = 基础间隔态）。
+// 供 /api/host-health 可观测端点与 backend 车道感知消费。
+func hostAdaptiveIntervalMs(host string) int64 {
+	hostSlotsMu.Lock()
+	slot, ok := hostSlots[host]
+	hostSlotsMu.Unlock()
+	if !ok {
+		return 0
+	}
+	return slot.aimdMs.Load()
+}
+
+// snapshotAdaptiveIntervals Task 31-b: 当前处于自适应态（aimdMs>0）的全部主机快照。
+// 供 /api/host-health 端点返回全量观测面。
+func snapshotAdaptiveIntervals() map[string]int64 {
+	hostSlotsMu.Lock()
+	defer hostSlotsMu.Unlock()
+	out := map[string]int64{}
+	for h, s := range hostSlots {
+		if v := s.aimdMs.Load(); v > 0 {
+			out[h] = v
+		}
+	}
+	return out
+}
+
 // politenessExtraMS 突发抑制的额外间隔：每满 200 次连续请求 +100ms，上界 +1s。
 // 抽成纯函数便于单测（Task 26-d）。
 func politenessExtraMS(consec int64) int64 {
@@ -101,25 +220,35 @@ func politenessExtraMS(consec int64) int64 {
 }
 
 // acquireDomainSlot 获取指定域名的请求槽位：同域名并发请求串行排队，相邻两次请求
-// 之间至少间隔 getMinIntervalMs() ± 抖动；不同域名互不影响。
+// 之间至少间隔「基础礼貌间隔或 AIMD 自适应间隔的较大者」± 抖动；不同域名互不影响。
 // 语义对齐 TS 版（FIFO 排队 + 排队后各自计算等待），锁仅在计算窗口持有，等待发生在锁外。
 // Task 26-d 突发抑制：同主机持续请求时在基准间隔上叠加 politenessExtraMS(consec)，
 // 长跑 Phase 2（数万章）随请求量自动从 1.2s 放缓至 ≈2.2-2.5s，降低触发源站封禁的概率；
 // 只增不减，空闲 5 分钟复位，对短任务无感。
+// Task 31-b AIMD 自适应：429/503 限流后该主机间隔乘性增大（×1.5 上界 8s；Retry-After 直接
+// 采纳），连续成功后加性缓慢回落（每次成功 -50ms 下限 1.2s）——被限流自动慢下来、恢复后
+// 缓慢提速，成为引擎内建行为。空闲 ≥5 分钟时 AIMD 与突发抑制一并复位。
 func acquireDomainSlot(host string) {
 	slot := getHostSlot(host)
 	slot.mu.Lock()
 	now := time.Now()
 	if now.UnixNano()-slot.lastUsedNano.Load() > int64(5*time.Minute) {
 		slot.consec.Store(0) // 空闲复位：突发抑制只针对持续批量
+		slot.aimdMs.Store(0) // Task 31-b: AIMD 同口径空闲复位（限流记忆由 hosthealth penalty 继续承担短期退避）
+		slot.aimdOKStreak.Store(0)
 	}
 	n := slot.consec.Add(1)
+	// Task 31-b: 有效基础间隔 = max(基础礼貌间隔, AIMD 自适应间隔)
+	interval := getMinIntervalMs()
+	if ai := slot.aimdMs.Load(); ai > interval {
+		interval = ai
+	}
 	base := now
 	if slot.nextAt.After(base) {
 		base = slot.nextAt
 	}
 	wait := base.Sub(now)
-	slot.nextAt = base.Add(time.Duration(getMinIntervalMs()+politenessExtraMS(n))*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
+	slot.nextAt = base.Add(time.Duration(interval+politenessExtraMS(n))*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
 	slot.lastUsedNano.Store(now.UnixNano())
 	slot.mu.Unlock()
 	if wait > 0 {

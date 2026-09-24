@@ -54,6 +54,14 @@ var reTailHint = regexp.MustCompile(
 // JS/CSS 残留：伪协议/函数定义/DOM 访问/花括号成对出现的短行
 var reJSResidue = regexp.MustCompile(`(?i)javascript:|function\s*\(|document\.|window\.|\{.*\}`)
 
+// Task 31-c: 行尾 JS 残留 token 剥离。全库审计（Task 31-c）实测两类源站把内联脚本尾巴
+// 拼在叙事行末：novel 1「……也没自己什么事了。javascript:」（大概率 href 注入残迹）、
+// novel 4「……她就立马关了手机。 hf();」（源站字体/脚本的函数调用残迹）。
+// 这类 token 不可能出现在任何叙事句尾（无叙事语义、纯代码形态），只劧行尾（$ 锥定）、
+// 只剥 token 本身，不整行删除也不动行首正文——比 isNoiseLine 整行判定更保守，
+// 避免长叙事行因粘了残留 token 而被整行丢弃（违反「宁可多留」）。
+var reTrailingJSArtifact = regexp.MustCompile(`(?i)(?:javascript:;?|hf\(\);)+$`)
+
 // Task 28-a: 独立 HTML 标签残行——部分站点正文里混有转义过的字面标签文本
 // （实测 huangjinwu.org 章末段落含 &lt;/div，解码后成独行 "</div"），容器级清洗后残留为独立行。
 // 整行（去除空白后）呈单个标签形态（可缺右尖括号）即判噪声：叙事文本不可能整行只是一个标签。
@@ -128,6 +136,11 @@ func cleanChapterText(raw string) cleanStats {
 	for _, rawLine := range splitLines(normalized) {
 		// 去行首全角空格/NBSP/半角空白 → 行内连续空白折叠为单空格 → 去首尾空白
 		line := trimJSSpace(reJSWhitespace.ReplaceAllString(reLeadingIndent.ReplaceAllString(rawLine, ""), " "))
+		// Task 31-c: 行尾 JS 残留 token 剥离（见 reTrailingJSArtifact 注）——归一化后
+		// 行尾已无空白，直接锥定 $；剥完再 trim 一次去可能残留的行尾空格。
+		if trimmed := reTrailingJSArtifact.ReplaceAllString(line, ""); trimmed != line {
+			line = trimJSSpace(trimmed)
+		}
 		if line == "" {
 			continue // 空行直接丢弃（不计入 total/removed）
 		}

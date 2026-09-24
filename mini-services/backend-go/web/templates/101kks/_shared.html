@@ -126,7 +126,8 @@
 <div class="min-w-0 flex-1 pt-[50px] lg:pt-[75px]">{{/* Task 28-c: flex-1 使页脚 sticky（body flex-col） */}}
   {{if .Site.notice}}
   <div class="flex h-[30px] items-center justify-center overflow-hidden bg-[#fff2df] px-3 text-xs text-[#8a6d3b] lg:h-[40px] lg:text-[13px]">
-    <p class="truncate">
+    {{/* Task 31-a: 公告内容限宽跟随顶栏导航 1250px */}}
+    <p class="w-full max-w-[1250px] truncate">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
       {{.Site.notice}}
     </p>
@@ -138,6 +139,8 @@
 
 {{/* 页脚：白底居中三行 */}}
 <footer class="mt-8 bg-white py-6 text-center">
+  {{/* Task 31-a: 页脚网站地图链接区+版权区限宽跟随顶栏导航 1250px */}}
+  <div class="mx-auto w-full max-w-[1250px]">
   <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-[#333]" style="line-height:2">
     <a href="/" title="演示模板：未提供全站排行頁" class="cursor-pointer hover:text-[#06c]">排行</a>
     <a href="/" title="演示模板：未提供全站最新頁" class="cursor-pointer hover:text-[#06c]">最新</a>
@@ -150,6 +153,7 @@
   </div>
   <p class="mt-1 text-xs text-[#888]" style="line-height:2">{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}} · 界面结构级主题模板（仿 101kks 布局 / 原创实现）{{end}}</p>
   <p class="mt-1 text-xs text-[#888]" style="line-height:2">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}友情連結<span class="mx-2 text-black/20">|</span>使用條款<span class="mx-2 text-black/20">|</span>隱私政策{{end}}</p>
+  </div>
 </footer>
 
 {{/* 阅读记录浮层（101kks.js 从 localStorage reader.history 填充） */}}

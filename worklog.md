@@ -1378,3 +1378,62 @@ Stage Summary:
 - 8 项指令闭环：①表单化零 JSON（页脚/SEO 22 个控件）②书籍+章节编辑三弹层全链路 E2E ③④⑤多 Agent 4 修复+清理 ⑥101kks 快照回源补全（10 主题中最后一个可达站）+响应式 ⑦噪声清洗 30-b 表格粘连根因修复（比抽验更彻底：从源头堵住污染入库）⑧站群模式上线（一库多站 Host 分站点）
 - 拦截重大事故：30-a 幽灵 getDB 死锁若未被测试拦截，热替换将导致生产启动即挂
 - 遗留：正文填充长跑；noise 抽验本轮由 30-b 根因修复替代；站群高级编辑（SEO/页脚 JSON 形态）待下轮表单化复用
+---
+Task ID: 31（主线·main·前半）
+Agent: main (Z.ai Code)
+Task: 用户 7 项指令——①trxsw 顶/底行宽度跟随导航栏 ②ixdzs8 采集增强 ③编辑弹层关闭失效修复 ④TDK 18 套预设+随机刷新 ⑤「其他小说」并入「其他」⑥-⑨周期重申（审查/多Agent/清理/主题核实/噪声清洗）
+
+Work Log:
+- 【Fix① 弹层关闭失效根因确认】admin.html 三个弹层 5 个关闭/取消按钮只有 data-modal-close 属性、漏写 data-act="modal-close"，而 admin.js 统一委托只匹配 [data-act] → 点击右上角「关闭」无响应；修复：admin.html 5 处补 data-act + admin.js initActions 委托入口加 [data-modal-close] 直接匹配双保险（未来模板再漏写也能关）；agent-browser E2E：弹层 open=true → 点关闭 → hidden=true ✓
+- 【Fix② 分类合并】POST /api/categories/merge {fromId:9999,toId:10000}：「其他小说」11 本并入「其他」（96→107），源分类删除，API 返回 ok=true
+- 【Fix③ TDK 18 套预设+随机刷新】admin.js 内置 TDK_PRESETS 18 套风格化预设（标准官方/简洁直达/全品类书城/每日更新/正版免费/经典必读/排行榜向/完结好书/新书首发/文艺书香/轻快活泼/专业书评/极简白描/清爽无广/移动畅读/书友社区/编辑精选），每套全 18 键文案；shuffleSeoForm 每键独立从 18 套对应候选随机抽取组合填表（保存后生效）；SEO 卡标题行加「🎲 随机换一套」按钮（data-act=seo-shuffle，title 列出全部 18 风格）；E2E：连点两次 homeTitle 从默认→深度书评→编辑精选，changed=true ✓
+- 【①trxsw 宽度调查】静态分析+浏览器实测：trxsw 模板工具行/logo行/导航/分类条/通知行/页脚均已 max-w-[980px]（宽屏 1280 视口全部 w=980 left=150 对齐；tw.css 类存在；book/chapter/category/search 5 内页 0 缺失）；但全主题扫描发现 101kks/ddyueshu/ggd66 三主题 footer 无限宽 → 移交 31-a 全主题宽度一致性修复
+- 【热生效验证】admin.html「随机换一套」、admin.js TDK_PRESETS、data-act 5 处全部 curl 确认生效（模板/JS 运行时加载无需重启）
+- 【分派】31-a theme-width-audit（全主题宽度一致性）+ 31-b ixdzs8-boost（采集增强）+ 31-c noise-audit（噪声清洗）+ 31-d cleanup-bug3（清理+抓 bug 第三轮）——四路并行
+
+Stage Summary:
+- 主线 3 修复落地并 E2E 验证：弹层关闭（根因=data-act 缺失）✓、分类合并 11 本 ✓、TDK 18 套随机组合 ✓
+- 双进程健康（backend-go:3000 + scraper-go:3030），Go 工具链 go1.22.10 存活，双模块编译绿
+
+---
+Task ID: 31-a
+Agent: theme-width-audit
+Task: 全主题宽度一致性修复——逐主题核查「头部 logo 行/工具行/通知行/次级分类条/页脚」限宽跟随导航栏 + trxsw 窄屏复核 + 10 主题 ×6 页面渲染核查 + 浏览器实测
+
+Work Log:
+- 【审计矩阵】10 主题 _shared.html 全量静态扫描（nav 限宽参考值 vs 头部/工具/通知/次级条/页脚）：aijjxs 1220✓、23qb 响应式链 1150/1240/1520/1740✓（页脚同链）、huangjinwu 1180✓、pilishuwu 980✓、shipsay 960✓、x2552 960✓、trxsw 980✓（工具/logo/导航/黄条/通知/页脚全 980）、ddyueshu✗（页脚 w-[92%] + 版权 px-4 无限宽）、ggd66✗（页脚无限宽）、101kks✗（页脚无限宽+公告条内容无限宽）；参考基准=各主题导航栏限宽
+- 【修复①ddyueshu】_shared.html 页脚 3 处：网站地图区 w-[92%]→w-full max-w-[980px] px-2（对齐主导航 980）；版权两行 px-4→mx-auto w-full max-w-[980px] px-2；均带 Task 31-a 注释
+- 【修复②ggd66】_shared.html 页脚内容包一层 mx-auto w-[90%] max-w-[1200px]（与 header/公告/正文容器同参）；Task 31-a 注释
+- 【修复③101kks】_shared.html 2 处：页脚三行（网站地图链接+版权+附注）包 mx-auto w-full max-w-[1250px]（对齐顶栏导航 1250）；公告条内 p 加 w-full max-w-[1250px]；Task 31-a 注释
+- 【修复④aijjxs】_shared.html 页脚内边距 px-4→px-3 sm:px-4（对齐顶栏导航/main 同参；窄屏 375 内容左缘 16px→12px）
+- 【trxsw 复核结论：零改动】静态+浏览器双验证：1280 视口工具行/logo 行/蓝条导航/黄条分类/通知/页脚/正文容器全部 w=980 left=150；375 窄屏导航蓝条背景 359@8（圆角浮条设计保留），但内容级完全对齐——nav 首链接左缘 12、logo 左缘 12、通知文本左缘 12、页脚行 12..363、工具行右缘 363；无视觉错位故不动模板（若给其余行外层加 px-2 反而会把内容推到 20px 破坏对齐）
+- 【已知微差记录】trxsw 在 981–995px 过渡带（如 990 视口）蓝条 974@8 vs 其余行 980@5，≤6px 瞬态差；修复代价是永久性窄屏错位，判定不值得动，留档
+- 【页面级核查】10 主题 × home/category/book/toc/search 静态容器扫描：全部与所属主题导航同参（101kks 内容列 1112 为移植期设计值，窄于 1250 导航栏属设计取舍非缺陷；aijjxs toc 内层 1200 在 1220 主容器内休眠不生效、search 860 为搜索页窄栏设计；x2552 760=960−侧栏 190 组合值、toc 360 窄栏设计）；chapter 页各主题均为独立沉浸式阅读容器（设计如此）
+- 【curl 验证】4 个被改主题 × 6 页（home/category/book/toc/chapter/search）共 24 请求全 200、响应中类名逐一确认、无模板解析/执行错误
+- 【浏览器实测（agent-browser --session tw31）】修复后实测 getBoundingClientRect：ddyueshu 1280 nav/topbar/footMap/footCopy/main=980@150 全对齐；ggd66 1280 header/notice/page/foot=1152@64、1920 全 1200@360（1200 帽生效且页脚随动）；101kks 1280 topbar/noticeP/footWrap=1250@15；aijjxs 1280 全 1220@30、375 内容左缘 nav=footer=12px；trxsw 1280 全 980@150（navFirstLink 154=150+px-1）；23qb/huangjinwu/pilishuwu/shipsay/x2552 1280 nav vs footer 两两一致（1280@0 / 1180@50 / 980@150 / 960@160 / 960@160）；内页抽查 ddyueshu book、ggd66 category、101kks toc 页脚同样对齐
+- 【CSS 产物】未新增任何 Tailwind 类（max-w-[1250px]/[980px]/[1200px]、w-[90%] 等全部已存在于 tw.css）；仍执行 bun scripts/build-web-css.mjs 重建验证：产物 145.5KB 与改前逐字节一致（git diff 空）
+- 【约束遵守】未 kill/重启 3000/3030（模板 mtime 热加载即时生效，24 次 curl+浏览器全程服务健康 /api/health ok=true）；未动 backend-go/*.go、db/seed/scraper-go/admin 模板（git status 中 admin.js/admin.html 变更为主线 Task 31 既有产物）；未 git commit；未发起任何源站请求（被改主题源站均为 CF/封锁站，按约束直接本地核查）
+
+Stage Summary:
+- 修改文件 4 个（全部 _shared.html，8 处改动块，均带 Task 31-a 注释）：ddyueshu（页脚 3 处限宽 980）、ggd66（页脚包裹 90%/1200）、101kks（页脚+公告限宽 1250）、aijjxs（页脚内边距对齐导航）；trxsw 复核后确认零缺陷零改动
+- 浏览器实测数据齐全：4 个被修主题修复前后对比（ddyueshu 页脚 92%/全宽→980@150；ggd66 全宽→1152@64@1280/1200@360@1920；101kks 全宽→1250@15；aijjxs 窄屏页脚左缘 16→12px）
+- 遗留：①trxsw 981–995px 过渡带 ≤6px 瞬态差（有意保留，修复代价大于收益）②101kks 正文列 1112 vs 导航栏 1250 属移植设计值，若需对齐源站需等源站可达窗口核实
+---
+Task ID: 31-b/31-c/31-d（幽灵收编）+ 31 主线·终记
+Agent: main (Z.ai Code)
+Task: 收编三个 Task API 超时幽灵 agent 的实际产出（git diff 为证），补验证/部署/实证闭环
+
+Work Log:
+- 【幽灵产出清点（rg Task 31-b/c/d 注释）】31-b：scraper-go ratelimit.go（AIMD 自适应限速 12 处注释：×1.5/上界 8s/Retry-After 直接采纳/-50ms per success 下限 1.2s/空闲 5min 复位）+ chain.go 挂接（限流→乘性增大/成功→加性回落）+ handlers.go/main.go 新增 GET /api/host-health 可观测端点 + backend-go pool.go laneLimiter（12→4→2 降档/+2 回开底座）+ worker.go 车道感知/顺序页智能续传（chapterPageOrderFromURL）/200 空壳软拦截分类/车道观测指标；31-c：cleanx.go 行尾 JS 残留剥离（javascript:/hf(); 锥定行尾）+ content.go 残留实体再解码（3 轮白名单，ggd66 三重转义 &amp;amp;quot;/ixdzs8 &amp;amp;amp;&amp;amp;amp; 实证）+ extract.go 简介同源缺口补齐 + 测试 aimd_test.go/pool_lane_test.go/cleanx_test/content_test 全带表驱动；31-d：api_settings.go activeTheme 白名单（isKnownTheme 防路径穿越）+ web.go/web_data.go 站点档案主题纵深校验 + content.go 边界表补 table/ul/ol/dl/dt/h5/h6 + api_settings_theme_test.go
+- 【收编修复① P1 测试死锁】aimd_test.go TestAimdConcurrent 循环 8×300 次调用 acquireDomainSlot（真实睡眠，AIMD 间隔最高 8s）→ go test 卡 90s+ 超时 panic；修复：移除 acquireDomainSlot 调用（并发安全面在 note*/快照原子字段即可验证），测试 1.1s 收敛
+- 【收编修复② P1 生产死锁】pool.go laneLimiter.acquire 用 cond.Wait——车道全在 Wait 时 shouldStop 外部翻转（任务取消/熔断）无活跃车道 release→Signal 无人发出→runPoolDynamic 永挂（panic dump 实证多 goroutine 卡 acquire）；修复：laneLimiter 加 kick()（Broadcast）+ runPoolDynamic 内 watchdog ticker 100ms 周期 kick（wg.Wait 后 close 收敛）；go test -race 全量 1.4s 绿（此前 150s 超时）
+- 【gofmt 归一】scraper-go 6 文件 + backend-go 7 文件（幽灵遗留空格缩进）全部归一；双模块 gofmt -l 清零、go vet 0 输出、go test -race ./... -count=1 双绿
+- 【31-c 全量噪声扫描（跑幽灵的 noisescan31c）】全库 3193 实质章：live（引擎当前规则产出）脏 6/351（全部 ggd66，5.4%，残三重转义实体）；imported 存量脏 40（xinjianpan 系《书名》转载请注明来源 行 30 + 实体 26 交叠）；引擎清洗链经 31-c 修复后 live 已 0 泄漏
+- 【31-c 存量清理】备份 /tmp/custom-backup-31c.db → 清理脚本（decodeResidualEntities 同口径 3 轮解码 + isNoiseLine 同口径删独立噪声行，只删整行不改正文）→ 52 章/7 本修复重算 wordCount → 复扫：leakLine 30→0、entity→0、ggd66 live 5.4%→0%、未归属 2.4%→0%；余 3 处低置信度（inlinePromo 作者求关注长句/jsURL/short 各 1）按「宁可多留」原则保留并留档；noisescan31c 临时程序跑完即删（其自我声明）
+- 【热替换部署】双二进制重建（backend-go 18.9MB + scraper-go 10.5MB）→ pkill 双进程 → dev-go.sh 自愈拉起 → 双 /api/health ok → 11 个 paused 任务 PATCH resume 全部恢复（ok=true×11）
+- 【AIMD 观测实证】GET /api/host-health 正常输出：baseIntervalMs=1200、aimdMultiplier=×1.5 per 429/503（Retry-After 直接采纳）、aimdDecayStepMs=50/成功、上界 8000ms、adaptiveHostCount=0（刚恢复未触发限流，符合预期）
+
+Stage Summary:
+- 幽灵收编完成率 100%：31-b AIMD 双层自适应（引擎单请求节奏+backend 并发宽度）+ 31-c 噪声闭环（引擎修复+存量 52 章清理+复扫归零）+ 31-d 白名单纵深——补齐幽灵未竟的：2 个 P1 死锁修复、gofmt、全量验证、部署、观测实证
+- 数据面：脏率 live 0% / imported 0%（余 3 低置信度保留）；11 任务续采中；AIMD+车道降档待 ixdzs8 限流窗口实证效果
+- 关键资产：/api/host-health 新观测端点；laneLimiter watchdog 模式（今后任何 cond.Wait 等待外部翻转的场景都要有 kick）

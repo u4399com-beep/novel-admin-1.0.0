@@ -38,6 +38,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -320,6 +321,22 @@ func safeOrigin(u string) string {
 	return p.Scheme + "://" + p.Host
 }
 
+// chapterPageOrderFromURL Task 31-b: 从顺序页 URL 提取章节序号（/read/{bid}/p{order}.html → order）。
+// 用于顺序页可预测站点的「按序爬取/智能续传」排序；无序号形态返回大常数排到最后（稳定排序保持原序）。
+var chapterPageOrderRE = regexp.MustCompile(`/p(\d{1,9})\.html?$`)
+
+func chapterPageOrderFromURL(u string) int64 {
+	if u == "" {
+		return int64(1) << 62
+	}
+	if m := chapterPageOrderRE.FindStringSubmatch(strings.ToLower(u)); m != nil {
+		if n, err := strconv.ParseInt(m[1], 10, 64); err == nil {
+			return n
+		}
+	}
+	return int64(1) << 62
+}
+
 // countNonSpaceRunes 对齐 TS content.replace(/\s/g,”).length（逐 rune、unicode.IsSpace 判定）
 func countNonSpaceRunes(s string) int {
 	n := 0
@@ -510,6 +527,9 @@ type Phase2Outcome struct {
 	// BreakerRateLimit Task 29: 熔断原因分类=true 表示失败形态呈限流特征（429/503/rate），
 	// 终态消息据此给出「等窗口恢复」而非「疑似封禁」的处置建议
 	BreakerRateLimit bool
+	// Task 31-b: 车道感知观测指标——本次 Phase 2 限流降档次数与最终活跃车道数
+	LaneShrinks int
+	LaneFinal   int
 }
 
 // phase2Fill 消费 Phase 1 的填充计划：逐书分批（200/批）拉取 DB 空骨架行（wordCount=0，
@@ -537,6 +557,18 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 	breakerStopped := false
 	isStopped := throttledCheck(func() bool { return stopState(run.TaskID) != "" })
 
+	// Task 31-b: 车道感知自适应并发。固定 12 车道对严格限流站（ixdzs8 实证）太猛：
+	// 高频触发 429/503 + 200 空壳窗口 → 成功 2/失败 69 后熔断停摆，resume 后又少量成功+熔断循环。
+	// 检测到限流类失败（复用 Task 29 的 isRateLimitErr）时动态收缩活跃车道（12→4→2），
+	// 成功恢复后缓慢回升（每连续 24 章成功 +2 车道，封顶配置值）；与引擎 AIMD 自适应间隔
+	//（scraper-go ratelimit.go）配合形成双层自适应：引擎层控制单请求节奏，本层控制并发宽度。
+	laneCtl := newLaneLimiter(CHAPTER_CONCURRENCY)
+	var laneLimit atomic.Int64
+	laneLimit.Store(int64(CHAPTER_CONCURRENCY))
+	var laneShrinks atomic.Int64
+	var laneOKStreak atomic.Int64
+	laneRestoreEvery := int64(24) // 连续成功多少章回开一档（+2 车道）
+
 	isRateLimitErr := func(err string) bool {
 		if err == "" {
 			return false
@@ -545,6 +577,43 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 		return strings.Contains(low, "429") || strings.Contains(low, "503") ||
 			strings.Contains(low, "限流") || strings.Contains(low, "rate")
 	}
+	// Task 31: 软拦截判定——ixdzs8 实证限流窗口的主要形态是 200 空壳/挑战循环失败
+	//（显式 429/503 反而少），这类失败 Error 文案不含"限流"字样，若不单列则车道降档
+	// 与熔断分类（BreakerRateLimit）永不触发，resume 循环烧穿。口径：挑战/空壳/正文空。
+	isSoftBlockErr := func(err string) bool {
+		if err == "" {
+			return false
+		}
+		low := strings.ToLower(err)
+		return strings.Contains(low, "challenge") || strings.Contains(low, "挑战") ||
+			strings.Contains(low, "空壳") || strings.Contains(low, "正文为空") ||
+			strings.Contains(low, "正文提取为空") || strings.Contains(low, "软拦截")
+	}
+
+	shrinkLanes := func(errClass string) {
+		cur := laneLimit.Load()
+		next := laneShrinkStep(cur)
+		if next >= cur {
+			return // 已在最低档
+		}
+		if laneLimit.CompareAndSwap(cur, next) {
+			laneCtl.setLimit(int(next))
+			laneShrinks.Add(1)
+			laneOKStreak.Store(0)
+			run.Log(fmt.Sprintf("[lane-control] 检测到限流类失败（%s），活跃车道 %d→%d（引擎已同步 AIMD 放缓请求间隔）", errClass, cur, next))
+		}
+	}
+	bumpLaneOnSuccess := func() {
+		if laneOKStreak.Add(1) >= laneRestoreEvery {
+			laneOKStreak.Store(0)
+			cur := laneLimit.Load()
+			next := laneRestoreStep(cur, int64(CHAPTER_CONCURRENCY))
+			if next > cur && laneLimit.CompareAndSwap(cur, next) {
+				laneCtl.setLimit(int(next))
+				run.Log(fmt.Sprintf("[lane-control] 连续 %d 章成功，活跃车道回升 %d→%d", laneRestoreEvery, cur, next))
+			}
+		}
+	}
 
 	noteChapterFail := func() {
 		if PHASE2_FAIL_BREAKER <= 0 {
@@ -552,10 +621,13 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 		}
 		if n := consecFails.Add(1); int(n) >= PHASE2_FAIL_BREAKER && failBreaker.CompareAndSwap(false, true) {
 			breakerConsec.Store(n) // Task 29: 快照（CAS 赢家独写，无竞态）
+			kindDesc := "疑似源站封禁或站点不可达"
 			if e := lastFailErr.Load(); e != nil && isRateLimitErr(*e) {
 				breakerKindLimit = true // CAS 赢家独写，无竞态
+				kindDesc = "失败形态呈限流/空壳软拦截特征（非封禁）"
 			}
-			run.Log(fmt.Sprintf("正文连续失败 %d 章（期间零成功）：疑似源站封禁或站点不可达，提前停止防烧穿（已采进度保留，可稍后恢复续传）", n))
+			// Task 31-b: 日志带上当时活跃车道快照，与降档日志形成完整证据链
+			run.Log(fmt.Sprintf("正文连续失败 %d 章（期间零成功，%s）：提前停止防烧穿（已采进度保留，可稍后恢复续传；当前活跃车道 %d）", n, kindDesc, laneLimit.Load()))
 		}
 	}
 
@@ -566,6 +638,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 	}
 	sort.Ints(ids)
 
+	var failSampleLogged atomic.Int64 // Task 31: phase2 失败原因采样（前 6 条进任务日志，ixdzs8 排障实证：无失败明细无法区分限流空壳/挑战失败/选择器失效）
 	for _, novelID := range ids {
 		if stoppedEarly || breakerStopped {
 			break
@@ -615,7 +688,14 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 			for _, r := range slice {
 				urlByTitle[r.Title] = r.URL
 			}
-			runPool(dbRows, CHAPTER_CONCURRENCY, func(row dbRow, _ int) {
+			// Task 31-b: 顺序页智能续传——ixdzs8 等章节 URL 呈 /read/{bid}/p{order}.html
+			// 顺序可预测形态时按 URL 序号升序爬取：对源站更友好（连续页面访问），
+			// 且断点续传/重发每次都从同一位置推进，进度确定可预期；无序号 URL 排最后
+			sort.SliceStable(dbRows, func(i, j int) bool {
+				return chapterPageOrderFromURL(urlByTitle[dbRows[i].title]) <
+					chapterPageOrderFromURL(urlByTitle[dbRows[j].title])
+			})
+			runPoolDynamic(dbRows, laneCtl, func(row dbRow, _ int) {
 				u, ok := urlByTitle[row.title]
 				if !ok {
 					return
@@ -630,6 +710,12 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 					bookFailed.Add(1)
 					e := res.Error // Task 29: 采样最近失败原因供熔断分类
 					lastFailErr.Store(&e)
+					if failSampleLogged.Add(1) <= 6 { // Task 31: 失败原因采样进任务日志（前 6 条）
+						run.Log(fmt.Sprintf("[失败采样 %d/6] %s → %s", failSampleLogged.Load(), truncateRunes(row.title, 30), truncateRunes(e, 120)))
+					}
+					if isRateLimitErr(e) || isSoftBlockErr(e) { // Task 31-b/31: 限流/软拦截 → 收缩活跃车道
+						shrinkLanes("HTTP 429/503 或引擎限流/软拦截判定")
+					}
 					noteChapterFail()
 					return
 				}
@@ -638,6 +724,14 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				if trimSpaceStr(content) == "" {
 					failedCtr.Add(1) // 源站空壳章：保留骨架，重发任务自动重试
 					bookFailed.Add(1)
+					// Task 31-b: HTTP 200 空壳按限流类软拦截采样（ixdzs8 实证该形态是
+					// 限流窗口的主要表现——200 但 .page-content 为空）
+					e := "章节正文为空（HTTP 200 空壳响应，疑似限流软拦截/挑战竞态）"
+					lastFailErr.Store(&e)
+					if failSampleLogged.Add(1) <= 6 { // Task 31: 空壳同样进采样
+						run.Log(fmt.Sprintf("[失败采样 %d/6] %s → 200 空壳（正文区无内容）", failSampleLogged.Load(), truncateRunes(row.title, 30)))
+					}
+					shrinkLanes("200 空壳软拦截")
 					noteChapterFail()
 					return
 				}
@@ -660,6 +754,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 					filledCtr.Add(1)
 					bookFilled.Add(1)
 					consecFails.Store(0) // 成功即复位连败计数
+					bumpLaneOnSuccess()  // Task 31-b: 成功回开车道
 					run.IncChapters()
 				} else {
 					failedCtr.Add(1)
@@ -687,7 +782,9 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 	}
 	return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly,
 		FailBreaker: breakerStopped || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照
-		BreakerRateLimit: breakerKindLimit}
+		BreakerRateLimit: breakerKindLimit,
+		// Task 31-b: 车道感知观测指标
+		LaneShrinks: int(laneShrinks.Load()), LaneFinal: int(laneLimit.Load())}
 }
 
 // ==================== 字数汇总 ====================
@@ -874,7 +971,8 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 		// 恢复=PATCH resume 重入队，Phase 2 依空骨架自动续传（每次重试至多再烧阈值内的失败）
 		// Task 29: 限流形态区分处置建议
 		if p2.BreakerRateLimit {
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流 429/503，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎将自动放缓节奏）", p2.ConsecFails, p2.Filled))
+			// Task 31-b: 分类覆盖面扩到 200 空壳（限流窗口的主要表现形态之一）
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
 		} else {
 			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
 		}
@@ -961,7 +1059,8 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 		// Task 26-d：连败熔断 → 转 paused（同 runList 注释）
 		// Task 29: 限流形态区分处置建议
 		if p2.BreakerRateLimit {
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流 429/503，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎将自动放缓节奏）", p2.ConsecFails, p2.Filled))
+			// Task 31-b: 分类覆盖面扩到 200 空壳（同 runList）
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
 		} else {
 			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
 		}

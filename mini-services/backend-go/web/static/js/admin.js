@@ -938,6 +938,382 @@
     return obj;
   }
 
+  /* ---- Task 31: TDK 预设 18 套 + 随机刷新组合 ----
+   * 18 套风格化 TDK 预设；「随机换一套」每键从 18 套对应候选中独立抽取组合成一套新配置。
+   * 变量占位符 {siteName}/{categoryName}/{novelTitle}/{author}/{statusText}/{descShort}
+   * /{chapterTitle}/{idx}/{query}/{keyword}/{count} 与后端 renderTpl 语义一致，保存后前台渲染时替换。 */
+  var TDK_PRESETS = [
+    {
+      label: '标准官方',
+      homeTitle: '{siteName} - 免费小说在线阅读_原创小说网站',
+      homeDescription: '{siteName}是领先的免费原创小说在线阅读网站，提供玄幻、仙侠、都市、历史、科幻等全品类小说，每日更新，畅享极致阅读体验。',
+      homeKeywords: '小说,免费小说,在线阅读,{siteName},玄幻小说,都市小说',
+      categoryTitle: '{categoryName}小说大全_最新{categoryName}小说排行榜 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}频道为您提供海量精品{categoryName}小说在线阅读，{categoryName}小说每日更新，尽在{siteName}。',
+      bookTitle: '{novelTitle}最新章节列表_{author}小说 - {siteName}',
+      bookDescription: '{novelTitle}连载于{siteName}，作者{author}，{statusText}。{descShort}',
+      bookKeywords: '{novelTitle},{novelTitle}最新章节,{author},{categoryName}小说',
+      tocTitle: '{novelTitle}目录_全部章节列表 - {siteName}',
+      tocDescription: '{novelTitle}全部章节目录一览，按顺序阅读《{novelTitle}》最新章节，尽在{siteName}。',
+      chapterTitle: '{chapterTitle}_《{novelTitle}》第{idx}章 - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}在线阅读，作者{author}，精彩章节尽在{siteName}。',
+      chapterKeywords: '{novelTitle},{chapterTitle},{author}',
+      searchTitle: '"{query}"的搜索结果 - {siteName}',
+      searchDescription: '在{siteName}搜索"{query}"找到的相关小说列表。',
+      pseoTitle: '{keyword}小说推荐_关于{keyword}的小说 - {siteName}',
+      pseoDescription: '{siteName}为您精选与"{keyword}"相关的小说合集，包含 {count} 本热门作品，在线免费阅读。',
+      pseoKeywords: '{keyword},{keyword}小说,{keyword}推荐'
+    },
+    {
+      label: '简洁直达',
+      homeTitle: '{siteName}｜免费小说全本阅读',
+      homeDescription: '{siteName}提供全品类免费小说在线阅读，玄幻言情都市历史一站直达，无需注册即点即读。',
+      homeKeywords: '免费小说,小说全本,{siteName},在线阅读,无广告小说',
+      categoryTitle: '{categoryName}小说_免费{categoryName}小说推荐 - {siteName}',
+      categoryDescription: '{siteName}精选{categoryName}小说免费在线阅读，热门{categoryName}作品持续更新中。',
+      bookTitle: '{novelTitle}_{author}作品全集 - {siteName}',
+      bookDescription: '{author}著作《{novelTitle}》{statusText}，{descShort}就在{siteName}免费阅读。',
+      bookKeywords: '{novelTitle},{author},{novelTitle}全本阅读',
+      tocTitle: '《{novelTitle}》章节目录 - {siteName}',
+      tocDescription: '《{novelTitle}》完整章节目录，一键直达任意章节开始阅读。',
+      chapterTitle: '{novelTitle} 第{idx}章 {chapterTitle} - {siteName}',
+      chapterDescription: '{novelTitle}第{idx}章{chapterTitle}全文在线阅读，更新及时无删减。',
+      chapterKeywords: '{novelTitle}第{idx}章,{chapterTitle}',
+      searchTitle: '搜索：{query} - {siteName}',
+      searchDescription: '{siteName}内"{query}"相关小说搜索结果。',
+      pseoTitle: '{keyword}相关小说_小说推荐 - {siteName}',
+      pseoDescription: '与"{keyword}"相关的 {count} 本精选小说，{siteName}在线免费读。',
+      pseoKeywords: '{keyword},{keyword}小说推荐'
+    },
+    {
+      label: '全品类书城',
+      homeTitle: '{siteName} - 海量全品类小说免费阅读平台',
+      homeDescription: '{siteName}汇聚玄幻、武侠、都市、历史、科幻、游戏、悬疑、轻小说等全品类海量小说，千万书友的共同选择。',
+      homeKeywords: '小说网站,全品类小说,免费书城,{siteName},小说大全',
+      categoryTitle: '{categoryName}小说频道_海量{categoryName}作品 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}频道收录海量{categoryName}小说，分类精准查找，免费畅读不断更。',
+      bookTitle: '《{novelTitle}》小说全文免费阅读_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，作者{author}。{descShort}全文在{siteName}免费畅读。',
+      bookKeywords: '{novelTitle}全文阅读,{novelTitle},{author}小说',
+      tocTitle: '{novelTitle}章节目录大全 - {siteName}',
+      tocDescription: '《{novelTitle}》章节目录大全，全部章节按序排列，追更补章两相宜。',
+      chapterTitle: '{chapterTitle} - {novelTitle}正文 - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}正文阅读，文字纯净排版舒适，尽在{siteName}。',
+      chapterKeywords: '{novelTitle}正文,{chapterTitle},{author}',
+      searchTitle: '"{query}"相关书籍 - {siteName}搜索',
+      searchDescription: '在{siteName}书城中查找"{query}"的相关小说作品。',
+      pseoTitle: '{keyword}主题小说合集（共{count}本） - {siteName}',
+      pseoDescription: '{siteName}整理"{keyword}"主题小说合集 {count} 本，题材相近口味一致，免费在线阅读。',
+      pseoKeywords: '{keyword},主题小说,小说合集,{siteName}'
+    },
+    {
+      label: '每日更新',
+      homeTitle: '{siteName} - 每日更新的免费小说阅读网',
+      homeDescription: '{siteName}每日更新数千章节，玄幻、都市、言情、悬疑热门连载追更不停，最新章节第一时间呈现。',
+      homeKeywords: '每日更新小说,最新章节,连载小说,{siteName},追更',
+      categoryTitle: '{categoryName}小说每日更新_最新{categoryName}连载 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}区每日更新最新{categoryName}小说章节，追更党收藏这一站就够了。',
+      bookTitle: '{novelTitle}最新章节（今日更新）_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，{author}最新力作，{siteName}同步更新最新章节。{descShort}',
+      bookKeywords: '{novelTitle}最新章节,{novelTitle}更新,{author}',
+      tocTitle: '{novelTitle}最新章节目录_持续更新 - {siteName}',
+      tocDescription: '《{novelTitle}》章节目录持续更新中，{statusText}，收藏页面追更不迷路。',
+      chapterTitle: '{novelTitle}第{idx}章 {chapterTitle}（最新） - {siteName}',
+      chapterDescription: '《{novelTitle}》最新章节{chapterTitle}已更新，{author}作品同步连载中。',
+      chapterKeywords: '{novelTitle}最新,{chapterTitle},{author}连载',
+      searchTitle: '{query}的小说_搜索结果 - {siteName}',
+      searchDescription: '{siteName}为您找到"{query}"相关小说，全部可免费在线阅读。',
+      pseoTitle: '{keyword}小说每日推荐_连载更新 - {siteName}',
+      pseoDescription: '"{keyword}"相关小说 {count} 本持续更新，{siteName}每日刷新推荐书单。',
+      pseoKeywords: '{keyword},每日更新小说,连载推荐'
+    },
+    {
+      label: '正版免费',
+      homeTitle: '{siteName} - 正版体验级免费小说阅读',
+      homeDescription: '{siteName}坚持免费阅读理念，全部小说免费开放，界面清爽无打扰，支持正版体验从{siteName}开始。',
+      homeKeywords: '免费阅读,正版小说,免费看书,{siteName},免费小说网站',
+      categoryTitle: '免费{categoryName}小说_全本免费阅读 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}分类全部小说免费阅读，无需付费开通会员，畅快阅读零门槛。',
+      bookTitle: '{novelTitle}免费阅读全文_作者{author} - {siteName}',
+      bookDescription: '《{novelTitle}》全文免费阅读，作者{author}，{statusText}。{descShort}',
+      bookKeywords: '{novelTitle}免费阅读,免费小说,{author}作品',
+      tocTitle: '{novelTitle}全本章节免费读 - {siteName}',
+      tocDescription: '《{novelTitle}》全部章节免费开放，点击目录任意章节即刻免费阅读。',
+      chapterTitle: '免费阅读 {novelTitle} {chapterTitle} - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}免费在线阅读，全程免费无付费章节。',
+      chapterKeywords: '{novelTitle}免费,{chapterTitle},免费章节',
+      searchTitle: '免费读"{query}" - {siteName}',
+      searchDescription: '"{query}"相关免费小说，{siteName}全部免费开放阅读。',
+      pseoTitle: '{keyword}免费小说推荐（{count}本） - {siteName}',
+      pseoDescription: '"{keyword}"相关 {count} 本小说全部免费阅读，{siteName}免费书库持续扩充。',
+      pseoKeywords: '{keyword},免费小说,免费阅读'
+    },
+    {
+      label: '经典必读',
+      homeTitle: '{siteName} - 经典小说必读书库',
+      homeDescription: '{siteName}精选历年经典小说必读佳作，经得起时间检验的好故事，资深书友口碑之选。',
+      homeKeywords: '经典小说,必读小说,口碑好书,{siteName},经典书库',
+      categoryTitle: '经典{categoryName}小说_必读{categoryName}书单 - {siteName}',
+      categoryDescription: '{siteName}严选经典{categoryName}小说，本本经过书友检验，入坑不后悔的{categoryName}必读书单。',
+      bookTitle: '经典小说《{novelTitle}》_{author}代表作 - {siteName}',
+      bookDescription: '《{novelTitle}》{author}代表作，{statusText}，书友口碑之作。{descShort}',
+      bookKeywords: '{novelTitle},经典小说,{author}代表作',
+      tocTitle: '《{novelTitle}》完整目录_经典重温 - {siteName}',
+      tocDescription: '《{novelTitle}》完整章节目录，经典小说重温，每一章都值得细品。',
+      chapterTitle: '《{novelTitle}》{chapterTitle}经典章节 - {siteName}',
+      chapterDescription: '重温经典《{novelTitle}》{chapterTitle}，{author}笔下的精彩篇章。',
+      chapterKeywords: '{novelTitle},{chapterTitle},经典章节',
+      searchTitle: '经典小说搜索：{query} - {siteName}',
+      searchDescription: '在{siteName}经典书库中查找"{query}"相关作品。',
+      pseoTitle: '{keyword}经典小说书单（{count}本必读） - {siteName}',
+      pseoDescription: '与"{keyword}"相关的 {count} 本经典小说，本本口碑之作，{siteName}经典书库呈现。',
+      pseoKeywords: '{keyword},经典小说,必读书单'
+    },
+    {
+      label: '排行榜向',
+      homeTitle: '{siteName} - 热门小说排行榜TOP阅读站',
+      homeDescription: '{siteName}实时更新热门小说排行榜，人气爆款一网打尽，看看大家都在追什么书。',
+      homeKeywords: '小说排行榜,热门小说,人气小说,{siteName},小说TOP',
+      categoryTitle: '{categoryName}小说排行榜_最热{categoryName}推荐 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}排行榜，按人气热度排序的{categoryName}小说，跟着榜单读书不踩坑。',
+      bookTitle: '上榜小说《{novelTitle}》_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》人气上榜作品，{author}所著，{statusText}。{descShort}',
+      bookKeywords: '{novelTitle},{novelTitle}排行,热门{categoryName}小说',
+      tocTitle: '{novelTitle}章节列表_人气作品 - {siteName}',
+      tocDescription: '人气小说《{novelTitle}》章节列表，全站书友正在追的{statusText}作品。',
+      chapterTitle: '{novelTitle} {chapterTitle} 人气连载 - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}，人气作品精彩继续，{author}最新章节。',
+      chapterKeywords: '{novelTitle},{chapterTitle},人气小说',
+      searchTitle: '"{query}"人气作品搜索 - {siteName}',
+      searchDescription: '{siteName}找到"{query}"相关人气小说，按热度排序呈现。',
+      pseoTitle: '{keyword}热门小说榜（{count}本） - {siteName}',
+      pseoDescription: '"{keyword}"相关热门小说 {count} 本按人气排序，{siteName}榜单实时更新。',
+      pseoKeywords: '{keyword},热门榜,人气小说'
+    },
+    {
+      label: '完结好书',
+      homeTitle: '{siteName} - 完结小说大全_一次性读到爽',
+      homeDescription: '{siteName}海量完结小说一次读个痛快，不用追更不用等更新，完结好书一步到位。',
+      homeKeywords: '完结小说,全本小说,完本小说,{siteName},一次读完',
+      categoryTitle: '完结{categoryName}小说_全本{categoryName}大全 - {siteName}',
+      categoryDescription: '{siteName}完结{categoryName}小说专区，全部{statusText}作品放心入坑，告别追更等待。',
+      bookTitle: '《{novelTitle}》全本阅读_{author}完本 - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，{author}完本作品，入坑即读到大结局。{descShort}',
+      bookKeywords: '{novelTitle}全本,{novelTitle}完结,{author}完本',
+      tocTitle: '{novelTitle}全本目录_完整章节 - {siteName}',
+      tocDescription: '《{novelTitle}》全本章节目录，正文完结一次性读完，无断更烦恼。',
+      chapterTitle: '{novelTitle}全本 第{idx}章 {chapterTitle} - {siteName}',
+      chapterDescription: '《{novelTitle}》（{statusText}）第{idx}章{chapterTitle}，畅快阅读到大结局。',
+      chapterKeywords: '{novelTitle}全本,{chapterTitle},大结局',
+      searchTitle: '完结小说"{query}" - {siteName}',
+      searchDescription: '"{query}"相关完结小说搜索结果，全本无忧阅读。',
+      pseoTitle: '{keyword}完结小说精选（{count}本全本） - {siteName}',
+      pseoDescription: '"{keyword}"相关完结小说 {count} 本，本本全本，{siteName}一次读到爽。',
+      pseoKeywords: '{keyword},完结小说,全本推荐'
+    },
+    {
+      label: '新书首发',
+      homeTitle: '{siteName} - 新书首发_最新上架小说抢先读',
+      homeDescription: '{siteName}新书首发专区，最新上架小说抢先阅读，做第一批读到好书的读者。',
+      homeKeywords: '新书首发,最新小说,新书上架,{siteName},抢先读',
+      categoryTitle: '最新{categoryName}小说_新书首发 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}新书区，最新上架{categoryName}小说抢先看，潜力新书别错过。',
+      bookTitle: '新书《{novelTitle}》_{author}新作 - {siteName}',
+      bookDescription: '《{novelTitle}》{author}最新作品，{statusText}。{descShort}新书首发就在{siteName}。',
+      bookKeywords: '{novelTitle},新书,{author}新作',
+      tocTitle: '{novelTitle}新章节目录_持续连载 - {siteName}',
+      tocDescription: '新书《{novelTitle}》章节目录，{statusText}，从第一章开始追新。',
+      chapterTitle: '{novelTitle} 第{idx}章 {chapterTitle} 新书连载 - {siteName}',
+      chapterDescription: '新书《{novelTitle}》{chapterTitle}连载中，{author}全新故事开更。',
+      chapterKeywords: '{novelTitle},新书连载,{author}',
+      searchTitle: '新书搜索"{query}" - {siteName}',
+      searchDescription: '"{query}"相关新书上架信息，{siteName}首发专区呈现。',
+      pseoTitle: '{keyword}新书推荐（{count}本上新） - {siteName}',
+      pseoDescription: '"{keyword}"相关新书 {count} 本已上架，{siteName}新书区抢先阅读。',
+      pseoKeywords: '{keyword},新书推荐,上新'
+    },
+    {
+      label: '文艺书香',
+      homeTitle: '{siteName}｜一卷在手，书香满屋',
+      homeDescription: '{siteName}愿做您的线上书房，网络文学与经典并存，安静阅读，享受文字之美。',
+      homeKeywords: '网络文学,在线书房,{siteName},小说阅读,书香',
+      categoryTitle: '{categoryName}文集_静品{categoryName}佳作 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}文集，静心甄选{categoryName}佳作，一杯茶一本书，慢慢读。',
+      bookTitle: '《{novelTitle}》_{author}著 - {siteName}',
+      bookDescription: '《{novelTitle}》，{author}著，{statusText}。{descShort}',
+      bookKeywords: '{novelTitle},{author},文学作品',
+      tocTitle: '《{novelTitle}》卷目_章节一览 - {siteName}',
+      tocDescription: '《{novelTitle}》卷目章节一览，按序展卷，渐入佳境。',
+      chapterTitle: '《{novelTitle}》· {chapterTitle} - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}，{author}文字之美，与您共赏。',
+      chapterKeywords: '{novelTitle},{chapterTitle},{author}',
+      searchTitle: '书海寻径：{query} - {siteName}',
+      searchDescription: '于{siteName}书海中为您寻得"{query}"相关作品。',
+      pseoTitle: '以"{keyword}"为题的文学书单 - {siteName}',
+      pseoDescription: '{siteName}甄选"{keyword}"主题作品 {count} 部，主题阅读，一次看全。',
+      pseoKeywords: '{keyword},主题书单,文学'
+    },
+    {
+      label: '轻快活泼',
+      homeTitle: '{siteName} - 追文达人都在用的小说站',
+      homeDescription: '{siteName}在手，好书不愁！玄幻脑洞、甜宠日常、悬疑反转，总有一款戳中你的爽点！',
+      homeKeywords: '好看的小说,小说推荐,追文,{siteName},爽文',
+      categoryTitle: '{categoryName}小说哪家强？来{siteName}看看',
+      categoryDescription: '{siteName}{categoryName}书友力荐！好看不腻的{categoryName}小说都在这里，快来挑本下饭的！',
+      bookTitle: '《{novelTitle}》超好看！{author}出品 - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}！{author}用心之作，{descShort}不看后悔系列！',
+      bookKeywords: '{novelTitle}好看吗,{novelTitle},{author}',
+      tocTitle: '《{novelTitle}》章节速递 - {siteName}',
+      tocDescription: '《{novelTitle}》章节速递，一键追更，精彩不断档！',
+      chapterTitle: '{novelTitle}：{chapterTitle} - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}来啦！{author}又一精彩更新！',
+      chapterKeywords: '{novelTitle},{chapterTitle},追更',
+      searchTitle: '搜"{query}"找到好书啦 - {siteName}',
+      searchDescription: '"{query}"的相关小说都帮你找齐了，挑一本开读吧！',
+      pseoTitle: '{keyword}控必看！{count}本高分小说 - {siteName}',
+      pseoDescription: '喜欢"{keyword}"的书友看过来，{count} 本同款好文一次收藏！',
+      pseoKeywords: '{keyword},{keyword}小说,高分推荐'
+    },
+    {
+      label: '专业书评',
+      homeTitle: '{siteName} - 深度小说阅读与评价平台',
+      homeDescription: '{siteName}注重阅读质量，从文笔、节奏、世界观多维度收录优质小说，帮读者高效选书。',
+      homeKeywords: '小说点评,优质小说,选书,{siteName},深度阅读',
+      categoryTitle: '{categoryName}小说精选_按质量收录 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}精选区，从设定、文笔、剧情多维度筛选{categoryName}作品，选书不再靠运气。',
+      bookTitle: '《{novelTitle}》小说详情_作者{author} - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，{author}作品。{descShort}阅读前先了解，选书更高效。',
+      bookKeywords: '{novelTitle},小说详情,{author}作品',
+      tocTitle: '《{novelTitle}》章节索引 - {siteName}',
+      tocDescription: '《{novelTitle}》章节索引完整收录，支持按序连续阅读。',
+      chapterTitle: '{novelTitle} 第{idx}章：{chapterTitle} - {siteName}',
+      chapterDescription: '《{novelTitle}》第{idx}章{chapterTitle}全文，{author}作品连续阅读。',
+      chapterKeywords: '{novelTitle} 第{idx}章,{chapterTitle}',
+      searchTitle: '"{query}"作品检索 - {siteName}',
+      searchDescription: '在{siteName}作品库中检索"{query}"，附作品信息一览。',
+      pseoTitle: '{keyword}题材小说分析（{count}部） - {siteName}',
+      pseoDescription: '{siteName}收录"{keyword}"题材作品 {count} 部，题材横向对比，按需选读。',
+      pseoKeywords: '{keyword},题材小说,作品分析'
+    },
+    {
+      label: '极简白描',
+      homeTitle: '{siteName}',
+      homeDescription: '{siteName}，在线小说阅读。分类清晰，检索快捷，即点即读。',
+      homeKeywords: '{siteName},小说,在线阅读',
+      categoryTitle: '{categoryName} - {siteName}',
+      categoryDescription: '{siteName}{categoryName}分类小说列表。',
+      bookTitle: '{novelTitle} - {author} - {siteName}',
+      bookDescription: '《{novelTitle}》，{author}著，{statusText}。{descShort}',
+      bookKeywords: '{novelTitle},{author}',
+      tocTitle: '{novelTitle} 目录 - {siteName}',
+      tocDescription: '《{novelTitle}》章节目录。',
+      chapterTitle: '{novelTitle} · {chapterTitle} - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}正文。',
+      chapterKeywords: '{novelTitle},{chapterTitle}',
+      searchTitle: '{query} - 搜索 - {siteName}',
+      searchDescription: '"{query}"搜索结果。',
+      pseoTitle: '{keyword} · 小说合集 - {siteName}',
+      pseoDescription: '"{keyword}"相关小说 {count} 本。',
+      pseoKeywords: '{keyword},小说'
+    },
+    {
+      label: '清爽无广',
+      homeTitle: '{siteName} - 无弹窗清爽小说阅读体验',
+      homeDescription: '{siteName}拒绝弹窗骚扰，页面清爽加载快，专心看书不受打扰的纯净阅读站。',
+      homeKeywords: '无弹窗小说,清爽阅读,纯净阅读,{siteName},无广告',
+      categoryTitle: '{categoryName}小说_清爽阅读版 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}分类页无弹窗无浮层，{categoryName}小说安心挑选静心阅读。',
+      bookTitle: '《{novelTitle}》纯净阅读页_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，{author}作品，{siteName}纯净页面无打扰阅读。{descShort}',
+      bookKeywords: '{novelTitle},无弹窗阅读,{author}',
+      tocTitle: '{novelTitle}目录页_无打扰追更 - {siteName}',
+      tocDescription: '《{novelTitle}》目录页清爽直达，无弹窗干扰，安心追更。',
+      chapterTitle: '{novelTitle} {chapterTitle} 纯净版 - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}纯净阅读页，无弹窗无浮层专心看书。',
+      chapterKeywords: '{novelTitle},{chapterTitle},纯净阅读',
+      searchTitle: '{query}搜索_清爽版 - {siteName}',
+      searchDescription: '"{query}"搜索结果页，无广告干扰快速直达。',
+      pseoTitle: '{keyword}小说推荐_纯净阅读（{count}本） - {siteName}',
+      pseoDescription: '"{keyword}"相关 {count} 本小说，{siteName}纯净页面无打扰阅读。',
+      pseoKeywords: '{keyword},无弹窗小说,清爽阅读'
+    },
+    {
+      label: '移动畅读',
+      homeTitle: '{siteName} - 手机小说阅读神器',
+      homeDescription: '{siteName}手机端流畅适配，流量省加载快，通勤路上碎片时间畅读海量小说。',
+      homeKeywords: '手机小说,移动阅读,手机看书,{siteName},碎片阅读',
+      categoryTitle: '手机看{categoryName}小说 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}分类手机端完美适配，通勤路上随时刷{categoryName}好书。',
+      bookTitle: '手机追《{novelTitle}》_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，{author}作品，手机打开{siteName}随时随地追更。{descShort}',
+      bookKeywords: '{novelTitle}手机阅读,{novelTitle},{author}',
+      tocTitle: '{novelTitle}手机版目录 - {siteName}',
+      tocDescription: '《{novelTitle}》手机版章节目录，单手滑动轻松追章。',
+      chapterTitle: '{novelTitle} 第{idx}章 {chapterTitle}（手机版） - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}手机阅读页，字号适中省眼省流量。',
+      chapterKeywords: '{novelTitle}手机版,{chapterTitle}',
+      searchTitle: '手机搜"{query}" - {siteName}',
+      searchDescription: '"{query}"手机端搜索结果，即搜即读。',
+      pseoTitle: '{keyword}手机小说推荐（{count}本） - {siteName}',
+      pseoDescription: '"{keyword}"相关 {count} 本小说手机畅读，{siteName}移动端优化体验。',
+      pseoKeywords: '{keyword},手机小说,移动阅读'
+    },
+    {
+      label: '书友社区',
+      homeTitle: '{siteName} - 千万书友的阅读社区',
+      homeDescription: '{siteName}千万书友共同挑选，大家读什么、追什么、赞什么一目了然，和书友一起淘好书。',
+      homeKeywords: '书友推荐,读者社区,书友交流,{siteName},大家都在读',
+      categoryTitle: '书友都在追的{categoryName}小说 - {siteName}',
+      categoryDescription: '{siteName}{categoryName}区书友热读中，跟着书友选{categoryName}小说，口碑有保障。',
+      bookTitle: '书友热读《{novelTitle}》_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》{statusText}，{author}作品，书友口碑热读中。{descShort}',
+      bookKeywords: '{novelTitle},书友推荐,{author}',
+      tocTitle: '《{novelTitle}》书友共读目录 - {siteName}',
+      tocDescription: '《{novelTitle}》章节目录，与书友同追共读，聊书不孤单。',
+      chapterTitle: '{novelTitle} {chapterTitle} 书友共读 - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}，{author}作品书友共读中。',
+      chapterKeywords: '{novelTitle},{chapterTitle},书友',
+      searchTitle: '书友都在搜"{query}" - {siteName}',
+      searchDescription: '"{query}"的书友搜索热度结果，看看大家都在找什么。',
+      pseoTitle: '{keyword}书友推荐榜（{count}本） - {siteName}',
+      pseoDescription: '"{keyword}"相关书友推荐 {count} 本，真人书友口碑筛选，{siteName}呈现。',
+      pseoKeywords: '{keyword},书友推荐,口碑小说'
+    },
+    {
+      label: '编辑精选',
+      homeTitle: '{siteName} - 编辑精选小说推荐站',
+      homeDescription: '{siteName}编辑团队每日精读筛选，从海量新书中挑出值得读的好作品，把时间花在好故事上。',
+      homeKeywords: '编辑推荐,精选小说,好书推荐,{siteName},编辑选书',
+      categoryTitle: '编辑精选{categoryName}小说 - {siteName}',
+      categoryDescription: '{siteName}编辑精选{categoryName}小说，人工严选弃坑率低，每一本都值得开始。',
+      bookTitle: '编辑推荐《{novelTitle}》_{author} - {siteName}',
+      bookDescription: '《{novelTitle}》编辑推荐作品，{author}所著，{statusText}。{descShort}',
+      bookKeywords: '{novelTitle},编辑推荐,{author}小说',
+      tocTitle: '《{novelTitle}》精选章节目录 - {siteName}',
+      tocDescription: '编辑推荐《{novelTitle}》章节目录，{statusText}，值得从头读到尾。',
+      chapterTitle: '{novelTitle} {chapterTitle} 编辑推荐 - {siteName}',
+      chapterDescription: '《{novelTitle}》{chapterTitle}，编辑推荐作品的精彩一章。',
+      chapterKeywords: '{novelTitle},{chapterTitle},编辑精选',
+      searchTitle: '"{query}"编辑检索结果 - {siteName}',
+      searchDescription: '{siteName}编辑库中"{query}"相关作品检索结果。',
+      pseoTitle: '{keyword}编辑精选书单（{count}本） - {siteName}',
+      pseoDescription: '{siteName}编辑严选"{keyword}"主题 {count} 本佳作，本本经过试读把关。',
+      pseoKeywords: '{keyword},编辑精选,严选书单'
+    }
+  ];
+
+  /** Task 31: 随机换一套——每个键独立从 18 套预设对应候选中抽取（含空候选过滤），组合成一套新 TDK 填入表单 */
+  function shuffleSeoForm() {
+    if (!TDK_PRESETS.length) return;
+    SEO_KEYS.forEach(function (k) {
+      var el = $('#adm-seo-' + k);
+      if (!el) return;
+      var pool = TDK_PRESETS.map(function (p) { return p[k] || ''; }).filter(function (v) { return v; });
+      if (pool.length) el.value = pool[Math.floor(Math.random() * pool.length)];
+    });
+    toast('已从 ' + TDK_PRESETS.length + ' 套预设随机组合一套 TDK（保存后生效）', 'ok');
+  }
+
   function initSettings() {
     $('#adm-set-basic-save').addEventListener('click', async function () {
       var siteName = $('#adm-set-name').value.trim();
@@ -1035,6 +1411,9 @@
 
   function initActions() {
     document.addEventListener('click', async function (e) {
+      // Task 31: 弹层关闭按钮双保险——模板只写 data-modal-close（漏 data-act）也能关闭
+      var mc = e.target.closest('[data-modal-close]');
+      if (mc && !mc.disabled) { closeModal(mc.dataset.modalClose); return; }
       var btn = e.target.closest('[data-act]');
       if (!btn || btn.disabled) return;
       var act = btn.dataset.act;
@@ -1096,6 +1475,8 @@
         openChapterEdit(id);
       } else if (act === 'modal-close') {
         closeModal(btn.dataset.modalClose);
+      } else if (act === 'seo-shuffle') { // Task 31: 18 套 TDK 预设随机组合填表
+        shuffleSeoForm();
       } else if (act === 'footer-link-del') {
         var fl = btn.closest('.adm-footer-link');
         if (fl) fl.remove();

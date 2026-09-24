@@ -82,7 +82,8 @@
   <main class="{{if ne (printf "%.9s" .Path) "/chapter/"}}mx-auto w-full max-w-[1220px] px-3 pb-12 pt-4 sm:px-4{{end}}">{{template "content" .}}</main>
   <div class="mt-auto">
     <footer class="border-t border-[#e5dccd] bg-[#efe9dc]/60 py-6">
-      <div class="mx-auto max-w-[1220px] px-4 text-center">
+      {{/* Task 31-a: 页脚内边距对齐顶栏导航（px-3 sm:px-4，原固定 px-4 窄屏内容缩进比导航多 4px） */}}
+      <div class="mx-auto max-w-[1220px] px-3 text-center sm:px-4">
         <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px] text-[#6b7280]">
           <a class="transition-colors hover:text-[#0f766e] hover:underline" href="/">网站首页</a>
           <a class="transition-colors hover:text-[#0f766e] hover:underline" href="/search">站内搜索</a>

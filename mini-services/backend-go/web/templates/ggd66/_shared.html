@@ -49,6 +49,8 @@ body{font-family:"Microsoft YaHei","微软雅黑",simsun,arial,sans-serif}
 
 {{/* 绿底页脚 */}}
 <footer class="mt-5 bg-[#56ccb5] py-[10px] text-center text-[14px] leading-[22px] text-white shadow-[0_-1px_1px_rgba(0,0,0,0.06)]">
+  {{/* Task 31-a: 页脚内容限宽跟随导航栏 w-[90%] max-w-[1200px]（原先无限宽） */}}
+  <div class="mx-auto w-[90%] max-w-[1200px]">
   <p class="flex flex-wrap items-center justify-center gap-x-3 px-4">
     <button type="button" data-gg-history title="查看最近读过的章节" class="cursor-pointer underline-offset-2 transition-colors hover:underline">阅读记录</button>
     <span class="opacity-60">|</span>
@@ -59,6 +61,7 @@ body{font-family:"Microsoft YaHei","微软雅黑",simsun,arial,sans-serif}
   {{if .Site.footerLinks}}<p class="flex flex-wrap items-center justify-center gap-x-3 px-4">
     {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="underline-offset-2 hover:underline">{{.label}}</a>{{end}}
   </p>{{end}}
+  </div>
 </footer>
 
 {{/* 阅读记录弹层（ggd66.js 填充） */}}

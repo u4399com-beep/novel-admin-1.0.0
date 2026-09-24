@@ -78,6 +78,41 @@ func pageFailureResponse(w http.ResponseWriter, page fetchPageResult, baseURL st
 // robotsSummaryJSON robots 摘要（crawlDelayMs 恒带，可能为 null）
 func robotsSummaryJSON(r RobotsSummary) RobotsSummary { return r }
 
+// handleHostHealth GET /api/host-health（Task 31-b 新增可观测端点）：
+// 返回基础限速参数与 AIMD 自适应状态。带 ?host= 时返回单主机明细（自适应间隔/限流退避/熔断剩余），
+// 不带 host 时返回当前处于自适应态（aimdMs>0）的全部主机快照——backend 车道感知与运维观测消费。
+func handleHostHealth(w http.ResponseWriter, r *http.Request) {
+	host := strings.TrimSpace(r.URL.Query().Get("host"))
+	out := map[string]any{
+		"ok":                  true,
+		"baseIntervalMs":      getMinIntervalMs(),
+		"aimdMaxIntervalMs":   aimdMaxIntervalMS,
+		"aimdDecayStepMs":     aimdDecayStepMS,
+		"aimdMultiplier":      "×1.5 per 429/503（Retry-After 直接采纳）",
+		"aimdDecayPerSuccess": "-50ms per success（下限=基础间隔）",
+	}
+	if host != "" {
+		out["host"] = host
+		out["adaptiveIntervalMs"] = hostAdaptiveIntervalMs(host)
+		out["penaltyMs"] = hostPenaltyMs(host)
+		out["circuitOpenMs"] = hostCircuitOpenMs(host)
+		writeJSON(w, 200, out)
+		return
+	}
+	snap := snapshotAdaptiveIntervals()
+	type hostRow struct {
+		Host               string `json:"host"`
+		AdaptiveIntervalMs int64  `json:"adaptiveIntervalMs"`
+	}
+	rows := make([]hostRow, 0, len(snap))
+	for h, v := range snap {
+		rows = append(rows, hostRow{Host: h, AdaptiveIntervalMs: v})
+	}
+	out["adaptiveHosts"] = rows
+	out["adaptiveHostCount"] = len(rows)
+	writeJSON(w, 200, out)
+}
+
 // handleStrategies GET /api/strategies
 func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 	strategies := listStrategies()

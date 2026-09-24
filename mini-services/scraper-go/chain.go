@@ -308,11 +308,17 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 			// 主机健康度记忆：本链内被 429/503 → 记一次限流退避（Retry-After 优先）
 			if res.status == 429 || res.status == 503 {
 				noteRateLimited(host, res.retryAfter)
+				// Task 31-b: AIMD 自适应限速「乘性增大」——该主机后续请求间隔 ×1.5 逐步放大
+				//（上界 8s；Retry-After 直接采纳），被限流自动慢下来而非靠熔断停摆
+				noteAdaptiveRateLimited(host, res.retryAfter)
 			}
 
 			if res.ok {
 				recordStrategySuccess(host, strat.name)
 				noteChainSuccess(host)
+				// Task 31-b: AIMD 自适应限速「加性回落」——连续成功后该主机请求间隔
+				// 每次成功 -50ms 缓慢降至基础间隔（1.2s），恢复后缓慢提速不突进
+				noteAdaptiveSuccess(host)
 				dec := decodeHtml(res.bytes, opts.forcedCharset, charsetFromContentType(res.contentType))
 				for _, w := range dec.Warnings {
 					warnings = append(warnings, "[charset] "+w)

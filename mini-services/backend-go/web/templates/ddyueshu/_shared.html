@@ -90,7 +90,8 @@
 
   {{/* 页脚 */}}
   <footer class="bg-white pb-10 pt-3">
-    <div class="mx-auto w-[92%] border-b-2 border-[#88c6e5] pb-2">
+    {{/* Task 31-a: 页脚网站地图区限宽跟随主导航 980px（原 w-[92%] 宽屏下超出导航宽度） */}}
+    <div class="mx-auto w-full max-w-[980px] border-b-2 border-[#88c6e5] px-2 pb-2">
       <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[13px]">
         <a class="dd-greenlink" href="/">网站首页</a>
         <a class="dd-greenlink" href="/search">站内搜索</a>
@@ -100,8 +101,9 @@
         {{range .Site.footerLinks}}<a class="dd-greenlink" href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.label}}</a>{{end}}
       </div>
     </div>
-    <p class="mt-3 px-4 text-center text-[12px] leading-[20px] text-[#b2b2b2]">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说站主题演示项目，全部书籍与章节内容仅用于技术学习与界面还原测试。{{end}}</p>
-    <p class="px-4 text-center text-[12px] leading-[20px] text-[#b2b2b2]">{{if .Site.footerText}}{{.Site.footerText}}{{else}}Copyright © {{.Site.siteName}} · 主题版式致敬经典笔趣阁{{end}}</p>
+    {{/* Task 31-a: 版权两行同样限宽 980px 对齐导航（原 px-4 无限宽） */}}
+    <p class="mx-auto mt-3 w-full max-w-[980px] px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说站主题演示项目，全部书籍与章节内容仅用于技术学习与界面还原测试。{{end}}</p>
+    <p class="mx-auto w-full max-w-[980px] px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]">{{if .Site.footerText}}{{.Site.footerText}}{{else}}Copyright © {{.Site.siteName}} · 主题版式致敬经典笔趣阁{{end}}</p>
   </footer>
 
   {{/* 阅读记录浮层（ddyueshu.js 填充） */}}

@@ -106,6 +106,9 @@ var reDescPrefix = regexp.MustCompile(`^(?:关于[《〈]?.{1,40}?[》〉]?|内�
 var reDescBoilerplate = regexp.MustCompile(`《[^》]{1,50}》是.{1,25}精心创作.{0,300}$`)
 
 func cleanDescription(t string) string {
+	// Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
+	// 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
+	t = decodeResidualEntities(t)
 	t = trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
 	return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }

@@ -9,6 +9,7 @@ package main
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -32,6 +33,57 @@ var reWatermarkLine = regexp.MustCompile(
 	`(?i)本书来自|首发(?:网址|域名|时间)|天才一?秒?记(?:住|得)|请记住本书|记住本站|最新章节|章节错误|点此举报|求收藏|求推荐票?|求月票|无弹窗|手机(?:版|用户)?(?:阅读|访问|看)|app下载|下载app|笔趣阁|顶点小说|吾爱文学|站内搜索|快速找到你想要的|TXT(?:电子书|下载|全集|全本|免费下载)|全本TXT|电子书免费下载|(?:www|wap|m|mip)\.[a-z0-9-]{2,}\.(?:com|net|cc|org|la|info|xyz|top|vip|site|icu|club)|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`)
 
 var reHasLorN = regexp.MustCompile(`[\p{L}\p{N}]`)
+
+// Task 31-c: 残留实体再解码。全库审计（Task 31-c，3193 实质正文章节）发现两类站点
+// 输出「双重/三重转义」正文：goquery Text() 只解码一层后仍残留字面实体——
+//
+//	① ggd66.com（实测 novel 24，live 采集 6/112 章脏）对话引号为 &amp;quot;（三重转义，
+//	   Text() 后残两层）；② ddyueshu/77shuku 系（novel 1/20，导入存量）作者注为
+//	   &amp;amp; / &amp;lt;…&amp;gt;（双重转义，残一层）；③ ixdzs8 系简介分隔符 &amp;amp;&amp;amp;。
+//
+// 残留实体不是叙事内容而是技术水印，解码属归一化不删正文（「宁可多留」原则不受影响）；
+// 只解码白名单命名实体 + 数字/十六进制字符实体，最多 3 轮（覆盖三重转义），无实体即停。
+// 位置必须在 Text() 之后、reWatermarkLine 行级闸之前——实体串会虚增行长（如 &amp;quot;
+// 8 字符）使超 100 字闸漏判水印行，先解码再判闸。
+var reResidualEntity = regexp.MustCompile(`&(?:amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-fA-F]+);`)
+
+// decodeEntityOne 解码单个实体；&nbsp; 归一为半角空格（与 reJSWhitespace 折叠口径一致）
+func decodeEntityOne(raw string) string {
+	switch raw {
+	case "&amp;":
+		return "&"
+	case "&lt;":
+		return "<"
+	case "&gt;":
+		return ">"
+	case "&quot;":
+		return "\""
+	case "&apos;", "&#39;", "&#x27;":
+		return "'"
+	case "&nbsp;":
+		return " "
+	}
+	if strings.HasPrefix(raw, "&#x") || strings.HasPrefix(raw, "&#X") {
+		if n, err := strconv.ParseInt(raw[3:len(raw)-1], 16, 32); err == nil {
+			return string(rune(n))
+		}
+		return raw
+	}
+	if strings.HasPrefix(raw, "&#") {
+		if n, err := strconv.Atoi(raw[2 : len(raw)-1]); err == nil {
+			return string(rune(n))
+		}
+	}
+	return raw
+}
+
+// decodeResidualEntities 对文本做最多 3 轮白名单实体解码，直到无残留实体（幂等上限防环）。
+func decodeResidualEntities(s string) string {
+	for i := 0; i < 3 && reResidualEntity.MatchString(s); i++ {
+		s = reResidualEntity.ReplaceAllStringFunc(s, decodeEntityOne)
+	}
+	return s
+}
 
 // cleanedContent 清洗后的正文（段落 + 拼接文本）
 type cleanedContent struct {
@@ -82,9 +134,23 @@ func cleanContainer(el *goquery.Selection) cleanedContent {
 	// 三段并一段），且粘连行超 100 字后同时绕过 reWatermarkLine 节点级(≤80)与行级(≤100)
 	// 短行闸——水印行与正文粘连后无法被行级清洗剔除，直接污染入库正文。center 为旧站
 	// 常用块级容器（HTML4 deprecated 但仍是块级语义），一并补齐。
+	// Task 31-d 补齐（同类粘连实测探针复现）：
+	//   ①边界表补 h5/h6/table/thead/tbody/tfoot/caption/ul/ol/dl/dt/blockquote/pre/
+	//     figure/figcaption/hr/address 全套块级语义——h5/h6 与正文粘连、dl 的 dt 与首个
+	//     dd 粘连均实测复现（header/footer/nav/aside 多为整块导航/运营容器，已在上方
+	//     广告 token 步骤整块移除，不重复加入）；
+	//   ②旧实现边界只加在块级元素之后（AfterHtml）——块前裸文本节点依旧成段粘连：
+	//     `<div>引言<p>正文` → 「引言正文」；table 直下裸文本经 foster parenting 前移后
+	//     与首格粘连（`表尾裸文本A段`）。同一选择器对称补 BeforeHtml（块前也断行）。
+	//     双 \n 产生的空行由下方收割循环跳过，零副作用。
 	clone.Find("br").ReplaceWithHtml("\n")
-	clone.Find("p,div,dd,li,section,article,h1,h2,h3,h4,td,th,tr,center").AfterHtml("\n")
-	raw := clone.Text()
+	blockBoundarySel := "p,div,dd,li,section,article,h1,h2,h3,h4,h5,h6,td,th,tr,center," +
+		"table,thead,tbody,tfoot,caption,ul,ol,dl,dt,blockquote,pre,figure,figcaption,hr,address"
+	clone.Find(blockBoundarySel).BeforeHtml("\n")
+	clone.Find(blockBoundarySel).AfterHtml("\n")
+	// Task 31-c: 残留实体再解码（见 decodeResidualEntities 注）——必须在行长敏感的
+	// 水印行闸（runeLen<=100 && reWatermarkLine）之前执行，防实体串虚增行长漏判。
+	raw := decodeResidualEntities(clone.Text())
 
 	paragraphs := []string{}
 	for _, line0 := range splitLines(raw) {
