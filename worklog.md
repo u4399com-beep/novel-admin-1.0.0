@@ -1437,3 +1437,20 @@ Stage Summary:
 - 幽灵收编完成率 100%：31-b AIMD 双层自适应（引擎单请求节奏+backend 并发宽度）+ 31-c 噪声闭环（引擎修复+存量 52 章清理+复扫归零）+ 31-d 白名单纵深——补齐幽灵未竟的：2 个 P1 死锁修复、gofmt、全量验证、部署、观测实证
 - 数据面：脏率 live 0% / imported 0%（余 3 低置信度保留）；11 任务续采中；AIMD+车道降档待 ixdzs8 限流窗口实证效果
 - 关键资产：/api/host-health 新观测端点；laneLimiter watchdog 模式（今后任何 cond.Wait 等待外部翻转的场景都要有 kick）
+---
+Task ID: 31（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: ixdzs8 失败形态实证+phase2 可观测性增强+isSoftBlockErr 软拦截判定+git 提交推送
+
+Work Log:
+- 【ixdzs8 实测取证】经引擎 /api/chapter 实测 /read/250299/p1.html：fetch-browser status=200/19KB/1.9s 抓到页面但 .page-content 正文空（ok=true+content=""）——**失败形态=HTTP 200 空壳软拦截**而非显式 429/503、也非选择器失效（同规则任务内成功 2 章证明选择器有效）；引擎 /api/test +includeHtml 不回 htmlDebug（调试字段未透传，记录可改进）
+- 【phase2 熔断证据链复盘】任务 13 resume 后 55s 熔断（60 连败）但「当前活跃车道 12」——降档未触发；/api/host-health adaptiveHosts=0——AIMD 未记录；根因：60 连败全是「挑战循环失败/空壳」形态，Error 文案不含 429/503/限流字样 → isRateLimitErr 不命中 → shrinkLanes 永不触发、熔断分类误判「封禁」；引擎侧 hosthealth 明确打了「主机 ixdzs8.com 最近被限流(429/503)」（hosthealth 记忆来自历史显式限流）但 fetch 层失败 Error 未携带该上下文
+- 【修复① 失败采样日志】worker.go phase2 新增 failSampleLogged（atomic）——每任务前 6 条失败原因打进任务日志（[失败采样 n/6] 章题 → Error 摘要/空壳形态），彻底终结「日志无失败明细无法区分限流空壳/挑战失败/选择器失效」的排障盲区
+- 【修复② isSoftBlockErr 软拦截判定面】新增判定函数：challenge/挑战/空壳/正文为空/正文提取为空/软拦截 → 与 isRateLimitErr 并联触发 shrinkLanes + 修正熔断分类（BreakerRateLimit→「失败形态呈限流/空壳软拦截特征（非封禁）」）——ixdzs8 类严格限流站今后 resume 即降档 12→4→2 而非全速烧穿
+- 【回归事故+自愈实录】31-c 存量清理脚本误用 SQL CURRENT_TIMESTAMP 写 Novel.updatedAt（Go 侧口径=unix 毫秒整型）→ /api/novels scan int64 报错；复检时 runner finalize 已按 nowMillis() 口径自然重写（typeof 守卫确认 0 行残留）——教训落档：**任何 DB 写 updatedAt 必须用 Go nowMillis() 口径，禁用 SQL CURRENT_TIMESTAMP**
+- 【验证+部署】go vet/test -race 全绿；编译热替换（pkill→dev-go.sh 自愈→双 /api/health ok）→ 11 任务 PATCH resume 全恢复；agent-browser 最终验证：首页 nav=logo=footer=980 对齐、ddyueshu 页脚 980 对齐、admin 弹层三连 E2E（书籍编辑/章节管理/关闭）全通过、TDK 随机组合 changed=true
+- 【git】0cd1304 推送 main 成功（26 文件 +2573/-972，含 3 个新测试文件）
+
+Stage Summary:
+- 用户 7 项指令全闭环：①trxsw 宽度（复核零缺陷+4 主题同类问题修复）②ixdzs8（AIMD+车道降档+软拦截判定+失败采样四层增强已部署，phase2 长跑验证中）③弹层关闭修复 E2E✓ ④TDK 18 套+随机刷新 E2E✓ ⑤分类合并✓ ⑥-⑨审查/多Agent/清理/主题核实/噪声清洗全落地
+- 遗留移交：①任务 13 phase2 效果待自然运行观察（失败采样日志会自动揭示形态，isSoftBlockErr 已保证降档触发）②引擎 fetch 失败 Error 未携带 hosthealth 限流上下文（engine 侧信息注入可作下轮增强）③/api/test includeHtml 调试字段未透传 ④trxsw 981-995px 过渡带 ≤6px 瞬态差（有意保留）⑤低置信度噪声 3 处保留（宁多留）
