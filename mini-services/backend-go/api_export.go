@@ -91,6 +91,12 @@ func handleNovelExportTxt(w http.ResponseWriter, r *http.Request, ps map[string]
 	}
 
 	outPath := exportTxtPath(int(nid), title)
+	// Task 32 修复：TXT 根目录不存在时（全新部署/清库后从未写过分章文件）导出必失败——
+	// MkdirAll 幂等建目录（与 writeChapterTxt 同语义），补齐首个使用场景的目录保障
+	if err := os.MkdirAll(txtNovelsRoot(), 0o755); err != nil {
+		failJSON(w, "导出失败", firstLineErr(err), 500)
+		return
+	}
 	if err := os.WriteFile(outPath, []byte(b.String()), 0o644); err != nil {
 		failJSON(w, "导出失败", firstLineErr(err), 500)
 		return

@@ -1468,3 +1468,26 @@ Work Log:
 Stage Summary:
 - 并行分派：32-a（主树：pseo×10 主题+友链+站群轮+admin UI）/ 32-b（worktree：t2s 集成+TXT 模式+ChapterContent 垂直分表+pragma 调优+智能增强）/ 32-d（worktree：15 规则字段核查+反反爬增强+逐行抓 bug）
 - 主线待办：admin 存储模式 UI 集成、合并 worktree 分支、热替换部署、E2E、精简、推送
+
+---
+Task ID: 32（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 9 项指令——①友链+站群内链轮+pseo 跟随主题 ②繁体采集转简体 ③TXT 文件存储模式 ④数据库性能/分表 ⑤规则字段核查 ⑥智能填充增强 ⑦持续审查抓 bug ⑧代码精简 ⑨git 推送
+
+Work Log:
+- 【沙箱清库应对】第 4 次清库；Go 工具链/进程/worktree 全部核验存活；规则 15+分类 9 seed 自动恢复；以 aijjxs 真实任务重建数据面
+- 【幽灵收编 32-a（318ba27）】pseo.html×10 主题（骨架同源 search 页，类名零新增 CSS，tw.css 重建零 diff 验证）；web_footer.go 友链（footerConfig.friendLinks ≤30，hrefAbsRe 白名单+javascript: 清洗）+站群内链轮（SiteSite enabled 排除当前 Host，60s 内存缓存 fail-open）；admin 友链动态行 UI；web_footer_test.go 289 行。疑似 grid-cols-inmax 类名损坏经 Python 字节级复核为显示伪影（[h 被渲染器吞），真实类名全部完好
+- 【幽灵收编 32-b（47a9a8a）】t2s 集成（t2sField 三态 auto|on|off：词条最长匹配+单字表；短文本 ≥2 繁体特征字阈值防「乾坤」误转；分类名繁转简先归一再匹配）+TXT 存储模式（txtdir.go 一章一文件 {idx:05d}_{safeTitle}.txt、safeTitle 防穿越、api_export.go 导出/清单 API）+ChapterContent 垂直分表（chapterId 单键——idx 会重排故不可作键；双跳 ON DELETE CASCADE；分批 500 幂等迁移）+SQLite 性能 pragma（cache 32MB/mmap 256MB/temp MEMORY/wal_autocheckpoint 1000）+智能填充（resolveAuthor 四级回退：源站→列表条目→LLM 5s→佚名；junk 占位判定+title-only 收编防同书双行；backfillDescriptions 首章预览→LLM；智能完结简介关键词兜底）+loadChapterContent 三级回落（分表→存量列→TXT）
+- 【幽灵收编 32-d（c612476）】hostRateLimitMemo 限流记忆注入 fetch 失败错误（Task 31 遗留①落地，10min 窗口）+debugHTML 失败快照 20KB 透出 htmlDebug（Task 31 遗留②③落地）+challenge-loop 挑战循环整链终止+softBlock 结构化档案（200 空壳弱命中特征）+curl 系策略 status=0 修复（限流记忆此前永不触发的真 bug）+读文件错误不再吞没+audit32d_test.go
+- 【合并】task-32-b/task-32-d 双分支并入 main（仅二进制 add/add 冲突，web_data.go 自动合并语义复核正确）；worktree/分支清理；双模块 gofmt 归一+vet+test -race 全绿
+- 【接线补齐（32-b 幽灵漏接 P1）】taskStorageModeParam 定义了但 POST /api/scrape-tasks 从未调用——INSERT 补 storageMode 列+400 白名单防御；admin.html 新建任务表单补「存储模式」下拉（db/txt/both）+admin.js 提交接线+任务列表 TXT/双写徽章
+- 【修复② 导出 MkdirAll】/api/novels/{id}/export-txt 在 download/novels 不存在时（全新部署/清库后）必失败——补幂等建目录
+- 【规则核查（指令⑤）】15 规则程序化审计：author 15/15、chapter 15/15、cover/category/status 缺省项由引擎 og:* 内置回退梯（extract.go bookFieldFallbacks 合并语义实证）+智能层（canonicalCategory 关键词表+LLM 推断+32-b 智能完结）设计性覆盖；aijjxs 实测发现站点改版 ul.lines-books li → div.listbg 卡片——listRule 重写（.title a/.mainGreen a[title]）+bookRule 补 categorySelector .kv p:contains(书籍分类)（stripFieldLabel 含书籍前缀 Task 28-a 既有）→ seed.json+DB 规则 10 双写；引擎预检 10 条目/书页 title/author/cover(协议相对 URL 正确解析)/status/category 全中
+- 【E2E 实证】友链：PATCH 配置→首页渲染 2 条+javascript: URL 被清洗 ✓；内链轮：建 2 站→默认站全显/fleet-a Host 自排除+主题切换 23qb ✓（60s 缓存窗口期记录在案）；pseo 跟随主题：/pseo/诡秘之主 默认 trxsw 模板+fleet-a 23qb 模板双视角+绑定书置顶+TDK 模板渲染 ✓；存储 UI：浏览器创建 txt 模式任务+列表 TXT 徽章 ✓；三级回落：构造分表空+存量空+wordCount>0 → TXT 文件回读 ✓；TXT 导出：全书合并文件（头部元信息+逐章）+清单 API ✓；真实任务 both 模式：aijjxs 10 本书骨架+真封面下载+真作者+已完结态映射+25+章 ChapterContent 落库（旧列恒空）+TXT 分章文件落盘（00001_内容简介.txt 零填充有序）全链路 ✓；storageMode=archive → 400 ✓
+- 【部署】双二进制重建热替换（seed embed 同步 aijjxs 新规则）→ pkill→自愈拉起→双 /api/health ok→任务 4 PATCH resume ok
+- 【SSRF 实证】回环采集被 SSRF 防护拒绝（设计行为）；测试站点 fleet-a/b 停用（enabled=false）；测试任务/规则清理
+
+Stage Summary:
+- 9 项指令闭环：①友链+内链轮+pseo 跟随主题（10 主题模板+按 Host 分站点渲染）②t2s 三态繁转简入库 ③TXT 文件存储（db/txt/both 三模式+三级回落读+全书导出）④ChapterContent 垂直分表+4 项性能 pragma ⑤15 规则字段核查+aijjxs 改版重写 ⑥智能填充四级回退+智能完结+简介回填 ⑦-⑧幽灵 3 修复接线补齐+gofmt 全绿 ⑨git 推送
+- 关键实证：both 模式真站全链路（10 书 25+章 TXT+分表双写）；pseo 按 Host 跨主题渲染；SSRF/清洗/白名单防线全部按设计工作
+- 遗留：①任务 4 phase2 长跑中（60s 缓存/限速合规）②回环 E2E 因 SSRF 防护放弃（改真站实证）③t2s 繁体源站活体验证待 101kks 可达窗口（单测 12 断言已绿）④101kks/ixdzs8 phase2 效果待长跑观察（32-d 限流记忆+软拦截降档已部署）

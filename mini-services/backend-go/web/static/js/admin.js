@@ -309,9 +309,13 @@
     btns += '<button type="button" class="adm-btn-xs adm-danger" data-act="task-del" data-id="' + t.id + '" title="删除任务">删除</button>';
 
     var name = t.ruleId ? escapeHtml(ruleName(t.ruleId)) : '<span class="text-neutral-400">无规则</span>';
+    // Task 32-b: 存储模式徽章（db 默认不显，txt/both 才标出，与存储面可见性一致）
+    var storageBadge = '';
+    if (t.storageMode === 'txt') storageBadge = ' <span class="adm-badge adm-badge-outline" title="正文存为一章一 TXT 文件">TXT</span>';
+    else if (t.storageMode === 'both') storageBadge = ' <span class="adm-badge adm-badge-neutral" title="数据库+TXT 文件双写">双写</span>';
     return '<tr data-task-id="' + t.id + '" data-mode="' + escapeHtml(t.mode) + '" data-url="' + escapeHtml(t.targetUrl) + '" data-pages="' + escapeHtml(t.pages) + '" data-rule-id="' + escapeHtml(ruleIdAttr) + '">' +
       '<td class="tabular-nums text-neutral-500">' + t.id + '</td>' +
-      '<td>' + (t.mode === 'list' ? '<span class="adm-badge adm-badge-neutral">范围</span>' : '<span class="adm-badge adm-badge-outline">单本</span>') + '</td>' +
+      '<td>' + (t.mode === 'list' ? '<span class="adm-badge adm-badge-neutral">范围</span>' : '<span class="adm-badge adm-badge-outline">单本</span>') + storageBadge + '</td>' +
       '<td>' + name + '</td>' +
       '<td class="adm-cell-url"><span title="' + escapeHtml(t.targetUrl) + '">' + escapeHtml(t.targetUrl) + '</span>' +
         (t.message ? '<span class="block truncate text-[11px] text-neutral-400" title="' + escapeHtml(t.message) + '">' + escapeHtml(t.message) + '</span>' : '') + '</td>' +
@@ -475,6 +479,8 @@
       var body = { mode: mode, targetUrl: url, pages: pages };
       var rid = $('#adm-new-rule').value;
       if (rid) body.ruleId = Number(rid);
+      var storage = $('#adm-new-storage').value; // Task 32-b: 存储模式 db|txt|both
+      if (storage && storage !== 'db') body.storageMode = storage;
       try {
         await api('POST', '/api/scrape-tasks', body);
         toast('采集任务已创建，等待 runner 领取执行', 'ok');

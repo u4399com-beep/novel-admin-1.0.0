@@ -58,3 +58,6 @@ public/covers/
 tool-results/
 db/custom.db-shm
 db/custom.db-wal
+
+# runtime txt storage data (Task 32-b)
+download/novels/

@@ -312,6 +312,15 @@ func handleScrapeTasksCreate(w http.ResponseWriter, r *http.Request, _ map[strin
 	if !hasPages {
 		pages = 1
 	}
+	// Task 32-b: 存储模式（可选，缺省 db）——白名单外 400 拒绝（与 pages 同款防御）
+	storageMode, hasStorage, storageOK := taskStorageModeParam(body)
+	if !storageOK {
+		writeJSON(w, 400, map[string]string{"error": "storageMode 必须是 db、txt 或 both"})
+		return
+	}
+	if !hasStorage {
+		storageMode = "db"
+	}
 
 	var ridArg any
 	if hasRule {
@@ -319,9 +328,9 @@ func handleScrapeTasksCreate(w http.ResponseWriter, r *http.Request, _ map[strin
 	}
 	now := nowMillis()
 	newID, err := execReturningID(
-		`INSERT INTO "ScrapeTask" ("mode","targetUrl","ruleId","pages","status","total","done","chaptersDone","chaptersTotal","created","updated","chapters","message","log","createdAt","updatedAt")
-                 VALUES (?,?,?,?, 'pending',0,0,0,0,0,0,0,'','',?,?)`,
-		mode, target.value, ridArg, pages, now, now,
+		`INSERT INTO "ScrapeTask" ("mode","targetUrl","ruleId","pages","storageMode","status","total","done","chaptersDone","chaptersTotal","created","updated","chapters","message","log","createdAt","updatedAt")
+                 VALUES (?,?,?,?,?, 'pending',0,0,0,0,0,0,0,'','',?,?)`,
+		mode, target.value, ridArg, pages, storageMode, now, now,
 	)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)

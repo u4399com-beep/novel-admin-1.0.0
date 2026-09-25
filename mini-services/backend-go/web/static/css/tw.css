@@ -5447,11 +5447,6 @@
       grid-template-columns: 75px 165px minmax(0,1fr) 85px;
     }
   }
-  .md\:grid-cols-\[auto_1fr_auto_auto\] {
-    @media (width >= 48rem) {
-      grid-template-columns: auto 1fr auto auto;
-    }
-  }
   .md\:grid-cols-\[auto_1fr_auto_auto_auto\] {
     @media (width >= 48rem) {
       grid-template-columns: auto 1fr auto auto auto;

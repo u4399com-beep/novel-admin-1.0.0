@@ -153,13 +153,21 @@
   <section id="tab-tasks" class="adm-panel hidden space-y-4">
     <div class="adm-card">
       <h2 class="adm-h2">新建采集任务</h2>
-      <div class="grid gap-x-4 gap-y-2 md:grid-cols-[auto_1fr_auto_auto] md:items-end">
+      <div class="grid gap-x-4 gap-y-2 md:grid-cols-[auto_1fr_auto_auto_auto] md:items-end">
         <label class="adm-field">模式
           <select id="adm-new-mode" class="adm-input"><option value="single">单本采集（书页 URL）</option><option value="list">范围采集（列表页 URL）</option></select>
         </label>
         <label class="adm-field">目标 URL *<input id="adm-new-url" class="adm-input" placeholder="https://www.example.com/book/1.html"></label>
         <label class="adm-field">采集规则
           <select id="adm-new-rule" class="adm-input"><option value="">不使用规则</option>{{range .Rules}}<option value="{{.id}}">{{.name}}</option>{{end}}</select>
+        </label>
+        <!-- Task 32-b: 存储模式（db=仅入库分表 / txt=仅分章 TXT 文件 / both=双写） -->
+        <label class="adm-field">存储模式
+          <select id="adm-new-storage" class="adm-input" title="db=数据库（默认）｜txt=一章一 TXT 文件｜both=数据库+文件双写">
+            <option value="db">数据库（默认）</option>
+            <option value="txt">TXT 文件</option>
+            <option value="both">双写（库+文件）</option>
+          </select>
         </label>
         <label class="adm-field hidden" id="adm-new-pages-wrap">列表页数（1-999）<input id="adm-new-pages" type="number" min="1" max="999" value="1" class="adm-input md:w-24"></label>
       </div>

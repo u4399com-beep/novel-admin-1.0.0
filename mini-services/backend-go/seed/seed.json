@@ -1,274 +1,274 @@
 {
- "_comment": "novel-admin 初始库种子（固化）：15 条精心校准采集规则 + 9 分类（其他 id=9999 恒末位）+ 站点默认配置。backend-go 启动时若对应表为空则自动导入（幂等，仅空表）。规则资产来源：git 4cb1619 快照 11 条 + c4dc1a4 新站 4 条。",
- "rules": [
-  {
-   "id": 10,
-   "name": "aijjxs",
-   "siteUrl": "https://www.aijjxs.com/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"ul.lines-books li\",\"titleSelector\":\"a\",\"linkSelector\":\".line-main a\",\"authorSelector\":\".author\",\"categorySelector\":\".cat\"}",
-   "bookRule": "{\"titleSelector\": \"article.panel h3\", \"authorSelector\": \".kv a[title]\", \"descriptionSelector\": \".intro-panel .desc\", \"coverSelector\": \".pic img@src\", \"statusSelector\": \".sfwj\", \"chapterLinkSelector\": \"ul.chapter-list a\", \"catalogLinkSelector\": \"a[href^=\\\"/read/\\\"]\", \"excludeSelector\": \"h1.logo,.search\", \"categorySelector\": \"p:contains(书籍分类)\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#view_content_txt\"}",
-   "notes": "2026-09 实测（Task3 第二轮）：fetch-browser 直连。帝国CMS TXT下载站：书页无章节列表，catalogLinkSelector=a[href^=/read/] 命中「在线阅读全文」，worker 二次抓 /read/{id}/ 目录用 chapterLinkSelector=ul.chapter-list a 提取全章（约140+条，首条为「内容简介」）。列表页 ul.lines-books li（最新上传62条）。章节页 h1 含书名前缀（worker 优先用目录页链接文本）；正文 #view_content_txt 干净。命中策略 fetch-browser，全链无反爬。"
+  "_comment": "novel-admin 初始库种子（固化）：15 条精心校准采集规则 + 9 分类（其他 id=9999 恒末位）+ 站点默认配置。backend-go 启动时若对应表为空则自动导入（幂等，仅空表）。规则资产来源：git 4cb1619 快照 11 条 + c4dc1a4 新站 4 条。",
+  "rules": [
+    {
+      "id": 10,
+      "name": "aijjxs",
+      "siteUrl": "https://www.aijjxs.com/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \"div.listbg\", \"titleSelector\": \".title a\", \"linkSelector\": \".title a\", \"authorSelector\": \".mainGreen a[title]\"}",
+      "bookRule": "{\"titleSelector\": \"article.panel h3\", \"authorSelector\": \".kv a[title]\", \"descriptionSelector\": \".intro-panel .desc\", \"coverSelector\": \".pic img@src\", \"statusSelector\": \".sfwj\", \"chapterLinkSelector\": \"ul.chapter-list a\", \"catalogLinkSelector\": \"a[href^=\\\"/read/\\\"]\", \"excludeSelector\": \"h1.logo,.search\", \"categorySelector\": \".kv p:contains(书籍分类)\", \"notes\": \"Task 32: +categorySelector 书籍分类（stripFieldLabel 剥前缀→canonicalCategory 直映都市言情）\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#view_content_txt\"}",
+      "notes": "2026-09 实测（Task 32）：站点改版 ul.lines-books li → div.listbg 卡片（含 .title a/.mainGreen 作者）；封面在书页 .pic img 提取 || 原注: 2026-09 实测（Task3 第二轮）：fetch-browser 直连。帝国CMS TXT下载站：书页无章节列表，catalogLinkSelector=a[href^=/read/] 命中「在线阅读全文」，worker 二次抓 /read/{id}/ 目录用 chapterLinkSelector=ul.chapter-list a 提取全章（约140+条，首条为「内容简介」）。列表页 ul.lines-books li（最新上传62条）。章节页 h1 含书名前缀（worker 优先用目录页链接文本）；正文"
+    },
+    {
+      "id": 11,
+      "name": "ddyueshu",
+      "siteUrl": "https://www.ddyueshu.cc/",
+      "enabled": true,
+      "charset": "gbk",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"#hotcontent .item, .ll .item\",\"titleSelector\":\"dl dt a\",\"linkSelector\":\"dl dt a\",\"authorSelector\":\"dl dt span\"}",
+      "bookRule": "{\"titleSelector\": \"#info h1\", \"authorSelector\": \"#info p:nth-of-type(1)\", \"descriptionSelector\": \"#intro\", \"coverSelector\": \"#fmimg img@src\", \"chapterLinkSelector\": \"#list dl dd a\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content\"}",
+      "chapterRule": "{\"titleSelector\":\".bookname h1\",\"contentSelector\":\"#content\"}",
+      "notes": "2026-09 实测：fetch-browser 直连，encoding=GBK（自动检测同样命中 GBK）。杰奇结构：书页 #list dl dd 含全目录（800条，注意前几条是「新书xx」公告章）；作者前缀「作 者：」引擎自动剥离；og:novel meta 兜底 status/category。章节页 .bookname h1 + #content，无分页。列表页用首页 #hotcontent .item（4条，dt span=作者）。 【28主线校准 2026-09-24】task8 失败根因=临时网络错误（全策略 network-error，站点在线复测 OK）；列表入口扩展：分类页 item 在 .hot .ll 容器（不在 #hotcontent），itemSelector 追加 .ll .item 备选；分类页 6 条/页含封面/作者/简介。"
+    },
+    {
+      "id": 12,
+      "name": "23qb",
+      "siteUrl": "https://www.23qb.net/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\".module-item\",\"titleSelector\":\"a.module-item-title\",\"linkSelector\":\"a.module-item-title\",\"authorSelector\":\".module-item-text\"}",
+      "bookRule": "{\"titleSelector\": \"h1.page-title\", \"authorSelector\": \"span.novel-tag-icon:contains(作者：)\", \"descriptionSelector\": \".novel-info-content\", \"coverSelector\": \".novel-cover img@data-src\", \"statusSelector\": \"a.tag-link[href=\\\"javascript:;\\\"]\", \"chapterLinkSelector\": \"a.module-row-text\", \"catalogLinkSelector\": \"a[href$=\\\"/catalog\\\"]\", \"categorySelector\": \"a.tag-link[href*=\\\"/book/\\\"] span\"}",
+      "chapterRule": "{\"titleSelector\":\"h1.article-title\",\"contentSelector\":\".article-content\"}",
+      "notes": "2026-09 实测：fetch-browser 直连。module 系新模板：列表页 /book/lastupdate_0_0_0_0_0_0_0_1_0.html 30条/页；书页仅最新9章，catalogLinkSelector 命中「完整目录」/book/{id}/catalog（768条，含正文卷标题行）。章节页 h1.article-title + .article-content，单页无分页。作者 span.novel-tag-icon:contains(作者：) 引擎剥前缀；status 走 og:novel:status 兜底。封面 img@data-src（懒加载）。【28-a 校准】书页 tag-link 选择器含笔误（tag-linka，站点实际 class=tag-link）→ 修正 statusSelector/categorySelector；实测 og:novel:category 为空串，修正后分类走 a.tag-link[href*=\"/book/\"] span（言情小说等）直达，status 直达 a.tag-link[href=\"javascript:;\"]（og:novel:status=连载 为兜底）。"
+    },
+    {
+      "id": 13,
+      "name": "huangjinwu",
+      "siteUrl": "https://www.huangjinwu.org/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"a.book-card\",\"titleSelector\":\".book-title\",\"authorSelector\":\".book-author\"}",
+      "bookRule": "{\"titleSelector\":\"h1.detail-title\",\"authorSelector\":\".detail-meta span\",\"descriptionSelector\":\".detail-intro-content\",\"coverSelector\":\".detail-cover@src\",\"chapterLinkSelector\":\"#chapterList li a\"}",
+      "chapterRule": "{\"titleSelector\":\".breadcrumb-item.active\",\"contentSelector\":\"#readerContent\",\"excludeSelector\":\"#readerContent h1,.reader-updated\"}",
+      "notes": "2026-09 实测：fetch-browser 直连（上一轮的 sbrowser 渲染样本与今直连结果一致）。列表页首页 a.book-card（item 即链接本身，linkSelector 省略走默认 a[href] 自匹配）；书页 #chapterList 全目录（73条）；og:novel meta 兜底 status/category。章节页分页 (1/2)：nextUrl=…/2.html，worker fetchChapterPaged 前缀判定自动拼接（引擎 rel=next 误标 bug 已修——该站把上一章锚点标了 rel=next）。excludeSelector=#readerContent h1 去标题行，title 用面包屑 .breadcrumb-item.active（干净无 (1/2)）。\n【28-a 校准 2026-09-24】excludeSelector 增补 .reader-updated——#readerContent 内每页/每章首部有 <p class=\"reader-updated\">更新于 YYYY-MM-DD</p>，旧配置漏杀（存量 72 章残留该行）；书页 /novel/{id} 实测（112 章目录+og meta 全套+详情三件套）；书页无封面书统一返回 /public/nocover.svg 已由引擎占位封面过滤兜底（extract.go rePlaceholderCover）；正文容器内终章按钮 <a id=\"nextChapter\" disabled>没有了</a> 与页间 reader-nav 已由引擎 reADLinkText 增补（content.go Task 28-a）清除。"
+    },
+    {
+      "id": 14,
+      "name": "ggd66",
+      "siteUrl": "https://www.ggd66.com/sort/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \".bookbox\", \"titleSelector\": \".bookname a\", \"linkSelector\": \".bookname a\", \"authorSelector\": \".author\", \"paginationTemplate\": \"https://www.ggd66.com/sort/{k}/\"}",
+      "bookRule": "{\"titleSelector\":\"h1.booktitle\",\"authorSelector\":\"p.booktag a.red\",\"descriptionSelector\":\"p.bookintro\",\"coverSelector\":\".bookcover img@src\",\"statusSelector\":\"p.booktag span.red\",\"chapterLinkSelector\":\"dl.chapterlist dd a\"}",
+      "chapterRule": "{\"titleSelector\":\".breadcrumb li.active\",\"contentSelector\":\"#rtext\",\"excludeSelector\":\"#acontent h1,.fullbar\"}",
+      "notes": "2026-09 实测：fetch-browser 直连。列表页 /sort/{cid}/{page}/（.bookbox 10条/页，author 第一个 .author=作者：xx 需注意列表作者带前缀）；书页 dl.chapterlist dd a 全目录27条（12条最新章在前会去重）；章节页分页 (1/2)：nextUrl=…_2.html 由 worker fetchChapterPaged 自动拼接；标题用面包屑 li.active（h1 带（1 / 2）尾巴），excludeSelector 去掉 h1+fullbar 广告条。封面图在 img.178yhr.com 外域。【28-a 校准】首页已改版为单书推广页（/qu/{id} 链接+.bookbox 清零，历史 task3 实证失败原因）→ siteUrl 迁移至书库列表页 /sort/（.bookbox 10条/页，分页 /sort/{k}/ 共 2513 页，paginationTemplate 已配）；/qu/{id} 书页与章节页结构未变，og:novel:* meta 全套，简介尾部「《书名》是XX精心创作…」样板由引擎 cleanDescription 截断（reDescBoilerplate）。"
+    },
+    {
+      "id": 15,
+      "name": "xinjianpan",
+      "siteUrl": "https://www.xinjianpan.com/rank/lastupdate/?page=1",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"dl[class*=\\\"list-item\\\"]\",\"titleSelector\":\"dt a\",\"linkSelector\":\"dt a\",\"authorSelector\":\"dd a\",\"categorySelector\":\"dd span:nth-of-type(3)\"}",
+      "bookRule": "{\"titleSelector\": \".booktitle h1\", \"authorSelector\": \"a[href*=\\\"/author/\\\"]\", \"descriptionSelector\": \".bookintro p\", \"coverSelector\": \"a.cover img@src\", \"statusSelector\": \".bookdes p:nth-of-type(2) span\", \"chapterLinkSelector\": \".chapterlist .all li a\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#chaptercontent\",\"excludeSelector\":\"#morecontent\"}",
+      "notes": "2026-09 实测：fetch-browser 直连，列表30条/页已实测。列表页 /rank/lastupdate/（?page=N 翻页与 worker pageVariants 兼容；itemSelector 用 dl[class*=list-item] 防站点 class hash 变化）；书页 .all 区块约103条章节链接（全量1400+章在 /txt/{id}/list-N.html 分页目录，但锚点 href=javascript: 真实地址在 onclick 里引擎取不到，故不配 catalogLinkSelector）；章节页分页 (第N/M页)：下一章锚点为 javascript:，nextUrl 由引擎内联脚本变量兜底（const next_page=\"…_2.html\"）+ worker fetchChapterPaged 拼接；#morecontent JS 占位噪声需排除。"
+    },
+    {
+      "id": 16,
+      "name": "101kks",
+      "siteUrl": "https://101kks.com/novels/class/0_1.html",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "http://103.237.102.191:11111",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\".newnovels li\",\"titleSelector\":\"h3\",\"linkSelector\":\"a\",\"authorSelector\":\"h4\",\"paginationTemplate\":\"https://101kks.com/novels/class/0_{k}.html\"}",
+      "bookRule": "{\"titleSelector\":\"h1\",\"authorSelector\":\"meta[property=\\\"og:novel:author\\\"]@content\",\"descriptionSelector\":\"meta[property=\\\"og:description\\\"]@content\",\"coverSelector\":\"meta[property=\\\"og:image\\\"]@content\",\"categorySelector\":\"meta[property=\\\"og:novel:category\\\"]@content\",\"chapterLinkSelector\":\"#allchapter li a\",\"catalogLinkSelector\":\"a.more-btn\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#txtcontent\",\"nextSelector\":\".txtinfo a[title*=章節], a:contains('下一章')\"}",
+      "notes": "Task3 第三轮实测：站点开启 CF Bot Fight Mode（全页注入 challenge-platform 前置脚本，旧检测器误杀已修复）+ WAF 对 Bun fetch TLS 指纹 403 → 命中策略 curl-impersonate（已安装 21 个 curl_chrome/ff/edge/safari 二进制轮换 JA3）。列表页 /novels/class/0_{page}.html 每页 25 条；书页 og:meta 全套 + 完整目錄 a.more-btn 二次抓；目录 #allchapter li a（36 条实测）；正文 #txtcontent 干净繁体。\n【proxy 更新 2026-09 二轮】站点升级封锁（curl-impersonate JA3 伪装也被 403，纯 IP 信誉拦截）。经德国出口代理实测恢复可达（首页 200/43KB）。\n【28-a 校准 2026-09-24】首页改版为 booklist 卡片落地页（.newnovels 清零，历史 task 失败原因）→ siteUrl 迁移至分类列表页 /novels/class/0_{k}.html（fetch-curl 200，.newnovels.newnovels2 ul li：a>imgbox+h3 书名+h4 作者，10 条/页，paginationTemplate 已配）。书页 og:novel:* meta 完整（book_name/author/category/status）；完整目录已迁移至 /book/{id}/index.html（catalogLinkSelector=a.more-btn 不变，#allchapter li a 36 条）；部分新书 og:novel:author=「佚名」为源站自身缺省；章节页 #txtcontent 正常（分页尾注「（先發一章…）」为作者感言属低频残留不清洗）。"
+    },
+    {
+      "id": 17,
+      "name": "x2552",
+      "siteUrl": "http://www.x2552.com/",
+      "enabled": true,
+      "charset": "gbk",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \"#centerm tr, .update li\", \"titleSelector\": \"td:nth-child(1) a, a.poptext\", \"linkSelector\": \"td:nth-child(1) a, a.poptext\", \"authorSelector\": \"td.C, p.ul2 + p\", \"categorySelector\": \"p.ul1 a:first-child\"}",
+      "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"dd h3:contains(作者：)\", \"descriptionSelector\": \"p.pl + table + p, meta[property=\\\"og:description\\\"]@content\", \"categorySelector\": \"dt a[href*=\\\"/list/\\\"]\", \"chapterLinkSelector\": \"#at td.L a\", \"catalogLinkSelector\": \"a.read\", \"coverSelector\": \"img[src*=\\\"files/article/image\\\"]@src, meta[property=\\\"og:image\\\"]@content\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"dd#contents\"}",
+      "notes": "Task3 第三轮实测：GBK 杰奇 CMS（吾爱文学网）。fetch-browser 直连无反爬。列表页 /list/{cat}_{page}.html 30 条/页（#centerm 行表：书名/最新章/作者/字数/更新/状态）；书页 /book/{id}.html：h1 带『全文阅读』后缀（引擎 cleanBookTitle 已增强剥离），#at 信息表提取作者/状态/类别，简介 p.pl+table+p；完整目录 a.read → /html/{a}/{b}/ 的 #at td.L a 全量章节；正文 dd#contents，首行广告噪声（书名+最新章节）由 SITE_PROMO 自动清除。三段实测全通过（30 items / 2136 字正文）。【28-a 校准】首页改版（#centerm 表格消失→.update li 最新更新模块）致 task1/5 失败 → listRule 增补首页备选（itemSelector 追加 .update li；title/link 追加 a.poptext；author 追加 p.ul2 + p；category p.ul1 a:first-child）。首页条目书链指向目录页 /html/{a}/{b}/（该页 og:novel:* 全套+dd h3 作者+#at 全量目录，descriptionSelector 增补 og:description 备选——目录页 meta[name=description] 为 SEO 样板，og:description 才是真简介；小说状态仅 /book/{id}.html 的 #at 表有，首页路径状态落空由后端默认连载）。/list/{cat}_{page}.html 表格路径原样保留。"
+    },
+    {
+      "id": 18,
+      "name": "trxsw",
+      "siteUrl": "http://www.trxsw.com/lastupdate/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "http://103.237.102.191:11111",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"#alistbox\",\"titleSelector\":\".title h2 a\",\"linkSelector\":\".pic a\",\"authorSelector\":\".title span\"}",
+      "bookRule": "{\"titleSelector\":\"h1.f21h\",\"authorSelector\":\"h1.f21h em a\",\"descriptionSelector\":\"td .intro\",\"coverSelector\":\".box_intro .pic img@src\",\"statusSelector\":\"td:contains(小说状态)\",\"categorySelector\":\"td:contains(小说分类)\",\"chapterLinkSelector\":\"#qvod-pl-list a\",\"catalogLinkSelector\":\".btopt a\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#content\"}",
+      "notes": "2026-09 二轮实测通过（经站点级代理出口，直连 TCP 被重置）：唐人小说网（葡萄/杰奇新模板，utf-8）。列表页 /lastupdate/（#alistbox 条目：.title h2 a 书名/.title span 作者/.pic a 书页链接）；书页 /tangren_{id}.html（h1.f21h 内嵌 em 作者已由引擎剥离，td .intro 简介剥「关于书名：」前缀，td:contains 取分类/状态已由引擎剥前缀，#qvod-pl-list 最新 11 章，.btopt a 开始阅读→目录页 /tangren/{id}/ 276 章整目提取）；章节页 #content（p 段落，无同章分页）。封面 img.trxsw.com 图床 → 采集后落盘 webp。proxy 字段为公共代理（欧洲出口），站点封锁大陆/数据中心 IP；建议替换为自有付费代理。\n【proxy 更新 2026-09】经代理实测三段全通过（50条目/书页/2207字章节）。美国免费出口逐个实测失败（Comcast 家宽代理劫持响应返回自身 404；Azure 400；腾讯云 LA 被 TCP 重置——站点封锁机房 IP），故采用实测可用的德国法兰克福出口；如需美国 IP 请在管理后台替换为自有美国代理。\n【proxy 池 2026-09】当前德国出口单节点。"
+    },
+    {
+      "id": 19,
+      "name": "pilishuwu",
+      "siteUrl": "https://www.pilishuwu.com/",
+      "enabled": false,
+      "charset": "gbk",
+      "proxy": "http://103.237.102.191:11111",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"#centerm tr\",\"titleSelector\":\"td:nth-child(1) a\",\"linkSelector\":\"td:nth-child(1) a\",\"authorSelector\":\"td.C\"}",
+      "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"dd h3:contains(作者：)\", \"descriptionSelector\": \"p.pl + table + p\", \"categorySelector\": \"dt a[href*=\\\"/list/\\\"]\", \"chapterLinkSelector\": \"#at td.L a\", \"catalogLinkSelector\": \"a.read\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"dd#contents\"}",
+      "notes": "【未实测草稿】2026-09 实测 Cloudflare 层封锁：数据中心 IP 全指纹 403（含 curl_chrome116/ff117/edge101、Playwright 真浏览器），CF 边缘偶发 520（源站故障）。需住宅 IP 或站点放宽防护后实测。规则基于杰奇族模板反推（主题 trxsw/pilishuwu 均为六列 杰奇 文章名称/最新章节/作者/字数/更新/状态 布局）。\n【28-a 复测停用 2026-09-24】经代理全策略复测仍 challenge-page 硬反爬（fetch-browser/ua-rotate/mobile 全系拦截页），与 26-a/27-b 结论一致 → enabled=false 落档停用，防止任务轮询空烧；站点放宽防护后仅需重新启用（规则选择器为杰奇族标准结构，未变）。"
+    },
+    {
+      "id": 20,
+      "name": "77shuku",
+      "siteUrl": "http://www.77shuku.info/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "http://115.231.181.40:8128,http://113.204.79.230:9091,http://61.158.175.38:9002",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"#container .item\",\"titleSelector\":\".txt dt a\",\"linkSelector\":\".txt dt a\",\"authorSelector\":\".txt dd span\"}",
+      "bookRule": "{\"titleSelector\":\"h1\",\"authorSelector\":\"meta[property=\\\"og:novel:author\\\"]@content\",\"descriptionSelector\":\"#intro\",\"coverSelector\":\"meta[property=\\\"og:image\\\"]@content, .pic img@src\",\"statusSelector\":\"meta[property=\\\"og:novel:status\\\"]@content\",\"categorySelector\":\"meta[property=\\\"og:novel:category\\\"]@content\",\"chapterLinkSelector\":\"a[href*=\\\"/chapter/\\\"]\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#ChapterContents\"}",
+      "notes": "2026-09 二轮实测通过（经国内代理出口；直连对非大陆 IP 拒绝/超时）：77读书（自建杰奇变体，utf-8，注意 body 有 JS 注入但正文静态）。列表页首页 #container .item（.txt dt a 书名链接/dd span 作者）；书页 /novel/{id}/ 全目录 1089 条 a[href*=\"/chapter/\"]，og:novel:* meta 全套（作者/分类/状态/封面 og:image 图床 /files/article/image/）；章节页 /chapter/{id}/{cid}.html 正文 #yueduye（p 段落，无同章分页）。封面采集后落盘 webp。proxy 字段为公共国内代理（宁波），建议替换为自有付费代理。\n【proxy 池 2026-09】多代理逗号分隔轮换（宁波节点已失效自动淘汰，当前重庆+郑州）。免费公共代理时效性短，建议替换自有国内代理。"
+    },
+    {
+      "id": 21,
+      "name": "大悟读书网(5165)",
+      "siteUrl": "https://5165.org/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \".entry-content ul li\", \"titleSelector\": \"p a, a\", \"linkSelector\": \"a\", \"authorSelector\": \"span.text-muted\"}",
+      "bookRule": "{\"titleSelector\": \"h1.page-title\", \"authorSelector\": \"#category-description-author\", \"descriptionSelector\": \"#category-description-text\", \"coverSelector\": \"#category-description-image img@src\", \"chapterLinkSelector\": \"a[rel=\\\"contents\\\"]\"}",
+      "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \".entry-content\"}",
+      "notes": "2026-09 实测（首页最近更新模块）：WordPress 结构，首页=置顶推荐+热门小说+13 个分类板块（li>a+span.text-muted），列表项图片卡标题走 p a 备选；书页 #category-description-* 三件套+全量目录 a[rel=contents]（151 章实测，单页无分页）；章节正文 .entry-content。全策略 403 challenge-page 而 curl+桌面 UA 三连 200（拦已知爬虫 JA3 放行诚实 curl 型 WAF）→ fetch-curl 策略实证突破 262 本；无翻页模板（/page/2/ 404，静态 front page）。\n【28-a 复测启用 2026-09-24】fetch-curl 全链复测通过：列表 262 条/书页（#category-description-* 三件套+137 章目录）/章节正文 2766 字全绿 → enabled=true 恢复启用；状态字段源站缺失由后端默认连载。"
+    },
+    {
+      "id": 22,
+      "name": "顶点小说(23uswx)",
+      "siteUrl": "http://www.23uswx.la/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \"#newscontent .l ul li\", \"titleSelector\": \".s2 a\", \"linkSelector\": \".s2 a\", \"authorSelector\": \".s4\", \"categorySelector\": \".s1\"}",
+      "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro\", \"coverSelector\": \"#fmimg img@src, meta[property=\\\"og:image\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a\"}",
+      "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \"#content\"}",
+      "notes": "2026-09 实测（首页最新更新小说模块）：杰奇结构（与顶点系模板同源），#newscontent .l 五段式列表（s1 分类/s2 书链/s3 最新章/s4 作者/s5 时间）；书页 og:novel:* meta 齐全+#intro+#fmimg+#list dl dd 全目录；章节页 h1+#content，正文头部「最新网址：www.…」广告行由 clean.ts URL_LINE 短行规则清除；书 URL 形如 /145_145762/。响应强制 gzip，直连即可。快填 30 本实证可用。"
+    },
+    {
+      "id": 23,
+      "name": "夜伴书屋(38.34.172.127)",
+      "siteUrl": "https://38.34.172.127/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": true,
+      "listRule": "{\"itemSelector\": \".panel .col-md-12.item\", \"titleSelector\": \"a.float-left\", \"linkSelector\": \"a.float-left\", \"authorSelector\": \"span.dark.float-right\"}",
+      "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a\"}",
+      "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \"#content\"}",
+      "notes": "2026-09 探测结论（草稿停用）：裸 IP 自签证书 insecureTLS=true 引擎旁路。首页(/index.html)「最新入库」模块可正常采集；但 /book/{id} 书页与 /list/*.html 分类页源站一律 403（curl/真实浏览器/bun fetch 复测一致），规范域名 www.ybswo.com 全站在 Cloudflare 挑战之后。快填 30 本实证（书页路径可达时）。SSRF 逐跳校验覆盖裸 IP 直连。\n【28-a 复测启用 2026-09-24】书页 403 已解除（/book/27556 复测 200，h1 命中）→ enabled=true 恢复启用；源站存在周期性 403 波动，若再封锁 runner 连败熔断会自动暂停任务（止损），站点恢复后 PATCH resume 续采。insecureTLS=true 旁路自签证书必须保持。"
+    },
+    {
+      "id": 24,
+      "name": "爱下电子书(ixdzs8)",
+      "siteUrl": "https://ixdzs8.com/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \"ul.u-line li, ul.u-list li.burl\", \"titleSelector\": \".l-name h3.bname a, h3.bname a\", \"linkSelector\": \".l-name a, h3.bname a\", \"authorSelector\": \".l-author .bauthor a, .bauthor a\", \"categorySelector\": \".l-sort a\", \"paginationTemplate\": \"https://ixdzs8.com/new/?page={k}\"}",
+      "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \".pintro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content\", \"statusSelector\": \"meta[property=\\\"og:novel:status\\\"]@content\", \"chapterLinkSelector\": \"ul.u-chapter.cfirst li a\", \"chapterListApi\": \"{\\\"url\\\":\\\"/novel/clist/\\\",\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"bid={bookId}\\\",\\\"bookIdSelector\\\":\\\"#bid@value\\\",\\\"listPath\\\":\\\"data\\\",\\\"titleField\\\":\\\"title\\\",\\\"orderField\\\":\\\"ordernum\\\",\\\"skipField\\\":\\\"ctype\\\",\\\"skipValue\\\":\\\"1\\\",\\\"urlTemplate\\\":\\\"/read/{bookId}/p{order}.html\\\"}\"}",
+      "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \".page-content section, .page-content\"}",
+      "notes": "2026-09 实测（首页最近更新模块 panel>h2>a[href=/new/]>ul.u-line）：书链 /read/{id}/；书页 og:novel:* meta 齐全+.pintro 简介+隐藏全目录（.clist ul.u-chapter 由 POST /novel/clist/ JSON 填充）→ chapterListApi 同源 JSON 目录接口（985 章实测），书页内嵌最新 10 章作回退；章节页轻量 JS token 挑战（引擎 fetch 层内置求解器自动跟随）；正文 .page-content section。/new/?page={k} 分页模板。快填 20 本实证可用。"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "玄幻奇幻",
+      "sort": 0
+    },
+    {
+      "id": 2,
+      "name": "武侠仙侠",
+      "sort": 1
+    },
+    {
+      "id": 3,
+      "name": "都市言情",
+      "sort": 2
+    },
+    {
+      "id": 4,
+      "name": "历史军事",
+      "sort": 3
+    },
+    {
+      "id": 5,
+      "name": "科幻未来",
+      "sort": 4
+    },
+    {
+      "id": 6,
+      "name": "游戏竞技",
+      "sort": 5
+    },
+    {
+      "id": 7,
+      "name": "悬疑灵异",
+      "sort": 6
+    },
+    {
+      "id": 8,
+      "name": "轻小说",
+      "sort": 7
+    },
+    {
+      "id": 9999,
+      "name": "其他",
+      "sort": 9999
+    }
+  ],
+  "site": {
+    "siteName": "青阅文学",
+    "activeTheme": "trxsw",
+    "notice": "本站为演示站点，全部内容为原创占位数据。"
   },
-  {
-   "id": 11,
-   "name": "ddyueshu",
-   "siteUrl": "https://www.ddyueshu.cc/",
-   "enabled": true,
-   "charset": "gbk",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"#hotcontent .item, .ll .item\",\"titleSelector\":\"dl dt a\",\"linkSelector\":\"dl dt a\",\"authorSelector\":\"dl dt span\"}",
-   "bookRule": "{\"titleSelector\": \"#info h1\", \"authorSelector\": \"#info p:nth-of-type(1)\", \"descriptionSelector\": \"#intro\", \"coverSelector\": \"#fmimg img@src\", \"chapterLinkSelector\": \"#list dl dd a\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content\"}",
-   "chapterRule": "{\"titleSelector\":\".bookname h1\",\"contentSelector\":\"#content\"}",
-   "notes": "2026-09 实测：fetch-browser 直连，encoding=GBK（自动检测同样命中 GBK）。杰奇结构：书页 #list dl dd 含全目录（800条，注意前几条是「新书xx」公告章）；作者前缀「作 者：」引擎自动剥离；og:novel meta 兜底 status/category。章节页 .bookname h1 + #content，无分页。列表页用首页 #hotcontent .item（4条，dt span=作者）。 【28主线校准 2026-09-24】task8 失败根因=临时网络错误（全策略 network-error，站点在线复测 OK）；列表入口扩展：分类页 item 在 .hot .ll 容器（不在 #hotcontent），itemSelector 追加 .ll .item 备选；分类页 6 条/页含封面/作者/简介。"
-  },
-  {
-   "id": 12,
-   "name": "23qb",
-   "siteUrl": "https://www.23qb.net/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\".module-item\",\"titleSelector\":\"a.module-item-title\",\"linkSelector\":\"a.module-item-title\",\"authorSelector\":\".module-item-text\"}",
-   "bookRule": "{\"titleSelector\": \"h1.page-title\", \"authorSelector\": \"span.novel-tag-icon:contains(作者：)\", \"descriptionSelector\": \".novel-info-content\", \"coverSelector\": \".novel-cover img@data-src\", \"statusSelector\": \"a.tag-link[href=\\\"javascript:;\\\"]\", \"chapterLinkSelector\": \"a.module-row-text\", \"catalogLinkSelector\": \"a[href$=\\\"/catalog\\\"]\", \"categorySelector\": \"a.tag-link[href*=\\\"/book/\\\"] span\"}",
-   "chapterRule": "{\"titleSelector\":\"h1.article-title\",\"contentSelector\":\".article-content\"}",
-   "notes": "2026-09 实测：fetch-browser 直连。module 系新模板：列表页 /book/lastupdate_0_0_0_0_0_0_0_1_0.html 30条/页；书页仅最新9章，catalogLinkSelector 命中「完整目录」/book/{id}/catalog（768条，含正文卷标题行）。章节页 h1.article-title + .article-content，单页无分页。作者 span.novel-tag-icon:contains(作者：) 引擎剥前缀；status 走 og:novel:status 兜底。封面 img@data-src（懒加载）。【28-a 校准】书页 tag-link 选择器含笔误（tag-linka，站点实际 class=tag-link）→ 修正 statusSelector/categorySelector；实测 og:novel:category 为空串，修正后分类走 a.tag-link[href*=\"/book/\"] span（言情小说等）直达，status 直达 a.tag-link[href=\"javascript:;\"]（og:novel:status=连载 为兜底）。"
-  },
-  {
-   "id": 13,
-   "name": "huangjinwu",
-   "siteUrl": "https://www.huangjinwu.org/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"a.book-card\",\"titleSelector\":\".book-title\",\"authorSelector\":\".book-author\"}",
-   "bookRule": "{\"titleSelector\":\"h1.detail-title\",\"authorSelector\":\".detail-meta span\",\"descriptionSelector\":\".detail-intro-content\",\"coverSelector\":\".detail-cover@src\",\"chapterLinkSelector\":\"#chapterList li a\"}",
-   "chapterRule": "{\"titleSelector\":\".breadcrumb-item.active\",\"contentSelector\":\"#readerContent\",\"excludeSelector\":\"#readerContent h1,.reader-updated\"}",
-   "notes": "2026-09 实测：fetch-browser 直连（上一轮的 sbrowser 渲染样本与今直连结果一致）。列表页首页 a.book-card（item 即链接本身，linkSelector 省略走默认 a[href] 自匹配）；书页 #chapterList 全目录（73条）；og:novel meta 兜底 status/category。章节页分页 (1/2)：nextUrl=…/2.html，worker fetchChapterPaged 前缀判定自动拼接（引擎 rel=next 误标 bug 已修——该站把上一章锚点标了 rel=next）。excludeSelector=#readerContent h1 去标题行，title 用面包屑 .breadcrumb-item.active（干净无 (1/2)）。\n【28-a 校准 2026-09-24】excludeSelector 增补 .reader-updated——#readerContent 内每页/每章首部有 <p class=\"reader-updated\">更新于 YYYY-MM-DD</p>，旧配置漏杀（存量 72 章残留该行）；书页 /novel/{id} 实测（112 章目录+og meta 全套+详情三件套）；书页无封面书统一返回 /public/nocover.svg 已由引擎占位封面过滤兜底（extract.go rePlaceholderCover）；正文容器内终章按钮 <a id=\"nextChapter\" disabled>没有了</a> 与页间 reader-nav 已由引擎 reADLinkText 增补（content.go Task 28-a）清除。"
-  },
-  {
-   "id": 14,
-   "name": "ggd66",
-   "siteUrl": "https://www.ggd66.com/sort/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\": \".bookbox\", \"titleSelector\": \".bookname a\", \"linkSelector\": \".bookname a\", \"authorSelector\": \".author\", \"paginationTemplate\": \"https://www.ggd66.com/sort/{k}/\"}",
-   "bookRule": "{\"titleSelector\":\"h1.booktitle\",\"authorSelector\":\"p.booktag a.red\",\"descriptionSelector\":\"p.bookintro\",\"coverSelector\":\".bookcover img@src\",\"statusSelector\":\"p.booktag span.red\",\"chapterLinkSelector\":\"dl.chapterlist dd a\"}",
-   "chapterRule": "{\"titleSelector\":\".breadcrumb li.active\",\"contentSelector\":\"#rtext\",\"excludeSelector\":\"#acontent h1,.fullbar\"}",
-   "notes": "2026-09 实测：fetch-browser 直连。列表页 /sort/{cid}/{page}/（.bookbox 10条/页，author 第一个 .author=作者：xx 需注意列表作者带前缀）；书页 dl.chapterlist dd a 全目录27条（12条最新章在前会去重）；章节页分页 (1/2)：nextUrl=…_2.html 由 worker fetchChapterPaged 自动拼接；标题用面包屑 li.active（h1 带（1 / 2）尾巴），excludeSelector 去掉 h1+fullbar 广告条。封面图在 img.178yhr.com 外域。【28-a 校准】首页已改版为单书推广页（/qu/{id} 链接+.bookbox 清零，历史 task3 实证失败原因）→ siteUrl 迁移至书库列表页 /sort/（.bookbox 10条/页，分页 /sort/{k}/ 共 2513 页，paginationTemplate 已配）；/qu/{id} 书页与章节页结构未变，og:novel:* meta 全套，简介尾部「《书名》是XX精心创作…」样板由引擎 cleanDescription 截断（reDescBoilerplate）。"
-  },
-  {
-   "id": 15,
-   "name": "xinjianpan",
-   "siteUrl": "https://www.xinjianpan.com/rank/lastupdate/?page=1",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"dl[class*=\\\"list-item\\\"]\",\"titleSelector\":\"dt a\",\"linkSelector\":\"dt a\",\"authorSelector\":\"dd a\",\"categorySelector\":\"dd span:nth-of-type(3)\"}",
-   "bookRule": "{\"titleSelector\": \".booktitle h1\", \"authorSelector\": \"a[href*=\\\"/author/\\\"]\", \"descriptionSelector\": \".bookintro p\", \"coverSelector\": \"a.cover img@src\", \"statusSelector\": \".bookdes p:nth-of-type(2) span\", \"chapterLinkSelector\": \".chapterlist .all li a\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#chaptercontent\",\"excludeSelector\":\"#morecontent\"}",
-   "notes": "2026-09 实测：fetch-browser 直连，列表30条/页已实测。列表页 /rank/lastupdate/（?page=N 翻页与 worker pageVariants 兼容；itemSelector 用 dl[class*=list-item] 防站点 class hash 变化）；书页 .all 区块约103条章节链接（全量1400+章在 /txt/{id}/list-N.html 分页目录，但锚点 href=javascript: 真实地址在 onclick 里引擎取不到，故不配 catalogLinkSelector）；章节页分页 (第N/M页)：下一章锚点为 javascript:，nextUrl 由引擎内联脚本变量兜底（const next_page=\"…_2.html\"）+ worker fetchChapterPaged 拼接；#morecontent JS 占位噪声需排除。"
-  },
-  {
-   "id": 16,
-   "name": "101kks",
-   "siteUrl": "https://101kks.com/novels/class/0_1.html",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "http://103.237.102.191:11111",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\".newnovels li\",\"titleSelector\":\"h3\",\"linkSelector\":\"a\",\"authorSelector\":\"h4\",\"paginationTemplate\":\"https://101kks.com/novels/class/0_{k}.html\"}",
-   "bookRule": "{\"titleSelector\":\"h1\",\"authorSelector\":\"meta[property=\\\"og:novel:author\\\"]@content\",\"descriptionSelector\":\"meta[property=\\\"og:description\\\"]@content\",\"coverSelector\":\"meta[property=\\\"og:image\\\"]@content\",\"categorySelector\":\"meta[property=\\\"og:novel:category\\\"]@content\",\"chapterLinkSelector\":\"#allchapter li a\",\"catalogLinkSelector\":\"a.more-btn\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#txtcontent\",\"nextSelector\":\".txtinfo a[title*=章節], a:contains('下一章')\"}",
-   "notes": "Task3 第三轮实测：站点开启 CF Bot Fight Mode（全页注入 challenge-platform 前置脚本，旧检测器误杀已修复）+ WAF 对 Bun fetch TLS 指纹 403 → 命中策略 curl-impersonate（已安装 21 个 curl_chrome/ff/edge/safari 二进制轮换 JA3）。列表页 /novels/class/0_{page}.html 每页 25 条；书页 og:meta 全套 + 完整目錄 a.more-btn 二次抓；目录 #allchapter li a（36 条实测）；正文 #txtcontent 干净繁体。\n【proxy 更新 2026-09 二轮】站点升级封锁（curl-impersonate JA3 伪装也被 403，纯 IP 信誉拦截）。经德国出口代理实测恢复可达（首页 200/43KB）。\n【28-a 校准 2026-09-24】首页改版为 booklist 卡片落地页（.newnovels 清零，历史 task 失败原因）→ siteUrl 迁移至分类列表页 /novels/class/0_{k}.html（fetch-curl 200，.newnovels.newnovels2 ul li：a>imgbox+h3 书名+h4 作者，10 条/页，paginationTemplate 已配）。书页 og:novel:* meta 完整（book_name/author/category/status）；完整目录已迁移至 /book/{id}/index.html（catalogLinkSelector=a.more-btn 不变，#allchapter li a 36 条）；部分新书 og:novel:author=「佚名」为源站自身缺省；章节页 #txtcontent 正常（分页尾注「（先發一章…）」为作者感言属低频残留不清洗）。"
-  },
-  {
-   "id": 17,
-   "name": "x2552",
-   "siteUrl": "http://www.x2552.com/",
-   "enabled": true,
-   "charset": "gbk",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\": \"#centerm tr, .update li\", \"titleSelector\": \"td:nth-child(1) a, a.poptext\", \"linkSelector\": \"td:nth-child(1) a, a.poptext\", \"authorSelector\": \"td.C, p.ul2 + p\", \"categorySelector\": \"p.ul1 a:first-child\"}",
-   "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"dd h3:contains(作者：)\", \"descriptionSelector\": \"p.pl + table + p, meta[property=\\\"og:description\\\"]@content\", \"categorySelector\": \"dt a[href*=\\\"/list/\\\"]\", \"chapterLinkSelector\": \"#at td.L a\", \"catalogLinkSelector\": \"a.read\", \"coverSelector\": \"img[src*=\\\"files/article/image\\\"]@src, meta[property=\\\"og:image\\\"]@content\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"dd#contents\"}",
-   "notes": "Task3 第三轮实测：GBK 杰奇 CMS（吾爱文学网）。fetch-browser 直连无反爬。列表页 /list/{cat}_{page}.html 30 条/页（#centerm 行表：书名/最新章/作者/字数/更新/状态）；书页 /book/{id}.html：h1 带『全文阅读』后缀（引擎 cleanBookTitle 已增强剥离），#at 信息表提取作者/状态/类别，简介 p.pl+table+p；完整目录 a.read → /html/{a}/{b}/ 的 #at td.L a 全量章节；正文 dd#contents，首行广告噪声（书名+最新章节）由 SITE_PROMO 自动清除。三段实测全通过（30 items / 2136 字正文）。【28-a 校准】首页改版（#centerm 表格消失→.update li 最新更新模块）致 task1/5 失败 → listRule 增补首页备选（itemSelector 追加 .update li；title/link 追加 a.poptext；author 追加 p.ul2 + p；category p.ul1 a:first-child）。首页条目书链指向目录页 /html/{a}/{b}/（该页 og:novel:* 全套+dd h3 作者+#at 全量目录，descriptionSelector 增补 og:description 备选——目录页 meta[name=description] 为 SEO 样板，og:description 才是真简介；小说状态仅 /book/{id}.html 的 #at 表有，首页路径状态落空由后端默认连载）。/list/{cat}_{page}.html 表格路径原样保留。"
-  },
-  {
-   "id": 18,
-   "name": "trxsw",
-   "siteUrl": "http://www.trxsw.com/lastupdate/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "http://103.237.102.191:11111",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"#alistbox\",\"titleSelector\":\".title h2 a\",\"linkSelector\":\".pic a\",\"authorSelector\":\".title span\"}",
-   "bookRule": "{\"titleSelector\":\"h1.f21h\",\"authorSelector\":\"h1.f21h em a\",\"descriptionSelector\":\"td .intro\",\"coverSelector\":\".box_intro .pic img@src\",\"statusSelector\":\"td:contains(小说状态)\",\"categorySelector\":\"td:contains(小说分类)\",\"chapterLinkSelector\":\"#qvod-pl-list a\",\"catalogLinkSelector\":\".btopt a\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#content\"}",
-   "notes": "2026-09 二轮实测通过（经站点级代理出口，直连 TCP 被重置）：唐人小说网（葡萄/杰奇新模板，utf-8）。列表页 /lastupdate/（#alistbox 条目：.title h2 a 书名/.title span 作者/.pic a 书页链接）；书页 /tangren_{id}.html（h1.f21h 内嵌 em 作者已由引擎剥离，td .intro 简介剥「关于书名：」前缀，td:contains 取分类/状态已由引擎剥前缀，#qvod-pl-list 最新 11 章，.btopt a 开始阅读→目录页 /tangren/{id}/ 276 章整目提取）；章节页 #content（p 段落，无同章分页）。封面 img.trxsw.com 图床 → 采集后落盘 webp。proxy 字段为公共代理（欧洲出口），站点封锁大陆/数据中心 IP；建议替换为自有付费代理。\n【proxy 更新 2026-09】经代理实测三段全通过（50条目/书页/2207字章节）。美国免费出口逐个实测失败（Comcast 家宽代理劫持响应返回自身 404；Azure 400；腾讯云 LA 被 TCP 重置——站点封锁机房 IP），故采用实测可用的德国法兰克福出口；如需美国 IP 请在管理后台替换为自有美国代理。\n【proxy 池 2026-09】当前德国出口单节点。"
-  },
-  {
-   "id": 19,
-   "name": "pilishuwu",
-   "siteUrl": "https://www.pilishuwu.com/",
-   "enabled": false,
-   "charset": "gbk",
-   "proxy": "http://103.237.102.191:11111",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"#centerm tr\",\"titleSelector\":\"td:nth-child(1) a\",\"linkSelector\":\"td:nth-child(1) a\",\"authorSelector\":\"td.C\"}",
-   "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"dd h3:contains(作者：)\", \"descriptionSelector\": \"p.pl + table + p\", \"categorySelector\": \"dt a[href*=\\\"/list/\\\"]\", \"chapterLinkSelector\": \"#at td.L a\", \"catalogLinkSelector\": \"a.read\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"dd#contents\"}",
-   "notes": "【未实测草稿】2026-09 实测 Cloudflare 层封锁：数据中心 IP 全指纹 403（含 curl_chrome116/ff117/edge101、Playwright 真浏览器），CF 边缘偶发 520（源站故障）。需住宅 IP 或站点放宽防护后实测。规则基于杰奇族模板反推（主题 trxsw/pilishuwu 均为六列 杰奇 文章名称/最新章节/作者/字数/更新/状态 布局）。\n【28-a 复测停用 2026-09-24】经代理全策略复测仍 challenge-page 硬反爬（fetch-browser/ua-rotate/mobile 全系拦截页），与 26-a/27-b 结论一致 → enabled=false 落档停用，防止任务轮询空烧；站点放宽防护后仅需重新启用（规则选择器为杰奇族标准结构，未变）。"
-  },
-  {
-   "id": 20,
-   "name": "77shuku",
-   "siteUrl": "http://www.77shuku.info/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "http://115.231.181.40:8128,http://113.204.79.230:9091,http://61.158.175.38:9002",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\":\"#container .item\",\"titleSelector\":\".txt dt a\",\"linkSelector\":\".txt dt a\",\"authorSelector\":\".txt dd span\"}",
-   "bookRule": "{\"titleSelector\":\"h1\",\"authorSelector\":\"meta[property=\\\"og:novel:author\\\"]@content\",\"descriptionSelector\":\"#intro\",\"coverSelector\":\"meta[property=\\\"og:image\\\"]@content, .pic img@src\",\"statusSelector\":\"meta[property=\\\"og:novel:status\\\"]@content\",\"categorySelector\":\"meta[property=\\\"og:novel:category\\\"]@content\",\"chapterLinkSelector\":\"a[href*=\\\"/chapter/\\\"]\"}",
-   "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#ChapterContents\"}",
-   "notes": "2026-09 二轮实测通过（经国内代理出口；直连对非大陆 IP 拒绝/超时）：77读书（自建杰奇变体，utf-8，注意 body 有 JS 注入但正文静态）。列表页首页 #container .item（.txt dt a 书名链接/dd span 作者）；书页 /novel/{id}/ 全目录 1089 条 a[href*=\"/chapter/\"]，og:novel:* meta 全套（作者/分类/状态/封面 og:image 图床 /files/article/image/）；章节页 /chapter/{id}/{cid}.html 正文 #yueduye（p 段落，无同章分页）。封面采集后落盘 webp。proxy 字段为公共国内代理（宁波），建议替换为自有付费代理。\n【proxy 池 2026-09】多代理逗号分隔轮换（宁波节点已失效自动淘汰，当前重庆+郑州）。免费公共代理时效性短，建议替换自有国内代理。"
-  },
-  {
-   "id": 21,
-   "name": "大悟读书网(5165)",
-   "siteUrl": "https://5165.org/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\": \".entry-content ul li\", \"titleSelector\": \"p a, a\", \"linkSelector\": \"a\", \"authorSelector\": \"span.text-muted\"}",
-   "bookRule": "{\"titleSelector\": \"h1.page-title\", \"authorSelector\": \"#category-description-author\", \"descriptionSelector\": \"#category-description-text\", \"coverSelector\": \"#category-description-image img@src\", \"chapterLinkSelector\": \"a[rel=\\\"contents\\\"]\"}",
-   "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \".entry-content\"}",
-   "notes": "2026-09 实测（首页最近更新模块）：WordPress 结构，首页=置顶推荐+热门小说+13 个分类板块（li>a+span.text-muted），列表项图片卡标题走 p a 备选；书页 #category-description-* 三件套+全量目录 a[rel=contents]（151 章实测，单页无分页）；章节正文 .entry-content。全策略 403 challenge-page 而 curl+桌面 UA 三连 200（拦已知爬虫 JA3 放行诚实 curl 型 WAF）→ fetch-curl 策略实证突破 262 本；无翻页模板（/page/2/ 404，静态 front page）。\n【28-a 复测启用 2026-09-24】fetch-curl 全链复测通过：列表 262 条/书页（#category-description-* 三件套+137 章目录）/章节正文 2766 字全绿 → enabled=true 恢复启用；状态字段源站缺失由后端默认连载。"
-  },
-  {
-   "id": 22,
-   "name": "顶点小说(23uswx)",
-   "siteUrl": "http://www.23uswx.la/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\": \"#newscontent .l ul li\", \"titleSelector\": \".s2 a\", \"linkSelector\": \".s2 a\", \"authorSelector\": \".s4\", \"categorySelector\": \".s1\"}",
-   "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro\", \"coverSelector\": \"#fmimg img@src, meta[property=\\\"og:image\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a\"}",
-   "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \"#content\"}",
-   "notes": "2026-09 实测（首页最新更新小说模块）：杰奇结构（与顶点系模板同源），#newscontent .l 五段式列表（s1 分类/s2 书链/s3 最新章/s4 作者/s5 时间）；书页 og:novel:* meta 齐全+#intro+#fmimg+#list dl dd 全目录；章节页 h1+#content，正文头部「最新网址：www.…」广告行由 clean.ts URL_LINE 短行规则清除；书 URL 形如 /145_145762/。响应强制 gzip，直连即可。快填 30 本实证可用。"
-  },
-  {
-   "id": 23,
-   "name": "夜伴书屋(38.34.172.127)",
-   "siteUrl": "https://38.34.172.127/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": true,
-   "listRule": "{\"itemSelector\": \".panel .col-md-12.item\", \"titleSelector\": \"a.float-left\", \"linkSelector\": \"a.float-left\", \"authorSelector\": \"span.dark.float-right\"}",
-   "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a\"}",
-   "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \"#content\"}",
-   "notes": "2026-09 探测结论（草稿停用）：裸 IP 自签证书 insecureTLS=true 引擎旁路。首页(/index.html)「最新入库」模块可正常采集；但 /book/{id} 书页与 /list/*.html 分类页源站一律 403（curl/真实浏览器/bun fetch 复测一致），规范域名 www.ybswo.com 全站在 Cloudflare 挑战之后。快填 30 本实证（书页路径可达时）。SSRF 逐跳校验覆盖裸 IP 直连。\n【28-a 复测启用 2026-09-24】书页 403 已解除（/book/27556 复测 200，h1 命中）→ enabled=true 恢复启用；源站存在周期性 403 波动，若再封锁 runner 连败熔断会自动暂停任务（止损），站点恢复后 PATCH resume 续采。insecureTLS=true 旁路自签证书必须保持。"
-  },
-  {
-   "id": 24,
-   "name": "爱下电子书(ixdzs8)",
-   "siteUrl": "https://ixdzs8.com/",
-   "enabled": true,
-   "charset": "utf-8",
-   "proxy": "",
-   "insecureTLS": false,
-   "listRule": "{\"itemSelector\": \"ul.u-line li, ul.u-list li.burl\", \"titleSelector\": \".l-name h3.bname a, h3.bname a\", \"linkSelector\": \".l-name a, h3.bname a\", \"authorSelector\": \".l-author .bauthor a, .bauthor a\", \"categorySelector\": \".l-sort a\", \"paginationTemplate\": \"https://ixdzs8.com/new/?page={k}\"}",
-   "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \".pintro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content\", \"statusSelector\": \"meta[property=\\\"og:novel:status\\\"]@content\", \"chapterLinkSelector\": \"ul.u-chapter.cfirst li a\", \"chapterListApi\": \"{\\\"url\\\":\\\"/novel/clist/\\\",\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"bid={bookId}\\\",\\\"bookIdSelector\\\":\\\"#bid@value\\\",\\\"listPath\\\":\\\"data\\\",\\\"titleField\\\":\\\"title\\\",\\\"orderField\\\":\\\"ordernum\\\",\\\"skipField\\\":\\\"ctype\\\",\\\"skipValue\\\":\\\"1\\\",\\\"urlTemplate\\\":\\\"/read/{bookId}/p{order}.html\\\"}\"}",
-   "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \".page-content section, .page-content\"}",
-   "notes": "2026-09 实测（首页最近更新模块 panel>h2>a[href=/new/]>ul.u-line）：书链 /read/{id}/；书页 og:novel:* meta 齐全+.pintro 简介+隐藏全目录（.clist ul.u-chapter 由 POST /novel/clist/ JSON 填充）→ chapterListApi 同源 JSON 目录接口（985 章实测），书页内嵌最新 10 章作回退；章节页轻量 JS token 挑战（引擎 fetch 层内置求解器自动跟随）；正文 .page-content section。/new/?page={k} 分页模板。快填 20 本实证可用。"
-  }
- ],
- "categories": [
-  {
-   "id": 1,
-   "name": "玄幻奇幻",
-   "sort": 0
-  },
-  {
-   "id": 2,
-   "name": "武侠仙侠",
-   "sort": 1
-  },
-  {
-   "id": 3,
-   "name": "都市言情",
-   "sort": 2
-  },
-  {
-   "id": 4,
-   "name": "历史军事",
-   "sort": 3
-  },
-  {
-   "id": 5,
-   "name": "科幻未来",
-   "sort": 4
-  },
-  {
-   "id": 6,
-   "name": "游戏竞技",
-   "sort": 5
-  },
-  {
-   "id": 7,
-   "name": "悬疑灵异",
-   "sort": 6
-  },
-  {
-   "id": 8,
-   "name": "轻小说",
-   "sort": 7
-  },
-  {
-   "id": 9999,
-   "name": "其他",
-   "sort": 9999
-  }
- ],
- "site": {
-  "siteName": "青阅文学",
-  "activeTheme": "trxsw",
-  "notice": "本站为演示站点，全部内容为原创占位数据。"
- },
- "homeBlocks": [
-  {
-   "id": "featured",
-   "title": "小编精选",
-   "source": "featured",
-   "count": 8
-  },
-  {
-   "id": "hot",
-   "title": "热门小说",
-   "source": "hot",
-   "count": 12
-  },
-  {
-   "id": "latest",
-   "title": "最新上架",
-   "source": "latest",
-   "count": 12
-  }
- ],
- "seoConfig": "{\"homeTitle\":\"{siteName} - 免费小说在线阅读_原创小说网站\",\"homeDescription\":\"{siteName}是领先的免费原创小说在线阅读网站，提供玄幻、仙侠、都市、历史、科幻等全品类小说，每日更新，畅享极致阅读体验。\",\"homeKeywords\":\"小说,免费小说,在线阅读,{siteName},玄幻小说,都市小说\",\"categoryTitle\":\"{categoryName}小说大全_最新{categoryName}小说排行榜 - {siteName}\",\"categoryDescription\":\"{siteName}{categoryName}频道为您提供海量精品{categoryName}小说在线阅读，{categoryName}小说每日更新，尽在{siteName}。\",\"bookTitle\":\"{novelTitle}最新章节列表_{author}小说 - {siteName}\",\"bookDescription\":\"{novelTitle}连载于{siteName}，作者{author}，{statusText}。{descShort}\",\"bookKeywords\":\"{novelTitle},{novelTitle}最新章节,{author},{categoryName}小说\",\"tocTitle\":\"{novelTitle}目录_全部章节列表 - {siteName}\",\"tocDescription\":\"{novelTitle}全部章节目录一览，按顺序阅读《{novelTitle}》最新章节，尽在{siteName}。\",\"chapterTitle\":\"{chapterTitle}_《{novelTitle}》第{idx}章 - {siteName}\",\"chapterDescription\":\"《{novelTitle}》{chapterTitle}在线阅读，作者{author}，精彩章节尽在{siteName}。\",\"chapterKeywords\":\"{novelTitle},{chapterTitle},{author}\",\"searchTitle\":\"“{query}”的搜索结果 - {siteName}\",\"searchDescription\":\"在{siteName}搜索“{query}”找到的相关小说列表。\",\"pseoTitle\":\"{keyword}小说推荐_关于{keyword}的小说 - {siteName}\",\"pseoDescription\":\"{siteName}为您精选与“{keyword}”相关的小说合集，包含 {count} 本热门作品，在线免费阅读。\",\"pseoKeywords\":\"{keyword},{keyword}小说,{keyword}推荐\",\"autoFromContent\":true,\"pseo\":{\"sources\":[\"baidu\",\"bing\",\"duckduckgo\"],\"seeds\":[\"科幻末日\",\"无限流副本\"],\"perSeedLimit\":10,\"maxKeywords\":200,\"expand\":false,\"autoGenerate\":true}}",
- "footerConfig": "{\"text\":\"\",\"extra\":\"\"}"
+  "homeBlocks": [
+    {
+      "id": "featured",
+      "title": "小编精选",
+      "source": "featured",
+      "count": 8
+    },
+    {
+      "id": "hot",
+      "title": "热门小说",
+      "source": "hot",
+      "count": 12
+    },
+    {
+      "id": "latest",
+      "title": "最新上架",
+      "source": "latest",
+      "count": 12
+    }
+  ],
+  "seoConfig": "{\"homeTitle\":\"{siteName} - 免费小说在线阅读_原创小说网站\",\"homeDescription\":\"{siteName}是领先的免费原创小说在线阅读网站，提供玄幻、仙侠、都市、历史、科幻等全品类小说，每日更新，畅享极致阅读体验。\",\"homeKeywords\":\"小说,免费小说,在线阅读,{siteName},玄幻小说,都市小说\",\"categoryTitle\":\"{categoryName}小说大全_最新{categoryName}小说排行榜 - {siteName}\",\"categoryDescription\":\"{siteName}{categoryName}频道为您提供海量精品{categoryName}小说在线阅读，{categoryName}小说每日更新，尽在{siteName}。\",\"bookTitle\":\"{novelTitle}最新章节列表_{author}小说 - {siteName}\",\"bookDescription\":\"{novelTitle}连载于{siteName}，作者{author}，{statusText}。{descShort}\",\"bookKeywords\":\"{novelTitle},{novelTitle}最新章节,{author},{categoryName}小说\",\"tocTitle\":\"{novelTitle}目录_全部章节列表 - {siteName}\",\"tocDescription\":\"{novelTitle}全部章节目录一览，按顺序阅读《{novelTitle}》最新章节，尽在{siteName}。\",\"chapterTitle\":\"{chapterTitle}_《{novelTitle}》第{idx}章 - {siteName}\",\"chapterDescription\":\"《{novelTitle}》{chapterTitle}在线阅读，作者{author}，精彩章节尽在{siteName}。\",\"chapterKeywords\":\"{novelTitle},{chapterTitle},{author}\",\"searchTitle\":\"“{query}”的搜索结果 - {siteName}\",\"searchDescription\":\"在{siteName}搜索“{query}”找到的相关小说列表。\",\"pseoTitle\":\"{keyword}小说推荐_关于{keyword}的小说 - {siteName}\",\"pseoDescription\":\"{siteName}为您精选与“{keyword}”相关的小说合集，包含 {count} 本热门作品，在线免费阅读。\",\"pseoKeywords\":\"{keyword},{keyword}小说,{keyword}推荐\",\"autoFromContent\":true,\"pseo\":{\"sources\":[\"baidu\",\"bing\",\"duckduckgo\"],\"seeds\":[\"科幻末日\",\"无限流副本\"],\"perSeedLimit\":10,\"maxKeywords\":200,\"expand\":false,\"autoGenerate\":true}}",
+  "footerConfig": "{\"text\":\"\",\"extra\":\"\"}"
 }
