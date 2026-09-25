@@ -4,6 +4,9 @@
  * 直接读写主站既有库 db/custom.db（Prisma 建库，表结构见 prisma/schema.prisma）：
  * - WAL + busy_timeout(5s) + foreign_keys(1)：跨进程安全（本服务是唯一业务写入方，
  *   scraper-go 引擎不碰业务库）
+ * - Task 32-b 性能设定：cache_size=-32000(32MB)、mmap_size=256MB、temp_store=MEMORY、
+ *   wal_autocheckpoint=1000（在 WAL/busy_timeout/foreign_keys/synchronous 基础上补齐，
+ *   DSN 级 pragma 对连接池内每条连接生效）
  * - DSN 经 DB_PATH 环境变量可覆盖
  * - helpers：queryOne/queryList/exec/execReturningID + JSON 列读写
  */
@@ -39,8 +42,12 @@ func dbPath() string {
 // getDB 打开共享连接（惰性；进程内单例）
 func getDB() (*sql.DB, error) {
 	gDBOnce.Do(func() {
+		// Task 32-b: 性能 pragma —— cache_size=-32000（32MB 页缓存）、mmap_size=256MB、
+		// temp_store=MEMORY、wal_autocheckpoint=1000（WAL 每 1000 页 checkpoint，
+		// 防长跑采集 WAL 无限膨胀）。其余 busy_timeout/WAL/foreign_keys/synchronous 原样保留
 		dsn := fmt.Sprintf(
-			"file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)",
+			"file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)"+
+				"&_pragma=cache_size(-32000)&_pragma=mmap_size(268435456)&_pragma=temp_store(MEMORY)&_pragma=wal_autocheckpoint(1000)",
 			dbPath(),
 		)
 		db, err := sql.Open("sqlite", dsn)
@@ -65,8 +72,96 @@ func getDB() (*sql.DB, error) {
 		if _, err := db.Exec(siteSiteDDL); err != nil {
 			log.Printf("[db] SiteSite 建表失败（站群功能不可用，默认站点不受影响）: %v", err)
 		}
+		// Task 32-b: Chapter 垂直分表 —— 正文大字段分离到 ChapterContent，
+		// TOC/列表等高频查询不再拖 content blob。建表/加列/存量迁移全部在 once
+		// 回调内用局部 db 直接 Exec（Task 30 P1 死锁教训：严禁 once 外再调 getDB）
+		if _, err := db.Exec(chapterContentDDL); err != nil {
+			log.Printf("[db] ChapterContent 建表失败（正文退化存储于 Chapter.content，COALESCE 读路径兼容）: %v", err)
+		}
+		if err := ensureColumn(db, "ScrapeTask", "storageMode",
+			`ALTER TABLE "ScrapeTask" ADD COLUMN "storageMode" TEXT NOT NULL DEFAULT 'db'`); err != nil {
+			log.Printf("[db] ScrapeTask.storageMode 加列失败（TXT 存储模式不可用，默认 db 不受影响）: %v", err)
+		}
+		// 存量正文迁移（幂等、分批 500 行防长锁；空库秒级完成，存量 3.5 万章首次启动秒级~十秒级）
+		if err := migrateChapterContentSplit(db); err != nil {
+			log.Printf("[db] Chapter 存量正文迁移 ChapterContent 失败（存量正文仍可经 COALESCE 读取）: %v", err)
+		}
 	})
 	return gDB, gDBError
+}
+
+// chapterContentDDL Chapter 垂直分表（Task 32-b）：正文大字段独立表，chapterId 单列主键。
+// 主键设计修正（主线集成审查）：**不用 (novelId,idx) 复合主键**——idx 可变（章节重排序工具
+// 会临时改写为负数再重排；并发入库冲突时序号顺延），以 idx 作键正文会错位/成孤儿；
+// chapterId（Chapter.id 自增主键）终生不变，级联链 Novel→Chapter→ChapterContent 双跳
+// ON DELETE CASCADE 在 SQLite 下逐级触发，章删除/书删除正文自动清理。该表由 Go 侧
+// 运行时幂等建表管理（SiteSite 先例），prisma/schema.prisma 仅作结构对照文档。
+const chapterContentDDL = `CREATE TABLE IF NOT EXISTS "ChapterContent" (
+        "chapterId" INTEGER NOT NULL PRIMARY KEY,
+        "content" TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY ("chapterId") REFERENCES "Chapter"("id") ON DELETE CASCADE
+)`
+
+// ensureColumn 幂等加列助手（Task 32-b）：PRAGMA table_info 检查列不存在则 ALTER TABLE ADD COLUMN。
+// 表不存在（0 行返回）时静默跳过——生产库由 Prisma 建表保证存在；测试环境先 getDB 后建表的
+// 场景由测试自行在建表后调用本函数补列。
+// ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训）。
+func ensureColumn(db *sql.DB, table, column, alterDDL string) error {
+	rows, err := db.Query(`PRAGMA table_info("` + table + `")`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	seen, exists := 0, false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, ctype string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		seen++
+		if name == column {
+			exists = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if seen == 0 || exists { // seen==0 = 表不存在；exists = 列已在
+		return nil
+	}
+	_, err = db.Exec(alterDDL)
+	return err
+}
+
+// migrateChapterContentSplit 存量正文迁移（Task 32-b 垂直分表，幂等）：
+// 把 Chapter.content 非空的行分批（500/批防长锁）INSERT OR IGNORE 进 ChapterContent，
+// 随即清空同键 Chapter.content（分表后 ChapterContent 为正文主存储，Chapter.content
+// 保留列位作兼容回落）。在 getDB once 回调内同步执行：空库秒级完成；存量库首次启动
+// 多花几秒可接受。终止条件=插入与清零双零（上一轮已收敛）；重复调用零操作。
+func migrateChapterContentSplit(db *sql.DB) error {
+	for i := 0; i < 1_000_000; i++ { // 硬上限防异常死循环（35 万章也只需 ~700 轮）
+		res, err := db.Exec(`INSERT OR IGNORE INTO "ChapterContent" ("chapterId","content")
+                        SELECT "id","content" FROM "Chapter" WHERE length("content") > 0 ORDER BY "id" LIMIT 500`)
+		if err != nil {
+			return err
+		}
+		inserted, _ := res.RowsAffected()
+		// 清零条件=该 (novelId,idx) 已有 ChapterContent 行：本轮插入的行即刻清零，
+		// 此前已迁移/已由新写路径落分表的遗留行同样收敛（幂等关键）
+		res2, err := db.Exec(`UPDATE "Chapter" SET "content" = ''
+                        WHERE length("content") > 0 AND EXISTS (
+                                SELECT 1 FROM "ChapterContent" cc WHERE cc."chapterId" = "Chapter"."id")`)
+		if err != nil {
+			return err
+		}
+		cleared, _ := res2.RowsAffected()
+		if inserted == 0 && cleared == 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("迁移循环超出硬上限（异常数据形态）")
 }
 
 // siteSiteDDL 站群站点档案表（Task 30-a「站群模式」：一库多站按 Host 分站点渲染）。

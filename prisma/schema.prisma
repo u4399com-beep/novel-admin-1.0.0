@@ -56,12 +56,24 @@ model Chapter {
   novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
   idx       Int
   title     String
-  content   String
+  // Task 32-b 垂直分表：正文主存储迁移至 ChapterContent（chapterId 主键，Go 侧运行时建表）。
+  // 本列保留作存量兼容回落（COALESCE 读路径），新写恒为空串。TOC/列表/管理查询不再拖正文 blob
+  content   String   @default("")
   wordCount Int      @default(0)
   createdAt DateTime @default(now())
 
   @@unique([novelId, idx])
   @@index([novelId])
+}
+
+// Chapter 正文垂直分表（Task 32-b，Go 侧运行时幂等建表管理，db:push 不感知；结构对照文档）
+// 语义：chapterId = Chapter.id（终生不变——idx 会因重排序/并发顺延改变，不可作正文键）；
+// 级联链 Novel→Chapter→ChapterContent 双跳 ON DELETE CASCADE，章/书删除正文自动清理。
+// 读路径统一 loadChapterContent 三级回落：ChapterContent → Chapter.content 存量 → TXT 分章文件
+// （storageMode=txt 的书正文落盘 /home/z/my-project/download/novels/{novelId}/{idx}_{title}.txt）
+model ChapterContent {
+  chapterId Int    @id
+  content   String @default("")
 }
 
 // 站点设置（单例行 id=1，默认站点档案；站群命中 SiteSite 后按站点覆盖渲染）
@@ -126,6 +138,9 @@ model ScrapeTask {
   ruleId    Int?
   rule      ScrapeRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   mode      String      @default("single") // single=单本(书页URL) | list=范围(列表页URL批量)
+  // Task 32-b TXT 文件存储模式：db=仅入库（ChapterContent 分表）| txt=仅分章 TXT 文件
+  //（download/novels/{novelId}/ 一章一文件，读路径三级回落兜底）| both=双写
+  storageMode String    @default("db")
   targetUrl String
   pages     Int         @default(1) // list 模式抓取列表页数 1-999（用户指令取消 20 页限制）
   status    String      @default("pending") // pending|running|success|partial|failed|canceled

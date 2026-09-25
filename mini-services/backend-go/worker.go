@@ -395,6 +395,9 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 	// 取消/暂停 + 快速终止（连续多本全败且 0 成功 → 判定站点不可达，中止防空转）；
 	// Task 26-d 增加无条件连败熔断（PHASE1_BOOK_FAIL_BREAKER）：站点中途封禁时旧版
 	// （okBooks>0 则永不提前停）会把余下书目全部烧成失败——连败达阈值即中止。
+	// Task 32-b: convertT2S 规则开关（auto|on|off）——书字段/骨架章题入库前繁转简
+	t2sMode := t2sModeFromRule(rule)
+
 	shouldStop := throttledCheck(func() bool {
 		if stopState(run.TaskID) != "" {
 			return true
@@ -444,6 +447,13 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 			}
 		}
 		refs := normalizeRefs(allRefs)
+		// Task 32-b: 骨架章节标题入库前繁转简（off 透传；auto 短文本按 ≥2 繁体特征字判定）。
+		// 转换在按标题去重/入库之前 → 简繁同题去重合一，续传 fillMap 标题亦为简体
+		if t2sMode != "off" {
+			for i := range refs {
+				refs[i].Title = t2sField(t2sMode, refs[i].Title)
+			}
+		}
 		// refs 为空：仍入库书籍（原语义「书籍已入库（未提取到章节链接）」），不计失败
 
 		// 源站分类名归并失败时用书名+简介 LLM 推断（防「未分类」堆积）
@@ -459,7 +469,8 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 			return
 		}
 
-		up := upsertBook(run, book, categoryID, rule.Proxy)
+		// Task 32-b: item.Author 作列表页条目作者兜底（书页作者占位/缺失时智能填充第一优先）
+		up := upsertBook(run, book, categoryID, rule.Proxy, item.Author, t2sMode)
 		if !up.OK {
 			mu.Lock()
 			setFirstError(up.Message)
@@ -536,7 +547,12 @@ type Phase2Outcome struct {
 // 含历史中断遗留的同名重复行），书内有界并发抓正文并 update 填充；处理完一本书即从
 // fillMap 释放其 rows（内存渐减）。章节抓取失败保留骨架（wordCount=0），重发任务自动续传。
 // onProgress(doneSoFar) 由调用方节流落库进度；返回 false 表示任务记录已删除，立即停止。
-func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress func(doneSoFar int) bool) Phase2Outcome {
+// Task 32-b: storageMode=db|txt|both（TXT 文件存储模式，任务参数；正文落盘语义见
+// persistChapterFill）。续传语义不变：填充判定恒依 wordCount>0——txt 模式下已写文件的
+// 章节 wordCount 照记（content 留空），不会被判为未填充重复抓取。
+func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode string, onProgress func(doneSoFar int) bool) Phase2Outcome {
+	// Task 32-b: convertT2S 规则开关（正文/章题入库前繁转简）
+	t2sMode := t2sModeFromRule(rule)
 	var filledCtr, failedCtr atomic.Int64
 	var warnLogged atomic.Int64
 	// Task 26-d 连败熔断：连续失败计数（成功归零），达阈值置位；书间/批间检查后停手。
@@ -660,13 +676,16 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 			for i, r := range slice {
 				titles[i] = r.Title
 			}
-			// 同名行可能有多条（历史遗留重复）：一起拉出来填同一内容，后续由目录体检工具去重
+			// 同名行可能有多条（历史遗留重复）：一起拉出来填同一内容，后续由目录体检工具去重。
+			// Task 32-b: dbRow 增 idx（TXT 分章文件名需要；ChapterContent 以 chapterId=id 为主键，
+			// idx 重排/顺延不致正文错位）
 			type dbRow struct {
 				id    int
+				idx   int
 				title string
 			}
 			var dbRows []dbRow
-			q := "SELECT id, title FROM Chapter WHERE novelId = ? AND wordCount = 0 AND title IN (" +
+			q := "SELECT id, idx, title FROM Chapter WHERE novelId = ? AND wordCount = 0 AND title IN (" +
 				sqlPlaceholders(len(titles)) + ")"
 			args := make([]any, 0, len(titles)+1)
 			args = append(args, novelID)
@@ -675,7 +694,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 			}
 			_ = queryList(q, func(rows *sql.Rows) error { // 失败 → 空数组（与 TS catch 一致）
 				var r dbRow
-				if err := rows.Scan(&r.id, &r.title); err != nil {
+				if err := rows.Scan(&r.id, &r.idx, &r.title); err != nil {
 					return err
 				}
 				dbRows = append(dbRows, r)
@@ -739,7 +758,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 					warnLogged.Add(1)
 					run.LogWarnings(res.Warnings)
 				}
-				wordCount := countNonSpaceRunes(content)
+				// Task 32-b: 正文/章题繁转简（convertT2S 规则开关；off 零开销透传）
+				content = t2sField(t2sMode, content)
 				title := trimSpaceStr(row.title)
 				if title == "" {
 					title = trimSpaceStr(res.Data.Title)
@@ -747,10 +767,10 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, onProgress 
 				if title == "" {
 					title = "第" + itoa(row.id) + "章"
 				}
-				title = truncateRunes(title, chapterTitleMax)
-				res2, uerr := execRetry("UPDATE Chapter SET title = ?, content = ?, wordCount = ? WHERE id = ?",
-					title, content, wordCount, row.id)
-				if uerr == nil && rowCountOf(res2) > 0 {
+				title = truncateRunes(t2sField(t2sMode, title), chapterTitleMax)
+				// Task 32-b: 持久化抽 persistChapterFill（垂直分表 ChapterContent +
+				// TXT 存储模式统一写序，见函数注释）；false=未填充（保留骨架续传）
+				if persistChapterFill(run, novelID, row.id, row.idx, title, content, storageMode) {
 					filledCtr.Add(1)
 					bookFilled.Add(1)
 					consecFails.Store(0) // 成功即复位连败计数
@@ -821,6 +841,116 @@ func recalcWordCountsFor(novelIDs []int) {
 			_, _ = execRetry("UPDATE Novel SET wordCount = ?, updatedAt = ? WHERE id = ?", int(s.total), nowMillis(), s.novelID)
 		}
 	}
+}
+
+// ==================== 正文持久化与简介回填（Task 32-b） ====================
+
+// persistChapterFill phase2 单章持久化（垂直分表 + TXT 存储模式统一写序）：
+//  1. ChapterContent upsert（db/both 模式；cc 写败 → 返回 false，Chapter.wordCount 保持 0，
+//     重发任务自动重试——绝不出现「已采但正文丢失」）；键=chapterId（chRowID=Chapter.id，
+//     idx 重排/顺延不致正文错位，见 db.go chapterContentDDL 注释）；
+//  2. TXT 分章文件（txt/both 模式；txt 模式写败同样视为未填充续传重试，both 模式 DB 已有
+//     正文，文件失败仅记日志；按指令「写文件失败不影响任务状态机」，只计章节失败不判任务失败）；
+//  3. Chapter 行 title/wordCount 落库（content 恒空串，正文一律在分表/文件）——本步成功
+//     才算已填充（resume 依 wordCount>0 判已采，txt 模式 content 为空不参与判定）。
+//
+// storageMode 语义：db=仅分表；txt=仅文件（分表不写，读路径靠 readChapterFromTxt 兜底）；
+// both=分表+文件双写。返回 true=已填充。
+func persistChapterFill(run *Run, novelID, chRowID, chIdx int, title, content, storageMode string) bool {
+	storeContent := content
+	if storageMode == "txt" {
+		storeContent = "" // txt 模式：正文只落文件；wordCount 照记（resume 判据 wordCount>0 不受影响）
+	}
+	if storeContent != "" {
+		if _, err := execRetry(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`,
+			chRowID, storeContent); err != nil {
+			return false
+		}
+	}
+	if storageMode == "txt" || storageMode == "both" {
+		if err := writeChapterTxt(novelID, chIdx, title, content); err != nil {
+			run.Log(fmt.Sprintf("TXT 写入失败(%s): %s", truncateRunes(chapterTxtPath(novelID, chIdx, title), 80), truncateRunes(err.Error(), 100)))
+			if storageMode == "txt" {
+				return false // 文件即唯一存储：按未填充处理（骨架保留续传），不影响任务状态机
+			}
+		}
+	}
+	res, err := execRetry("UPDATE Chapter SET title = ?, wordCount = ? WHERE id = ?", title, countNonSpaceRunes(content), chRowID)
+	return err == nil && rowCountOf(res) > 0
+}
+
+// backfillDescriptions 简介缺失回填（Task 32-b，finalize 前批量执行，限 10 本/任务）：
+// description 为空的书取第一章正文首 200 字清洗截断（干净截断，无前缀）；无正文可取走
+// LLM 生成（5s 超时+静默降级，llm.go），仍未果跳过。条件更新（description=”）防与编辑竞态。
+func backfillDescriptions(novelIDs []int) {
+	if len(novelIDs) == 0 {
+		return
+	}
+	args := make([]any, 0, len(novelIDs))
+	for _, id := range novelIDs {
+		args = append(args, id)
+	}
+	var emptyCount int
+	if err := queryOne(`SELECT COUNT(*) FROM "Novel" WHERE "description" = '' AND "id" IN (`+sqlPlaceholders(len(novelIDs))+`)`,
+		[]any{&emptyCount}, args...); err != nil || emptyCount == 0 {
+		return // 预检零成本：绝大多数任务无空简介书
+	}
+	fixed := 0
+	for _, nid := range novelIDs {
+		if fixed >= 10 {
+			break
+		}
+		var title, author, desc string
+		if err := queryOne(`SELECT "title", "author", "description" FROM "Novel" WHERE "id" = ?`,
+			[]any{&title, &author, &desc}, nid); err != nil || trimSpaceStr(desc) != "" {
+			continue
+		}
+		generated := firstChapterPreview(nid)
+		if trimSpaceStr(generated) == "" {
+			generated = trimSpaceStr(llmGenerateDescription(title, author))
+		}
+		if trimSpaceStr(generated) == "" {
+			continue
+		}
+		res, err := execRetry(`UPDATE "Novel" SET "description" = ?, "updatedAt" = ? WHERE "id" = ? AND "description" = ''`,
+			truncateRunes(trimSpaceStr(generated), novelDescriptionMax), nowMillis(), nid)
+		if err == nil && rowCountOf(res) > 0 {
+			fixed++
+		}
+	}
+}
+
+// firstChapterPreview 首章正文首 200 字（逐行清洗：TrimSpace 去空行后以单空格拼接、截断）。
+// 正文读取 COALESCE 分表兼容（chapterId 键）+ readChapterFromTxt 兜底（txt 存储模式）。
+func firstChapterPreview(novelID int) string {
+	var idx int
+	var content string
+	err := queryOne(`SELECT c."idx", COALESCE(cc."content", c."content") AS "content"
+                FROM "Chapter" c LEFT JOIN "ChapterContent" cc ON cc."chapterId" = c."id"
+                WHERE c."novelId" = ? ORDER BY c."idx" ASC LIMIT 1`, []any{&idx, &content}, novelID)
+	if err != nil {
+		return ""
+	}
+	if trimSpaceStr(content) == "" {
+		if body, terr := readChapterFromTxt(novelID, idx); terr == nil {
+			content = body
+		}
+	}
+	var b strings.Builder
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(line)
+		if len([]rune(b.String())) >= 200 {
+			break
+		}
+	}
+	return truncateRunes(b.String(), 200)
 }
 
 // ==================== Phase 0：列表页条目收集 ====================
@@ -895,8 +1025,9 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
 
 // ==================== 两种模式 ====================
 
-// runList list 范围模式：Phase 0 列表 → Phase 1 骨架 → Phase 2 填充
-func runList(run *Run, task TaskRecord, rule LoadedRule) {
+// runList list 范围模式：Phase 0 列表 → Phase 1 骨架 → Phase 2 填充。
+// Task 32-b: storageMode 由 runTask 从任务行读出透传（db|txt|both）
+func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 	// ---- Phase 0：列表页 ----
 	collected, currentListURL := collectListItems(run, task, rule)
 	if reason := stopState(run.TaskID); reason != "" {
@@ -953,7 +1084,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 	run.Log(fmt.Sprintf("━━ 阶段 2/2 正文填充（并发 %d，待填充 %d 章）", CHAPTER_CONCURRENCY, p1.FillTotal))
 	phase2Breather(run)
 	var lastFlush int64
-	p2 := phase2Fill(run, rule, p1.FillMap, func(doneSoFar int) bool {
+	p2 := phase2Fill(run, rule, p1.FillMap, storageMode, func(doneSoFar int) bool {
 		now := nowMillis()
 		if now-lastFlush < int64(FLUSH_INTERVAL_MS) {
 			return true
@@ -988,6 +1119,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 			fmt.Sprintf("已暂停（正文填充 %d/%d 章，进度保留，可恢复继续）", p2.Filled, p1.FillTotal))
 		return
 	}
+	backfillDescriptions(p1.NovelIDs) // Task 32-b: finalize 前空简介批量回填（限 10 本/任务）
 	if p2.Filled == 0 && p1.FillTotal == 0 {
 		// 可续跑语义：重发已完成任务时骨架全部已有正文（FillTotal=0），Phase 2 无事可做
 		// 应报成功而非「正文采集全部失败」（旧版误报 failed 会诱导用户无意义重跑；
@@ -1006,8 +1138,9 @@ func runList(run *Run, task TaskRecord, rule LoadedRule) {
 	finalize(run, "success", fmt.Sprintf("范围采集完成：%d 本书，正文 %d 章", p1.OKBooks, p2.Filled))
 }
 
-// runSingle single 单本模式：复用两阶段管线，一个条目 → 骨架 → 填充；done/total 主口径=章节
-func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
+// runSingle single 单本模式：复用两阶段管线，一个条目 → 骨架 → 填充；done/total 主口径=章节。
+// Task 32-b: storageMode 透传同 runList
+func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 	items := []ListItem{{Title: "", URL: task.TargetURL}}
 	run.Log(fmt.Sprintf("━━ 阶段 1/2 书目骨架（并发 %d）", BOOK_CONCURRENCY))
 	p1 := phase1Skeletons(run, rule, items, "")
@@ -1040,7 +1173,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 	run.Log(fmt.Sprintf("━━ 阶段 2/2 正文填充（并发 %d，待填充 %d 章）", CHAPTER_CONCURRENCY, p1.FillTotal))
 	phase2Breather(run)
 	var lastFlush int64
-	p2 := phase2Fill(run, rule, p1.FillMap, func(doneSoFar int) bool {
+	p2 := phase2Fill(run, rule, p1.FillMap, storageMode, func(doneSoFar int) bool {
 		now := nowMillis()
 		if now-lastFlush < int64(FLUSH_INTERVAL_MS) {
 			return true
@@ -1074,6 +1207,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule) {
 		finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
 		return
 	}
+	backfillDescriptions(p1.NovelIDs) // Task 32-b: finalize 前空简介批量回填（限 10 本/任务）
 	if p2.Filled == 0 && p1.FillTotal == 0 {
 		// 同 runList：骨架已全部有正文的可续跑重发报成功（旧版误报 failed）
 		finalize(run, "success", fmt.Sprintf("书籍已入库且正文齐全（%d 章，续跑无待填充章节）", p1.SkippedFilled))
@@ -1165,12 +1299,19 @@ func runTask(taskID int) {
 	if err != nil || rowCountOf(res) == 0 {
 		return
 	}
-	var mode, targetURL string
+	// Task 32-b: storageMode（TXT 文件存储模式）随任务参数读出（db.go once 已 ensureColumn，
+	// 旧任务行/异常值统一归一 db）
+	var mode, targetURL, storageMode string
 	var pages int
 	var ruleID sql.NullInt64
-	if err := queryOne("SELECT mode, targetUrl, pages, ruleId FROM ScrapeTask WHERE id = ?",
-		[]any{&mode, &targetURL, &pages, &ruleID}, taskID); err != nil {
+	if err := queryOne("SELECT mode, targetUrl, pages, ruleId, storageMode FROM ScrapeTask WHERE id = ?",
+		[]any{&mode, &targetURL, &pages, &ruleID, &storageMode}, taskID); err != nil {
 		return
+	}
+	switch storageMode {
+	case "txt", "both":
+	default:
+		storageMode = "db"
 	}
 	task := TaskRecord{ID: taskID, Mode: mode, TargetURL: targetURL, Pages: pages}
 	if ruleID.Valid {
@@ -1197,10 +1338,14 @@ func runTask(taskID int) {
 		run.Log("未使用规则，依赖引擎内置启发式提取")
 	}
 	run.Flush(nil)
+	if storageMode != "db" {
+		run.Log(fmt.Sprintf("存储模式: %s（正文%s）", storageMode,
+			map[string]string{"txt": "仅落 TXT 分章文件", "both": "入库+TXT 双写"}[storageMode]))
+	}
 	if task.Mode == "list" {
-		runList(run, task, rule)
+		runList(run, task, rule, storageMode)
 	} else {
-		runSingle(run, task, rule)
+		runSingle(run, task, rule, storageMode)
 	}
 }
 

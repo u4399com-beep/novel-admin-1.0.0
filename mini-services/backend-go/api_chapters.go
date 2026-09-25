@@ -90,9 +90,11 @@ func handleChapterCreate(w http.ResponseWriter, r *http.Request, _ map[string]st
 	wc := wordCountJS(content)
 
 	createChapter := func(idxVal int64) (int64, error) {
+		// Task 32-b: 垂直分表 —— Chapter 行 content 恒空串，非空正文入库后写 ChapterContent
+		//（chapterId 键；写在拿到 chapterID 之后统一进行，idx 顺延重试不致正文错位）
 		return execReturningID(
-			`INSERT INTO "Chapter" ("novelId","idx","title","content","wordCount","createdAt") VALUES (?,?,?,?,?,?)`,
-			novelId, idxVal, chTitle, content, wc, nowMillis(),
+			`INSERT INTO "Chapter" ("novelId","idx","title","content","wordCount","createdAt") VALUES (?,?,?,'',?,?)`,
+			novelId, idxVal, chTitle, wc, nowMillis(),
 		)
 	}
 
@@ -117,6 +119,14 @@ func handleChapterCreate(w http.ResponseWriter, r *http.Request, _ map[string]st
 		idx = retryIdx.Int64 + 1
 		chapterID, err = createChapter(idx)
 		if err != nil {
+			failJSON(w, "创建章节失败", firstLineErr(err), 500)
+			return
+		}
+	}
+	// Task 32-b: 非空正文写分表（chapterId 键）；写败删刚建行防僵尸，不静默丢正文
+	if content != "" {
+		if _, err := exec(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`, chapterID, content); err != nil {
+			_, _ = exec(`DELETE FROM "Chapter" WHERE "id" = ?`, chapterID)
 			failJSON(w, "创建章节失败", firstLineErr(err), 500)
 			return
 		}
@@ -158,6 +168,8 @@ func handleChapterDetail(w http.ResponseWriter, r *http.Request, ps map[string]s
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
 	}
+	// Task 32-b: 正文三级回落（ChapterContent 分表 → Chapter.content 存量 → TXT 文件）
+	content = loadChapterContent(id, novelId, idx, content, wordCount)
 	var prevID, nextID sql.NullInt64
 	_ = queryOne(`SELECT "id" FROM "Chapter" WHERE "novelId" = ? AND "idx" < ? ORDER BY "idx" DESC LIMIT 1`, []any{&prevID}, novelId, idx)
 	_ = queryOne(`SELECT "id" FROM "Chapter" WHERE "novelId" = ? AND "idx" > ? ORDER BY "idx" ASC LIMIT 1`, []any{&nextID}, novelId, idx)
@@ -200,8 +212,9 @@ func handleChapterUpdate(w http.ResponseWriter, r *http.Request, ps map[string]s
 	}
 	body := bodyMap(v)
 
-	var novelId int64
-	if err := queryOne(`SELECT "novelId" FROM "Chapter" WHERE "id" = ?`, []any{&novelId}, cid); err != nil {
+	var novelId, chIdx int64
+	var curTitle string
+	if err := queryOne(`SELECT "novelId", "idx", "title" FROM "Chapter" WHERE "id" = ?`, []any{&novelId, &chIdx, &curTitle}, cid); err != nil {
 		// TS update 抛错（含不存在）一律 404
 		writeJSON(w, 404, map[string]string{"error": "章节不存在或更新失败"})
 		return
@@ -209,20 +222,32 @@ func handleChapterUpdate(w http.ResponseWriter, r *http.Request, ps map[string]s
 
 	sets := []string{}
 	args := []any{}
+	finalTitle := curTitle // Task 32-b: TXT 分章文件名含标题，编辑后同步重写需最终标题
 	if s, ok2 := body["title"].(string); ok2 {
 		if t := trimSpaceStr(s); t != "" {
+			finalTitle = truncateRunes(t, 120)
 			sets = append(sets, `"title" = ?`)
-			args = append(args, truncateRunes(t, 120))
+			args = append(args, finalTitle)
 		}
 	}
 	if s, ok2 := body["content"].(string); ok2 {
-		sets = append(sets, `"content" = ?`, `"wordCount" = ?`)
-		args = append(args, s, wordCountJS(s))
+		// Task 32-b: 垂直分表 —— 编辑正文写 ChapterContent（chapterId 键），Chapter.content
+		// 列位保留恒空；保存成功后同步重写该章 TXT 分章文件（txt/both 模式书，旧题名文件顺带清理）
+		sets = append(sets, `"wordCount" = ?`)
+		args = append(args, wordCountJS(s))
+		defer func() { syncChapterTxt(int(novelId), int(chIdx), finalTitle, s) }()
 	}
 	if len(sets) > 0 {
 		if _, err := exec(`UPDATE "Chapter" SET `+strings.Join(sets, ", ")+` WHERE "id" = ?`, append(args, cid)...); err != nil {
 			writeJSON(w, 404, map[string]string{"error": "章节不存在或更新失败"})
 			return
+		}
+		// Task 32-b: content 编辑同步分表（chapterId 键）
+		if s, ok2 := body["content"].(string); ok2 {
+			if _, err := exec(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`, cid, s); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "章节不存在或更新失败"})
+				return
+			}
 		}
 	}
 	// 内容变化同步书籍字数合计并触碰 updatedAt（对齐 TS 语义）
@@ -241,8 +266,8 @@ func handleChapterDelete(w http.ResponseWriter, r *http.Request, ps map[string]s
 	if !ok {
 		return
 	}
-	var novelId int64
-	if err := queryOne(`SELECT "novelId" FROM "Chapter" WHERE "id" = ?`, []any{&novelId}, cid); err != nil {
+	var novelId, chIdx int64
+	if err := queryOne(`SELECT "novelId", "idx" FROM "Chapter" WHERE "id" = ?`, []any{&novelId, &chIdx}, cid); err != nil {
 		writeJSON(w, 404, map[string]string{"error": "章节不存在"})
 		return
 	}
@@ -255,6 +280,8 @@ func handleChapterDelete(w http.ResponseWriter, r *http.Request, ps map[string]s
 		writeJSON(w, 404, map[string]string{"error": "章节不存在"})
 		return
 	}
+	// Task 32-b: ChapterContent 经 chapterId FK 级联自动清理；TXT 分章文件需手动同步删除
+	removeChapterTxt(int(novelId), int(chIdx))
 	// 与 PUT/POST 对齐：内容变化同时触碰 updatedAt，让「最近更新」排序如实反映删章
 	// TS 的 agg/novel.update 也在同一 try 内，任何失败 → 404「章节不存在」
 	if err := resumNovelWordCount(novelId, true); err != nil {
@@ -292,7 +319,10 @@ var (
 	cleanAllRunning bool
 )
 
-// scanChapters 遍历全部章节做清洗比对；write=true 落库（章节 content/wordCount + 书籍字数合计）
+// scanChapters 遍历全部章节做清洗比对；write=true 落库（章节 content/wordCount + 书籍字数合计）。
+// Task 32-b: 正文经三级回落读取（分表→存量列→TXT），写回统一落 ChapterContent（chapterId 键）
+// 并同步 Chapter.wordCount；纯 txt 模式书（分表/存量列均空）只读不写（txt 文件重写由
+// syncChapterTxt 场景覆盖，批量清洗不碰文件保持幂等简单）。
 func scanChapters(write bool) (checked, changed, novels int, err error) {
 	cursor := int64(0)
 	touchedNovels := map[int64]bool{}
@@ -300,13 +330,15 @@ func scanChapters(write bool) (checked, changed, novels int, err error) {
 		type row struct {
 			id      int64
 			novelId int64
+			idx     int64
 			content string
+			wc      int64
 		}
 		batch := make([]row, 0, cleanAllBatchSize)
-		err := queryList(`SELECT "id", "novelId", "content" FROM "Chapter" WHERE "id" > ? ORDER BY "id" ASC LIMIT ?`,
+		err := queryList(`SELECT "id", "novelId", "idx", "content", "wordCount" FROM "Chapter" WHERE "id" > ? ORDER BY "id" ASC LIMIT ?`,
 			func(rows *sql.Rows) error {
 				var r row
-				if err := rows.Scan(&r.id, &r.novelId, &r.content); err != nil {
+				if err := rows.Scan(&r.id, &r.novelId, &r.idx, &r.content, &r.wc); err != nil {
 					return err
 				}
 				batch = append(batch, r)
@@ -321,13 +353,20 @@ func scanChapters(write bool) (checked, changed, novels int, err error) {
 		for _, ch := range batch {
 			cursor = ch.id
 			checked++
-			res := cleanChapterContent(ch.content)
-			if res.Text == ch.content {
+			content := loadChapterContent(ch.id, ch.novelId, ch.idx, ch.content, ch.wc)
+			if content == "" {
+				continue // 空骨架/纯 txt 空读不参与清洗
+			}
+			res := cleanChapterContent(content)
+			if res.Text == content {
 				continue // 无变化不写库
 			}
 			if write {
 				// 更新失败（瞬时锁等）不计入 cleaned，避免虚报；下轮 dryRun 可复查
-				if _, err := exec(`UPDATE "Chapter" SET "content" = ?, "wordCount" = ? WHERE "id" = ?`, res.Text, wordCountJS(res.Text), ch.id); err != nil {
+				if _, err := exec(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`, ch.id, res.Text); err != nil {
+					continue
+				}
+				if _, err := exec(`UPDATE "Chapter" SET "wordCount" = ? WHERE "id" = ?`, wordCountJS(res.Text), ch.id); err != nil {
 					continue
 				}
 			}
