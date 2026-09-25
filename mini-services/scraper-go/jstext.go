@@ -8,7 +8,6 @@ package main
 import (
 	"regexp"
 	"strings"
-	"unicode"
 )
 
 // reJSWhitespace 等价 JS /\s+/（含 Unicode 空白全集）
@@ -66,4 +65,3 @@ func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
 
-var _ = unicode.IsSpace

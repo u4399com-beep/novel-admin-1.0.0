@@ -8,6 +8,7 @@
 package main
 
 import (
+	"unicode"
 	"regexp"
 	"strconv"
 	"strings"
@@ -63,15 +64,22 @@ func decodeEntityOne(raw string) string {
 	case "&nbsp;":
 		return " "
 	}
+	decodeNumEntity := func(n int64) string {
+		r := rune(n)
+		if r == 0 || unicode.IsControl(r) { // Task 34 (P3-23): NUL/控制字符不进正文（旧版 string(rune(0)) 直落存储）
+			return raw
+		}
+		return string(r)
+	}
 	if strings.HasPrefix(raw, "&#x") || strings.HasPrefix(raw, "&#X") {
 		if n, err := strconv.ParseInt(raw[3:len(raw)-1], 16, 32); err == nil {
-			return string(rune(n))
+			return decodeNumEntity(n)
 		}
 		return raw
 	}
 	if strings.HasPrefix(raw, "&#") {
 		if n, err := strconv.Atoi(raw[2 : len(raw)-1]); err == nil {
-			return string(rune(n))
+			return decodeNumEntity(int64(n))
 		}
 	}
 	return raw

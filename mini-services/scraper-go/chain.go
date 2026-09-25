@@ -9,7 +9,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net/url"
 	"strconv"
 	"strings"
@@ -288,9 +287,8 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 			if remaining-500 < effTimeout {
 				effTimeout = remaining - 500
 			}
-			if effTimeout < 1000 {
-				effTimeout = 1000
-			}
+			// Task 34 (P3-24): 旧版 effTimeout<1000 兜底是死分支——入口已保证 remaining≥1500，
+			// remaining-500≥1000，钳制永不触发。删除。
 			s0 := nowMs()
 			// 硬时间闸：任何策略都不得挂死整条链（链剩余预算 + 2.5s 余量）。
 			// Task 27-c（25-a 遗留 c 收紧）：硬闸 context 传入策略，超时 cancel 后
@@ -556,4 +554,3 @@ func containsStr(arr []string, v string) bool {
 	return false
 }
 
-var _ = rand.Intn

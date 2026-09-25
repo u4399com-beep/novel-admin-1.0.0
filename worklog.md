@@ -1555,3 +1555,32 @@ Work Log:
 Stage Summary:
 - 部署期实战闭环：3 缺口修复全落地并实证（尤其 ensureEngine 自愈竞态——此前多次「引擎失联」事故的可能根因）
 - 任务面：6 任务 running、138 书、153.8 万字基线；自动恢复/车道记忆/瞬态 paused 三层新机制待长跑观察
+
+---
+Task ID: 34
+Agent: Z.ai Code (main)
+Task: 用户最新 4 点指令——①核查 15 条规则分类/封面图/作者字段获取完整性 ②采集+反反爬增强+逐行深度抓 bug 全部修复 ③清理整合精简代码 ④推送 git
+
+Work Log:
+- 规则字段实测审计（新增 python 脚本逐站走 /api/test）：11/14 站实采通过——书名/作者/封面/分类/状态五字段全部正确提取（含 ixdzs8 chapterListApi 8109 章、23qb tag-link、ggd66 og:novel 全套）；aijjxs/ddyueshu 熔断冷却（稍后自动恢复），huangjinwu 站点整体不可达（全策略 timeout，熔断机制正常止损）；pilishuwu 硬反爬维持停用
+- 「选择器损坏」假案侦破：排查中连续出现 `[h` 片段消失假象（DB/seed/内存值多处"损坏"），经 hexdump+布尔验证推翻——本沙箱 Bash 工具输出显示层会吞 `[h` 序列，197 个规则键值全量比对零损坏（mismatched=0），seed.json 与 DB 均完好；教训：敏感字符验证一律用布尔值/文件中转
+- seed.go：新增 repairRuleCorruption/repairCorruptJSON 防御性自愈（db 值==seed 值删"[h"时回写，误伤面为零；幂等零副作用）+ seedIfEmpty 接线（表非空也执行）
+- api_noveltools.go：smart-fill 毒丸堵塞修复（固定 ORDER BY id ASC → RANDOM() 抽样，修复不动的书不再霸占候选队首饿死后续）；report 新增 gradientCover 封面缺失维度（GLOB g1-g12，实测 36 本）
+- worker.go：Phase 2 软起步（新任务无降档记忆时起步 4 车道而非 12 全速，连续 24 章成功逐档回开，SCRAPE_LANE_SOFT_START 可调）；失败形态统计摘要（限流/空壳×N、熔断×N、超时×N、其他×N 进任务日志，补 6 条采样之外的全貌）；laneRestoreEvery 提为包级常量；错字 兑底→兜底
+- scraper-go 深度审查（子代理逐行 22 文件+20 探针实测+race 测试）：0 P1 / 1 P2 / 25 P3，本轮修复 16 项：
+  - P2-1 cookies.go：Max-Age/Expires 语义修正——显式过期属性直接定 TTL（钳 7 天上界可长于 30min），WAF 通关 cookie 不再半小时丢会话反复过挑战；测试断言同步更新
+  - P3-3 gotStrategyRun 终态 3xx lastHTTPStatus 补写（对齐 curl 系 Task 32-d 口径）；P3-11 got 系画像头 variant 循环外生成一次（UA 跨跳不再跳变）；P3-2 fetch 系 timeout-budget 子尝试不再从 last 快照丢失
+  - P3-4 meta-refresh 0 秒跳板检测改属性顺序无关（content 在前的老式跳板不再漏杀）；P3-5 实体正则并入数字实体（零宽空格实体堆叠不再顶过近空闸）
+  - P3-9 hostOf 统一小写（限速槽/cookie 桶/健康度不再被大小写变体稀释）；P3-16 JS 重定向首跳判定改 hops>0（重定向回原 URL 不再漏排队）；P3-6 assertHostPublic/isPrivateHost 剥净双尾点（127.0.0.1.. 不再逃逸文本层）
+  - P3-10 clampTimeout 先 TrimSpace（" 3000" 不再静默变 20s）；P3-14 readAllCapped 非 EOF 读错误不再吞（robots 残缺文本不再按完整数据解析）；P3-20 备选正文 80 字闸改 runeLen；P3-23 数字实体解码拒绝 NUL/控制字符
+  - 精简：P3-1 httpguard 重复 challenge-loop 死检查、P3-7 ssrf limit 死代码、P3-24 chain effTimeout 死分支、P3-12 fetch-curl 描述对齐实现、9 处 var _ 占位死代码对（含无用 import）全清
+- 未修项（有意）：P3-8 IPv6 6to4/Teredo（已知边界）、P3-13 32 位平台 itoa（amd64 部署）、P3-15 误导告警（触发面极窄）、P3-17 双重限速排队（TS 语义对齐，有意为之）、P3-18 socks4 降级直连（已有警告）、P3-19/21/22/25（低危/运维已知）
+- 编译验证：backend-go + scraper-go go build/go vet 零输出；两服务 go test -race 全绿；热替换部署（kill→自愈拉起→健康检查 OK）
+- 全部 6 任务恢复运行：aijjxs 熔断恢复后列表 62 条成功；task5 手动 resume；smart-fill report 新字段 gradientCover=36 正常返回
+
+Stage Summary:
+- 15 条规则三字段核查结论：11 站实测全绿（作者/封面/分类/状态提取正确），2 站熔断自恢复中，1 站不可达熔断保护中，1 站停用——规则资产健康，无需修选择器
+- 「损坏」假案澄清：历史 Task 28-a/33 的选择器从未损坏（显示层吞字假象），197 键全比对一致；repairRuleCorruption 保留为防御层
+- 智能填充链增强：四步修复 API 毒丸解锁 + 封面缺失可见化 + Phase 2 软起步防首波烧穿 + 失败形态全貌统计
+- 反反爬增强实质项：WAF cookie 会话延长（反复过挑战根因）、UA 跨跳一致、挑战页检测双漏杀堵住、限速合规面两个豁免洞封堵
+- 待下一会话：Task 30 七项挂账、Task 31 其余 4 项（友链内链轮 pSEO/繁简/TXT/分表已在 32 落地，余项见前文）、git 推送待本任务收尾执行

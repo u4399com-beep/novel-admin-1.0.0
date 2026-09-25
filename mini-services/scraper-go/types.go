@@ -41,8 +41,6 @@
  */
 package main
 
-import "strconv"
-
 // ==================== DTO（字段名与主站/TS 版完全一致） ====================
 
 // ListRule 列表页规则
@@ -176,4 +174,3 @@ func strPtr(s string) *string {
 func fPtr(f float64) *float64 { return &f }
 
 // intToStr 调试用（未使用时编译器会剔除）
-var _ = strconv.Itoa

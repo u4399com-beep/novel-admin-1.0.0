@@ -10,10 +10,7 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -355,7 +352,3 @@ func pageSoftBlockProfile(page fetchPageResult, doc *goquery.Document) map[strin
 	return prof
 }
 
-// jsonNumbersAttempsCount 保留（未用则编译器剔除）
-var _ = json.Marshal
-var _ = regexp.MustCompile
-var _ = strconv.Itoa

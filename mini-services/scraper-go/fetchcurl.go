@@ -60,7 +60,7 @@ func baseName(p string) string {
 
 var curlPlainStrategy = strategyDef{
 	name:         "fetch-curl",
-	description:  "调用系统原生 curl（诚实客户端指纹：普通 curl + 桌面/移动浏览器 UA 轮换，HTTP/2 失败自动降级 --http1.1）；针对「拦截已知爬虫指纹但放行普通 curl」的 WAF 站点（Task 25 新增）",
+	description:  "调用系统原生 curl（诚实客户端指纹：桌面浏览器 UA，HTTP/2 失败自动降级 --http1.1 双协议画像）；针对「拦截已知爬虫指纹但放行普通 curl」的 WAF 站点（Task 25 新增）",
 	probe:        func() bool { return detectPlainCurl() != "" },
 	selfRetrying: true,
 	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {

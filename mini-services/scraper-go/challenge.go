@@ -14,7 +14,6 @@ package main
 import (
 	"golang.org/x/net/html/charset"
 	"regexp"
-	"strings"
 )
 
 var (
@@ -25,8 +24,10 @@ var (
 	reChallengeEmbed = regexp.MustCompile(`(?i)challenge-platform|cdn-cgi/challenge`)
 	// 极小页启发式关键词（挑战专用词，不含裸词 javascript）
 	reChallengeKeyword = regexp.MustCompile(`(?i)verify|challenge|captcha|安全验证|人机验证|请完成验证`)
-	// 0 秒 meta refresh 跳板
-	reMetaRefreshJump = regexp.MustCompile(`(?i)<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]+content\s*=\s*["']?\s*0(\.0+)?\s*;`)
+	// 0 秒 meta refresh 跳板。Task 34 (P3-4): 属性顺序无关——旧正则要求 http-equiv 在 content
+	// 之前，content 在前的写法（老式 CMS/手写跳板常见）漏杀；拆成两个独立子匹配同时命中才判
+	reMetaRefreshEquiv = regexp.MustCompile(`(?i)<meta[^>]*http-equiv\s*=\s*["']?refresh["']?`)
+	reMetaRefreshZero  = regexp.MustCompile(`(?i)<meta[^>]*content\s*=\s*["']?\s*0(\.0+)?\s*;`)
 	// 近空正文 + JS 跳转脚本
 	reJSRedirectShell = regexp.MustCompile(`(?i)window\.location(\.\w+)?\s*=|location\.(?:replace|assign)\s*\(|location\.href\s*=`)
 	// JS 计算 cookie 壳的两个半特征（必须同时命中且可见正文近空才判定）
@@ -53,8 +54,40 @@ var (
 	reScriptBlock = regexp.MustCompile(`(?i)<script[\s\S]*?</script>`)
 	reStyleBlock  = regexp.MustCompile(`(?i)<style[\s\S]*?</style>`)
 	reAnyTag      = regexp.MustCompile(`<[^>]+>`)
-	reHTMLEntity  = regexp.MustCompile(`(?i)&[a-z]+;`)
+	reHTMLEntity  = regexp.MustCompile(`(?i)&[a-z]+;|&#[0-9]+;|&#x[0-9a-f]+;`) // Task 34 (P3-5): 数字实体并入（零宽空格实体堆叠曾把近空壳页顶过可见字闸）
 )
+
+// metaRefreshJumpHit 同一 meta 标签内同时含 http-equiv=refresh 与 content=0;（属性顺序无关）
+func metaRefreshJumpHit(s string) bool {
+	b := []byte(s)
+	for _, m := range reMetaRefreshEquiv.FindAllIndex(b, 32) {
+		end := m[1] + 400 // 同标签 content 属性通常紧跟其后，窗口 400B 足够
+		if end > len(b) {
+			end = len(b)
+		}
+		seg := b[m[0]:end]
+		if c := reMetaRefreshZero.Find(seg); c != nil && reMetaRefreshEquiv.Match(c) {
+			return true
+		}
+		// 更稳的做法：从 equiv 命中处向后找最近的 '>' 结束本标签，在标签内查 content=0;
+		if gt := indexByte(seg, '>'); gt > 0 {
+			tag := seg[:gt]
+			if reMetaRefreshZero.Match(tag) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func indexByte(b []byte, c byte) int {
+	for i, x := range b {
+		if x == c {
+			return i
+		}
+	}
+	return -1
+}
 
 // looksLikeChallenge 挑战页/拦截页检测（四层）。命中即 true（视为失败，继续后续策略）。
 func looksLikeChallenge(b []byte) bool {
@@ -120,7 +153,7 @@ func looksLikeChallenge(b []byte) bool {
 		return true
 	}
 	bodyTextLatin1 := visibleBodyText(scan)
-	if reMetaRefreshJump.MatchString(scan) && runeLen(bodyTextLatin1) < 80 {
+	if metaRefreshJumpHit(scan) && runeLen(bodyTextLatin1) < 80 {
 		return true
 	}
 	return false
@@ -161,7 +194,7 @@ func challengeFeatureSummary(b []byte) []string {
 	if reChallengeKeyword.MatchString(text) {
 		hits = append(hits, "challenge-keyword")
 	}
-	if reMetaRefreshJump.MatchString(scan) {
+	if metaRefreshJumpHit(scan) {
 		hits = append(hits, "meta-refresh-0s")
 	}
 	if runeLen(visibleBodyText(text)) == 0 && len(hits) == 0 {
@@ -170,4 +203,3 @@ func challengeFeatureSummary(b []byte) []string {
 	return hits
 }
 
-var _ = strings.TrimSpace

@@ -6,7 +6,6 @@ package main
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -216,7 +215,7 @@ func clampTimeout(ms any) int {
 	case float64:
 		n = v
 	case string:
-		f, err := strconv.ParseFloat(v, 64)
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64) // Task 34 (P3-10): 带空白的 " 3000" 不再静默落 20s 默认
 		if err != nil {
 			return 20_000
 		}
@@ -272,14 +271,14 @@ func urlJoin(ref, base string) *url.URL {
 // urlParse 包装 net/url.Parse（供各模块统一入口）
 func urlParse(raw string) (*url.URL, error) { return url.Parse(raw) }
 
-// hostOf 取 URL 的 host（含端口；解析失败时原样返回，供限速 key 使用）
+// hostOf 取 URL 的 host（含端口；解析失败时原样返回，供限速 key 使用）。
+// Task 34 (P3-9): 统一小写——host 键同时用作限速槽/cookie 桶/健康度/亲和缓存的 key，
+// 大小写变体（http://Example.COM）会分裂出独立条目，1.2s 合规限速被稀释。
 func hostOf(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
-		return rawURL
+		return strings.ToLower(rawURL)
 	}
-	return u.Host
+	return strings.ToLower(u.Host)
 }
 
-// isLoopbackIP 保留给未来 socket 层增强（当前 SSRF 文本层覆盖见 ssrf.go）
-var _ = net.ParseIP

@@ -452,8 +452,9 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 			*warnings = append(*warnings, "[ssrf] "+check.warning)
 		}
 
-		// 跨域重定向跳也必须受限速约束（首跳由策略层已排队，跳过避免同一 host 双重等待）
-		if current != target {
+		// 跨域重定向跳也必须受限速约束。Task 34 (P3-16): 首跳判定改 hops==0（旧实现
+		// 按字符串全等 current!=target——某跳重定向回初始 URL 逐字节相同时会漏排队，合规面出豁免洞）
+		if hops > 0 {
 			acquireDomainSlot(hostOf(current))
 		}
 
@@ -561,11 +562,6 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 		}
 
 		// Task 32-d: 跟随 JS token 跳转后的落地页仍命中挑战特征 → challenge-loop（避免烧穿）
-		if followedJS && len(body.bytes) > 0 && looksLikeChallenge(body.bytes) {
-			return rawResponse{ok: false, status: res.StatusCode, note: "challenge-loop",
-				warning: "挑战循环：JS token 跳转跟随后页面仍命中挑战特征，判定挑战循环终止重试"}
-		}
-
 		return rawResponse{ok: res.StatusCode >= 200 && res.StatusCode < 300, status: res.StatusCode,
 			bytes: body.bytes, contentType: body.contentType, finalURL: current, note: body.note, warning: body.warning, retryAfter: retryAfter}
 	}

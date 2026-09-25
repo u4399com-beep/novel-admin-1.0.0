@@ -583,7 +583,7 @@ func extractChapter(doc *goquery.Document, rule map[string]string, baseURL strin
 			best = cleaned
 		}
 		// 规则选择器按备选顺序取第一个"足够长"的命中（>=80 字），避免被小预览框截胡
-		if _, hasRule := rule["contentSelector"]; hasRule && len(cleaned.text) >= 80 {
+		if _, hasRule := rule["contentSelector"]; hasRule && runeLen(cleaned.text) >= 80 { // Task 34 (P3-20): rune 计（字节计对 CJK 宽 3 倍，首个备选易截胡）
 			break
 		}
 	}

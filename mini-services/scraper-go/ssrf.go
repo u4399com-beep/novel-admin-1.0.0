@@ -88,15 +88,8 @@ func parseIpv4TextOk(host string) (uint32, bool) {
 		last := nums[len(nums)-1]
 		nums = nums[:len(nums)-1]
 		missing := 4 - len(nums) - 1
-		if missing > 0 {
-			var limit uint64 = 1
-			for i := 0; i <= missing; i++ {
-				limit *= 256
-			}
-			if uint64(last) >= limit {
-				return 0, false
-			}
-		}
+		// Task 34 (P3-7): 旧版此处对 last 做 limit 越界检查是死代码——last 恒 ≤255（前面
+		// 已拒 >255 段），而 limit=256^(missing+1) ≥ 65536，比较永假。删除。
 		for i := missing; i >= 1; i-- {
 			div := uint32(1)
 			for j := 0; j < i; j++ {
@@ -290,7 +283,9 @@ func isPrivateHost(hostname string) bool {
 	h := strings.ToLower(strings.TrimSpace(hostname))
 	h = strings.TrimPrefix(h, "[")
 	h = strings.TrimSuffix(h, "]")
-	h = strings.TrimSuffix(h, ".")
+	for strings.HasSuffix(h, ".") { // Task 34 (P3-6): 剥净尾点（单一 TrimSuffix 对双尾点失效）
+		h = strings.TrimSuffix(h, ".")
+	}
 	if h == "" {
 		return true
 	}
@@ -352,6 +347,9 @@ func assertHostPublic(hostname string) hostCheckResult {
 	h := strings.ToLower(strings.TrimSpace(hostname))
 	h = strings.TrimPrefix(h, "[")
 	h = strings.TrimSuffix(h, "]")
+	for strings.HasSuffix(h, ".") { // Task 34 (P3-6): 剥净尾点（"127.0.0.1.." 曾逃逸文本层）
+		h = strings.TrimSuffix(h, ".")
+	}
 	if h == "" {
 		return hostCheckResult{ok: false, reason: "空主机名"}
 	}

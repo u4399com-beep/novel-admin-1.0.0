@@ -67,6 +67,9 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 				remaining := deadline - nowMs()
 				if remaining < 1000 {
 					subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+					if last != nil {
+						last.subAttempts = subAttempts // Task 34 (P3-2): budget 耗尽前 last 快照不含本条，同步防丢失
+					}
 					break
 				}
 				s0 := nowMs()
@@ -157,6 +160,9 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 		noH2    bool
 	}{{profile: "h2", noH2: false}, {profile: "http1.1", noH2: true}}
 
+	// Task 34 (P3-11): 画像头在 variant 循环外生成一次——旧实现每跳重新随机，
+	// 同一会话链内 UA/头在跳间跳变（真实浏览器跨跳恒定），属可被服务端识别的指纹矛盾
+	variantHeaders := headerGeneratorHeaders(targetURL)
 	for _, variant := range variants {
 		current := targetURL
 		hops := 0
@@ -169,7 +175,10 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 				break
 			}
 			s0 := nowMs()
-			hopHeaders := headerGeneratorHeaders(targetURL)
+			hopHeaders := map[string]string{}
+				for hk, hv := range variantHeaders {
+					hopHeaders[hk] = hv
+				}
 			if explicitReferer != "" {
 				hopHeaders["referer"] = explicitReferer
 			} else {
@@ -209,6 +218,7 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 
 			// 3xx：解析 Location → 协议白名单 + 逐跳 SSRF 校验 → 限速后请求下一跳
 			if isRedirectStatus(status) {
+				lastHTTPStatus = status // Task 34 (P3-3): 终态 3xx 时 status 不再回 0（对齐 curl 系口径）
 				recordResponseCookies(hopHost, res, hopHTTPS) // 中间跳下发的 Set-Cookie 也要入会话
 				loc := res.Header.Get("Location")
 				_ = res.Body.Close()

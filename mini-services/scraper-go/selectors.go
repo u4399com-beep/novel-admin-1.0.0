@@ -12,7 +12,6 @@
 package main
 
 import (
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -205,4 +204,3 @@ func pickHref(s *goquery.Selection, rawSelectors []string, base string) string {
 	return ""
 }
 
-var _ = url.Parse

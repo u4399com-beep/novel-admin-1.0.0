@@ -64,12 +64,12 @@ func TestParseSetCookieLineMaxAgeBounds(t *testing.T) {
 		{"Max-Age=inf 忽略属性按默认 TTL", "a=1; Max-Age=inf", false, now + cookieSessionTTLMS},
 		{"Max-Age=NaN 忽略属性按默认 TTL", "a=1; Max-Age=NaN", false, now + cookieSessionTTLMS},
 		{"Max-Age=1e999 ParseFloat 报错忽略", "a=1; Max-Age=1e999", false, now + cookieSessionTTLMS},
-		// 超大有限值：float 域钳制后不溢出；实现语义为 min(默认会话 TTL, Max-Age)，
-		// 故 30min 会话 TTL 生效（既有语义回归锁定）
-		{"Max-Age 超大取 min(会话TTL,Max-Age)", "a=1; Max-Age=999999999999", false, now + cookieSessionTTLMS},
+		// Task 34 (P2-1) 语义变更：显式 Max-Age 直接定 TTL（钳 cookieMaxTTLMS 上界），
+		// 不再被 30min 会话默认值压制——WAF 通关 cookie（数小时 Max-Age）不再频繁丢会话
+		{"Max-Age 超大钳 7 天上界", "a=1; Max-Age=999999999999", false, now + cookieMaxTTLMS},
 		{"Max-Age=0 删除指令", "a=1; Max-Age=0", true, 0},
 		{"Max-Age=-5 删除指令", "a=1; Max-Age=-5", true, 0},
-		{"Max-Age=3600 取 min(会话TTL,Max-Age)", "a=1; Max-Age=3600", false, now + cookieSessionTTLMS},
+		{"Max-Age=3600 按 Max-Age 生效（可长于 30min）", "a=1; Max-Age=3600", false, now + 3_600_000},
 	}
 	for _, c := range cases {
 		p := parseSetCookieLine(c.line, now)

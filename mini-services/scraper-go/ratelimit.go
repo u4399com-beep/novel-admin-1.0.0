@@ -625,6 +625,9 @@ func readAllCapped(r io.Reader, maxBytes int) ([]byte, bool) {
 			buf = append(buf, chunk[:n]...)
 		}
 		if err != nil {
+			if err != io.EOF { // Task 34 (P3-14): 非 EOF 读错误不再吞——残缺数据按失败处理（调用方Unmarshal兜底之外的正道）
+				return nil, true
+			}
 			break
 		}
 	}
