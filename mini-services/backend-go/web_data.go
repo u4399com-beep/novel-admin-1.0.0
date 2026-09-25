@@ -559,6 +559,8 @@ func handleWebChapter(w http.ResponseWriter, r *http.Request, ps map[string]stri
 		web404(w, r, "章节不存在")
 		return
 	}
+	// Task 32-b: 正文三级回落（ChapterContent 分表 → Chapter.content 存量 → TXT 文件）
+	chContent = loadChapterContent(chID, chNovelID, chIdx, chContent, chWC)
 	novel, err := webNovelFull(chNovelID)
 	if err != nil {
 		web404(w, r, "书籍不存在")

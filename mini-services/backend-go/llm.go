@@ -32,8 +32,9 @@ import (
 )
 
 const (
-	llmTimeoutMs   = 3_000  // 单次调用超时（与 LLM_TIMEOUT_MS 一致）
-	llmCooldownMs  = 30_000 // 失败冷却窗（与 LLM_COOLDOWN_MS 一致）
+	llmTimeoutMs   = 3_000                    // 单次调用超时（与 LLM_TIMEOUT_MS 一致）
+	llmGenTimeout  = 5_000 * time.Millisecond // Task 32-b: 智能填充（author/简介生成）超时（用户指令「5s 超时+静默降级」）
+	llmCooldownMs  = 30_000                   // 失败冷却窗（与 LLM_COOLDOWN_MS 一致）
 	zaiConfigLimit = 2 << 20
 )
 
@@ -124,6 +125,12 @@ type llmChatMessage struct {
 // llmChat 串行化调用 LLM；返回 choices[0].message.content（trim 后）。
 // 失败（超时/非 2xx/网络）返回 "" 并进入冷却窗——绝不 panic、绝不阻塞调用方主流程。
 func llmChat(messages []llmChatMessage) string {
+	return llmChatWithTimeout(messages, time.Duration(llmTimeoutMs)*time.Millisecond)
+}
+
+// llmChatWithTimeout llmChat 的超时参数化形态（Task 32-b 智能填充用 5s；既有 3s 行为不变）：
+// 同样走全局串行链 + 失败冷却窗治理，失败/超时静默返回 ""。
+func llmChatWithTimeout(messages []llmChatMessage, timeout time.Duration) string {
 	if llmInCooldown() {
 		return ""
 	}
@@ -205,9 +212,39 @@ func llmChat(messages []llmChatMessage) string {
 			return ""
 		}
 		return trimSpaceStr(res.content)
-	case <-time.After(time.Duration(llmTimeoutMs) * time.Millisecond):
-		log.Printf("[llm] 超时 %dms（进入 %ds 冷却）", llmTimeoutMs, llmCooldownMs/1000)
+	case <-time.After(timeout):
+		log.Printf("[llm] 超时 %s（进入 %ds 冷却）", timeout, llmCooldownMs/1000)
 		llmMarkCooldown()
 		return ""
 	}
+}
+
+// ==================== 智能填充 LLM 兜底（Task 32-b） ====================
+// 用户指令：author/description 缺失时 LLM 兜底——5s 超时 + 失败静默降级（返回 ""），
+// 调用方回落占位值/跳过，绝不阻塞或破坏采集主流程（冷却窗治理同 llmChat）。
+
+// llmGuessAuthor 依书名+简介推断作者笔名；无法推断输出「佚名」（调用方 junk 判定后回落占位）
+func llmGuessAuthor(title, description string) string {
+	user := "网文《" + truncateRunes(trimSpaceStr(title), 60) + "》"
+	if d := trimSpaceStr(description); d != "" {
+		user += "，简介：" + truncateRunes(d, 120)
+	}
+	user += "。推测其作者笔名。"
+	return llmChatWithTimeout([]llmChatMessage{
+		{Role: "assistant", Content: "你是中文网文资料库。根据书名与简介推测作者笔名，只输出作者名本身，不要任何其他文字；无法推断时输出：佚名"},
+		{Role: "user", Content: user},
+	}, llmGenTimeout)
+}
+
+// llmGenerateDescription 依书名+作者生成简介；失败/超时静默返回 ""（调用方跳过回填）
+func llmGenerateDescription(title, author string) string {
+	user := "网文书名《" + truncateRunes(trimSpaceStr(title), 60) + "》"
+	if a := trimSpaceStr(author); a != "" && a != "佚名" {
+		user += "，作者：" + truncateRunes(a, 30)
+	}
+	user += "。写一段 80 字以内的书籍简介。"
+	return llmChatWithTimeout([]llmChatMessage{
+		{Role: "assistant", Content: "你是网文简介写手。根据书名与作者写一段不超过 80 字的中文书籍简介，直接输出简介正文，不要任何前后缀或引号。"},
+		{Role: "user", Content: user},
+	}, llmGenTimeout)
 }

@@ -247,6 +247,16 @@ func canonicalCategory(rawName string) string {
 		return FALLBACK_CATEGORY
 	}
 
+	// Task 32-b: 繁体分类名先繁转简再匹配（101kks 等繁体站 og:novel:category 输出
+	// 「歷史軍事」「武俠仙俠」形态）——t2s 占比判定零开销透传简体，繁体一次性归一后
+	// 走 L1/L2 既有简体表，繁体直映/关键词补全表降级为回归兜底
+	if trad := t2s(norm); trad != norm {
+		norm = normalizeCategory(trad)
+		if norm == "" {
+			return FALLBACK_CATEGORY
+		}
+	}
+
 	if cached := catCacheGet(norm); cached != "" {
 		return cached
 	}

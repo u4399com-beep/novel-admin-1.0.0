@@ -41,6 +41,8 @@ const runnerHeartbeatPath = "/tmp/scrape-runner-heartbeat"
 var (
 	scrapeTaskModes    = map[string]bool{"single": true, "list": true}
 	scrapeTaskStatuses = map[string]bool{"pending": true, "running": true, "paused": true, "success": true, "partial": true, "failed": true, "canceled": true}
+	// Task 32-b: TXT 文件存储模式白名单（db=仅入库 / txt=仅分章文件 / both=双写）
+	scrapeTaskStorageModes = map[string]bool{"db": true, "txt": true, "both": true}
 )
 
 func init() {
@@ -102,7 +104,7 @@ func runnerAliveRecent() bool {
 }
 
 // scrapeTaskListCols 列表字段（顺序即 Scan 顺序）
-const scrapeTaskListCols = `"id","ruleId","mode","targetUrl","pages","status","total","done","created","updated","chapters","message","createdAt","updatedAt","chaptersDone","chaptersTotal"`
+const scrapeTaskListCols = `"id","ruleId","mode","targetUrl","pages","status","total","done","created","updated","chapters","message","createdAt","updatedAt","chaptersDone","chaptersTotal","storageMode"`
 
 // scanTaskListItem 一行 → LIST_SELECT 形状 map（字段名与 TS 完全一致）
 func scanTaskListItem(rows *sql.Rows) (map[string]any, error) {
@@ -110,9 +112,16 @@ func scanTaskListItem(rows *sql.Rows) (map[string]any, error) {
 	var ruleID sql.NullInt64
 	var mode, targetURL, status, message string
 	var createdAt, updatedAt int64
+	var storageMode string
 	if err := rows.Scan(&id, &ruleID, &mode, &targetURL, &pages, &status, &total, &done,
-		&created, &updated, &chapters, &message, &createdAt, &updatedAt, &chaptersDone, &chaptersTotal); err != nil {
+		&created, &updated, &chapters, &message, &createdAt, &updatedAt, &chaptersDone, &chaptersTotal, &storageMode); err != nil {
 		return nil, err
+	}
+	// Task 32-b: 存量行/异常值归一 db（列 DEFAULT 'db'，防御性再归一）
+	switch storageMode {
+	case "txt", "both":
+	default:
+		storageMode = "db"
 	}
 	var rid any
 	if ruleID.Valid {
@@ -135,6 +144,7 @@ func scanTaskListItem(rows *sql.Rows) (map[string]any, error) {
 		"updatedAt":     isoFromMillis(updatedAt),
 		"chaptersDone":  chaptersDone,
 		"chaptersTotal": chaptersTotal,
+		"storageMode":   storageMode,
 	}, nil
 }
 
@@ -189,6 +199,23 @@ func taskPagesParam(body map[string]any) (int, bool, bool) {
 		return 0, false, false
 	}
 	return int(f), true, true
+}
+
+// taskStorageModeParam 提取可选 storageMode（undefined/null/” 视为未提供）
+// Task 32-b: TXT 文件存储模式开关，白名单 db|txt|both（小写归一），非法值 ok=false → 400
+func taskStorageModeParam(body map[string]any) (string, bool, bool) {
+	val, present := body["storageMode"]
+	if !present || val == nil {
+		return "", false, true
+	}
+	if s, isStr := val.(string); isStr && s == "" {
+		return "", false, true
+	}
+	sm := strings.ToLower(jsStringify(val))
+	if !scrapeTaskStorageModes[sm] {
+		return "", false, false
+	}
+	return sm, true, true
 }
 
 // ruleExists 校验采集规则存在
