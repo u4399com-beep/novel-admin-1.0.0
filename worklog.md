@@ -1734,3 +1734,15 @@ Work Log:
 Stage Summary:
 - 回归闭环：403 误伤根因=预览代理链路 Host 改写，回退 Origin 校验后站点设置保存实测落库成功
 - 教训留档：①无凭证系统的应用层 Origin 校验是负收益（无安全增益+高误伤概率）②部署链路的 Host 头形态是「环境事实」不可假设，收紧类改动必须先实测完整访问链路 ③浏览器 E2E 应覆盖写操作路径（此前 E2E 只验证了读渲染，403 只影响写）
+---
+Task ID: 37（补记·第 7 次沙箱清库）
+Agent: main (Z.ai Code)
+Task: 403 修复部署后发现业务表再次全清（Novel/Chapter/ChapterContent/ScrapeTask 归零，mtime 14:02）
+
+Work Log:
+- seed 播种机制第 4 次自动恢复（ScrapeRule 15/Category 9/SiteSetting 1）；download/novels TXT 归零
+- 重建 6 个 list 任务（storageMode=both）；45s 后 4 running（task1 列表 62 条/Novel 35 本在涨）+ 2 paused
+- task4/6（huangjinwu/xinjianpan 窗口型封锁）列表失败转 paused 而非 failed——Task 35 词表修复的完整行为实证：不再进 failed 终态，自动恢复冷却后重入队
+
+Stage Summary:
+- 清库-恢复流水线已完全自愈化：seed 播种+任务重建脚本化，业务面 1 分钟内恢复生产
