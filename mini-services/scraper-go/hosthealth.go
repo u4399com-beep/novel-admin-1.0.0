@@ -10,7 +10,11 @@
  */
 package main
 
-import "sync"
+import (
+	"strconv"
+	"sync"
+	"time"
+)
 
 const (
 	hostHealthMaxEntries = 256
@@ -35,6 +39,10 @@ type hostHealth struct {
 	openUntil    int64
 	penaltyMs    int64
 	penaltyUntil int64
+	// Task 32-d: 最近一次显式限流（429/503）记忆——fetch 整链失败时把该上下文注入错误消息，
+	// backend 熔断分类（isRateLimitErr）与日志从此能区分「真限流」与「其它失败」
+	lastRateLimitAt     int64 // 0 = 无记忆
+	lastRateLimitStatus int   // 429 / 503
 }
 
 var (
@@ -89,14 +97,19 @@ func hostCircuitOpenMs(host string) int64 {
 	return h.openUntil - nowMs()
 }
 
-// noteRateLimited 记录一次限流（429/503）：Retry-After 优先，缺省指数增长
-func noteRateLimited(host string, retryAfterMs *int64) {
+// noteRateLimited 记录一次限流（429/503）：Retry-After 优先，缺省指数增长。
+// Task 32-d: 同步记录限流时刻与状态码（供 hostRateLimitMemo 注入 fetch 失败错误）
+func noteRateLimited(host string, status int, retryAfterMs *int64) {
 	if host == "" {
 		return
 	}
 	healthMu.Lock()
 	defer healthMu.Unlock()
 	h := touchHealth(host)
+	h.lastRateLimitAt = nowMs()
+	if status == 429 || status == 503 {
+		h.lastRateLimitStatus = status
+	}
 	var base int64
 	if retryAfterMs != nil && *retryAfterMs > 0 {
 		base = *retryAfterMs
@@ -181,6 +194,30 @@ func noteChainSuccess(host string) {
 		}
 		delete(healthMap, host)
 	}
+}
+
+// hostRateLimitMemoMaxAge 限流记忆注入错误消息的有效窗口（记忆过旧则不再注入，
+// 避免「上周被限流一次」的陈旧上下文误导 backend 分类）
+const hostRateLimitMemoMaxAge = 10 * 60_000
+
+// hostRateLimitMemo Task 32-d（Task 31 遗留①落地）：fetch 整链失败时供 chain.go 注入错误消息的
+// hosthealth 限流上下文。此前 ixdzs8 实证：hosthealth 有 429/503 记忆但 fetch 失败 Error 不携带，
+// backend isRateLimitErr 判定不到 → 车道降档/熔断分类（BreakerRateLimit）全部失灵。
+// 近期（hostRateLimitMemoMaxAge 内）被 429/503 过的主机返回「(host 近期限流记忆: …，建议退避)」；
+// 无记忆/记忆过旧返回空串（不注入）。
+func hostRateLimitMemo(host string) string {
+	healthMu.Lock()
+	defer healthMu.Unlock()
+	h, ok := healthMap[host]
+	if !ok || h.lastRateLimitAt == 0 || nowMs()-h.lastRateLimitAt > hostRateLimitMemoMaxAge {
+		return ""
+	}
+	status := "429/503"
+	if h.lastRateLimitStatus != 0 {
+		status = strconv.Itoa(h.lastRateLimitStatus)
+	}
+	t := time.UnixMilli(h.lastRateLimitAt).UTC().Format("2006-01-02T15:04:05Z")
+	return "(host 近期限流记忆: " + status + " @" + t + "，建议退避)"
 }
 
 type hostHealthStatsOut struct {

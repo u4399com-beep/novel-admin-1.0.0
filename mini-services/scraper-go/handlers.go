@@ -56,8 +56,11 @@ func fetchAndPrepare(w http.ResponseWriter, body map[string]any) pageFetchOutcom
 	return pageFetchOutcome{page: page, target: t.url.String()}
 }
 
-// pageFailureResponse 策略链全败时的结构化 502 响应（含 attempts 明细与挑战页标记）
-func pageFailureResponse(w http.ResponseWriter, page fetchPageResult, baseURL string) {
+// pageFailureResponse 策略链全败时的结构化 502 响应（含 attempts 明细与挑战页标记）。
+// Task 32-d（Task 31 遗留②）：includeHtml=true 时附带 htmlDebug 字段——策略链最后一次
+// 抓到的原始页面（chain.go 注入 page.debugHTML，截断到 htmlDebugCap），排障时能直接看到
+// 挑战页/空壳页原文而非只剩「全部策略失败」。
+func pageFailureResponse(w http.ResponseWriter, page fetchPageResult, baseURL string, includeHtml bool) {
 	challengeSuspected := false
 	for _, a := range page.attempts {
 		if a.Blocked {
@@ -68,11 +71,19 @@ func pageFailureResponse(w http.ResponseWriter, page fetchPageResult, baseURL st
 	if !challengeSuspected && strings.Contains(page.detail, "挑战页") {
 		challengeSuspected = true
 	}
-	writeJSON(w, 502, map[string]any{
+	if !challengeSuspected && strings.Contains(page.detail, "挑战循环") {
+		challengeSuspected = true
+	}
+	resp := map[string]any{
 		"ok": false, "url": baseURL, "error": page.err, "detail": page.detail,
 		"challengeSuspected": challengeSuspected, "attempts": page.attempts,
 		"robots": page.robots, "warnings": page.warnings, "elapsedMs": page.elapsedMs,
-	})
+	}
+	if includeHtml && page.debugHTML != "" {
+		resp["htmlDebug"] = truncateStr(page.debugHTML, htmlDebugCap)
+		resp["htmlDebugTruncated"] = runeLen(page.debugHTML) > runeLen(truncateStr(page.debugHTML, htmlDebugCap))
+	}
+	writeJSON(w, 502, resp)
 }
 
 // robotsSummaryJSON robots 摘要（crawlDelayMs 恒带，可能为 null）
@@ -184,8 +195,11 @@ func handleTest(w http.ResponseWriter, body map[string]any) {
 	page := outcome.page
 	baseURL := outcome.target
 
+	// 调试开关（可选，向后兼容）：includeHtml=true 时响应附带原始 HTML（截断到上限）。
+	// Task 32-d: 提前解析——失败路径（pageFailureResponse）也要透出 htmlDebug
+	includeHtml, _ := body["includeHtml"].(bool)
 	if !page.ok {
-		pageFailureResponse(w, page, baseURL)
+		pageFailureResponse(w, page, baseURL, includeHtml)
 		return
 	}
 
@@ -194,8 +208,6 @@ func handleTest(w http.ResponseWriter, body map[string]any) {
 	bookRule := sanitizeRule(bookKeys, rawRule["bookRule"])
 	chapterRule := sanitizeRule(chapterKeys, rawRule["chapterRule"])
 	hasRule := len(listRule)+len(bookRule)+len(chapterRule) > 0
-	// 调试开关（可选，向后兼容）：includeHtml=true 时响应附带原始 HTML（截断到上限）
-	includeHtml, _ := body["includeHtml"].(bool)
 	htmlDebug := ""
 	if includeHtml {
 		htmlDebug = truncateStr(page.html, htmlDebugLimit)
@@ -232,9 +244,22 @@ func handleTest(w http.ResponseWriter, body map[string]any) {
 		"htmlLength": runeLen(page.html), "robots": page.robots, "attempts": page.attempts,
 		"data": data, "warnings": warnings,
 	}
+
+	// Task 32-d（200 空壳早识别）：HTTP 200 但规则提取全空（列表 0 条且书籍标题空）——
+	// 与 handleChapter 的空壳哨兵同源：附 softBlock 档案（title/长度/挑战特征摘要），
+	// 供 backend 把「200 伪装空壳」归入软拦截而非「规则失效」
+	if page.status == 200 && hasRule && extractionEmpty(data) {
+		warnings = append(warnings, "HTTP 200 但规则提取结果全空：疑似限流空壳/挑战竞态页（softBlock 档案见响应 softBlock 字段）")
+		resp["warnings"] = warnings
+		resp["softBlock"] = pageSoftBlockProfile(page, doc)
+	}
 	if includeHtml {
 		resp["html"] = htmlDebug
 		resp["htmlTruncated"] = runeLen(page.html) > runeLen(htmlDebug)
+		// Task 32-d: htmlDebug 调试字段（最后一次抓取的原始 HTML，截断 20KB）——与 300KB 的
+		// html 全量字段互补，供排障快速查看挑战页/空壳页关键原文
+		resp["htmlDebug"] = truncateStr(page.html, htmlDebugCap)
+		resp["htmlDebugTruncated"] = runeLen(page.html) > runeLen(truncateStr(page.html, htmlDebugCap))
 	}
 	writeJSON(w, 200, resp)
 }
@@ -251,7 +276,7 @@ func handleChapter(w http.ResponseWriter, body map[string]any) {
 	baseURL := outcome.target
 
 	if !page.ok {
-		pageFailureResponse(w, page, baseURL)
+		pageFailureResponse(w, page, baseURL, false)
 		return
 	}
 
@@ -265,6 +290,11 @@ func handleChapter(w http.ResponseWriter, body map[string]any) {
 
 	// 软 404/空壳质量哨兵：HTTP 200 但正文为空的伪装页。
 	// 纯提示（ok 仍为 true，不改变既有成功语义），把「200 伪装」暴露给调用方可观测。
+	resp := map[string]any{
+		"ok": true, "url": baseURL, "strategy": page.strategy, "status": page.status,
+		"elapsedMs": nowMs() - t0, "fetchElapsedMs": page.elapsedMs, "encoding": page.encoding,
+		"robots": page.robots, "attempts": page.attempts, "data": data, "warnings": warnings,
+	}
 	if page.status == 200 && data.Content == "" {
 		// 标题呈 404/空壳特征时更明确；排除「第404章」这类标题里的数字巧合
 		soft404Title := soft404TitleRe.MatchString(data.Title) && !chapterNumPrefix.MatchString(data.Title)
@@ -273,13 +303,56 @@ func handleChapter(w http.ResponseWriter, body map[string]any) {
 		} else {
 			warnings = append(warnings, "HTTP 200 但正文提取为空：疑似 JS 渲染空壳或软 404，建议用 browser 策略复核该 URL")
 		}
+		// Task 32-d（200 空壳早识别）：结构化 softBlock 档案（ixdzs8 形态：200/19KB 但
+		// .page-content 空）。ok 仍为 true 不改成功语义；backend 消费 softBlock 与
+		// 「正文提取为空」warning 字样即可把该形态归入软拦截（isSoftBlockErr 已按字样命中）
+		resp["softBlock"] = pageSoftBlockProfile(page, doc)
+		resp["warnings"] = warnings
 	}
+	writeJSON(w, 200, resp)
+}
 
-	writeJSON(w, 200, map[string]any{
-		"ok": true, "url": baseURL, "strategy": page.strategy, "status": page.status,
-		"elapsedMs": nowMs() - t0, "fetchElapsedMs": page.elapsedMs, "encoding": page.encoding,
-		"robots": page.robots, "attempts": page.attempts, "data": data, "warnings": warnings,
-	})
+// htmlDebugCap Task 32-d: htmlDebug 调试字段截断上限（20KB，任务书口径；
+// 挑战页/空壳页特征集中在前部，与 chain.debugHTMLCapBytes 同参数）
+const htmlDebugCap = 20 * 1024
+
+// extractionEmpty Task 32-d: handleTest 的规则提取结果是否全空（列表 0 条 + 书标题空 + 章节正文空）
+func extractionEmpty(data map[string]any) bool {
+	if len(data) == 0 {
+		return true
+	}
+	empty := true
+	if l, ok := data["list"].(ListData); ok && l.Count > 0 {
+		empty = false
+	}
+	if b, ok := data["book"].(BookData); ok && b.Title != "" {
+		empty = false
+	}
+	if c, ok := data["chapter"].(ChapterData); ok && c.Content != "" {
+		empty = false
+	}
+	return empty
+}
+
+// pageSoftBlockProfile Task 32-d: 200 空壳软拦截页的特征档案（title/长度/可见正文/挑战特征摘要）。
+// 挑战特征复用 challenge.go 四层正则做「弱命中」标注（此时 looksLikeChallenge 未判死，
+// 页面仍是 200 ok——弱命中证据帮助 backend 区分「限流空壳」与「规则选择器失效」）。
+func pageSoftBlockProfile(page fetchPageResult, doc *goquery.Document) map[string]any {
+	title := ""
+	if doc != nil {
+		title = collapse(doc.Find("title").First().Text())
+	}
+	prof := map[string]any{
+		"title":        truncateStr(title, 200),
+		"htmlLength":   runeLen(page.html),
+		"strategy":     page.strategy,
+		"status":       page.status,
+		"visibleChars": runeLen(visibleBodyText(page.html)),
+	}
+	if hits := challengeFeatureSummary([]byte(page.html)); len(hits) > 0 {
+		prof["challengeFeatures"] = hits
+	}
+	return prof
 }
 
 // jsonNumbersAttempsCount 保留（未用则编译器剔除）

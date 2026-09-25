@@ -126,4 +126,48 @@ func looksLikeChallenge(b []byte) bool {
 	return false
 }
 
+// challengeFeatureSummary Task 32-d: 200 空壳软拦截页的特征摘要（handlers 的 softBlock 档案用）。
+// 背景：ixdzs8 形态——HTTP 200/19KB、挑战检测四层均未判死（looksLikeChallenge=false）、
+// 但正文选择器命中为空。本函数复用挑战正则做「弱命中」标注，把页面证据交给调用方
+// 组装 softBlock 档案（title/长度/特征列表），供 backend 更精准分类（isSoftBlockErr 家族）。
+// 只扫描前 32KB（与 looksLikeChallenge 同口径），无命中返回空切片。
+func challengeFeatureSummary(b []byte) []string {
+	if len(b) == 0 {
+		return nil
+	}
+	end := len(b)
+	if end > 32768 {
+		end = 32768
+	}
+	head := b[:end]
+	scan := bytesToLatin1String(head)
+	text := string(head)
+	hits := []string{}
+	if reChallengePlatform.MatchString(scan) {
+		hits = append(hits, "platform-strong")
+	}
+	if reChallengeEmbed.MatchString(scan) {
+		hits = append(hits, "cf-embed")
+	}
+	if reJSRedirectShell.MatchString(text) {
+		hits = append(hits, "js-redirect-shell")
+	}
+	if reJSCookieSet.MatchString(text) && reJSReload.MatchString(text) {
+		hits = append(hits, "js-cookie-shell")
+	}
+	if reJSRequiredShell.MatchString(text) {
+		hits = append(hits, "js-required-shell")
+	}
+	if reChallengeKeyword.MatchString(text) {
+		hits = append(hits, "challenge-keyword")
+	}
+	if reMetaRefreshJump.MatchString(scan) {
+		hits = append(hits, "meta-refresh-0s")
+	}
+	if runeLen(visibleBodyText(text)) == 0 && len(hits) == 0 {
+		hits = append(hits, "near-empty-body")
+	}
+	return hits
+}
+
 var _ = strings.TrimSpace

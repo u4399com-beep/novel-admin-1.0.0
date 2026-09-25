@@ -392,6 +392,9 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 	deadline := nowMs() + timeoutMs
 	current := target
 	hops := 0
+	// Task 32-d: JS token 跳转循环检测状态（followedJS=已跟随过 JS 跳；jsVisited=跳转目标集合）
+	followedJS := false
+	jsVisited := map[string]bool{}
 	if proxy != "" {
 		// 站点级出口代理：仅首次请求时提示一次（凭证掩码不回显）
 		masked := reProxyCred.ReplaceAllString(proxy, "//***@")
@@ -484,12 +487,24 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 		}
 		body := readBodyCapped(res)
 
+		// Task 32-d: 跟随 JS token 跳转后的落地页仍命中挑战特征 → challenge-loop（避免烧穿）。
+		// 置于 jsNext 解析之前：挑战壳无论是否再携带跳转脚本，跟随后仍为挑战即终止
+		if followedJS && len(body.bytes) > 0 && looksLikeChallenge(body.bytes) {
+			return rawResponse{ok: false, status: res.StatusCode, note: "challenge-loop",
+				warning: "挑战循环：JS token 跳转跟随后页面仍命中挑战特征，判定挑战循环终止重试"}
+		}
+
 		// JS token 重定向挑战：200 + 近空 JS 页（window.location.href 拼接跳转）——
 		// 还原目标 URL 后按重定向跳处理（共享跳数预算与 cookie 会话；跳回可能升级会话 cookie）。
 		// 仅在非 3xx 路径上检查，且只信任字面量常量折叠结果。
+		// Task 32-d（挑战循环二次校验）：再次指向已访问过的跳转目标（A→B→A）同样判 challenge-loop。
 		if len(body.bytes) > 0 && len(body.bytes) < 8192 {
 			jsNext := resolveJsRedirect(latinView(body.bytes), current)
 			if jsNext != "" {
+				if jsVisited[jsNext] {
+					return rawResponse{ok: false, status: res.StatusCode, note: "challenge-loop",
+						warning: "挑战循环：JS token 跳转回到已访问过的目标（" + truncateStr(jsNext, 120) + "），判定挑战循环终止"}
+				}
 				next, err := url.Parse(jsNext)
 				if err != nil || next.Host == "" {
 					return rawResponse{ok: false, status: res.StatusCode, note: "bad-js-redirect"}
@@ -509,9 +524,17 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 						warning: "重定向（含 JS token 跳转）超过 " + strconv.Itoa(maxRedirectHops) + " 跳，已停止"}
 				}
 				*warnings = append(*warnings, "JS token 重定向挑战页：已解析 location 拼接目标并跟随（会话 cookie 持续回放）")
+				jsVisited[jsNext] = true
+				followedJS = true
 				current = next.String()
 				continue
 			}
+		}
+
+		// Task 32-d: 跟随 JS token 跳转后的落地页仍命中挑战特征 → challenge-loop（避免烧穿）
+		if followedJS && len(body.bytes) > 0 && looksLikeChallenge(body.bytes) {
+			return rawResponse{ok: false, status: res.StatusCode, note: "challenge-loop",
+				warning: "挑战循环：JS token 跳转跟随后页面仍命中挑战特征，判定挑战循环终止重试"}
 		}
 
 		return rawResponse{ok: res.StatusCode >= 200 && res.StatusCode < 300, status: res.StatusCode,
