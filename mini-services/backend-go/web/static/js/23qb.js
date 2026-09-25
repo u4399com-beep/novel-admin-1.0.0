@@ -17,6 +17,14 @@
     try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ }
   }
 
+  /* Task 36-b: 阅读记录含采集来的书名/章题（不可信输入），拼 HTML 前必须转义 */
+  function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   /* ---------- 顶栏滚动换肤 ---------- */
   var SOLID = 'bg-[#eaedf1]/95 shadow-[0_2px_12px_rgba(149,157,165,.18)] backdrop-blur-[10px]';
   var CLEAR = 'bg-transparent';
@@ -90,7 +98,7 @@
         histList.innerHTML = '<p class="py-6 text-center text-sm text-black/40">暂无阅读记录，打开任意章节后自动记录</p>';
       } else {
         histList.innerHTML = rows.slice(0, 20).map(function (r) {
-          var t = (r.bookTitle || '未知书名') + ' · ' + (r.title || '');
+          var t = escapeHtml(r.bookTitle || '未知书名') + ' · ' + escapeHtml(r.title || '');
           return '<a class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors hover:bg-white hover:text-[#ff2a14]" href="/chapter/' + encodeURIComponent(r.chapterId) + '">' +
             '<span class="flex-1 truncate">' + t + '</span></a>';
         }).join('');

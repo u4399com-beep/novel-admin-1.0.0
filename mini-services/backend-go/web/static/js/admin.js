@@ -88,6 +88,20 @@
 
   function busyKey(act, id) { return act + ':' + id; }
 
+  /** Task 36-b: 提交型按钮防连点——await 期间 disabled（创建/保存类重复提交会产出重复任务/重复关键词） */
+  function withBusy(btn, fn) {
+    return function () {
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      var self = this;
+      var p;
+      try { p = Promise.resolve(fn.apply(self, arguments)); }
+      catch (e) { p = Promise.resolve(); }
+      return p.catch(function () { /* 处理器内部已自行 toast/容错 */ })
+        .then(function () { btn.disabled = false; });
+    };
+  }
+
   /* ==================== 状态常量（与模板 admBadge 定义保持一致） ==================== */
 
   var STATUS_CLS = {
@@ -467,7 +481,8 @@
     modeSel.addEventListener('change', function () {
       $('#adm-new-pages-wrap').classList.toggle('hidden', modeSel.value !== 'list');
     });
-    $('#adm-new-submit').addEventListener('click', async function () {
+    var createTaskBtn = $('#adm-new-submit');
+    createTaskBtn.addEventListener('click', withBusy(createTaskBtn, async function () {
       var url = $('#adm-new-url').value.trim();
       if (!url) return toast('请输入目标 URL', 'err');
       var mode = modeSel.value;
@@ -488,7 +503,7 @@
         tasksPage = 1;
         refreshTasks();
       } catch (e) { handleErr(e); }
-    });
+    }));
     $('#adm-task-prev').addEventListener('click', function () { if (tasksPage > 1) { tasksPage--; refreshTasks(); } });
     $('#adm-task-next').addEventListener('click', function () { if (tasksPage < tasksTotalPages) { tasksPage++; refreshTasks(); } });
     $('#adm-task-refresh').addEventListener('click', function () { refreshTasks(); });
@@ -548,12 +563,12 @@
       var btn = this;
       btn.disabled = true;
       try {
-        var rep = await (await fetch('/api/novels/smart-fill')).json();
+        var rep = await api('GET', '/api/novels/smart-fill'); // Task 36-b: 改走 api() 封装——原裸 fetch 非 2xx 时 rep.report 为空 → 误报「体检通过」静默失败
         var r = rep && rep.report ? rep.report : {};
         var total = (r.junkAuthor || 0) + (r.emptyDescription || 0) + (r.fallbackCategory || 0) + (r.serialWithFinishedEnding || 0);
         if (!total) { toast('体检通过：没有需要补全的书籍', 'ok'); return; }
         if (!confirm('智能补全体检：占位作者 ' + (r.junkAuthor || 0) + ' 本、空简介 ' + (r.emptyDescription || 0) + ' 本、「其他」分类滞留 ' + (r.fallbackCategory || 0) + ' 本、疑似完结未标 ' + (r.serialWithFinishedEnding || 0) + ' 本。\n\n将按相关信息智能填充（简介取首章预览/LLM 生成、作者 LLM 推断、分类关键词+LLM 归类、完结按末章标题判定），单批至多 50 本。是否执行？')) return;
-        var res = await (await fetch('/api/novels/smart-fill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 50 }) })).json();
+        var res = await api('POST', '/api/novels/smart-fill', { limit: 50 }); // Task 36-b: 同上，非 2xx 由 api() 抛错 toast
         if (res && res.ok) {
           toast('智能补全完成：简介 +' + res.descFilled + '、作者 +' + res.authorFilled + '、分类迁移 +' + res.categoryMoved + '、完结标记 +' + res.statusFixed + '（扫描 ' + res.scanned + ' 本）', 'ok');
           refreshNovels();
@@ -565,9 +580,11 @@
     });
     $('#adm-novel-prev').addEventListener('click', function () { if (novelsPage > 1) { novelsPage--; refreshNovels(); } });
     $('#adm-novel-next').addEventListener('click', function () { if (novelsPage < novelsTotalPages) { novelsPage++; refreshNovels(); } });
-    // Task 30 主线：书籍编辑/章节管理弹层
-    $('#adm-novel-edit-save').addEventListener('click', saveNovelEdit);
-    $('#adm-chapter-edit-save').addEventListener('click', function () { saveChapterEdit(this); });
+    // Task 30 主线：书籍编辑/章节管理弹层（Task 36-b: 保存按钮防连点）
+    var novelSaveBtn = $('#adm-novel-edit-save');
+    novelSaveBtn.addEventListener('click', withBusy(novelSaveBtn, saveNovelEdit));
+    var chapterSaveBtn = $('#adm-chapter-edit-save');
+    chapterSaveBtn.addEventListener('click', withBusy(chapterSaveBtn, function () { saveChapterEdit(this); }));
     $('#adm-chapters-q').addEventListener('input', function () {
       chaptersQ = this.value.trim();
       chaptersPage = 1;
@@ -1596,6 +1613,49 @@
     });
   }
 
+  /**
+   * Task 36-b: 接线此前从未绑定的静态按钮（回归修复——新建/保存规则、添加分类、
+   * 智能归并建议、PSEO 搜索生成/刷新列表这些 id 在 admin.html 中存在但 admin.js 无任何
+   * 事件绑定，点击无响应；API 契约：POST /api/scrape-rules、POST /api/categories、
+   * GET /api/categories/merge、POST /api/pseo/generate）。
+   */
+  function initStaticButtons() {
+    var ruleNew = $('#adm-rule-new');
+    if (ruleNew) ruleNew.addEventListener('click', function () { showRuleForm(null); });
+    var ruleSave = $('#adm-rule-save');
+    if (ruleSave) ruleSave.addEventListener('click', withBusy(ruleSave, saveRuleForm));
+    var ruleCancel = $('#adm-rule-cancel');
+    if (ruleCancel) ruleCancel.addEventListener('click', hideRuleForm);
+
+    var catAdd = $('#adm-cat-add');
+    if (catAdd) catAdd.addEventListener('click', withBusy(catAdd, async function () {
+      var name = $('#adm-cat-name').value.trim();
+      if (!name) return toast('分类名不能为空', 'err');
+      try {
+        await api('POST', '/api/categories', { name: name });
+        toast('分类已添加', 'ok');
+        $('#adm-cat-name').value = '';
+        refreshCats();
+      } catch (e) { handleErr(e); }
+    }));
+
+    var catMergeBtn = $('#adm-cat-merge-btn');
+    if (catMergeBtn) catMergeBtn.addEventListener('click', loadMergeSuggestions);
+
+    var pseoGen = $('#adm-pseo-gen');
+    if (pseoGen) pseoGen.addEventListener('click', withBusy(pseoGen, async function () {
+      var kw = $('#adm-pseo-kw').value.trim();
+      if (!kw) return toast('请输入关键词', 'err');
+      try {
+        var res = await api('POST', '/api/pseo/generate', { keyword: kw, limit: 20 });
+        toast('PSEO 生成完成：关键词 +' + ((res && res.added) || 0) + '，聚合页 +' + ((res && res.generated) || 0), 'ok');
+        refreshPseo();
+      } catch (e) { handleErr(e); }
+    }));
+    var pseoRefresh = $('#adm-pseo-refresh');
+    if (pseoRefresh) pseoRefresh.addEventListener('click', refreshPseo);
+  }
+
   function formatJsonTextarea(taId) {
     var ta = $('#' + taId);
     if (!ta) return;
@@ -1616,6 +1676,7 @@
     initNovels();
     initSettings();
     initActions();
+    initStaticButtons(); // Task 36-b: 死按钮接线（规则表单/添加分类/归并建议/PSEO 生成）
 
     checkHealth();
     setInterval(checkHealth, 30000);

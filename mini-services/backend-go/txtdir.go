@@ -87,6 +87,7 @@ func writeChapterTxt(novelID, idx int, title, content string) error {
 	final := chapterTxtPath(novelID, idx, title)
 	tmp := final + ".tmp-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		_ = os.Remove(tmp) // Task 36-a: 磁盘满等半写场景清掉残缺 tmp（名尾非 .txt 不影响读路径，纯卫生）
 		return err
 	}
 	if err := os.Rename(tmp, final); err != nil {
@@ -190,13 +191,18 @@ func removeChapterTxt(novelID, idx int) {
 // Task 35-a: 写新先行——旧版先删全部旧文件再写新文件，writeChapterTxt 失败时旧文件已删、
 // 新文件未落盘，txt 模式书该章正文凭空消失；改为先写新文件（tmp+rename 原子），成功后再
 // 清理旧题名残留（跳过与新文件同名的目标行），写失败旧文件原样保留（内容旧但不丢）。
+// Task 36-a: 补上 35-a 遗留口子——写失败的 error 被丢弃后清理循环照旧执行，改题保存
+// 场景（旧题名 ≠ final）下写失败仍会把旧文件全部删光，正是本函数要防的丢正文形态；
+// 改为写失败提前返回（旧文件全保留，下次编辑保存自然重试），仅写成功才清旧题残留。
 func syncChapterTxt(novelID, idx int, title, content string) {
 	matches, err := filepath.Glob(filepath.Join(novelTxtDir(novelID), fmt.Sprintf("%05d", idx)+"_*.txt"))
 	if err != nil || len(matches) == 0 {
 		return
 	}
 	final := chapterTxtPath(novelID, idx, title)
-	_ = writeChapterTxt(novelID, idx, title, content)
+	if werr := writeChapterTxt(novelID, idx, title, content); werr != nil {
+		return // 写失败：旧文件原样保留（含改题场景），不删任何旧文件
+	}
 	for _, m := range matches {
 		if m == final {
 			continue // 同名覆盖场景：新文件即目标，不得误删

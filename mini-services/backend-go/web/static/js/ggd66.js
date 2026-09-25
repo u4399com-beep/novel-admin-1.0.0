@@ -16,6 +16,14 @@
     try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ }
   }
 
+  /* Task 36-b: 阅读记录含采集来的书名/章题（不可信输入），拼 HTML 前必须转义 */
+  function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   /* ---------- 收藏本站 ---------- */
   document.querySelectorAll('[data-gg-favorite]').forEach(function (el) {
     el.addEventListener('click', function () {
@@ -44,7 +52,7 @@
         histList.innerHTML = '<p class="py-6 text-center text-[13px] text-[#999]">暂无阅读记录，打开任意章节后自动记录</p>';
       } else {
         histList.innerHTML = rows.slice(0, 20).map(function (r) {
-          var t = (r.bookTitle || '未知书名') + ' · ' + (r.title || '');
+          var t = escapeHtml(r.bookTitle || '未知书名') + ' · ' + escapeHtml(r.title || '');
           return '<a class="flex h-[28px] items-center border-b border-dashed border-[#ccc] text-[#00886d] hover:text-[#f50]" href="/chapter/' + encodeURIComponent(r.chapterId) + '">' +
             '<span class="min-w-0 flex-1 truncate">' + t + '</span></a>';
         }).join('');

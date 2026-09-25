@@ -115,6 +115,51 @@ func TestReindexChapterTxtFilesNoFile(t *testing.T) {
 	}
 }
 
+// TestSyncChapterTxtWriteFailureKeepsOldFiles Task 36-a 回归锁定：写失败（改题场景，
+// 目标新题名路径被目录占位使 rename 失败）时旧题名文件必须原样保留——
+// 35-a 修复遗留口子（写失败仍执行清理循环）会把「改题+写失败」变回正文凭空消失。
+// 注入方式 root 安全：预创建与新题名同名的目录（rename file→dir 必失败）。
+func TestSyncChapterTxtWriteFailureKeepsOldFiles(t *testing.T) {
+	root := withTxtRoot(t)
+	if err := writeChapterTxt(10, 1, "第1章", "旧正文"); err != nil {
+		t.Fatalf("write old: %v", err)
+	}
+	chapterDir := filepath.Join(root, "10")
+	// 新题名同路径预置目录 → writeChapterTxt 的 tmp 写成功但 rename 必失败
+	blocker := chapterTxtPath(10, 1, "第1章改题")
+	if err := os.MkdirAll(blocker, 0o755); err != nil {
+		t.Fatalf("mkdir blocker: %v", err)
+	}
+	syncChapterTxt(10, 1, "第1章改题", "新正文")
+	if body, err := readChapterFromTxt(10, 1); err != nil || body != "旧正文" {
+		t.Fatalf("写失败后旧题名文件必须保留，got (%q,%v)", body, err)
+	}
+	entries, rerr := os.ReadDir(chapterDir)
+	if rerr != nil {
+		t.Fatalf("read dir: %v", rerr)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".tmp") {
+			t.Fatalf("写失败不应残留 tmp 文件，发现 %q", e.Name())
+		}
+		// 占位 blocker 是目录（注入手段本身），文件类只允许旧题名 .txt 保留
+		if !e.IsDir() && e.Name() != "00001_第1章.txt" {
+			t.Fatalf("写失败后不应新增/删除任何文件，发现 %q", e.Name())
+		}
+	}
+	// 清理占位目录后重试同调用：写成功路径应正常落新文件并清旧题残留
+	if err := os.Remove(blocker); err != nil {
+		t.Fatalf("remove blocker: %v", err)
+	}
+	syncChapterTxt(10, 1, "第1章改题", "新正文")
+	if body, err := readChapterFromTxt(10, 1); err != nil || body != "新正文" {
+		t.Fatalf("写成功后应可回读新正文，got (%q,%v)", body, err)
+	}
+	if _, err := os.Stat(filepath.Join(chapterDir, "00001_第1章.txt")); !os.IsNotExist(err) {
+		t.Fatalf("写成功后旧题名残留应被清理: %v", err)
+	}
+}
+
 // TestRemoveNovelTxtAll 删书清理：分章目录 + 导出合并文件移除，无关文件保留
 func TestRemoveNovelTxtAll(t *testing.T) {
 	root := withTxtRoot(t)

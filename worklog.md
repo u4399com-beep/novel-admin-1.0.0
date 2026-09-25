@@ -1651,3 +1651,71 @@ Stage Summary:
 - backend-go 本轮合计 7 项修复（35-a 4 项+主线 3 项：瞬态保护三处统一/词表脱节/章级进度落库）
 - 反反爬体系五层成型：限速合规→软起步车道→瞬态 paused→有界自动恢复→窗口开启即续采（task4/6 实证）
 - 工程约束实证：MultiEdit 原子性失效会部分落盘（helper 重复插入后删除修正）——跨行批量编辑后必须 rg 复核
+
+---
+Task ID: 36-a
+Agent: review-verify
+Task: 上轮 11 项修复质量复核 + backend 二轮扫描
+
+Work Log:
+- 【环境】/tmp/gosdk go1.22.5 仍可用；仅改 mini-services/backend-go 4 文件（worker.go/txtdir.go/txtdir_test.go/worker_smart_test.go），scraper-go 零改动零触碰；未 kill/重启任何进程、未 git 操作、未碰 web/ 静态资源
+- 【复核① isTransientScrapeErr 三处调用+词表误伤面】三处（runList Phase 0:1244 / runList p1.OKBooks==0:1284 / runSingle:1376）接线正确；逐词核查错误文本流（callEngine 固定文案 / 引擎 err+detail 策略备注 / upsertBook 与 ensureCategory 错误 / 「无书籍采集成功」「书页提取失败」兜底文案）：当前全部文案无「策略」类误命中，LLM 错误恒返 "" 不入 FirstError。但抓到潜在误伤面并修复：isRateLimitErrText 的裸子串 Contains("rate") 会命中 generate/operate/moderate/separate/accurate 等无关英文词（当前文本流未出现，属一触即误转 paused 的潜在面）；Contains("429"/"503") 会命中内嵌数字（如「第1429章抓取失败」「HTTP 1503」）。修复：429/503/rate 改词元边界正则 reRateLimitToken（(?:^|[^0-9])(?:429|503)(?:[^0-9]|$)|(?:^|[^a-z])rate(?:[^a-z]|$)），真实限流文案（HTTP 429 /（429/503）/ rate limit）全保持命中；中文词表与 budget-exhausted 等长词无歧义保留裸 Contains。worker_smart_test 补 8 条误伤回归向量
+- 【复核② phase2Fill onProgress+stoppedEarly atomic 化】抓到新 bug（Task 35-b 章级调用引入的数据竞争）：runList/runSingle 的 onProgress 闭包内 lastFlush 是裸 int64 读改写，Task 35-b 起章级回调从多车道 goroutine 并发进入 → 并发读写 lastFlush（旧代码单线程书级调用无此问题）。修复：两处改 atomic.Int64 + CompareAndSwap 抢占 800ms 窗口（每窗口恰一次落库，语义与旧单线程一致）。stoppedEarly/shouldStop 并发面复核无问题：atomic Bool 读写无锁序问题，shouldStop 闭包在 laneLimiter.mu 持锁内调用 throttledCheck（自身互斥，不回锁 laneLimiter），锁序 limiter.mu→checkMu 无环、watchdog kick 防挂死在位
+- 【复核③ storex.go upsertBook】四处回读（首查/占位收编/冲突回读×2）均带 status；全库扫 UPDATE Novel 与 description=/status= 写面：仅 upsertBook（有保护）、backfillDescriptions（条件 description='' 只补空）、smartCompleteStatus（条件 status='serial' 只升级）、runner.go:115（仅 categoryId）、用户编辑 API（人为操作允许）——无遗漏降级/清空路径，复核通过
+- 【复核④ web_data.go 邻接查询】SQL 正确（idx</> + ORDER BY idx DESC/ASC LIMIT 1）；实库 sqlite_master 核对：Chapter 有 UNIQUE INDEX Chapter_novelId_idx_key(novelId, idx)，两查询可走该复合索引定位+同序扫描，无需回表排序；无 rows 与 api_chapters.go handleChapterDetail 同口径；复核通过
+- 【复核⑤ txtdir.go syncChapterTxt 写新先行】抓到 35-a 修复遗留口子（真实 bug）：writeChapterTxt 的 error 被丢弃后清理循环照旧执行——「改题保存+写失败」场景旧题名 ≠ final，旧文件仍会被全部删光，正是该修复要防的丢正文形态（同题名场景侥幸不触发所以 35-a 测试未暴露）。修复：写失败提前 return（旧文件全保留，下次编辑保存自然重试），仅写成功才清旧题残留；另 writeChapterTxt 的 WriteFile 失败路径补 os.Remove(tmp) 清残缺 tmp（名尾非 .txt 本就不影响读路径，纯卫生）。新增 TestSyncChapterTxtWriteFailureKeepsOldFiles（root 安全注入：新题名路径预置目录使 rename 必败，断言旧文件保留/无 tmp/清障后重试写成功并清残留）
+- 【复核⑥ scraper-go chain.go】chainSlotDeadline 数学正确（min 语义、timeoutMs≤0 退化、钳不动时取链 deadline）；「钳太紧误 shed 慢站首跳」结论=不会：槽等待=同域排队深度而非站点响应时长，单调用方等待上限 ≈ 有效间隔 1.2-2.5s（AIMD 极值 8s）≪ 有效钳 20.5s（cap=timeoutMs+2s 减 reserveMS 1.5s），shed 仅在 12 车道排队饱和时触发=预期行为；慢站响应时长由 effTimeout/链预算约束不受影响。策略间退避门控 scoping 正确（siAttemptsFrom 截取本策略 attempts；纯引擎自状态 lastStatus 不变+hasRealNetworkAttempt=false 双保险不退避；上一策略真 503+本策略 shed 场景正确跳过退避）。hosthealth 指数退避参数边界正确：非网络级 1s<<shift 钳 4 位→15s 由 maxPenaltyMS 兑底、网络级 1.5s 翻倍钳 8s、熔断冷却 <<exp 溢出由 cooldown<=0 守卫兑底、429/503 Retry-After 指数路径取较大者不打断
+- 【复核⑦ scraper-go ratelimit.go acquireDomainSlotBudgeted】零副作用承诺属实：shed 路径仅 consec.Add(-1) 回退首加、nextAt/lastUsedNano 不动、不睡眠、无锁外状态残留；slotSheds 为观测计数（有意保留）；空闲复位路径即使在 shed 时也只做「放宽」方向的复位无危害；并发窗口内 consec 瞬态 +1 对他方 politenessExtraMS 计算无害
+- 【部分2 二轮扫描 9 文件】api_settings.go（PATCH 白名单/读改写串行锁/病理输入分支齐备）、api_sites.go（host 正则防穿越、查重+唯一约束双防线、PUT 合并语义）、pseo_suggest.go（每引擎独立 ctx 超时+失败隔离、engine client 无全局 Timeout 但 req 挂 ctx 有硬闸、并发结果按索引写无竞态）、pseo_gen.go（sanitize 白名单、LIMIT 参数化、INSERT 错误吞并即「已存在」语义）、api_pseo.go（normalizeMillis 时间戳容错在位、novelIds float64 反序列化安全、batch 锁 defer 释放）、categoryx.go（in-flight 广播 close(done) 先于返回 happens-before 正确、ensureCategory 错误文案无关键词误伤）、llm.go（超时 goroutine 经缓冲 channel+client 5s Timeout 有界回收无泄漏、失败恒返 "" 不污染 FirstError）、chapterorder.go（纯函数+recover 兜底、溢出整弃在位）、api_export.go（N+1 为 35-a 已留档低危观察项）——全部无新 bug；分页边界复核 pageParamList ≥1、pageSize 钳 4-60、(page-1)*pageSize 在 int64 平台无溢出
+- 【验证】backend-go：go build ./... 绿、go vet ./... 零输出、go test -race -count=1 . ok（含新增 TestSyncChapterTxtWriteFailureKeepsOldFiles 与 8 条词表误伤向量全过）、gofmt -w 归一 4 个触碰文件（worker/txtdir/txtdir_test/worker_smart_test——本轮沙箱文件态为历史空格缩进，沿 35-a 惯例归一；runner.go 空格缩进为存量未触碰）；scraper-go：build/vet/test -race 全绿（零改动基线确认）
+
+Stage Summary:
+- 上轮 11 项修复复核结论：9 项正确无副作用；2 项各抓出 1 个真实遗留问题并修复（phase2Fill onProgress lastFlush 数据竞争 = Task 35-b 章级调用引入；syncChapterTxt 写失败仍删旧文件 = Task 35-a 修复未闭环的改题+写失败丢正文口子）
+- isRateLimitErrText 误伤面结论：当前生产错误文本流零误伤（逐词核查实证），但 rate/429/503 裸子串属一触即误的潜在面（generate/operate/moderate/separate/accurate 及内嵌数字），已词元边界硬化并锁定回归
+- 二轮扫描 9 文件（api_settings/api_sites/pseo_suggest/pseo_gen/api_pseo/categoryx/llm/chapterorder/api_export）零新 bug；LLM 调用无错误外泄面（失败恒静默返空）、JSON 解析全 comma-ok 无 panic 面、SQL 全占位符、分页/时间戳容错在位
+- 低危留档（不修）：pseo batch 理论最长 112s 超 WriteTimeout 65s（TS 对齐设计，batch 锁保证重试续跑）；api_export 逐章 legacy 查询 N+1（35-a 已留档）
+- 工程约束：scraper-go 本轮复核零改动（chain/ratelimit/hosthealth 三项参数边界全部实测通过），生产进程未触碰，部署由主线统一做
+
+---
+Task ID: 36-b
+Agent: web-render-audit
+Task: web 渲染层逐行深审（SSR 注入面/模板一致性/admin JS/XSS）
+
+Work Log:
+- 【逐行审查面】web.go（438 行）/web_data.go（860 行）全读；web/templates 12 目录（10 主题+_fallback+admin）×8 页模板全扫（href 形态全量归一分析 595 条、img src/isLocalCover 守卫逐条核对、{{.Q}}/{{.Keyword}}/{{.Description}}/{{.Tags}} 消费点全列）；web/static/js 13 文件全读（app.js+10 主题 js+admin.js 1670 行+admin-fleet.js）；关联面 web_footer.go/api_settings.go(sanitize/renderTpl)/router.go/pseo_book.go/api_pseo.go/api_categories.go/api_scrape_rules.go 契约核对
+- 【P1 admin.js 死按钮修复】ID 全量 diff（admin.html 62 个 adm-* id vs admin.js/admin-fleet.js 引用）实锤 7 个控件从未绑定事件：#adm-rule-new/#adm-rule-save/#adm-rule-cancel（规则新建/保存/取消，saveRuleForm/hideRuleForm 因此是死代码）、#adm-cat-add+#adm-cat-name（添加分类）、#adm-cat-merge-btn（智能归并建议，loadMergeSuggestions 死代码）、#adm-pseo-gen+#adm-pseo-kw（搜索生成）、#adm-pseo-refresh（刷新列表）——后台这几条功能链 UI 完全不可用。修复：新增 initStaticButtons() 按 API 契约接线（POST /api/scrape-rules、POST /api/categories{name}、GET /api/categories/merge、POST /api/pseo/generate{keyword,limit:20}→toast{added,generated}），写操作套防连点
+- 【P2 主题 JS 阅读记录 XSS】trxsw/pilishuwu/23qb/ggd66 四主题历史弹层 innerHTML 直拼 r.bookTitle+r.title（数据链=采集章题/书名→app.js 写 localStorage→弹层注入 DOM），恶意源站章题含 <img onerror> 即持久化 XSS；其余 6 主题（aijjxs/ddyueshu/huangjinwu/101kks/x2552/shipsay）本就 createElement+textContent 安全。修复：4 文件各加 escapeHtml（与 admin.js 同实现）后拼接，10 主题行为对齐
+- 【P2 101kks 首页 <no value>】101kks/home.html:17 是唯一消费 {{.Q}} 的 home 模板，而 webCommon/handleWebHome 从不设 Q 键 → html/template 对 map 缺键渲染字面量「<no value>」进搜索框 value。修复：webCommon data 补 "Q":"" 缺省（搜索页随后覆盖，一行修复全主题无副作用）
+- 【P3 sitemap 非法 XML】url.PathEscape 不转义 &（path 段合法字符），pseo 关键词含 & 即产出非法 <loc> 炸掉整个 sitemap.xml；web.go 新增 xmlEscape() 对 pseo loc 转义（&<>"' 全兜底）
+- 【P3 web404 站名未转义】404 页 <title> 直拼 DB siteName（手改库/历史行非可信）→ template.HTMLEscapeString（与 renderPage 终极兜底同口径）
+- 【P3 搜索 LIKE 反斜杠】ESCAPE '\' 下孤立 \ 吞后续 %/_ 转义符（35-a 移交观察项落地）：NewReplacer 先行 \→\\ 再转 %/_
+- 【P3 admin 智能补全静默假成功】smart-fill 两处裸 fetch().json() 无 res.ok 检查，后端 500/404 时 report 为空 → 误报「体检通过：没有需要补全的书籍」；改走 api() 封装（非 2xx 抛错 toast）
+- 【P3 防连点】admin.js 新增 withBusy()（await 期间 disabled）套 #adm-new-submit（创建任务重复提交）/saveNovelEdit/saveChapterEdit/新增的 rule-save/cat-add/pseo-gen；admin-fleet.js createSite 补 disabled 守卫（saveSite 原本已有）
+- 【报而不修（跨辖区）】router.go:110-115 OPTIONS 预检 Access-Control-Allow-Origin:* 且全部 /api/* 无鉴权无 CSRF token、应用不使用 Cookie（无 SameSite 可依赖）——任意网页可发起预检通过的跨源 JSON 写请求（POST/PUT/PATCH/DELETE），借受害者浏览器打内网实例可绕网络隔离；根因=无鉴权+宽松 CORS 架构取舍，router.go 非 web 辖区按约束不动，移交主线定夺（去 ACAO:* 或加 token/同源校验）
+- 【过检无问题面】SSR 注入面：全部模板变量走 html/template 自动转义，无 template.HTML/safeHTML/自定义 safe 管道（rg 全模板零命中），书名/简介/章题/分类名/站点名/公告/页脚文本/TDK 渲染结果均转义后输出；?theme= 穿越面：白名单 isKnownTheme+_fallback 常量，loadPageTemplate 仅 renderPage 调用且 theme 必经白名单（webCommon:212 站点档案主题纵深校验在位），无穿越面；链接构造：全部主题 href 经 bookURL/chapterURL/tocURL/catURL/pseoURL（strconv 数值化）+searchURL/pseoURL（Query/PathEscape），admin.html 两处直拼亦安全（id 数值/keyword 经 URL 上下文转义），无 ../ 注入 href 面，10 套主题行为一致（_fallback 无友链/站群区块属降级主题设计）；封面：全主题 <img src> 均有 isLocalCover 守卫（仅 /covers/，handleCovers Base+拒..//再兜底），非本地走 gcls 渐变（非法 token 回落 g1），空封面/空书名（title0 回落「书」）/空简介渲染均不产生 broken html；静态/封面 handler 防穿越闭环；404/500 不泄露 DB 路径（路由 404 JSON detail 仅回显请求路径且 JSON content-type）；admin.js/admin-fleet.js 其余 innerHTML 点全部 escapeHtml 过 API 数据（采集书名/章题/规则 notes/proxy/task message/site host 复核无裸拼）；主题 JS 其余交互全 textContent/className DOM API
+- 【临时回归测试（跑完即删）】tmp_audit36_test.go 4 用例：①101kks home 全量骨架渲染断言无 <no value> 且 value=""②12 主题目录×8 页模板解析非 nil③xmlEscape 断言④LIKE 反斜杠转义断言
+- 【验证】go build ./... 绿；go vet ./... 零输出；go test -count=1 ./... 全绿；6 个 JS 文件 node --check 全过；未 kill/重启进程、未 git 操作、未触碰 worker/runner/api_*/router 等非辖区 .go；模板零改动（本轮修复全在 Go 数据层与 JS 层，主线热替换 JS 即生效）
+
+Stage Summary:
+- web 渲染层深审闭环：8 项修复落地（1 P1 admin 死按钮接线 + 2 P2 [主题 JS 阅读 XSS 持久化链、101kks 首页 <no value>] + 5 P3 [sitemap XML/404 转义/LIKE 反斜杠/智能补全假成功/防连点]），10 主题行为一致
+- XSS/注入面总体结论：SSR 层 html/template 自动转义无破口（零 template.HTML）；真实破口在客户端 JS——4 主题阅读记录 innerHTML 直拼采集数据（已修）；?theme= 白名单/静态资源防穿越/链接数值化构造全部在位无穿越面
+- 跨辖区移交：router.go OPTIONS ACAO:* + API 无鉴权无 CSRF 的架构级 CSRF 面（报告未动）；web.go/web_data.go 空格缩进为 HEAD 既有状态（gofmt -l 会标记，最小 diff 未整文件归一，是否归一由主线定夺）
+- 编译结果：go build/vet/test 全绿，node --check 6 JS 全过
+---
+Task ID: 36（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 4 点指令（续）——②持续修复+反反爬 ③精简 ④推送 git
+
+Work Log:
+- 【36-a 子代理·上轮 11 项修复质量复核】7 项全过（isTransientScrapeErr 接线正确/atomic 并发面无锁序问题/简介完结保护无遗漏路径/邻接查询走复合索引/35-b 引擎修复零问题），新抓 3 bug 全修：①P1 lastFlush 裸 int64 被多车道并发读写（35-b 章级 onProgress 引入的竞态，-race 可证）→ atomic.Int64+CAS 抢占 800ms 落库窗口 ②P2 syncChapterTxt「改题保存+写失败」旧文件仍被全删（35-a 修复的同形态残留口子）→ 写失败提前 return ③P3 isRateLimitErrText 裸子串误伤面（rate 命中 generate/operate；429 命中第1429章）→ 429/503/rate 改词元边界正则+8 条回归向量（当前生产文本流零实际误伤，属一触即误潜在面）
+- 【36-b 子代理·web 渲染层逐行深审】修复 8 项：①P1 admin.js 7 个后台按钮从未接线（新建规则/保存规则/取消/添加分类/智能归并建议/PSEO 生成/刷新列表——saveRuleForm/hideRuleForm/loadMergeSuggestions 全是死代码）→ 按 API 契约全部接线+防连点 ②P2 四主题阅读记录 innerHTML 直拼采集数据持久化 XSS（trxsw/pilishuwu/23qb/ggd66）→ escapeHtml（其余 6 主题本就走 textContent，10 主题对齐）③P2 101kks 首页搜索框渲染字面量 <no value> → webCommon 补 Q 缺省 ④P3 sitemap xmlEscape（& 炸 XML）/404 title 转义/LIKE 反斜杠转义/smart-fill 假成功走 api() 封装/withBusy 防连点
+- 【36-b 总体结论】SSR 层无破口：全变量 html/template 自动转义、零 template.HTML、?theme= 白名单无穿越、链接构造全数值化、封面 isLocalCover 守卫闭环；真实破口在客户端 JS（已修）
+- 【主线·CORS 架构面收紧（36-b 移交 P2）】旧版 OPTIONS 预检 ACAO:* 让任意网页可预检通过后跨源读写无鉴权 API → dispatch 入口加 Origin 同源校验（跨源一律 403；Caddy header_up Host {host} 保证网关访问同源判定成立；服务端互调无 Origin 不受影响）——实测：同源 200/跨源 evil 403/跨源预检 403
+- 【精简】两模块死函数/死声明/重复工具扫描 NONE；死按钮接线即「整合」最大项（7 个僵尸控件复活）
+- 【TXT 对账】222 本书中 220 本 both 模式分表↔TXT 文件数完美一致；2 本 db 模式（ixdzs8 单书任务）无 TXT 属设计正确
+- 【部署+E2E】backend 热替换（36-a 3 修复+CORS）→ 5 任务 resume 全部 running；浏览器 E2E：admin 死按钮接线实证（新建规则弹表单/智能归并建议在位）、前台首页+book/108+章节页 2405 字正文渲染、console 零错误
+
+Stage Summary:
+- 本轮合计 14 项修复（36-a 3+36-b 8+主线 CORS+36-b 移交处置+对账验证）：2×P1（lastFlush 竞态/7 死按钮）+4×P2+8×P3
+- 安全面：SSR 注入面零破口结论落档；客户端 XSS 全堵；CORS 从 ACAO:* 收紧为 Origin 同源校验（403）
+- 部署验证链完整：编译→热替换→CORS 三态实测→任务恢复→浏览器 E2E（admin+前台+章节）

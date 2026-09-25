@@ -155,12 +155,20 @@
     var body = { host: host, siteName: siteName };
     if (themeEl && themeEl.value) body.activeTheme = themeEl.value;
     if (noticeEl && noticeEl.value.trim()) body.notice = noticeEl.value;
+    // Task 36-b: 防连点（重复 POST 会因 host 唯一约束报错，但前端不应发起）
+    var createBtn = $('#adm-site-create');
+    if (createBtn && createBtn.disabled) return;
+    if (createBtn) createBtn.disabled = true;
     try {
       await api('POST', '/api/sites', body);
       toast('站点已创建：' + host + '（前台按 Host 命中后生效）', 'ok');
       hostEl.value = ''; nameEl.value = ''; if (noticeEl) noticeEl.value = '';
       loadSites(true);
-    } catch (e) { handleErr(e); }
+    } catch (e) {
+      handleErr(e);
+    } finally {
+      if (createBtn) createBtn.disabled = false;
+    }
   }
 
   /* ==================== 编辑弹层 ==================== */
