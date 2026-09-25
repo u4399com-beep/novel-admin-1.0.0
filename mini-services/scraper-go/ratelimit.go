@@ -82,6 +82,12 @@ type hostSlot struct {
 	aimdMs atomic.Int64
 	// Task 31-b: 自适应态下的连续成功计数（加性回落按每次成功逐步进行）
 	aimdOKStreak atomic.Int64
+	// Task 35-b: 排队/准入观测（/api/host-health?host= 透出）。
+	// lastWaitMS 最近一次真实取槽的等待毫秒；sleepers 当前在锁外睡眠等槽的调用方数；
+	// sheds 预算感知准入累计拒绝次数（shed 不占槽不计 consec）。
+	lastWaitMS atomic.Int64
+	sleepers   atomic.Int64
+	sheds      atomic.Int64
 }
 
 var (
@@ -240,6 +246,23 @@ func politenessExtraMS(consec int64) int64 {
 // 采纳），连续成功后加性缓慢回落（每次成功 -50ms 下限 1.2s）——被限流自动慢下来、恢复后
 // 缓慢提速，成为引擎内建行为。空闲 ≥5 分钟时 AIMD 与突发抑制一并复位。
 func acquireDomainSlot(host string) {
+	acquireDomainSlotBudgeted(host, 0, 0) // deadline=0：旧语义无界等待
+}
+
+// acquireDomainSlotBudgeted Task 35-b: 预算感知取槽——ixdzs8 Phase 2 实证根因（task7 复盘：
+// 115 章成功后 12 车道全灭 61 失败）：域名槽是「预约制」（nextAt 顺延），N 个并发调用方按
+// N×有效间隔错峰拿到槽位；后台 12 车道 × 间隔 1.5-2.5s ⇒ 末位车道纯排队 ≈18-30s，直接吃穿
+// 策略级 20s 预算（backend 不传 timeoutMs → 默认 20s）→ timeout-budget 全灭 → 整链失败
+// ×N → hosthealth 熔断 → 60 章连败提前停止。旧实现在两个方向上自我放大：①排队不感知预算，
+// 必然超时的调用方照样预约槽位（把 nextAt 推得更远、叠 consec 礼貌增量）；②预约后锁外
+// sleep 无法被硬时间闸取消，失败反馈滞后一个排队周期。
+// 本函数在预约前判断：预计等待 + reserveMS 是否超出 deadlineMs 余量，超出则**不预约、不
+// 推 nextAt、不计 consec、不睡眠**，立即返回 granted=false（调用方按结构化快速失败处理，
+// backend 车道控制按「预算耗尽」关键词降档，负反馈秒级生效而非超时级生效）。
+// deadlineMs=0 保持旧语义（无界等待，robots.txt/chapterListApi 等低频路径沿用）。
+// waitedMs 返回实际睡眠毫秒（0 = 未等待/被拒绝），供调用方补偿策略级 deadline（排队时间
+// 不吃服务时间窗）。granted=true 时预约已生效（nextAt 已顺延），调用方必须发起真实请求。
+func acquireDomainSlotBudgeted(host string, deadlineMs int64, reserveMS int64) (waitedMs int64, granted bool) {
 	slot := getHostSlot(host)
 	slot.mu.Lock()
 	now := time.Now()
@@ -259,12 +282,54 @@ func acquireDomainSlot(host string) {
 		base = slot.nextAt
 	}
 	wait := base.Sub(now)
+	// Task 35-b: 预算闸——本槽位的预计等待加服务时间预留必须落在调用方 deadline 内，
+	// 否则拒绝预约（不消耗槽位资源：consec 回退、nextAt 不动），拒绝路径零副作用
+	if deadlineMs > 0 && int64(wait.Milliseconds())+reserveMS > deadlineMs-nowMs() {
+		slot.consec.Add(-1)
+		slot.sheds.Add(1)
+		slot.mu.Unlock()
+		return 0, false
+	}
 	slot.nextAt = base.Add(time.Duration(interval+politenessExtraMS(n))*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
 	slot.lastUsedNano.Store(now.UnixNano())
 	slot.mu.Unlock()
 	if wait > 0 {
+		slot.sleepers.Add(1)
 		time.Sleep(wait)
+		slot.sleepers.Add(-1)
 	}
+	ms := wait.Milliseconds()
+	if ms < 0 {
+		ms = 0
+	}
+	slot.lastWaitMS.Store(ms)
+	return ms, true
+}
+
+// hostSlotStats Task 35-b: 单主机限速槽观测快照（/api/host-health?host= 消费）
+type hostSlotStats struct {
+	LastWaitMS        int64 `json:"lastSlotWaitMs"`
+	Sleepers          int64 `json:"slotSleepers"`
+	Sheds             int64 `json:"slotSheds"`
+	Consec            int64 `json:"slotConsec"`
+	PolitenessExtraMS int64 `json:"politenessExtraMs"`
+}
+
+func hostSlotStatsFor(host string) (hostSlotStats, bool) {
+	hostSlotsMu.Lock()
+	slot, ok := hostSlots[host]
+	hostSlotsMu.Unlock()
+	if !ok {
+		return hostSlotStats{}, false
+	}
+	consec := slot.consec.Load()
+	return hostSlotStats{
+		LastWaitMS:        slot.lastWaitMS.Load(),
+		Sleepers:          slot.sleepers.Load(),
+		Sheds:             slot.sheds.Load(),
+		Consec:            consec,
+		PolitenessExtraMS: politenessExtraMS(consec),
+	}, true
 }
 
 // ==================== 重试 ====================

@@ -258,6 +258,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 
 	for si := 0; si < len(order); si++ {
 		strat := &order[si]
+		siAttemptsFrom := len(attempts) // Task 35-b: 本策略 attempts 起点（策略间退避门控用）
 		if nowMs() > deadline-1500 {
 			attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "budget-exhausted（整体时间预算耗尽，停止尝试后续策略）"})
 			break
@@ -277,7 +278,22 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 				break
 			}
 			// 限速排队可能耗时较长（同主机并发任务时可达数秒）：剩余预算必须在排队之后重新计算
-			acquireDomainSlot(host)
+			// Task 35-b: 预算感知取槽——预计等待将超出剩余预算时不预约槽位、不睡眠，
+			// 结构化快速失败（旧实现照样预约+锁外睡眠到预算耗尽，12 车道饱和时整波
+			// 空耗 20s×N 且 sleep 不可被硬时间闸取消）。备注含 budget-exhausted 前缀：
+			// ①isEngineStateNote 归零网络级连败计数 ②backend isRateLimitErrText 按关键词降档车道
+			// Task 35-b 增强（链层排队上界=单策略预算）：链层取槽只是预等待，策略随后仍会以
+			// 自身 timeoutMs 预算再取一次槽（双重限速为 TS 对齐语义，Task 34 P3-17）——
+			// 排队若超过 timeoutMs+2s，策略层取槽必然 shed，链层先睡后废纯属白占车道
+			//（ixdzs8 task8 实测：12 车道饱和时链层放行 30s 排队、策略层照样 shed，
+			// 单章 30-50s 零产出且活跌车道被睡眠占满）。链层排队上界钳到
+			// now+timeoutMs+2s（chainSlotDeadline），饱和时快速 shed，backend 降档信号秒级生效
+			waited, granted := acquireDomainSlotBudgeted(host, chainSlotDeadline(deadline, int64(timeoutMs), nowMs()), 1500)
+			if !granted {
+				attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "budget-exhausted（限速排队饱和，未预约槽位快速失败，backend 请降并发）"})
+				break
+			}
+			_ = waited // 链层不补偿 deadline：紧随其后的 remaining 重算已把排队时间计入链预算
 			remaining := deadline - nowMs()
 			if remaining < 1500 {
 				attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "budget-exhausted（限速排队后预算耗尽）"})
@@ -395,7 +411,12 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		// 策略间退避：429/5xx/网络错误 → 进入下一策略前显式指数退避+jitter。
 		// 剩余预算 <3s 时不再退避（宁可靠限速器自身 1.2s 间隔，也不突破 55s 硬上限）；
 		// 最后一个策略后无需退避。
-		if si < len(order)-1 && isRetryableStatus(lastStatus) {
+		// Task 35-b: 纯引擎自状态失败（排队饱和 shed/预算耗尽/策略不可用）不退避——
+		// 退避是对「目标站网络层受刺激」的礼貌，引擎自身没发过请求就无需客气；
+		// ixdzs8 task8 实测：饱和链 8 策略 × 500-750ms 退避 ≈ 每章白烧 4-6s 且推迟
+		// backend 拿到 budget-exhausted 降档信号的时点。
+		lastStrategyHadNet := hasRealNetworkAttempt(attempts[siAttemptsFrom:])
+		if si < len(order)-1 && isRetryableStatus(lastStatus) && lastStrategyHadNet {
 			remaining := deadline - nowMs()
 			if remaining > 3000 {
 				capMs := remaining - 2500
@@ -442,7 +463,13 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	// ——此时源站在连接层拒绝本机，hosthealth 会更快熔断+温和退避。
 	// 预算耗尽（budget-exhausted）/策略不可用（unavailable）属引擎自身状态，不计入网络级连败，
 	// 避免把「站点慢」误判成「站点拒绝」而提前熔断。
-	noteChainFailure(host, allAttemptsNetErr(attempts))
+	// Task 35-b: 整链未发起任何真实网络请求（纯引擎自状态：排队饱和 shed/预算耗尽/策略不可用）
+	// 时不再计连败——hosthealth 度量的是站点健康度；ixdzs8 task7 实证：12 车道排队饱和的
+	// 零网络链失败把 strikes 推到 6，熔断冷却指数涨到 600s，半开重试又一次排队超时 →
+	// 10min 锁死。引擎自拥堵不应惩罚站点。
+	if hasRealNetworkAttempt(attempts) {
+		noteChainFailure(host, allAttemptsNetErr(attempts))
+	}
 
 	detailParts := make([]string, 0, len(attempts))
 	for _, a := range attempts {
@@ -494,6 +521,18 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	}
 }
 
+// chainSlotDeadline Task 35-b: 链层取槽的排队上界 = min(链预算 deadline, now+timeoutMs+2s)。
+// 纯函数（表驱动测试见 audit35b_test.go）。timeoutMs≤0 视为无单策略约束（退化为链 deadline）。
+func chainSlotDeadline(chainDeadline, timeoutMs, now int64) int64 {
+	if timeoutMs <= 0 {
+		return chainDeadline
+	}
+	if cap := now + timeoutMs + 2000; cap < chainDeadline {
+		return cap
+	}
+	return chainDeadline
+}
+
 // safeStrategyRun 策略运行 + panic 兜底（TS 版以 try/catch 转 internal-error，语义对齐）
 func safeStrategyRun(s *strategyDef, targetURL string, timeoutMs int64, ctx *strategyRunCtx) (res attemptResult) {
 	defer func() {
@@ -523,11 +562,26 @@ func safeStrategyRun(s *strategyDef, targetURL string, timeoutMs int64, ctx *str
 // 「源站连接层拒绝本机」快速熔断+网络级退避——把「站点慢」误判成「站点拒绝本机」，
 // 与 Task 26-d 注释声明的意图（引擎自身状态不计入网络级连败）相悖。
 func isEngineStateNote(note string) bool {
-	return note == "hard-timeout" || note == "internal-error" ||
+	return note == "hard-timeout" || note == "internal-error" || note == "queue-saturated" ||
 		strings.HasPrefix(note, "budget-exhausted") ||
 		strings.HasPrefix(note, "unavailable") ||
 		strings.HasPrefix(note, "timeout-budget") ||
 		strings.HasPrefix(note, "missing-")
+}
+
+// hasRealNetworkAttempt Task 35-b: 本次链上是否发起过至少一次真实网络尝试（网络层发出过
+// 请求或收到过响应）。纯引擎自状态（排队饱和/预算耗尽/策略不可用/missing-binary/内部 panic）
+// 不算——hosthealth 连败计数与熔断只应由站点真实行为驱动（见 fetchPage 尾部调用点注释）。
+func hasRealNetworkAttempt(attempts []AttemptSummary) bool {
+	for _, a := range attempts {
+		if a.Status != 0 || a.Blocked {
+			return true
+		}
+		if !isEngineStateNote(a.Note) {
+			return true // status=0 但备注非引擎自状态：network-error/timeout 等真实网络层证据
+		}
+	}
+	return false
 }
 
 // allAttemptsNetErr 本次链上所有尝试是否全部为「网络级失败」（status=0、非挑战页、
@@ -553,4 +607,3 @@ func containsStr(arr []string, v string) bool {
 	}
 	return false
 }
-

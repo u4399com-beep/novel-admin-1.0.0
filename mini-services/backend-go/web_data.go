@@ -580,19 +580,32 @@ func handleWebChapter(w http.ResponseWriter, r *http.Request, ps map[string]stri
 	data["Paragraphs"] = paras
 	data["Novel"] = novel
 
-	// 上一章/下一章（按 idx 相邻）
-	fetchAdj := func(idx int64) map[string]any {
+	// 上一章/下一章（Task 35-a 修复：idx 相邻存在性查询而非 idx±1 精确匹配）。
+	// idx 非连续是常态（storeChapter 唯一冲突顺延、audit 去重删行、历史数据断档），
+	// 旧版 idx±1 精确命中在断档处 Prev/Next 恒空 → 阅读页翻页死链；
+	// 与 api_chapters.go handleChapterDetail 的 idx</> 邻接查询同口径。
+	fetchPrev := func() map[string]any {
 		var id, aidx int64
 		var t string
 		if err := queryOne(
-			`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? AND "idx" = ? LIMIT 1`,
-			[]any{&id, &aidx, &t}, chNovelID, idx); err != nil {
+			`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? AND "idx" < ? ORDER BY "idx" DESC LIMIT 1`,
+			[]any{&id, &aidx, &t}, chNovelID, chIdx); err != nil {
 			return nil
 		}
 		return map[string]any{"id": id, "idx": aidx, "title": t}
 	}
-	data["Prev"] = fetchAdj(chIdx - 1)
-	data["Next"] = fetchAdj(chIdx + 1)
+	fetchNext := func() map[string]any {
+		var id, aidx int64
+		var t string
+		if err := queryOne(
+			`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? AND "idx" > ? ORDER BY "idx" ASC LIMIT 1`,
+			[]any{&id, &aidx, &t}, chNovelID, chIdx); err != nil {
+			return nil
+		}
+		return map[string]any{"id": id, "idx": aidx, "title": t}
+	}
+	data["Prev"] = fetchPrev()
+	data["Next"] = fetchNext()
 
 	title, _ := novel["title"].(string)
 	chAuthor, _ := novel["author"].(string)

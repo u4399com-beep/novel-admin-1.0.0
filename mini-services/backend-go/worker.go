@@ -536,6 +536,10 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 // 车道仍 12）、熔断被误分类「封禁/不可达」。补齐：限速（限速排队）/预算耗尽与
 // budget-exhausted（同一形态中英文）/熔断与整链失败（引擎主机熔断期，降档完全正确）。
 // 「timeout-budget」单看可能是慢站而非限流，不纳入（宁窄勿宽，防误降档）。
+// Task 35-b: 补「全部可用策略」——引擎整链失败的另一顶层文案（huangjinwu/xinjianpan
+// 实证「全部可用策略均抓取失败（…timeout…）」）；旧词表只有「整链失败」永不命中，
+// 导致这两站列表阶段直接 failed 终态而非可自动恢复的 paused。整链失败多因自拥堵/
+// 限速封锁（35-b 诊断 ixds8 同源），降档+自动恢复均为正确响应。
 func isRateLimitErrText(err string) bool {
         if err == "" {
                 return false
@@ -545,8 +549,19 @@ func isRateLimitErrText(err string) bool {
                 strings.Contains(low, "限流") || strings.Contains(low, "rate") ||
                 strings.Contains(low, "限速") || strings.Contains(low, "预算耗尽") ||
                 strings.Contains(low, "budget-exhausted") ||
-                strings.Contains(low, "熔断") || strings.Contains(low, "整链失败")
+                strings.Contains(low, "熔断") || strings.Contains(low, "整链失败") ||
+                strings.Contains(low, "全部可用策略")
 }
+
+// isTransientScrapeErr 瞬态失败判定（Task 35-b 抽取共用）：限流/软拦截/引擎主机熔断冷却/
+// 引擎不可达——这些形态重入即可续传，任务应转 paused（自动恢复资格）而非 failed 终态。
+// Task 33 落在 runList Phase 0；Task 35-b 补齐 runList Phase 1 / runSingle 书目全败路径
+// （单书重入撞引擎熔断冷却被误定 failed，数千章进度恢复成本全由人工承担）。
+func isTransientScrapeErr(err string) bool {
+        return isRateLimitErrText(err) || isSoftBlockErrText(err) ||
+                strings.Contains(err, "引擎不可达") || strings.Contains(err, "引擎请求超时")
+}
+
 
 // isSoftBlockErrText 软拦截判定（Task 31 引入，Task 33 提取为包级函数供单测）：
 // 限流窗口的主要形态是 200 空壳/挑战循环失败，Error 文案不含限流字样。口径：挑战/空壳/正文空。
@@ -578,7 +593,10 @@ func laneFloorLoad(taskID int) int {
         return 0
 }
 
-// laneFloorStore 记录任务历史车道下限（只降不升：取历史最小值）
+// laneFloorStore 记录任务历史车道下限（只降不升：取历史最小值）。
+// 首写必须 LoadOrStore（Task 35-a 修复，与 scraper-go Task 33 TestLaneFloorConcurrent 同类竞态）：
+// 并发双 shrink 在首写窗口各自 Load 到 cur==0 后裸 Store，后写的较大值会覆盖先写的更小值，
+// 丢失更深降档记忆 → resume 起步偏高速烧穿。
 func laneFloorStore(taskID, limit int) {
         if limit <= 0 {
                 return
@@ -589,8 +607,10 @@ func laneFloorStore(taskID, limit int) {
                         return
                 }
                 if cur == 0 {
-                        gLaneFloor.Store(taskID, limit)
-                        return
+                        if _, loaded := gLaneFloor.LoadOrStore(taskID, limit); !loaded {
+                                return // 首写成功
+                        }
+                        continue // 并发者已抢先写入：重新取值比较
                 }
                 if gLaneFloor.CompareAndSwap(taskID, cur, limit) {
                         return
@@ -644,7 +664,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
         // 不可达需查站点状态），resume 抖动循环时消息必须能区分两者。
         var lastFailErr atomic.Pointer[string]
         breakerKindLimit := false
-        stoppedEarly := false
+        // Task 35-b: 改 atomic.Bool——章级 onProgress 回调（多车道并发）也会写入
+        var stoppedEarly atomic.Bool
         breakerStopped := false
         isStopped := throttledCheck(func() bool { return stopState(run.TaskID) != "" })
 
@@ -740,11 +761,11 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
         // 终态/熔断消息带形态摘要（timeout×N/熔断×N/空壳×N/挑战×N）才能定位主体失败形态
         var failTimeout, failCircuit, failSoftBlock, failOther atomic.Int64
         for _, novelID := range ids {
-                if stoppedEarly || breakerStopped {
+                if stoppedEarly.Load() || breakerStopped {
                         break
                 }
                 if isStopped() {
-                        stoppedEarly = true
+                        stoppedEarly.Store(true)
                         break
                 }
                 if failBreaker.Load() {
@@ -877,16 +898,24 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                         bookFailed.Add(1)
                                         noteChapterFail()
                                 }
-                        }, func() bool { return isStopped() || failBreaker.Load() })
+                                // Task 35-b: 章级节流进度落库——onProgress 原先只在书级循环末尾
+                                // 调用（:904），单书超长任务（ixdzs8 单本 369 章实测）整本书采完前
+                                // chDone 永不刷新（用户看到的进度静止十几分钟，分表实际每 3s +1 章）。
+                                // 回调内部自带 FLUSH_INTERVAL_MS(800ms) 节流，书级调用保持不变。
+                                if !onProgress(int(filledCtr.Load())) {
+                                        stoppedEarly.Store(true)
+                                        return
+                                }
+                        }, func() bool { return isStopped() || failBreaker.Load() || stoppedEarly.Load() })
                         if failBreaker.Load() {
                                 breakerStopped = true
                         }
                         if !onProgress(int(filledCtr.Load())) {
-                                stoppedEarly = true
+                                stoppedEarly.Store(true)
                                 break
                         }
                         if isStopped() {
-                                stoppedEarly = true
+                                stoppedEarly.Store(true)
                                 break
                         }
                         if breakerStopped {
@@ -911,9 +940,9 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 if v := failOther.Load(); v > 0 {
                         parts = append(parts, fmt.Sprintf("其他×%d", v))
                 }
-                run.Log("[失败形态统计] 共 "+itoa(int(f))+" 章失败："+strings.Join(parts, "、"))
+                run.Log("[失败形态统计] 共 " + itoa(int(f)) + " 章失败：" + strings.Join(parts, "、"))
         }
-        return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly,
+        return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly.Load(),
                 FailBreaker: breakerStopped || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照
                 BreakerRateLimit: breakerKindLimit,
                 // Task 31-b: 车道感知观测指标
@@ -1212,8 +1241,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 // Task 33: 首页抓取失败若是熔断/软拦截形态（引擎主机冷却中，瞬态非真失效），任务转
                 // paused 而非 failed——resume/自动恢复冷却后重新入队即可续传；旧逻辑把带 2.5 万章
                 // 进度的任务打成 failed 终态（列表重入撞 60s 熔断窗口），恢复成本全由人工承担
-                if isRateLimitErrText(firstListErr) || isSoftBlockErrText(firstListErr) ||
-                        strings.Contains(firstListErr, "引擎不可达") || strings.Contains(firstListErr, "引擎请求超时") {
+                if isTransientScrapeErr(firstListErr) {
                         finalize(run, "paused", "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
                         return
                 }
@@ -1250,6 +1278,12 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 msg := p1.FirstError
                 if msg == "" {
                         msg = "无书籍采集成功"
+                }
+                // Task 35-b: 书目全败若是瞬态（引擎熔断冷却/不可达/限流软拦截），转 paused
+                // 而非 failed（同 Phase 0 口径；列表成功但 Phase 1 撞熔断窗口同样可自动恢复）
+                if isTransientScrapeErr(msg) {
+                        finalize(run, "paused", "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
+                        return
                 }
                 finalize(run, "failed", msg)
                 return
@@ -1336,6 +1370,12 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 msg := p1.FirstError
                 if msg == "" {
                         msg = "书页提取失败"
+                }
+                // Task 35-b: 同 runList——单书重入撞引擎熔断冷却/不可达/限流软拦截（瞬态）转
+                // paused 而非 failed；旧逻辑把带数千章进度的单书任务打成 failed 终态
+                if isTransientScrapeErr(msg) {
+                        finalize(run, "paused", "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
+                        return
                 }
                 finalize(run, "failed", msg)
                 return

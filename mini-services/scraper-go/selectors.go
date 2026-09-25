@@ -203,4 +203,3 @@ func pickHref(s *goquery.Selection, rawSelectors []string, base string) string {
 	}
 	return ""
 }
-

@@ -8,10 +8,10 @@
 package main
 
 import (
-	"unicode"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 )

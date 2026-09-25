@@ -62,7 +62,18 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 			var last *attemptResult
 
 			for _, profile := range profiles {
-				acquireDomainSlot(hostOf(targetURL)) // 每个画像的请求同样受域名限速约束
+				// Task 35-b: 预算感知取槽（预计等待超预算时 shed，不预约不睡眠）+
+				// 排队时间补偿 deadline（排队不吃服务时间窗；ixdzs8 12 车道实证：
+				// 末位车道纯排队 18-30s 吃穿 20s 策略预算 → timeout-budget 全灭）
+				waited, granted := acquireDomainSlotBudgeted(hostOf(targetURL), deadline, 1000)
+				if !granted {
+					subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+					if last != nil {
+						last.subAttempts = subAttempts // 同步快照防丢失（Task 34 P3-2 口径）
+					}
+					break
+				}
+				deadline += waited
 				// 限速等待可能耗时 >1s：剩余预算必须在等待之后计算
 				remaining := deadline - nowMs()
 				if remaining < 1000 {
@@ -168,7 +179,13 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 		hops := 0
 		stopVariants := false
 		for {
-			acquireDomainSlot(hostOf(current)) // 每一跳（跨域后是不同域名）都受限速约束
+			// Task 35-b: 预算感知取槽 + 排队时间补偿（与 fetch 系同口径，见 makeFetchStrategy）
+			waited, granted := acquireDomainSlotBudgeted(hostOf(current), deadline, 1000)
+			if !granted {
+				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+				break
+			}
+			deadline += waited
 			remaining := deadline - nowMs()
 			if remaining < 1000 {
 				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
@@ -176,9 +193,9 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 			}
 			s0 := nowMs()
 			hopHeaders := map[string]string{}
-				for hk, hv := range variantHeaders {
-					hopHeaders[hk] = hv
-				}
+			for hk, hv := range variantHeaders {
+				hopHeaders[hk] = hv
+			}
 			if explicitReferer != "" {
 				hopHeaders["referer"] = explicitReferer
 			} else {
@@ -218,7 +235,7 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 
 			// 3xx：解析 Location → 协议白名单 + 逐跳 SSRF 校验 → 限速后请求下一跳
 			if isRedirectStatus(status) {
-				lastHTTPStatus = status // Task 34 (P3-3): 终态 3xx 时 status 不再回 0（对齐 curl 系口径）
+				lastHTTPStatus = status                       // Task 34 (P3-3): 终态 3xx 时 status 不再回 0（对齐 curl 系口径）
 				recordResponseCookies(hopHost, res, hopHTTPS) // 中间跳下发的 Set-Cookie 也要入会话
 				loc := res.Header.Get("Location")
 				_ = res.Body.Close()

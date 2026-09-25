@@ -104,6 +104,11 @@ func handleHostHealth(w http.ResponseWriter, r *http.Request) {
 		out["adaptiveIntervalMs"] = hostAdaptiveIntervalMs(host)
 		out["penaltyMs"] = hostPenaltyMs(host)
 		out["circuitOpenMs"] = hostCircuitOpenMs(host)
+		// Task 35-b: 限速槽排队/准入观测 + 连败深度（12 车道排队饱和类自拥堵的排障入口）
+		out["failStreak"] = hostFailStreak(host)
+		if slotStats, ok := hostSlotStatsFor(host); ok {
+			out["slot"] = slotStats
+		}
 		writeJSON(w, 200, out)
 		return
 	}
@@ -351,4 +356,3 @@ func pageSoftBlockProfile(page fetchPageResult, doc *goquery.Document) map[strin
 	}
 	return prof
 }
-

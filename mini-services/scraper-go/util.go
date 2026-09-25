@@ -281,4 +281,3 @@ func hostOf(rawURL string) string {
 	}
 	return strings.ToLower(u.Host)
 }
-

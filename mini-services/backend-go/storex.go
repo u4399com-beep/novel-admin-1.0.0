@@ -285,6 +285,7 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 	createdNew := false
 	hasExisting := false
 	existingCover := ""
+	existingStatus := "" // Task 35-a: 存量行状态（降级保护判定用；仅 hasExisting/冲突回读命中时有效）
 
 	// Task 32-b: 智能完结——源站状态缺失/不可判时，用简介关键词兜底判定（简介含
 	// 「完本/大结局/全书完」等 → finished；「连载中/未完」等负向词先行）。有明确源站
@@ -296,18 +297,20 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 
 	var id int64
 	var cov string
-	err := queryOne("SELECT id, cover FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&id, &cov}, title, author)
+	var st string
+	err := queryOne("SELECT id, cover, status FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&id, &cov, &st}, title, author)
 	if err == nil {
-		novelID, existingCover, hasExisting = id, cov, true
+		novelID, existingCover, hasExisting, existingStatus = id, cov, true, st
 	} else if isNoRows(err) {
 		// Task 32-b: 作者智能填充后口径可能与存量占位行不同（存量「《X》/佚名」vs 新解析
 		// 「《X》/金庸」）——title-only 收编存量占位作者行，防同书双行（反向场景：存量行
 		// 作者真实、本次占位 → 照旧走新建，与历史行为一致不回归）
 		var jcov string
+		var jst string
 		if qerr := queryOne(
-			"SELECT id, cover FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
-			[]any{&id, &jcov}, title); qerr == nil {
-			novelID, existingCover, hasExisting = id, jcov, true
+			"SELECT id, cover, status FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
+			[]any{&id, &jcov, &jst}, title); qerr == nil {
+			novelID, existingCover, hasExisting, existingStatus = id, jcov, true, jst
 			run.Log("作者口径与存量占位行不一致，收编已有书籍（title-only 兜底）")
 		}
 	} else {
@@ -330,13 +333,16 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 			//（冲突行作者口径可能不同），仍不命中才判失败——绝不因 author 口径丢书
 			var wid int64
 			var wcov string
-			if err2 := queryOne("SELECT id, cover FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&wid, &wcov}, title, author); err2 == nil {
+			var wst string
+			if err2 := queryOne("SELECT id, cover, status FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&wid, &wcov, &wst}, title, author); err2 == nil {
 				novelID = wid
+				existingStatus = wst
 				run.Log(fmt.Sprintf("并发入库冲突，命中已有书籍 #%d", novelID))
 			} else if err3 := queryOne(
-				"SELECT id, cover FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
-				[]any{&wid, &wcov}, title); err3 == nil {
+				"SELECT id, cover, status FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
+				[]any{&wid, &wcov, &wst}, title); err3 == nil {
 				novelID = wid
+				existingStatus = wst
 				run.Log(fmt.Sprintf("并发入库冲突，按 title+占位作者收编已有书籍 #%d", novelID))
 			} else {
 				return fail("书籍入库失败（并发冲突后未找到记录）", true)
@@ -369,9 +375,21 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 		run.IncCreated()
 		run.Log(fmt.Sprintf("新建书籍 #%d《%s》", novelID, truncateRunes(title, 30)))
 	} else {
-		res, uerr := execRetry(
-			"UPDATE Novel SET description = ?, categoryId = ?, status = ?, updatedAt = ? WHERE id = ?",
-			description, categoryID, status, nowMillis(), novelID)
+		// Task 35-a: 状态单向升级保护——源站未给状态且简介兜底也判不出完结时，
+		// 不得把存量 finished 降级回 serial（与 smartCompleteStatus「绝不降级」同哲学；
+		// 源站明确给出连载中状态时源站优先，照常写 serial）
+		if status == "serial" && trimSpaceStr(book.Status) == "" && existingStatus == "finished" {
+			status = "finished"
+		}
+		// Task 35-a: 空简介不覆写——重采时书页简介提取失败（空串）不再清空既有简介
+		//（旧版无条件 SET description 会把历史好数据抹掉，重发任务即触发）
+		uq := "UPDATE Novel SET categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
+		uargs := []any{categoryID, status, nowMillis(), novelID}
+		if description != "" {
+			uq = "UPDATE Novel SET description = ?, categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
+			uargs = []any{description, categoryID, status, nowMillis(), novelID}
+		}
+		res, uerr := execRetry(uq, uargs...)
 		if uerr != nil || rowCountOf(res) == 0 {
 			return fail("书籍更新失败（记录可能已被删除）", true)
 		}

@@ -455,7 +455,16 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 		// 跨域重定向跳也必须受限速约束。Task 34 (P3-16): 首跳判定改 hops==0（旧实现
 		// 按字符串全等 current!=target——某跳重定向回初始 URL 逐字节相同时会漏排队，合规面出豁免洞）
 		if hops > 0 {
-			acquireDomainSlot(hostOf(current))
+			// Task 35-b: 预算感知取槽 + 排队时间补偿：挑战页多跳舞（ixdzs8 每章 3 跳）
+			// 在主机排队饱和时逐跳预约等待会把后续跳的预算吃穿 → 跟随后仍被挑战 →
+			// challenge-loop 误判。预计等待超预算时直接 shed（不预约槽位），跟随后
+			// 的落地页仍可能被限流空壳覆盖——快速失败让链层换策略/让 backend 降并发
+			hopWaited, hopGranted := acquireDomainSlotBudgeted(hostOf(current), deadline, 500)
+			if !hopGranted {
+				return rawResponse{ok: false, status: 0, note: "queue-saturated",
+					warning: "域限速排队将超出本跳预算，未预约槽位快速失败（引擎准入拒绝，backend 请降并发）"}
+			}
+			deadline += hopWaited
 		}
 
 		// Cookie 会话回放：合并该 host 的 cookie（覆盖式设置，调用方不自带 cookie 头）

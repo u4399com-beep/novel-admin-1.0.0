@@ -1584,3 +1584,70 @@ Stage Summary:
 - 智能填充链增强：四步修复 API 毒丸解锁 + 封面缺失可见化 + Phase 2 软起步防首波烧穿 + 失败形态全貌统计
 - 反反爬增强实质项：WAF cookie 会话延长（反复过挑战根因）、UA 跨跳一致、挑战页检测双漏杀堵住、限速合规面两个豁免洞封堵
 - 待下一会话：Task 30 七项挂账、Task 31 其余 4 项（友链内链轮 pSEO/繁简/TXT/分表已在 32 落地，余项见前文）、git 推送待本任务收尾执行
+
+---
+Task ID: 35-a
+Agent: backend-audit
+Task: backend-go 逐行深审抓 bug 并修复
+
+Work Log:
+- 【环境】沙箱清库后 Go 工具链缺失 → 下载 go1.22.5（与项目既往版本同线）至 /tmp/gosdk/go/bin，build/vet/test/gofmt 全链可用；DB/进程零触碰（未 kill/重启任何服务，未 git commit）
+- 【逐行审查】33 个 .go 全读（跳过 t2stable.go 生成表；*_test.go 均可编译随全量测试验证）：worker/engineclient/runner/storex/api_scrape_tasks/api_novels/api_chapters/web_data/web/coversx/txtdir/chapterorder/api_noveltools/api_pseo/api_sites/api_scrape_rules/api_settings/api_categories_merge/llm/db/seed/pool/categoryx/pseo_suggest/pseo_gen/api_export/main 及 httpx/util/runlog/router/pagination/typesx/limits/t2s/cleanx/api_home/api_health/api_categories/api_scrape/web_footer/pseo_book/t2s
+- 【修复① P2 web_data.go:587-608 阅读页 Prev/Next 断档死链】handleWebChapter 旧版按 idx±1 精确匹配取上一/下一章——idx 非连续是常态（storeChapter 唯一冲突顺延/audit 去重删行/历史断档），断档处 Prev/Next 恒空 → 翻页死链；改与 api_chapters.go handleChapterDetail 同口径的 idx</> 邻接查询（ORDER BY idx DESC/ASC LIMIT 1）
+- 【修复② P2 storex.go:288,301-345,377-397 upsertBook 重采覆写丢数据】更新路径旧版无条件 SET description=?/status=?：①重采书页简介提取失败（空串）会清空存量好简介（重发任务即触发）；②源站状态缺失时 mapNovelStatus("")=serial 会把存量 finished 降级（与 smartCompleteStatus「绝不降级」哲学相悖）。修复：四处回读 SELECT 增查 status（existingStatus），空简介跳写 description 列，缺省状态遇存量 finished 单向保护；源站明确「连载中」仍源站优先允许降级
+- 【修复③ P2 txtdir.go:188-206 syncChapterTxt 先删后写丢正文】编辑保存旧版先删全部旧题名 txt 文件再写新文件——writeChapterTxt 失败（磁盘满/权限）时旧文件已删新文件未落，txt 模式书该章正文凭空消失。修复：写新先行（tmp+rename 原子）成功后再清旧题残留（跳过与新文件同路径行），写失败旧文件保留（内容旧但不丢）
+- 【修复④ P3 worker.go:585-604 laneFloorStore 首写竞态】cur==0 分支裸 gLaneFloor.Store——并发双 shrink（12→4 与 4→2 快速连发）在首写窗口互相覆盖，后写较大值覆盖先写更小值，丢深降档记忆 → resume 起步偏快烧穿（与 scraper-go Task 33 TestLaneFloorConcurrent 抓出的同类竞态）。修复：LoadOrStore 首写 + 失败重取比较循环
+- 【临时回归测试（跑完即删）】tmp_audit35_test.go 4 用例 -race 全绿：①upsertBook 三场景（空简介保存量+finished 保护/新简介正常覆写/源站明确状态生效）②laneFloorStore 只降不升+并发首写取 min ③syncChapterTxt 目录只读时旧文件保留+正常同步改题清理回读 ④Prev/Next 邻接查询 idx 断档(1,3,5)命中与首章空
+- 【gofmt】gofmt -l 报 6 文件（worker/storex/txtdir/web_data/api_noveltools/seed——Task 32 记录的「HEAD 即空格缩进」历史状态+本次改动面），按指令 gofmt -w 归一 tab；归一后 storex/txtdir/web_data diff 收敛至仅实际改动行，worker/api_noveltools/seed 为整文件缩进归一（HEAD 本身非格式化）
+- 【验证】go build ./... 绿；go vet ./... 零输出；go test -race -count=1 ./... ok（含 chapterorder/recover/engineclient/storex/categoryx/coversx/txtdir/seed_time/pool_lane/web_footer/worker_smart/api_chapters_audit/api_scrape_tasks/api_settings_theme 全部存量测试）；gofmt -l 全清；scraper-go 目录零触碰
+
+Stage Summary:
+- backend-go 33 文件逐行深审完成，抓出并修复 4 个真实 bug（2 个数据丢失面：重采覆写简介/状态、txt 同步先删后写；1 个前台功能死链：阅读页断档翻页；1 个并发竞态：车道下限首写覆盖），全部最小化修复不改 API 契约
+- 重点排查方向逐项过检结论：goroutine 泄漏/竞态（pool/runlog/laneLimiter/in-flight 去重均锁序正确，仅 laneFloorStore 一处竞态已修）、SQL 注入（全部占位符，拼接面仅常量列名/占位符串/FALLBACK_CATEGORY 编译期常量，无注入面）、错误吞没（历史 P1 修复项均在位且未被合并丢失）、资源泄漏（rows/body/File 全闭环、runPoolDynamic watchdog 正常收、time.After 均短周期）、SSRF（coversx 三层防线完好）、事务原子性（audit 重排/merge/resort 单事务在位）、normalizeMillis 双存储类容错覆盖全读路径
+- 未修观察项（低危留档）：①storeChapterSkeletons 的 Total 在单本超上限截断时含未采章节 → single 模式进度分母偏大（TS 同源语义，展示层）②scanChapters 对纯 txt 书清洗结果写入 ChapterContent（与注释「只读不写」矛盾，效果=获得 DB 清洗副本，无串章，建议后续统一口径）③ensureEngine 对 5xx 也 pkill 重拉（引擎内部错误态会被重启，设计取舍）④sitemap.xml loc 为相对路径（非规范绝对 URL，改动涉部署拓扑）⑤api_export 全书导出逐章 legacy 查询 N+1（低频可接受）⑥handleWebSearch LIKE 未转义查询词中的反斜杠（SQLite 孤立转义符按字面处理不崩）⑦runner.go runBash 已无调用方（runBashSync 取代），留精简主线定夺
+- 工具链备注：本次安装的 Go 在 /tmp/gosdk/go/bin（沙箱重启即失），主线部署机仍用 /home/z/go-sdk/go/bin
+
+---
+Task ID: 35-b
+Agent: scraper-ixdzs8
+Task: ixdzs8 Phase 2 正文失败攻坚 + 反反爬增强
+
+Work Log:
+- 【会话衔接说明】本次为 Task 35-b 第二个会话：上一会话已在源码落地第一批修复（chain/strategies/fetchcurl/curlimp/httpguard 五处「预算感知取槽」+ hosthealth 连败指数退避 + hasRealNetworkAttempt 引擎自状态不计连败 + /api/host-health slot 观测 + audit35b_test.go），并已编译出 ./scraper-go 二进制但未及写 worklog 即中断；生产进程（scraper-go.bin，08:44 构建）仍为旧版。本会话接力：实测定位根因 → 复核并补齐第二批修复 → 全量验证 → 落档
+- 【根因实测①规则链路全绿排除选择器嫌疑】引擎 :3030 直测 ixdzs8（规则 24）：/new/ 列表 20 条全带 URL；书页 /read/646375/ og:novel:* 全提取 + chapterListApi（POST /novel/clist/ bid=bookId）JSON 目录 369 条优于内嵌 8 条；章节 URL 为绝对路径 https://ixdzs8.com/read/{bid}/p{order}.html（无 token 无 404）；/api/chapter 串行抓 p1/p2/p51 全部 200 且 .page-content section 正文 2100-2400 字——「正文选择器不匹配/章节 URL 拼坏」两嫌疑全部排除，问题聚焦抓取并发面
+- 【根因实测②单书任务复现完整失败链】POST backend /api/scrape-tasks 建单书任务 task8（《主人下山》369 章，storageMode=db）：Phase 1 骨架 369 章正常；Phase 2 软起步 4 车道 → 24 章成功逐档回开 4→6→8→10→12（11:45-11:50）→ 12 车道跑 ~100 章后 11:52:20 起雪崩：失败采样全部为「fetch-browser/chrome-desktop: timeout-budget; fetch-ua-rotate: budget-exhausted（整体时间预算耗尽）」→ 车道 12→4→2 → hosthealth 3 strikes 熔断 → 49 章「熔断快速失败」秒失败 → 「正文连续失败 60 章（期间零成功）提前停止」终态：成功 129 / 失败 61（熔断快速失败×49、超时/预算耗尽×12）——与历史 task7「成功 2/失败 69」同形态，完整复现
+- 【根因结论】ixdzs8 无状态码级限流（全程无 429/503），其反爬形态是：session 首访/持续爬取后切「JS token 挑战页」（curl 裸抓实测：350B 壳页，let token=…; window.location.href=location.pathname+"?challenge="+encodeURIComponent(token)，跟随后 302 回原 URL 携 PHPSESSID 放行）+ 挑战期每章请求数 1→3（挑战壳→?challenge=TOKEN→302→正文）。域名限速槽（1.2s+ 预约制 FIFO）下 12 车道 × 3 grant/章 ⇒ 排队需求 36 grant/周期 vs 供给 ~1/1.3s ⇒ 末位车道排队 30-50s 吃穿 20s 策略预算 → timeout-budget 雪崩 → 旧实现 budget-exhausted 也计连败 → 熔断锁死。即「引擎自拥堵 + 双重限速取槽」，非站点封禁
+- 【修复②-1 chain.go 链层取槽排队上界】新增纯函数 chainSlotDeadline（chain.go:524）：链层 acquireDomainSlotBudgeted 的 deadline 由「链预算 50s」钳到 min(链 deadline, now+timeoutMs+2s)（chain.go:290）——旧链层放行 30s 排队后策略层照样 shed，先睡后废白占车道；钳后饱和时秒级 shed，backend 车道降档信号从 30-50s 级提前到即时
+- 【修复②-2 chain.go 策略间退避门控】纯引擎自状态失败（本策略 attempts 全为 shed/budget 备注）不再付策略间 500-750ms 退避税（chain.go:418-419，lastStrategyHadNet := hasRealNetworkAttempt(attempts[siAttemptsFrom:]) 门控）——退避是对目标站网络层受刺激的礼貌，引擎没发过请求就无需客气；饱和链 8 策略 × 退避 ≈ 每章省 4-6s 且降档信号不再被推迟
+- 【修复②-3 观测补强继承】/api/host-health?host= 透出 failStreak + slot{lastSlotWaitMs/slotSleepers/slotSheds/slotConsec/politenessExtraMs}（handlers.go:107/ratelimit.go:85,309）——排队饱和类自拥堵从此有数字可查
+- 【合规边界确认】挑战跟随逐跳限速维持不动（每域名 ≥1.2s 是模块硬红线；「同 host 挑战跳降间隔」提案否决——红线上微调合规面，且 shed 机制已可自稳）；浏览器跳步 P3-16 修复不回退
+- 【方向 B 逐项结论】B-1 hosthealth：非网络级连败 1s→2s→4s→8s→15s 指数退避（上会话落地，本会话 TestNoteChainFailureStreakEscalation 锁定）+ 零网络链不计连败/熔断（TestHasRealNetworkAttempt）——「连败 60 才停烧预算」主烧点已由 shed 零副作用化；B-2 挑战 cookie：Task 34 P2-1（显式过期定 TTL 钳 7 天）在位，实测挑战 302 放行链（PHPSESSID）在会话内稳定复用，正文链受益确认；B-3 curl-impersonate：21 个二进制在 ~/.local/bin 且 /api/strategies available=True，无需指纹特配（ixdzs8 由 fetch-browser 通吃）
+- 【活体验证（新二进制 3031 独立实例，未触碰生产）】①顺序单章 5.6s（挑战期 3 跳）成功；②8 并发 burst（与 backend 同参：默认 20s 预算）8/8 全成功 12-22s/章，slotSheds=0 lastSlotWaitMs=10728 failStreak=0——旧二进制同形态即 timeout-budget 雪崩，新二进制预算闸自稳；③build/vet/test -race/gofmt 全绿（audit35b_test 9 用例含新增 TestChainSlotDeadline/TestInterStrategyBackoffGate）
+- 【遗留移交（backend-go 辖区，本任务禁改）】task8 暂停后 runner 有界自动恢复重入时恰逢引擎熔断冷却，book 页抓取失败被 runSingle 定为 failed 终态（p1.FirstError 直传）——runList 已有 Task 33 缺口①瞬态→paused 修复，runSingle 书页路径无同款保护，建议主线补齐：book 页失败含熔断/限流字样时转 paused
+- 【环境】测试实例 SCRAPER_PORT=3031 独立进程（进程名 ./scraper-go 不匹配 ensureEngine 的 scraper-[g]o.bin pkill 模式，生产零影响，验证完即清）；生产 backend-go/scraper-go.bin 全程未重启；未 git 操作
+
+Stage Summary:
+- 根因定案：ixdzs8 Phase 2 正文雪崩 = 站点 JS token 挑战期（每章 1→3 请求）× 12 车道并发 × 域名槽 1.2s 预约制 ⇒ 排队 30-50s 吃穿 20s 策略预算 ⇒ timeout-budget 雪崩 + 旧计法把引擎自拥堵计入连败 ⇒ 熔断锁死；规则 24（选择器/chapterListApi/URL 形态）实测全绿无配置问题
+- 修复清单（scraper-go，未部署）：①chain.go:290 链层取槽 deadline 钳 min(链预算, now+timeoutMs+2s)（新纯函数 chainSlotDeadline:524）②chain.go:418-419 纯引擎自状态策略间退避豁免 ③继承上会话：五策略预算感知取槽（shed 零副作用）/零网络链不计连败熔断/非网络级连败指数退避 1s→15s/slot+failStreak 观测面
+- 预期行为（部署后）：车道回开到 8-12 后若触发挑战期，排队超 22s 的调用秒级 shed（budget-exhausted 关键词）→ backend isRateLimitErrText 降档 12→4→2 → 排队回退章节恢复 → 24 连胜再回开；hosthealth 不再被自拥堵推爆，熔断只反映站点真实拒绝；最坏情况从「烧满 50s×60 章+10min 熔断锁死」变为「秒级 shed+秒级降档+暂停保护」
+- 部署后需复测：①主线热替换 scraper-go（新二进制已就绪：./scraper-go，12:01 构建，build/vet/test -race 全绿）②resume/restart task8（129/369 已存，注意当前为 failed 态需手动重发或 resume）观察 Phase 2 失败形态统计应见「超时/预算耗尽×N」显著下降且不再出现「熔断快速失败×N」主导 ③观察 /api/host-health?host=ixdzs8.com 的 slotSheds/failStreak 是否随车道降档回落 ④长跑看挑战期车道自稳均衡位（预计 4-6 车道可持续）
+---
+Task ID: 35（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 4 点指令——②采集+反反爬增强+逐行深度抓 bug 全部修复 ③清理整合优化精简 ④推送 git
+
+Work Log:
+- 【环境第 6 次沙箱清库】DB 表/dev.log/TXT/covers 全失但 seed 自动播种再次生效（15 规则+9 分类秒回）；重建 6 个 list 任务（storageMode=both）恢复数据生产
+- 【35-a 子代理·backend-go 逐行深审】修复 4 项：①web_data.go 阅读页 Prev/Next 按 idx±1 精确匹配断档处死链→改邻接查询（P2）②storex.go upsertBook 重采空简介清空存量好简介+缺省状态把 finished 降级 serial→空简介跳写+finished 单向保护（P2）③txtdir.go syncChapterTxt 先删后写，写失败旧文件已删正文凭空消失→写新先行成功再清旧（P2）④worker.go laneFloorStore 首写裸 Store 并发覆盖丢深降档记忆→LoadOrStore 循环（P3）
+- 【35-b 子代理·ixdzs8 Phase 2 正文雪崩攻坚】根因定案=引擎自拥堵（12 车道×挑战期 3 请求/章 vs 限速槽 1.2s 供给→末位排队 30-50s 吃穿 20s 预算→budget-exhausted 雪崩→误计入连败→3 strikes 熔断→49 章熔断快速失败）。修复 5 项：链层取槽 deadline 钳 min(链预算,+2s) 秒级 shed、策略间退避门控（纯引擎自状态不付退避税）、acquireDomainSlotBudgeted 预算闸零副作用 shed、零真实网络尝试不计连败熔断+非网络连败指数退避 1s→15s、host-health 透出 failStreak/slot 观测面
+- 【35-b 移交缺口补修】runSingle/runList Phase 1 书目全败无瞬态保护（单书重入撞引擎熔断冷却被误定 failed）→ isTransientScrapeErr 抽取共用，三处统一转 paused
+- 【词表脱节 bug（本轮实测新抓）】引擎整链失败顶层文案「全部可用策略均抓取失败（…timeout…）」不在 isRateLimitErrText 词表（旧表只有「整链失败」）→ huangjinwu/xinjianpan 列表阶段永远误判 failed 终态。补词+单测断言；实证：两站 restart 后本次抓取成功（窗口型封锁解除），新词表兜住未来 timeout 场景转 paused 自动恢复
+- 【章级进度落库修复（本轮实测新抓）】phase2Fill 的 onProgress 只在书级循环末尾调用，单书 369 章任务整本书采完前 chDone 永不刷新（实测卡 129 超过 15 分钟，分表实际每 3s +1 章）→ 章级节流 flush（回调自带 800ms 节流）；stoppedEarly 改 atomic.Bool（多车道并发写安全）+纳入 shouldStop 闭包（记录删除时全车道及时停）
+- 【精简】runBash 死代码删除（runBashSync 取代后无调用方）；两模块死函数/死声明/重复工具扫描均 NONE
+- 【部署+E2E 实证】两轮热替换（engine+backend 各一轮）→ 双 /api/health ok；task8 ixdzs8 复测终态 partial「235 章成功/5 章失败」vs 历史「成功 2/失败 69」质变，车道软起步 4→6→8→10→12 连胜回开零熔断；task4/6 窗口开启后列表翻页正常；全部 7 任务 running/paused 健康
+
+Stage Summary:
+- ixdzs8 Phase 2 雪崩闭环：根因=引擎自拥堵非站点封禁，5 项修复+E2E 质变实证（235 成功 vs 历史 2 成功）
+- backend-go 本轮合计 7 项修复（35-a 4 项+主线 3 项：瞬态保护三处统一/词表脱节/章级进度落库）
+- 反反爬体系五层成型：限速合规→软起步车道→瞬态 paused→有界自动恢复→窗口开启即续采（task4/6 实证）
+- 工程约束实证：MultiEdit 原子性失效会部分落盘（helper 重复插入后删除修正）——跨行批量编辑后必须 rg 复核

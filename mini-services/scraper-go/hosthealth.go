@@ -36,6 +36,7 @@ const (
 type hostHealth struct {
 	strikes      int
 	netStreak    int // 连续「纯网络级错误」整链失败计数（连接层被拒/EOF）
+	failStreak   int // Task 35-b: 连续整链失败计数（含网络级/HTTP 级；成功即随健康度整体清零），驱动非网络级连败的指数退避
 	openUntil    int64
 	penaltyMs    int64
 	penaltyUntil int64
@@ -97,6 +98,17 @@ func hostCircuitOpenMs(host string) int64 {
 	return h.openUntil - nowMs()
 }
 
+// hostFailStreak Task 35-b: 当前连续整链失败计数（0 = 无记忆/已成功复位）。
+// /api/host-health?host= 观测面消费，供运维/后续 backend 车道感知判断软拦截深度。
+func hostFailStreak(host string) int {
+	healthMu.Lock()
+	defer healthMu.Unlock()
+	if h, ok := healthMap[host]; ok {
+		return h.failStreak
+	}
+	return 0
+}
+
 // noteRateLimited 记录一次限流（429/503）：Retry-After 优先，缺省指数增长。
 // Task 32-d: 同步记录限流时刻与状态码（供 hostRateLimitMemo 注入 fetch 失败错误）
 func noteRateLimited(host string, status int, retryAfterMs *int64) {
@@ -133,6 +145,12 @@ func noteRateLimited(host string, status int, retryAfterMs *int64) {
 //  2. 纯网络级连败 2 次即熔断（netBreakerStrikes）：连接层被拒＝源站拒绝本机，
 //     3 次阈值会让全链多空烧一整轮；
 //  3. 冷却指数增长口径不变（60s→120s→…上界 10min），成功一次整体清零。
+//
+// Task 35-b 增强（方向 B-1 自适应退避）：非网络级连败从「固定 1s」改为按 failStreak
+// 指数增长（1s→2s→4s→8s→15s 上界 maxPenaltyMS）：持续软拦截（200 空壳/挑战循环）时
+// 每次失败把下一拍退避翻倍，烧预算速率随连败深度自动衰减；一次性抖动仍只退 1s。
+// 网络级路径维持 netStreak 翻倍（既有口径）；两路径共用「取较大者」合入逻辑，
+// 429/503 的 Retry-After 指数路径不被打断。
 func noteChainFailure(host string, allNetErr bool) {
 	if host == "" {
 		return
@@ -141,6 +159,7 @@ func noteChainFailure(host string, allNetErr bool) {
 	defer healthMu.Unlock()
 	h := touchHealth(host)
 	h.strikes++
+	h.failStreak++
 	if allNetErr {
 		h.netStreak++
 	} else {
@@ -156,6 +175,16 @@ func noteChainFailure(host string, allNetErr bool) {
 		if suggest > netFailPenaltyMaxMS {
 			suggest = netFailPenaltyMaxMS
 		}
+	} else {
+		// Task 35-b: 非网络级连败指数退避：1s 左移 (failStreak-1) 位，钳 4 位（×16 → 15s 由 maxPenaltyMS 兑底）
+		shift := h.failStreak - 1
+		if shift > 4 {
+			shift = 4
+		}
+		if shift < 0 {
+			shift = 0
+		}
+		suggest = int64(1_000) << uint(shift)
 	}
 	if suggest > h.penaltyMs {
 		h.penaltyMs = suggest

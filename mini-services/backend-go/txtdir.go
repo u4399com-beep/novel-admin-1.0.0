@@ -187,15 +187,22 @@ func removeChapterTxt(novelID, idx int) {
 
 // syncChapterTxt 编辑保存时的分章文件同步：该章已有 txt 文件（说明该书处于 txt/both 模式）
 // 才按最新标题/正文重写（旧文件名含旧标题时顺带清理）；无文件（db 模式）零开销直返。
+// Task 35-a: 写新先行——旧版先删全部旧文件再写新文件，writeChapterTxt 失败时旧文件已删、
+// 新文件未落盘，txt 模式书该章正文凭空消失；改为先写新文件（tmp+rename 原子），成功后再
+// 清理旧题名残留（跳过与新文件同名的目标行），写失败旧文件原样保留（内容旧但不丢）。
 func syncChapterTxt(novelID, idx int, title, content string) {
 	matches, err := filepath.Glob(filepath.Join(novelTxtDir(novelID), fmt.Sprintf("%05d", idx)+"_*.txt"))
 	if err != nil || len(matches) == 0 {
 		return
 	}
+	final := chapterTxtPath(novelID, idx, title)
+	_ = writeChapterTxt(novelID, idx, title, content)
 	for _, m := range matches {
+		if m == final {
+			continue // 同名覆盖场景：新文件即目标，不得误删
+		}
 		_ = os.Remove(m)
 	}
-	_ = writeChapterTxt(novelID, idx, title, content)
 }
 
 // exportedTxtItem 已导出合并文件条目（GET /api/export-txt/list 行）

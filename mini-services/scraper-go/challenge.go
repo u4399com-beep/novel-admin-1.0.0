@@ -202,4 +202,3 @@ func challengeFeatureSummary(b []byte) []string {
 	}
 	return hits
 }
-
