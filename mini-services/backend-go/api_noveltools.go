@@ -266,6 +266,28 @@ func resortApplyReorder(novelID int64, order []int64) (int, error) {
 	return len(order), nil
 }
 
+// resortTxtMoves 重排前后 idx 迁移表（Task 38-b）：order 为重排后的章节 id 顺序，
+// 落位目标=位置 i+1；与重排前 idx 不同的行才需要同步分章 txt 文件名。
+// 与 api_chapters.go audit 重排（Task 33-b）同口径：reindexChapterTxtFiles 对无文件行
+// （db 模式/未落盘）自动跳过，两段式 rename 防 swap 互覆。
+func resortTxtMoves(chapters []resortChapterRow, order []int64) []chapterTxtMove {
+	byID := make(map[int64]resortChapterRow, len(chapters))
+	for _, ch := range chapters {
+		byID[ch.id] = ch
+	}
+	moves := make([]chapterTxtMove, 0)
+	for i, id := range order {
+		ch, ok := byID[id]
+		if !ok {
+			continue
+		}
+		if target := int64(i + 1); ch.idx != target {
+			moves = append(moves, chapterTxtMove{ChapterID: ch.id, OldIdx: ch.idx, NewIdx: target, Title: ch.title})
+		}
+	}
+	return moves
+}
+
 func handleNovelsResortChaptersGet(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	books, candidates, err := resortAudit()
 	if err != nil {
@@ -328,6 +350,11 @@ func handleNovelsResortChaptersPost(w http.ResponseWriter, r *http.Request, _ ma
 			failJSON(w, "目录重排失败", firstLineErr(aerr), 500)
 			return
 		}
+		// Task 38-b: 重排落库后同步分章 txt 文件名。旧版遗漏（与 Task 33-b audit 重排
+		// 同形态的姊妹路径）：txt/both 模式书的分章文件名内嵌 idx，DB 重排后文件仍挂旧
+		// idx → readChapterFromTxt 按「新 idx」前缀命中别的章（串章）或读不到
+		//（txt 书正文"丢失"），三级回落读到错误内容。
+		reindexChapterTxtFiles(cid, resortTxtMoves(chapters, order))
 		results = append(results, map[string]any{"id": cid, "title": title, "moved": moved})
 	}
 	writeJSON(w, 200, map[string]any{"scanned": len(candidates), "reordered": len(results), "results": results})

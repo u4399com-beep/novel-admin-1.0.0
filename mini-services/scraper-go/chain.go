@@ -132,7 +132,11 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	var host string
 	var hostName string // Task 27-c: 不含端口的主机名（SSRF 校验口径与各策略逐跳一致）
 	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
-		host = u.Host
+		// Task 38-a: host 键统一小写（hostOf 同口径）——host 同时用作限速槽/健康度熔断/
+		// 策略亲和/限流记忆的 key，而各策略层取槽走 hostOf()（已小写）；链层若保留原样，
+		// URL 带大写域名（http://Example.COM/）时同站点会分裂出两个槽桶/两份健康度，
+		// 1.2s 合规限速被稀释、熔断/退避记忆互不可见
+		host = strings.ToLower(u.Host)
 		hostName = u.Hostname()
 	} else {
 		return fetchPageResult{
@@ -562,7 +566,9 @@ func safeStrategyRun(s *strategyDef, targetURL string, timeoutMs int64, ctx *str
 // 「源站连接层拒绝本机」快速熔断+网络级退避——把「站点慢」误判成「站点拒绝本机」，
 // 与 Task 26-d 注释声明的意图（引擎自身状态不计入网络级连败）相悖。
 func isEngineStateNote(note string) bool {
+	// Task 38-a: engine-cancel = 硬时间闸 hcancel() 中止在途请求（netErrNote 归类），引擎自状态
 	return note == "hard-timeout" || note == "internal-error" || note == "queue-saturated" ||
+		note == "engine-cancel" ||
 		strings.HasPrefix(note, "budget-exhausted") ||
 		strings.HasPrefix(note, "unavailable") ||
 		strings.HasPrefix(note, "timeout-budget") ||

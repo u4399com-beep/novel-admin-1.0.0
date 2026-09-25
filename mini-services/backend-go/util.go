@@ -31,23 +31,3 @@ func readAllLimited(r io.Reader, maxBytes int) ([]byte, error) {
 	}
 	return b, nil
 }
-
-// strSlice any → []string（JSON 数组字段兜底转换）
-func strSlice(v any) []string {
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(arr))
-	for _, it := range arr {
-		if s, ok := it.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// derefStr 去除字符串首尾空白并截断（表单字段统一清洗）
-func cleanStr(v any, maxLen int) string {
-	return truncateRunes(strings.TrimSpace(strField(v, 0)), maxLen)
-}

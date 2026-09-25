@@ -179,6 +179,9 @@ var curlImpersonateStrategy = strategyDef{
 		explicitReferer := ctx.referer
 		deadline := nowMs() + timeoutMs
 		var lastRetryAfter *int64
+		// Task 38-a: 本策略内最近一次限流记忆（混合失败时提升返回，保住链层退避记忆）
+		lastLimitedStatus := 0
+		var lastLimitedRetryAfter *int64
 		// Task 32-d 修复：旧实现失败时 status 恒回 0——curl 系策略收到 HTTP 429/5xx 后
 		// 链层 res.status=0，noteRateLimited/AIMD（res.status==429||503 分支）永不触发，
 		// 限流记忆与退避全部丢失（与 gotStrategyRun 的 lastHTTPStatus 口径对齐）
@@ -266,7 +269,8 @@ var curlImpersonateStrategy = strategyDef{
 					args = append(args, "--header", k+": "+v)
 				}
 				https := tu.Scheme == "https"
-				if cookie := cookieHeaderFor(tu.Host, https); cookie != "" {
+				// Task 38-a: 桶 key 归一 hostOf（小写，与 fetch/got 系一致，防大小写变体分裂会话）
+				if cookie := cookieHeaderFor(hostOf(current), https); cookie != "" {
 					args = append(args, "--cookie", cookie)
 				}
 				args = append(args, variant.extraArgs...)
@@ -310,7 +314,7 @@ var curlImpersonateStrategy = strategyDef{
 				hdrText := string(hdrTextBytes)
 				// Set-Cookie 捕获（每一跳都入会话——3xx 种子跳也在内）
 				if scLines := headerLines(hdrText, "Set-Cookie"); len(scLines) > 0 {
-					recordSetCookieLines(tu.Host, scLines, https)
+					recordSetCookieLines(hostOf(current), scLines, https)
 				}
 
 				if isRedirectStatus(status) {
@@ -368,21 +372,30 @@ var curlImpersonateStrategy = strategyDef{
 				}
 				// Retry-After 解析：与 fetch/got 系策略对齐（429/503 时供链层做退避记忆）
 				if status == 429 || status == 503 {
+					// Task 38-a: 记录限流状态供失败返回时提升（promoteRateLimitedStatus）
+					lastLimitedStatus = status
 					if ras := headerLines(hdrText, "Retry-After"); len(ras) > 0 {
 						if ra := parseRetryAfterMs(ras[0]); ra != nil {
 							lastRetryAfter = ra
+							lastLimitedRetryAfter = ra
 						}
 					}
 				}
 				if a.ok {
 					return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts, retryAfter: lastRetryAfter}
 				}
-				break // 非重定向且非 2xx：换 HTTP/1.1 画像重试（由外层 variants 循环继续；lastRetryAfter 保留供最终结果）
+				if status >= 400 {
+					// Task 38-a: 4xx/5xx 时停止协议梯子（对齐 got 系口径：换协议不会改变服务端
+					// 按 UA/JA3 层做出的拒绝决策，对限流中的站点追加降级请求只会加重刺激）
+					stopVariants = true
+				}
+				break // 非重定向且非 2xx：2xx 之外的 3xx/1xx 换 HTTP/1.1 画像重试，4xx/5xx 已停梯子（lastRetryAfter 保留供最终结果）
 			}
 			if stopVariants {
 				break
 			}
 		}
-		return attemptResult{ok: false, status: lastHTTPStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: lastRetryAfter}
+		finalStatus, finalRA := promoteRateLimitedStatus(lastHTTPStatus, lastRetryAfter, lastLimitedStatus, lastLimitedRetryAfter) // Task 38-a
+		return attemptResult{ok: false, status: finalStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: finalRA}
 	},
 }

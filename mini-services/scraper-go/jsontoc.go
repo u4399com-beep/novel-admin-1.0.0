@@ -189,9 +189,11 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 
 	// 3) 请求（复用引擎 cookie 会话：书页抓取时种下的会话 cookie 是部分站点的放行条件）
 	// 同域请求同样受限速约束（JSON 目录是页面抓取之外的额外请求，不豁免）
-	acquireDomainSlot(apiURL.Host)
+	// Task 38-a: 限速槽 key 归一小写（与链层/策略层 hostOf 同口径，防大小写变体稀释限速）
+	acquireDomainSlot(strings.ToLower(apiURL.Host))
 	https := apiURL.Scheme == "https"
-	cookie := cookieHeaderFor(apiURL.Host, https)
+	// Task 38-a: 桶 key 归一 hostOf（小写，与策略层一致，防大小写变体分裂会话）
+	cookie := cookieHeaderFor(hostOf(apiURL.String()), https)
 	var req *http.Request
 	if cfg.method == "POST" {
 		// 用 strings.NewReader 让 NewRequest 自动设置 ContentLength：
@@ -231,7 +233,7 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	}
 	// 会话 cookie 持续回放：接口下发的 Set-Cookie 也入 jar（与策略层行为一致）
 	if lines := res.Header.Values("Set-Cookie"); len(lines) > 0 {
-		recordSetCookieLines(apiURL.Host, lines, https)
+		recordSetCookieLines(hostOf(apiURL.String()), lines, https)
 	}
 	body, tooLarge := readAllCapped(res.Body, maxTocBytes)
 	if tooLarge || len(body) == 0 {

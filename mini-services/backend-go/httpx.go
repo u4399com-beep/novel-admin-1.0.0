@@ -12,13 +12,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
 )
-
-const maxBodyBytes = 1 << 20 // 1MB 请求体上限（与引擎一致）
 
 // writeJSON 写 JSON 响应
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -38,28 +35,6 @@ func failJSON(w http.ResponseWriter, errMsg, detail string, status int) {
 	writeJSON(w, status, map[string]string{"error": errMsg, "detail": detail})
 }
 
-// readJSON 读取请求体到 map[string]any（超限/坏 JSON 返回 false 并已写 400 响应）
-func readJSON(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
-	if err != nil {
-		failJSON(w, "参数错误", "请求体读取失败", 400)
-		return nil, false
-	}
-	if len(body) > maxBodyBytes {
-		failJSON(w, "参数错误", "请求体超限（>1MB）", 413)
-		return nil, false
-	}
-	var m map[string]any
-	if err := json.Unmarshal(body, &m); err != nil {
-		failJSON(w, "参数错误", "请求体不是合法 JSON 对象", 400)
-		return nil, false
-	}
-	if m == nil {
-		m = map[string]any{}
-	}
-	return m, true
-}
-
 // strField 从 body 取字符串字段（缺省空串）
 func strField(v any, maxLen int) string {
 	s, _ := v.(string)
@@ -70,23 +45,6 @@ func strField(v any, maxLen int) string {
 	return s
 }
 
-// boolField 取布尔字段
-func boolField(v any) bool {
-	b, _ := v.(bool)
-	return b
-}
-
-// floatField 取数值字段（JSON 数字统一 float64）
-func floatField(v any) float64 {
-	f, _ := v.(float64)
-	return f
-}
-
-// intField 取整数字段
-func intField(v any) int {
-	return int(floatField(v))
-}
-
 // optIntField 可选整数字段（存在且为数字返回 true）
 func optIntField(v any) (int, bool) {
 	f, ok := v.(float64)
@@ -94,29 +52,6 @@ func optIntField(v any) (int, bool) {
 		return 0, false
 	}
 	return int(f), true
-}
-
-// parseID 解析路径参数 id（非数字写 400 响应并返回 false）
-func parseID(w http.ResponseWriter, raw string) (int, bool) {
-	id, err := strconv.Atoi(raw)
-	if err != nil || id <= 0 {
-		failJSON(w, "参数错误", "id 须为正整数", 400)
-		return 0, false
-	}
-	return id, true
-}
-
-// parseQueryInt 解析 query 参数为整数（非法/缺省返回 def）
-func parseQueryInt(r *http.Request, key string, def int) int {
-	v := r.URL.Query().Get(key)
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
 }
 
 // parseQueryStr 解析 query 参数字符串

@@ -1,7 +1,7 @@
 /**
  * backend-go —— SQLite 访问层（modernc.org/sqlite 纯 Go 驱动，免 cgo）。
  *
- * 直接读写主站既有库 db/custom.db（Prisma 建库，表结构见 prisma/schema.prisma）：
+ * 直接读写业务库 db/custom.db（schema 由运行时 DDL 幂等管理 + seed/seed.json 播种）：
  * - WAL + busy_timeout(5s) + foreign_keys(1)：跨进程安全（本服务是唯一业务写入方，
  *   scraper-go 引擎不碰业务库）
  * - Task 32-b 性能设定：cache_size=-32000(32MB)、mmap_size=256MB、temp_store=MEMORY、
@@ -14,7 +14,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -95,7 +94,7 @@ func getDB() (*sql.DB, error) {
 // 会临时改写为负数再重排；并发入库冲突时序号顺延），以 idx 作键正文会错位/成孤儿；
 // chapterId（Chapter.id 自增主键）终生不变，级联链 Novel→Chapter→ChapterContent 双跳
 // ON DELETE CASCADE 在 SQLite 下逐级触发，章删除/书删除正文自动清理。该表由 Go 侧
-// 运行时幂等建表管理（SiteSite 先例），prisma/schema.prisma 仅作结构对照文档。
+// 运行时幂等建表管理（SiteSite 先例），表结构即本文件 DDL 为准。
 const chapterContentDDL = `CREATE TABLE IF NOT EXISTS "ChapterContent" (
         "chapterId" INTEGER NOT NULL PRIMARY KEY,
         "content" TEXT NOT NULL DEFAULT '',
@@ -287,37 +286,10 @@ func isNoRows(err error) bool {
 	return errors.Is(err, sql.ErrNoRows)
 }
 
-// ---------- JSON 列 helpers ----------
+// ---------- 时间 helpers ----------
 
-// jsonColumn 读取 JSON 文本列 → map（空/损坏一律得空 map，与 safeParseRule 同语义）
-func jsonColumn(s sql.NullString) map[string]string {
-	out := map[string]string{}
-	if !s.Valid || s.String == "" {
-		return out
-	}
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(s.String), &raw); err != nil {
-		return out
-	}
-	for k, v := range raw {
-		if sv, ok := v.(string); ok && sv != "" {
-			out[k] = sv
-		}
-	}
-	return out
-}
-
-// marshalJSONColumn map → JSON 文本（空 map 存 "{}"）
-func marshalJSONColumn(m map[string]string) string {
-	if m == nil {
-		m = map[string]string{}
-	}
-	b, _ := json.Marshal(m)
-	return string(b)
-}
-
-// nowStr 当前时间（Prisma DateTime 兼容：SQLite 存 ms epoch 数字或 ISO 文本？
-// Prisma SQLite 实际存 ms 整数。createdAt/updatedAt 由 SQL 默认或显式写入）
+// nowMillis 当前时间（Prisma DateTime 兼容：SQLite 存 ms 整数。
+// createdAt/updatedAt 由 SQL 默认或显式写入）
 func nowMillis() int64 {
 	return time.Now().UnixMilli()
 }

@@ -6,20 +6,12 @@
     "dev": "bash scripts/dev-go.sh",
     "build": "bash scripts/build-go.sh",
     "start": "bash scripts/dev-go.sh",
-    "db:push": "prisma db push --accept-data-loss",
-    "db:generate": "prisma generate",
     "build:css": "bun scripts/build-web-css.mjs"
-  },
-  "dependencies": {
-    "@prisma/client": "^6.11.1",
-    "prisma": "^6.11.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "26.6.2",
-    "eslint": "^9",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "postcss": "^8",
+    "tailwindcss": "^4"
   },
-  "description": "novel-admin Go 全栈（Task 27 起 Next.js 已拆除）：dev = backend-go 单进程承载 3000"
+  "description": "novel-admin 纯 Go 全栈（Task 27 起 Next.js 拆除、Task 38 起 Prisma/TS 工具链全部移除）：dev = backend-go 单进程承载 3000；build:css = Go 页面层 Tailwind CSS 构建管线（唯一保留的构建期 JS 工具，运行时零 Node 依赖）"
 }

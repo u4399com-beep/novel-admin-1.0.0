@@ -290,7 +290,14 @@ func acquireDomainSlotBudgeted(host string, deadlineMs int64, reserveMS int64) (
 		slot.mu.Unlock()
 		return 0, false
 	}
-	slot.nextAt = base.Add(time.Duration(interval+politenessExtraMS(n))*time.Millisecond + time.Duration(rand.Intn(jitterMS))*time.Millisecond)
+	// Task 38-a: 抖动改 ± 双向——旧实现只加 0..+300ms，间隔分布是「固定底噪 + 单向噪声」，
+	// 对统计节奏检测器仍是均匀可识别指纹；真实浏览器访问节奏双侧散布。
+	// 合规红线：有效间隔钳下限 1000ms（>1 req/s 不允许），负向抖动不得击穿。
+	effInterval := interval + politenessExtraMS(n) + int64(rand.Intn(2*jitterMS+1)) - jitterMS
+	if effInterval < 1000 {
+		effInterval = 1000
+	}
+	slot.nextAt = base.Add(time.Duration(effInterval) * time.Millisecond)
 	slot.lastUsedNano.Store(now.UnixNano())
 	slot.mu.Unlock()
 	if wait > 0 {
@@ -565,7 +572,8 @@ func checkRobots(targetURL string) robotsResult {
 	warnings := []string{}
 	var info *robotsInfo
 	// 限速槽位 key 与策略层一致（含端口，见 hostOf），避免同源不同 key 绕过限速
-	acquireDomainSlot(u.Host)
+	// Task 38-a: 槽 key 归一小写（与链层 hostOf 同口径，防大小写变体绕过限速）
+	acquireDomainSlot(strings.ToLower(u.Host))
 	// robots.txt 请求走 redirect:'manual' 逐跳 SSRF 校验：
 	// 否则恶意站点可用 robots.txt 302 让本服务对内网地址发起 GET（SSRF）
 	robotsURL := origin + "/robots.txt"

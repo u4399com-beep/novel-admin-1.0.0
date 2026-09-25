@@ -85,9 +85,6 @@ type TaskFlushFields struct {
 	Chapters      *int
 }
 
-// ptrInt 取整型指针（构造 TaskFlushFields 用）
-func ptrInt(v int) *int { return &v }
-
 // refPair 归一化后的章节行（title→URL；Phase 1/2 间传递）
 type refPair struct {
 	Title string

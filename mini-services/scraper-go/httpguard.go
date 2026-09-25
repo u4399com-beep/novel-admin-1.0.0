@@ -470,7 +470,9 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 		// Cookie 会话回放：合并该 host 的 cookie（覆盖式设置，调用方不自带 cookie 头）
 		https := target2.Scheme == "https"
 		hopHeaders := headers
-		if hopCookie := cookieHeaderFor(target2.Host, https); hopCookie != "" {
+		// Task 38-a: 桶 key 统一 hostOf（小写）——与 got 系（hostOf）对齐，否则同站点
+		// URL 大小写差异会把 fetch 系种的会话与 got 系读的会话分裂成两个桶（反复过挑战）
+		if hopCookie := cookieHeaderFor(hostOf(current), https); hopCookie != "" {
 			hopHeaders = map[string]string{}
 			for k, v := range headers {
 				hopHeaders[k] = v
@@ -491,13 +493,11 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 		}
 		res, err := manualClient(tr, time.Duration(remaining)*time.Millisecond).Do(req)
 		if err != nil {
-			note := "network-error"
-			if strings.Contains(strings.ToLower(err.Error()), "timeout") || strings.Contains(strings.ToLower(err.Error()), "deadline") {
-				note = "timeout"
-			}
-			return rawResponse{ok: false, status: 0, note: note, warning: "网络错误: " + err.Error()}
+			// Task 38-a: 分类抽 netErrNote——硬时间闸取消（context canceled）归引擎自状态
+			// engine-cancel，不再按 network-error 计入 hosthealth 网络级连败
+			return rawResponse{ok: false, status: 0, note: netErrNote(err), warning: "网络错误: " + err.Error()}
 		}
-		recordResponseCookies(target2.Host, res, https)
+		recordResponseCookies(hostOf(current), res, https)
 
 		if isRedirectStatus(res.StatusCode) {
 			loc := res.Header.Get("Location")

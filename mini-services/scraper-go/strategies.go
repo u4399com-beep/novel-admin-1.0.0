@@ -60,6 +60,9 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 			subAttempts := []SubAttempt{}
 			deadline := nowMs() + timeoutMs
 			var last *attemptResult
+			// Task 38-a: 本策略内最近一次限流记忆（混合失败时提升返回，保住链层退避记忆）
+			lastLimitedStatus := 0
+			var lastLimitedRetryAfter *int64
 
 			for _, profile := range profiles {
 				// Task 35-b: 预算感知取槽（预计等待超预算时 shed，不预约不睡眠）+
@@ -102,12 +105,23 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 					warnings = append(warnings, "["+profile.id+"] "+w)
 				}
 
+				if r.status == 429 || r.status == 503 {
+					// Task 38-a: 记录限流状态供失败返回时提升（promoteRateLimitedStatus）
+					lastLimitedStatus = r.status
+					lastLimitedRetryAfter = r.retryAfter
+				}
 				if a.ok {
 					return attemptResult{ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r.retryAfter}
 				}
 				last = &attemptResult{ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, note: note, subAttempts: subAttempts, retryAfter: r.retryAfter}
+				if r.status == 429 || r.status == 503 {
+					// Task 38-a: 限流中换 UA 画像只会加重刺激（对齐 got 系「429/5xx 停止内部梯子，
+					// 链层退避/健康记忆接手」口径），停止画像梯子
+					break
+				}
 			}
 			if last != nil {
+				last.status, last.retryAfter = promoteRateLimitedStatus(last.status, last.retryAfter, lastLimitedStatus, lastLimitedRetryAfter)
 				return *last
 			}
 			return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "no-profile-attempted", subAttempts: subAttempts}
@@ -222,10 +236,9 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 			client := manualClient(tr, time.Duration(remaining)*time.Millisecond)
 			res, err := client.Do(req)
 			if err != nil {
-				note := "network-error"
-				if le := strings.ToLower(err.Error()); strings.Contains(le, "timeout") || strings.Contains(le, "deadline") {
-					note = "timeout"
-				}
+				// Task 38-a: 分类抽 netErrNote（与 fetch 系同口径）——硬时间闸 hcancel()
+				// 中止的在途请求按 engine-cancel 归引擎自状态，不再落 network-error
+				note := netErrNote(err)
 				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: note})
 				warnings = append(warnings, "got-scraping 网络错误（"+variant.profile+"）: "+note)
 				break
@@ -327,6 +340,36 @@ func urlParseHost(raw string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host + "/"
+}
+
+// netErrNote Go 传输层网络错误 → 结构化备注（fetch 系 fetchWithRedirectGuard / got 系共用）。
+// Task 38-a: "context canceled" 单独归类 engine-cancel——策略链硬时间闸超时 hcancel() 中止
+// 在途请求属引擎自状态（站点只是慢/挂起，未拒绝本机）。旧实现按兜底 network-error 落账：
+// 硬闸超时与策略 goroutine 收尾存在毫秒级竞态（select 双 ready），竞态下 network-error 会被
+// 摊平进 attempts → hasRealNetworkAttempt=true → noteChainFailure(allNetErr=true) →
+// netStreak 2 次即熔断——把「站点响应停滞（硬闸兜底）」误判成「站点连接层拒绝本机」提前熔断。
+func netErrNote(err error) string {
+	le := strings.ToLower(err.Error())
+	if strings.Contains(le, "context canceled") {
+		return "engine-cancel"
+	}
+	if strings.Contains(le, "timeout") || strings.Contains(le, "deadline") {
+		return "timeout"
+	}
+	return "network-error"
+}
+
+// promoteRateLimitedStatus Task 38-a: 混合失败时的限流状态提升。
+// 策略内部画像/协议梯子可能在多子尝试间经历「先 429/503 后 403」的混合失败：末位状态（403 等
+// 确定性失败）若原样返回，链层 res.status==429/503 判定失败 → noteRateLimited/AIMD 退避记忆
+// 全部丢失 → 下一条链立刻重打限流中的站点（健康度面失明）。本函数在「本策略内发生过限流且
+// 末位状态非限流」时把返回状态提升为限流码（attempts 明细不受影响——子尝试自带各跳真实状态码，
+// 提升只作用于链层策略级 status 的健康记忆消费点）。
+func promoteRateLimitedStatus(finalStatus int, finalRA *int64, limitedStatus int, limitedRA *int64) (int, *int64) {
+	if limitedStatus == 0 || finalStatus == 429 || finalStatus == 503 {
+		return finalStatus, finalRA
+	}
+	return limitedStatus, limitedRA
 }
 
 // runWithHardGate 策略硬时间闸：任何策略都不得挂死整条链。底层库自身超时可能失效，

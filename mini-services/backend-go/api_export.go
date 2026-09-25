@@ -43,26 +43,6 @@ func handleNovelExportTxt(w http.ResponseWriter, r *http.Request, ps map[string]
 	}
 	categoryName := ""
 	_ = queryOne(`SELECT "name" FROM "Category" WHERE "id" = ?`, []any{&categoryName}, categoryID)
-	// 全部章节按 idx 升序（同 idx 稳定按 id）；正文三级回落逐章读取
-	type chRow struct {
-		id, idx, wc int64
-		title       string
-	}
-	chapters := []chRow{}
-	if err := queryList(`SELECT "id", "idx", "wordCount", "title" FROM "Chapter"
-                WHERE "novelId" = ? ORDER BY "idx" ASC, "id" ASC`,
-		func(rows *sql.Rows) error {
-			var c chRow
-			if err := rows.Scan(&c.id, &c.idx, &c.wc, &c.title); err != nil {
-				return err
-			}
-			chapters = append(chapters, c)
-			return nil
-		}, nid); err != nil {
-		failJSON(w, "服务器错误", firstLineErr(err), 500)
-		return
-	}
-
 	var b strings.Builder
 	b.WriteString(title + "\n")
 	b.WriteString("作者：" + author + "\n")
@@ -79,15 +59,29 @@ func handleNovelExportTxt(w http.ResponseWriter, r *http.Request, ps map[string]
 	}
 	b.WriteString(strings.Repeat("=", 32) + "\n\n")
 
-	filled := 0
-	for _, c := range chapters {
-		var legacy string
-		_ = queryOne(`SELECT "content" FROM "Chapter" WHERE "id" = ?`, []any{&legacy}, c.id)
-		content := loadChapterContent(c.id, nid, c.idx, legacy, c.wc)
-		if strings.TrimSpace(content) != "" {
-			filled++
-		}
-		fmt.Fprintf(&b, "第%d章 %s\n\n%s\n\n", c.idx, strings.TrimSpace(c.title), content)
+	// 全部章节按 idx 升序（同 idx 稳定按 id）。Task 38-b：legacy content 并入同一查询、
+	// 回调内流式构建（旧版逐章 SELECT content 是 35-a 留档的 N+1——每章一次额外往返；
+	// 边读边写 builder 不整表驻留内存，峰值与旧版一致；正文读取仍统一走 loadChapterContent
+	// 三级回落，不直读分表）
+	filled, chapterCount := 0, 0
+	if err := queryList(`SELECT "id", "idx", "wordCount", "title", "content" FROM "Chapter"
+                WHERE "novelId" = ? ORDER BY "idx" ASC, "id" ASC`,
+		func(rows *sql.Rows) error {
+			var id, idx, wc int64
+			var title, legacy string
+			if err := rows.Scan(&id, &idx, &wc, &title, &legacy); err != nil {
+				return err
+			}
+			chapterCount++
+			content := loadChapterContent(id, nid, idx, legacy, wc)
+			if strings.TrimSpace(content) != "" {
+				filled++
+			}
+			fmt.Fprintf(&b, "第%d章 %s\n\n%s\n\n", idx, strings.TrimSpace(title), content)
+			return nil
+		}, nid); err != nil {
+		failJSON(w, "服务器错误", firstLineErr(err), 500)
+		return
 	}
 
 	outPath := exportTxtPath(int(nid), title)
@@ -104,7 +98,7 @@ func handleNovelExportTxt(w http.ResponseWriter, r *http.Request, ps map[string]
 	writeJSON(w, 200, map[string]any{
 		"ok":       true,
 		"file":     outPath,
-		"chapters": len(chapters),
+		"chapters": chapterCount,
 		"filled":   filled,
 		"bytes":    len(b.String()),
 	})

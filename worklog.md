@@ -1746,3 +1746,62 @@ Work Log:
 
 Stage Summary:
 - 清库-恢复流水线已完全自愈化：seed 播种+任务重建脚本化，业务面 1 分钟内恢复生产
+---
+Task ID: 38-b
+Agent: backend-review
+Task: backend-go 未扫文件逐行深审抓 bug+精简
+
+Work Log:
+- 【辖区划定】对照 worklog 35-a/36-a/36-b 已扫清单，本轮逐行深读 24 文件：router/runner/api_health/main/db/api_chapters/api_novels/api_scrape/api_scrape_tasks/api_scrape_rules/api_categories(+merge)/api_export/api_noveltools/api_home/storex(非 upsertBook 部分)/web_footer/pseo_book/util/typesx/limits/pagination/httpx/runlog/cleanx（api_books.go 不存在；worker/engineclient/pool/seed/coversx/web_data/api_settings/api_sites/api_pseo*/categoryx/llm/chapterorder 属既往辖区，仅交叉核对）
+- 【修复① P2 resort-chapters 重排后 TXT 不重排（api_noveltools.go）】POST /api/novels/resort-chapters 两阶段改号落库后分章 txt 文件仍挂旧 idx——Task 33-b 给 audit 重排补的 reindexChapterTxtFiles 未接到这条姊妹路径，txt/both 模式书 readChapterFromTxt 按「新 idx」前缀命中别的章（串章）或读不到；修复：新增 resortTxtMoves（order→迁移表，仅变号行）+ 提交后 reindexChapterTxtFiles；回归测试 TestResortChaptersReorderSyncsTxtFiles（9 章倒序 E2E，禁用修复行实证位置 1 读到 body9 串章可被抓）+ TestResortTxtMoves（未变号行零迁移）
+- 【修复② P3 api_export 全书导出逐章 legacy N+1（35-a 留档项）】旧版对每章额外 SELECT content FROM Chapter WHERE id=?（17k 章书=17k 次额外往返）；修复：content 并入章节主查询、queryList 回调内流式构建 builder（不整表驻留内存，峰值与旧版一致；正文读取仍统一走 loadChapterContent 三级回落）；章节计数由 len(chapters) 改回调内计数；回归测试 TestExportTxtStreamsThreeLevelFallback（分表/存量列/TXT 三级各命中一章+idx 升序+头部元信息断言）
+- 【精简 12 死函数+1 死常量】rg 全模块（含测试）零调用方且无反射/FuncMap 引用：httpx.go readJSON/maxBodyBytes/boolField/floatField/intField/parseID/parseQueryInt（readBodyValue 取代后遗留）；util.go strSlice/cleanStr；db.go jsonColumn/marshalJSONColumn（JSON 列已改 marshalCompact/safeParseRule 路径）；typesx.go ptrInt（worker 用 &local 直取）；顺带清 db.go 孤儿「JSON 列 helpers」节头+nowStr 陈旧函数名注释（实为 nowMillis）
+- 【逐行过检无新增 bug 面】runner（recatOffset/autoResumeAttempts 单 goroutine 访问无竞态；autoResume LIKE '%限流%软拦截%' 与三处 paused 终态文案全匹配）；router（静态段优先/405 回读如实）；api_scrape_tasks（PUT/PATCH/DELETE 条件更新 TOCTOU 防护闭环）；api_chapters（audit 事务 committed/rollback 正确、类型断言均为同函数自产安全）；api_novels/api_categories(+merge)/api_scrape/api_scrape_rules/api_home/storex 剩余函数/pseo_book/web_footer（fleet 缓存锁内无嵌套锁）/pagination/typesx/runlog/cleanx/limits/httpx/main 全过检
+- 【gofmt】触碰文件 api_noveltools/db/httpx/util/typesx/api_export/2 新测试全归一；router/runner/web/web_data 历史空格缩进未触碰维持存量；全程未 kill/重启进程、未 git 操作、未触碰 scraper-go 与 web/templates+web/static
+- 注意：go build ./... 副作用更新了仓库内 backend-go 构建产物（backend-go 非 .bin 文件，运行中进程为 backend-go.bin 不受影响；主线部署时统一重建）
+
+Stage Summary:
+- backend-go 未扫辖区 24 文件深审闭环：2 修复（1 个数据正确性 P2：resort-chapters TXT 串章——Task 33-b 修复链的姊妹路径遗漏；1 个性能 P3：export N+1 落地）+ 精简 12 死函数/1 死常量（净 -148/+53 行）
+- 测试资产：+2 测试文件 3 用例（resort TXT 同步 E2E+纯函数迁移表+导出三级回落流式）；go build/vet/gofmt -l（除 4 个未触碰存量文件）/go test -race 全绿
+- 留档不修（低危/设计取舍）：pageParamFloor 对 16 进制串与 JS Number 语义微差（管理端 query 参数，无实际影响面）；handleChapterAuditPost 重排无 pending/running 守卫（resort 有；既有不一致，属 33-b 已验收行为）；renderFriendLinksBlock 仅测试引用（文档明示为测试/预览复用面，非死代码）
+---
+---
+Task ID: 38-a
+Agent: scraper-review
+Task: scraper-go 采集+反反爬增强+逐行深审抓 bug
+
+Work Log:
+- 【逐行深审面】scraper-go 全部 26 个非测试 .go（9162 行）逐行读毕（fetchcurl/curlimp/httpguard/profiles/strategies/chain/ratelimit/hosthealth/ssrf/cookies/charsetx/challenge/extract/selectors/content/cleanx/jsontoc/jstext/browser/affinity/handlers/main/types/util/helpers），复核 Task 34/35-b/36-a 已修项零回归；基线 build/vet/test -race 全绿后动工
+- 【修复① P2·反反爬 host/cookie 键大小写归一不一致】chain.go:139 fetchPage 的 host 恒为 u.Host 原样（未小写），而策略层取槽走 hostOf()（Task 34 P3-9 已小写）——URL 带大写域名（http://Example.COM/，中文站管理员配置常态）时链层限速槽/健康度熔断/亲和/限流记忆与策略层分裂成双桶，1.2s 合规限速被稀释、熔断退避互不可见；同类：httpguard/curlimp/fetchcurl/jsontoc/browser 6 文件的 cookie 桶 key 用原样 Host 而 got 系用 hostOf——fetch 系种的 WAF 会话 got 系读不到（「首访种 cookie 二访放行」站点跨策略反复过挑战）。修复：链层 host=ToLowerCase(u.Host)（一处）+ 8 处 cookie/2 处槽 key 调用点统一 hostOf()（robots/jsontoc 的 acquireDomainSlot 同口径）；测试 TestHostKeyNormalizationPipeline 锁定跨大小写变体会话/槽互操作
+- 【修复② P2 硬闸取消误分类 network-error 计入连败】strategies.go 新抽 netErrNote(err)（fetch 系/got 系共用）：「context canceled」→ 新备注 engine-cancel（旧实现落兜底 network-error）——runWithHardGate 超时 hcancel 与策略 goroutine 收尾存在毫秒级 select 双 ready 竞态，竞态下硬闸自取消被摊平进 attempts → hasRealNetworkAttempt=true → noteChainFailure(allNetErr) → netStreak 2 次即熔断，把「站点响应停滞（硬闸兜底）」误判成「站点连接层拒绝本机」提前锁死。isEngineStateNote 扩词 engine-cancel；got 系/httpguard 两处接线；测试 TestNetErrNote 4 向量 + TestIsEngineStateNoteEngineCancel 联动断言
+- 【修复③ P2·反反爬 混合失败限流状态丢失】fetch 系画像梯子/协议梯子「先 429/503 后 403」混合失败时，返回 status 被末位画像（403）覆盖 → 链层 res.status==429/503 判定失败 → noteRateLimited/hosthealth penalty/AIMD 乘性增大全部失明 → 下一条链立刻重打限流中的站点。新抽纯函数 promoteRateLimitedStatus（strategies.go），fetch 系/curl 系失败返回时提升（attempts 明细不受影响——子尝试自带真实状态码）；测试 TestPromoteRateLimitedStatus 5 向量
+- 【修复④ P2·反反爬 curl 系 4xx/5xx 不停协议梯子】curlimp.go/fetchcurl.go 旧版对 429/403/5xx 非重定向失败仅 break 内层跳循环，外层 variants 继续 --http1.1 降级重打——与 got 系「429/5xx 直接结束梯子（换协议不会改变服务端决策，对限流中的站点追加降级请求只会加重刺激）」口径矛盾。修复：两文件 break 前加 if status>=400 { stopVariants=true }；fetch 系同口径补「429/503 停画像梯子」（403 保留换 UA 能力=fetch-ua-rotate 对抗 UA 白名单的设计本意）
+- 【修复⑤ P3·反反爬 限速抖动伪随机】ratelimit.go acquireDomainSlotBudgeted 旧抖动 rand.Intn(300) 只加不减——间隔分布 [1200,1500] 是「固定底噪+单向噪声」均匀指纹（handlers.go compliance 文案宣称 1200ms±300ms 与实现不符）。修复：改 rand.Intn(2*300+1)-300 双向散布，effInterval 钳下限 1000ms（合规红线 >1 req/s 不允许负向击穿）；测试 TestJitterBidirectional 24 轮分布断言（上界/下界/负向存在性三重锁定）
+- 【修复⑥ P2·反反爬 宝塔 WAF 挑战特征缺失】challenge.go 四层检测无宝塔面板系特征（中文小说站最常见面板 WAF）。修复：reChallengePlatform 强特征补 btwaf token（拦截页 class/JS 变量/challenge cookie 名，正常页面不可能出现，任意体积判定）+ reChallengeKeyword 补「网站防火墙」（keyword 层自带极小页 <3KB+近空 <200 可见字双守卫）；测试 TestChallengeBTWAF 三态（拦截页命中/极小壳命中/含「防火墙」长叙事不误杀）
+- 【未修项（有意）】robots 获取失败 10min 负缓存（warning-only 面）；detectCurl* 二进制缓存永不过期（生产二进制不消失）；checkRobots 重定向跳不逐跳取槽（robots 是提示不阻断）；curlimp binScore/headerLines 函数内 compile 正则（性能小疵）；fetch 系 accept-encoding 无 br（TLS/JA3 指纹才是主检测面，curl-impersonate 已覆盖，补 br 需手动解压触碰 readBodyCapped 属过度工程）
+- 【环境约束】仅改 mini-services/scraper-go/ 内 10 文件（8 源+1 测试新增+1 二进制）；go build ./... 惯例副作用重建了模块根 ./scraper-go 二进制（含本轮全部修复，主线热替换即可部署）；生产进程 scraper-go.bin/零进程触碰/零 git commit；backend-go 零改动
+
+Stage Summary:
+- 6 项修复落地（P2×5+P3×1），其中 4 项为反反爬实质增强（host 键归一防会话分裂、宝塔 WAF 特征补全、限流状态提升保住健康度记忆、± 抖动去节奏指纹），2 项为熔断正确性（engine-cancel 不计连败、curl 梯子停止口径统一）
+- 深审结论：Task 34/35-b/36-a 已修项零回归（chainSlotDeadline/shed 零副作用/hosthealth 指数退避逐行复核）；fetch 系/got 系/curl 系的 SSRF 逐跳校验、body Close 闭环、预算感知取槽、cookie TTL 语义全部在位；无 P1 级新发现
+- 验证：go build/vet 零输出、go test -race -count=1 ./... 全绿（含新增 audit38_test.go 6 用例）、gofmt -l 全清
+- 产物：./scraper-go 二进制已含全部修复待主线热替换；生产采集进程未受任何干扰
+---
+---
+Task ID: 38（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 4 点指令——①彻底放弃 Next.js/TS 全面转移到 Go ②采集+反反爬增强+逐行抓 bug ③精简 ④推送 git
+
+Work Log:
+- 【①Next.js/TS 拆除收官】运行时自 Task 27 起已是纯 Go（backend-go :3000 承载 SSR+API+runner，dev-go.sh 自愈循环），本轮拆除全部构建期残留：删除 prisma/（schema.prisma+seed.ts，Go 侧 seed/seed.json 播种+运行时 DDL 已自足）、删除 tests/（3 个沙箱平台基础设施脚本，测 db:push/python-runtime 非项目代码）、package.json 剥离 prisma/@prisma/client/typescript/eslint/@types/node 与 db:push/db:generate 脚本、node_modules 125→17 包（32MB，仅剩 Tailwind CSS 构建管线）、.gitignore 清理 next/vercel/pnp 时代条目+补 upload/、db.go 清理指向已删文件的死引用（移植溯源注释保留）
+- 【保留唯一 JS 工具】scripts/build-web-css.mjs（bun run build:css）= Go 页面层 Tailwind CSS 构建管线（build-go.sh 内置调用，产物 tw.css 134KB 已落盘），运行时零 Node 依赖，重建后验证 133.9KB 输出正常
+- 【38-a 子代理·scraper-go 采集+反反爬】修复 6 项：①P2 链层 host 大小写未归一→限速/熔断/cookie 会话跨策略双桶分裂（WAF 反复过挑战）→ hostOf() 全链路统一 ②P2 引擎硬时间闸自取消（context canceled）误计网络级连败→2 次即熔断→新 netErrNote 引擎自状态豁免 ③P2 「先429后403」混合失败状态被末位画像覆盖→限流 AIMD/penalty 全失明→promoteRateLimitedStatus 状态提升 ④P2 curl 系 429/5xx 后仍降级重打→与 got 系停梯子口径对齐 ⑤P2 挑战检测缺宝塔 WAF（btwaf/网站防火墙）→200 拦截页当正文 ⑥P3 抖动 rand 只加不减=可统计节奏指纹→±300ms 双向散布（合规下限 1000ms 不击穿）；深审过检：SSRF 逐跳校验/body Close/预算感知取槽/AIMD 边界全在位
+- 【38-b 子代理·backend-go 未扫文件】修复 2 项：①P2 api_noveltools.go resort-chapters 重排只改 DB idx 不动分章 TXT 文件（33-b 给姊妹路径补过 reindexChapterTxtFiles，此路径漏接）→ txt/both 模式重排后串章/正文丢失 → resortTxtMoves 迁移表+复用两段式 rename ②P3 api_export.go 全书导出逐章 legacy N+1（35-a 留档）→ content 并入主查询流式构建；精简 12 死函数+1 死常量（httpx/util/db/typesx 净 -148 行）
+- 【部署】build-go.sh 全绿 → 热替换 scraper-go（ensure-services 拉起新二进制）+ backend-go（dev-go.sh 自愈）→ 双健康；热替换中断的 5 任务全部正确转 paused（瞬态保护生效）→ PATCH resume 全部 running；task6 partial（xinjianpan 窗口封锁）保持 Task 37 等窗口策略
+- 【浏览器 E2E（Agent Browser 实证）】前台首页渲染全（导航/搜索/分类）+ console/errors 零输出；admin 站点设置公告改写→保存→API 回读含 E2E 标记落库实证（Task 37 修复的 403 黄金路径未复发）→恢复原值复验；book/65 渲染；chapter/1 正文 1937 字渲染；chapter/44659 空态正确（Phase 2 未采到，非 bug）；footer 短页精确吸底（空搜索页 docH=viewportH=800 贴底）/长页自然下推（4493>844）；移动端 390×844 视口布局正常
+- 【生产实证】新引擎二进制下 30s 章节增量 +29 章（5 任务并发生产）；engine.log 无 panic/fatal
+
+Stage Summary:
+- Next.js/TS 彻底清场：运行时（Task 27 起）+构建期（本轮）全 Go 化，仓库仅余 Tailwind CSS 构建工具（Go 页面样式管线，无运行时依赖）
+- 本轮合计 8 项修复（scraper 6+backend 2）+4 项反反爬实质增强（会话统一/限流闭环/宝塔 WAF/去节奏指纹）+12 死函数精简（净 -148 行）
+- 反反爬体系增量：WAF 会话跨策略不再分裂（反复过挑战根因之一）、限流站点不再被降级请求追加刺激、宝塔系拦截页识别、间隔分布去指纹

@@ -160,8 +160,9 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
 	}
 	// 渲染会话 cookie 回存（浏览器自己收到的新 cookie 也进入引擎 jar）
 	if len(payload.Cookies) > 0 {
-		if tu, err := urlParse(targetURL); err == nil {
-			recordBridgeCookies(tu.Host, payload.Cookies)
+		if _, err := urlParse(targetURL); err == nil {
+			// Task 38-a: 桶 key 归一 hostOf（小写，与其余策略一致，防大小写变体分裂会话）
+			recordBridgeCookies(hostOf(targetURL), payload.Cookies)
 		}
 	}
 	bytes := []byte(payload.HTML)
@@ -212,7 +213,7 @@ var browserStrategy = strategyDef{
 		cookieEnv := ""
 		if tu != nil {
 			https := tu.Scheme == "https"
-			cookieEnv = cookieHeaderFor(tu.Host, https)
+			cookieEnv = cookieHeaderFor(hostOf(targetURL), https)
 			// 注入格式 cookie 同样经 SCRAPER_COOKIES 透传（render.py 兼容两种格式）
 			if injected := cookiesForPlaywright(tu.Host, https); len(injected) > 0 && cookieEnv == "" {
 				parts := []string{}

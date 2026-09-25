@@ -19,11 +19,15 @@ import (
 var (
 	// 已知反爬/拦截平台强特征（任意体积都判定）
 	reChallengePlatform = regexp.MustCompile(
-		`(?i)just a moment|cf-browser-verification|cf_chl_|checking your browser|attention required|ddos-guard|_Incapsula_Resource|incap_ses_|sucuri_cloudproxy|awswaf|aws waf|acw_sc__v2|__jsl_clearance|__jsluid|yunsuo_session_verify|wzws_cid`)
+		// Task 38-a: 补 btwaf（宝塔网站防火墙 token：拦截页 class/JS 变量/challenge cookie 名，
+		// 中文小说站最常见面板系 WAF，该 token 不可能出现在正常页面）
+		`(?i)just a moment|cf-browser-verification|cf_chl_|checking your browser|attention required|ddos-guard|_Incapsula_Resource|incap_ses_|sucuri_cloudproxy|awswaf|aws waf|acw_sc__v2|__jsl_clearance|__jsluid|yunsuo_session_verify|wzws_cid|btwaf`)
 	// Cloudflare 注入型弱特征：仅近空正文时才判挑战
 	reChallengeEmbed = regexp.MustCompile(`(?i)challenge-platform|cdn-cgi/challenge`)
 	// 极小页启发式关键词（挑战专用词，不含裸词 javascript）
-	reChallengeKeyword = regexp.MustCompile(`(?i)verify|challenge|captcha|安全验证|人机验证|请完成验证`)
+	// Task 38-a: 补「网站防火墙」（宝塔系拦截页标题/正文词；keyword 层自带极小页+近空守卫，
+	// 正常叙事不可能整页只含该词）
+	reChallengeKeyword = regexp.MustCompile(`(?i)verify|challenge|captcha|安全验证|人机验证|请完成验证|网站防火墙`)
 	// 0 秒 meta refresh 跳板。Task 34 (P3-4): 属性顺序无关——旧正则要求 http-equiv 在 content
 	// 之前，content 在前的写法（老式 CMS/手写跳板常见）漏杀；拆成两个独立子匹配同时命中才判
 	reMetaRefreshEquiv = regexp.MustCompile(`(?i)<meta[^>]*http-equiv\s*=\s*["']?refresh["']?`)
