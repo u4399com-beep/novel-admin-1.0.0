@@ -73,6 +73,8 @@ var curlPlainStrategy = strategyDef{
 		explicitReferer := ctx.referer
 		deadline := nowMs() + timeoutMs
 		var lastRetryAfter *int64
+		// Task 32-d 修复：失败时 status 恒回 0 → 链层限流记忆（429/503）丢失，与 curlimp.go 同口径修复
+		lastHTTPStatus := 0
 
 		// 子尝试梯子：默认（HTTP/2）→ --http1.1（覆盖协议指纹差异）
 		variants := []struct {
@@ -184,7 +186,12 @@ var curlPlainStrategy = strategyDef{
 				if len(parts) > 1 {
 					ctype = strings.TrimSpace(parts[1])
 				}
-				hdrTextBytes, _ := os.ReadFile(tmpHdr)
+				lastHTTPStatus = status // Task 32-d: 保留最后一个 HTTP 状态码（含 3xx/429/5xx）
+				hdrTextBytes, hdrErr := os.ReadFile(tmpHdr)
+				if hdrErr != nil {
+					// Task 32-d: 错误不再吞没——头文件读不到时 Set-Cookie/Location 全部失效，需留痕
+					warnings = append(warnings, "fetch-curl 响应头文件读取失败: "+hdrErr.Error())
+				}
 				hdrText := string(hdrTextBytes)
 				if scLines := headerLines(hdrText, "Set-Cookie"); len(scLines) > 0 {
 					recordSetCookieLines(tu.Host, scLines, https)
@@ -221,7 +228,11 @@ var curlPlainStrategy = strategyDef{
 					continue
 				}
 
-				raw, _ := os.ReadFile(tmpOut)
+				raw, rawErr := os.ReadFile(tmpOut)
+				if rawErr != nil {
+					// Task 32-d: 错误不再吞没——body 文件读不到会被误判为 empty-body
+					warnings = append(warnings, "fetch-curl 响应体文件读取失败: "+rawErr.Error())
+				}
 				_ = os.Remove(tmpOut)
 				_ = os.Remove(tmpHdr)
 				if len(raw) > maxBytes {
@@ -255,6 +266,6 @@ var curlPlainStrategy = strategyDef{
 				break
 			}
 		}
-		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: lastRetryAfter}
+		return attemptResult{ok: false, status: lastHTTPStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: lastRetryAfter}
 	},
 }

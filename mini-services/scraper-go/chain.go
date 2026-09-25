@@ -18,6 +18,10 @@ import (
 
 const chainBudgetMS = 55_000
 
+// debugHTMLCapBytes Task 32-d: 整链失败时保留的响应体快照上限（20KB，透出为 htmlDebug 调试字段）。
+// 挑战页/空壳页特征集中在前部（token 脚本/跳板 head），20KB 足够判形。
+const debugHTMLCapBytes = 20 * 1024
+
 // proxyCursor 站点级代理池轮换游标（跨请求轮换出口）。fetchPage 会被多请求并发调用，
 // 游标必须原子递增（Go race detector 实证竞态点）；原子递增取模语义与 TS 版一致。
 var proxyCursor atomic.Int64
@@ -65,6 +69,10 @@ type fetchPageResult struct {
 	elapsedMs int64
 	err       string
 	detail    string
+	// Task 32-d（Task 31 遗留②落地）：整链失败时策略链最后一次抓到的原始页面（已解码、
+	// 截断到 debugHTMLCapBytes）——排障时直接看到挑战页/空壳页原文而非只剩状态码。
+	// 成功路径恒为空（调用方用 html 字段）。includeHtml=true 时经 handlers 透出 htmlDebug。
+	debugHTML string
 }
 
 // listStrategies 可用抓取策略及状态
@@ -220,6 +228,9 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	lastNote := ""
 	var lastRetryAfterMs *int64
 	sawChallenge := false
+	// Task 32-d: 失败尝试响应体快照（debugHTML 注入用，见 fetchPageResult.debugHTML 注释）
+	var lastFailBytes []byte
+	lastFailCT := ""
 
 	// 站点级代理池（规则可配多个逗号分隔）：每次 fetchPage 调用轮换一个出口，
 	// 失效代理由后续请求自然绕过（免费公共代理单点易失效的多出口容错）
@@ -307,10 +318,24 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 
 			// 主机健康度记忆：本链内被 429/503 → 记一次限流退避（Retry-After 优先）
 			if res.status == 429 || res.status == 503 {
-				noteRateLimited(host, res.retryAfter)
+				// Task 32-d: 透传状态码供 hosthealth 记忆（hostRateLimitMemo 注入失败错误用）
+				noteRateLimited(host, res.status, res.retryAfter)
 				// Task 31-b: AIMD 自适应限速「乘性增大」——该主机后续请求间隔 ×1.5 逐步放大
 				//（上界 8s；Retry-After 直接采纳），被限流自动慢下来而非靠熔断停摆
 				noteAdaptiveRateLimited(host, res.retryAfter)
+			}
+
+			// Task 32-d: 保留失败尝试的响应体快照（截断拷贝，不持整份 backing array），
+			// 供整链失败时注入 debugHTML——挑战页/空壳页排障不再只看到状态码
+			if !res.ok && len(res.bytes) > 0 {
+				keep := res.bytes
+				if len(keep) > debugHTMLCapBytes {
+					keep = keep[:debugHTMLCapBytes]
+				}
+				snap := make([]byte, len(keep))
+				copy(snap, keep)
+				lastFailBytes = snap
+				lastFailCT = res.contentType
 			}
 
 			if res.ok {
@@ -334,8 +359,15 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 			lastStatus = res.status
 			lastNote = res.note
 			lastRetryAfterMs = res.retryAfter
-			if lastNote == "challenge-page" {
+			if lastNote == "challenge-page" || lastNote == "challenge-loop" {
 				sawChallenge = true
+			}
+			// Task 32-d（挑战循环终止）：JS token 跳转跟随后仍命中挑战特征（challenge-loop）
+			// 说明该站挑战无法经此路径通过——继续换策略只会重复烧穿预算。
+			// 直接终止整链，错误消息带「挑战循环」（backend isSoftBlockErr 按「挑战」命中软拦截分类）
+			if lastNote == "challenge-loop" {
+				warnings = append(warnings, "[chain] 挑战循环：JS token 跳转跟随后仍为挑战页，终止后续策略尝试以防烧穿")
+				break
 			}
 			// selfRetrying 策略内部已有多画像/多协议重试梯子，外层不再重复重试
 			if !strat.selfRetrying && isRetryableStatus(res.status) && attempt < maxAttempts {
@@ -348,6 +380,11 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 				sleepMs(delay)
 				continue
 			}
+			break
+		}
+
+		// Task 32-d: challenge-loop 属站点级挑战循环（换策略同因失败），终止整条策略链
+		if lastNote == "challenge-loop" {
 			break
 		}
 
@@ -429,13 +466,27 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	if sawChallenge {
 		detail += "；检测到疑似挑战页，目标站可能有反爬防护"
 	}
+	// Task 32-d（Task 31 遗留①）：错误消息注入 hosthealth 限流上下文——backend 侧
+	// isRateLimitErr 熔断分类与失败采样日志从此能直接识别「近期被 429/503」的软拦截形态
+	errMsg := "全部可用策略均抓取失败"
+	if memo := hostRateLimitMemo(host); memo != "" {
+		errMsg += " " + memo
+		detail += "；" + memo
+	}
+	// Task 32-d（Task 31 遗留②）：整链失败时把最后一次失败响应体解码进 debugHTML
+	//（无快照/快照为空则留空），includeHtml=true 时经 handlers 透出
+	debugHTML := ""
+	if len(lastFailBytes) > 0 {
+		debugHTML = decodeHtml(lastFailBytes, opts.forcedCharset, charsetFromContentType(lastFailCT)).Text
+	}
 	return fetchPageResult{
 		ok: false, html: "", encoding: "", strategy: opts.requestedStrategy, status: lastStatus,
 		warnings: warnings, attempts: attempts,
 		robots:    RobotsSummary{Checked: robots.info.checked, Disallowed: robots.info.disallowed, CrawlDelayMs: robots.info.crawlDelayMs},
 		elapsedMs: nowMs() - t0,
-		err:       "全部可用策略均抓取失败",
+		err:       errMsg,
 		detail:    detail,
+		debugHTML: debugHTML,
 	}
 }
 

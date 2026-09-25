@@ -105,7 +105,7 @@ func TestHostHealthConcurrent(t *testing.T) {
 			defer wg.Done()
 			host := fmt.Sprintf("hh%d.test", g%3)
 			for i := 0; i < 300; i++ {
-				noteRateLimited(host, nil)
+				noteRateLimited(host, 429, nil)
 				_ = hostPenaltyMs(host)
 				noteChainFailure(host, i%2 == 0)
 				_ = hostCircuitOpenMs(host)
