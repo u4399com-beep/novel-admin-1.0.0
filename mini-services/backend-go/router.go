@@ -9,7 +9,6 @@ package main
 
 import (
         "net/http"
-        "net/url"
         "strings"
 )
 
@@ -102,39 +101,23 @@ func routeHasParam(segs []string) bool {
         return false
 }
 
-// sameOrigin Origin 与请求 Host 是否同源（host:port 口径，忽略 scheme——网关终结 TLS
-// 后转发 http，Origin 的 https 与 Host 无 scheme 属预期同源形态；X-Forwarded-Host
-// 优先于 Host 以兼容多层代理）。
-func sameOrigin(r *http.Request, origin string) bool {
-        u, err := url.Parse(origin)
-        if err != nil || u.Host == "" {
-                return false
-        }
-        host := r.Host
-        if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
-                host = fh
-        }
-        return u.Host == host
-}
-
 // dispatch 总入口（main.go 挂到 http.Server）
 func dispatch(w http.ResponseWriter, r *http.Request) {
-        // Task 36-b: Origin 同源校验——API 无鉴权（部署拓扑依赖网关/内网隔离），旧版
-        // OPTIONS 预检 ACAO:* 让任意网页预检通过后即可跨源读写本 API（借受害者浏览器绕
-        // 网络隔离打内网实例）。收紧：跨源请求一律 403（预检/读/写全拦）；同源浏览器请求
-        // 与无 Origin 的服务端互调（backend→scraper 等）不受影响。Caddy 保留原始 Host
-        //（header_up Host {host}），经网关访问时 Origin 与 Host 同源判定成立。
-        // 仅比对 host:port（比 scheme 宽）：网关终结 TLS 后转发 http，scheme 必不同。
-        if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(r, origin) {
-                w.WriteHeader(http.StatusForbidden)
-                return
-        }
+        // Task 37 教训回退：Task 36 曾将跨源请求一律 403（Origin vs Host 同源校验），
+        // 但沙箱预览链路的中间层会改写 Host（Origin=外部预览域名 vs Host=localhost），
+        // 合法同源用户全部被误伤——「站点设置所有功能保存 403」。回退原因：
+        // ① 本 API 无 Cookie/无登录凭证，CSRF 无可劫持面，跨源请求能做的事与匿名直连
+        //   完全一样，Origin 校验没有实际安全增益；
+        // ② 预览链路 Host 形态不可控，任何基于 Host 的严格校验都会再次误伤。
+        // 安全边界维持「网关/内网隔离」这一部署拓扑事实，不在应用层复刻。
         // 前缀路由优先（静态资源 /static/ /covers/ 等，无段匹配语义）
         if matchPrefix(w, r) {
                 return
         }
         if r.Method == http.MethodOptions {
-                // 同源浏览器请求不预检、跨源已被 403 拦截，此分支仅余运维探测场景：204 无 CORS 头
+                w.Header().Set("Access-Control-Allow-Origin", "*")
+                w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+                w.Header().Set("Access-Control-Allow-Headers", "content-type")
                 w.WriteHeader(204)
                 return
         }

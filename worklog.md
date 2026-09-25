@@ -1719,3 +1719,18 @@ Stage Summary:
 - 本轮合计 14 项修复（36-a 3+36-b 8+主线 CORS+36-b 移交处置+对账验证）：2×P1（lastFlush 竞态/7 死按钮）+4×P2+8×P3
 - 安全面：SSR 注入面零破口结论落档；客户端 XSS 全堵；CORS 从 ACAO:* 收紧为 Origin 同源校验（403）
 - 部署验证链完整：编译→热替换→CORS 三态实测→任务恢复→浏览器 E2E（admin+前台+章节）
+---
+Task ID: 37（主线·main·回归修复）
+Agent: main (Z.ai Code)
+Task: 用户报告「站点设置所有功能不能编辑，保存失败 403」——Task 36 CORS 收紧回归修复
+
+Work Log:
+- 【复现】curl 模拟预览链路（Origin=外部预览域名 vs Host=localhost）→ POST /api/settings 403，实证 Task 36 主线收紧的 Origin 同源校验误伤合法用户
+- 【根因】沙箱预览链路的中间层会改写 Host 头（浏览器 Origin=外部域名，backend 收到 Host=localhost）——基于 Host==Origin 的严格校验在不可控的代理链路下必然误伤；Caddy 的 header_up Host {host} 只保证 Caddy 自身不改写，不覆盖上游预览代理的行为
+- 【修复决策：整体回退而非修补】①本 API 无 Cookie/无登录凭证，CSRF 无可劫持面——跨源请求能做的事与匿名直连完全一样，Origin 校验没有实际安全增益（36-b 原本就把它列为「报而不修的架构取舍」，主线收紧时低估了预览链路 Host 变形）；②预览链路 Host 形态不可控，任何 Host 基校验都会再犯。回退 sameOrigin 函数+Origin 403 拦截+OPTIONS 分支恢复 ACAO:*，注释留档完整决策链防重蹈
+- 【环境】Go 工具链再次随 /tmp 清库丢失 → 重装 go1.22.5 至 /home/z/go-sdk/go（今后固定此路径，不再用 /tmp）
+- 【验证】编译/vet/test -race 全绿 → 热替换 → 回归三态：跨源 POST 405（不再 403）/OPTIONS 预检 204/GET 200 → 浏览器 E2E：admin 站点设置改公告→保存→API 回读含测试标记（落库实证）→恢复原值复验；5 个采集任务 resume 恢复 running
+
+Stage Summary:
+- 回归闭环：403 误伤根因=预览代理链路 Host 改写，回退 Origin 校验后站点设置保存实测落库成功
+- 教训留档：①无凭证系统的应用层 Origin 校验是负收益（无安全增益+高误伤概率）②部署链路的 Host 头形态是「环境事实」不可假设，收紧类改动必须先实测完整访问链路 ③浏览器 E2E 应覆盖写操作路径（此前 E2E 只验证了读渲染，403 只影响写）
