@@ -140,8 +140,9 @@ func ensureEngine() {
 	log.Println("[backend-go-runner] engine 不可达，重新拉起")
 	// 两步走：先 pkill（[g] 防自匹配），再 setsid 托孤拉起（Task 13 教训：pkill 与 spawn
 	// 放同一 bash -c 时 pkill -f 会匹配到自身命令行导致自杀）
-	_ = runBash("pkill -f 'scraper-[g]o.bin' 2>/dev/null; sleep 0.3; true")
-	_ = runBash("cd /home/z/my-project/mini-services/scraper-go && setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &")
+	// Task 33: pkill 同步等待完成后再 spawn（消除 pkill/spawn 异步竞态）
+	_ = runBashSync("pkill -f 'scraper-[g]o.bin' 2>/dev/null; true", 5*time.Second)
+	_ = runBashSync("cd /home/z/my-project/mini-services/scraper-go && setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &", 3*time.Second)
 }
 
 // runBash 执行一条 bash 命令（不等待长任务；失败仅忽略）。
@@ -158,6 +159,31 @@ func runBash(cmd string) error {
 	}
 	go func() { _ = c.Wait() }() // 回收子进程，防 zombie 累积
 	return nil
+}
+
+// runBashSync 同步执行 bash 命令（Task 33：限时等待完成，超时放后台收敛）。
+// ensureEngine 的 pkill 与 spawn 必须串行化：旧实现两条 runBash 都是异步 fire-and-forget，
+// 「pkill 旧引擎 → spawn 新引擎」存在自愈竞态——pkill 的 0.3s sleep 尚未结束时 spawn 的
+// 新引擎可能已被同一模式匹配击杀（Task 13 TS 版自杀 bug 的异步残留形态，engine.log 曾
+// 出现「listening 后无任何退出痕迹消失」的实证）。spawn 本身立即返回（bash 内 setsid &），
+// 同步化开销可忽略。
+func runBashSync(cmd string, timeout time.Duration) error {
+	c := osexec.Command("bash", "-c", cmd)
+	c.Stdin = nil
+	c.Stdout = nil
+	c.Stderr = nil
+	if err := c.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		go func() { _ = <-done }() // 超时后由 goroutine 收尾，防 zombie
+		return nil
+	}
 }
 
 // ==================== 限流类熔断的有界自动恢复（Task 33） ====================

@@ -1540,3 +1540,18 @@ Stage Summary:
 - 4 项指令闭环：①规则字段实证 72 书全绿+2 个站点改版规则修复（双结构兼容写回 seed+DB）②智能完结末章判定落地+全库智能补全 API+admin UI（E2E 实证 2 本完结标记）③幽灵 33-a/b/c 全收编（13 处 bug 修复+2 个 P1：AIMD 空闲复位死代码/封面私网误判）+反反爬三层增强（关键词扩容/车道跨 resume/有界自动恢复）④代码精简 9,472 行⑤待推送
 - 测试资产：+6 测试文件（worker_smart_test 5 断言组/api_chapters_audit_test/txtdir_test/seed_time_test/coversx_test/audit33a_test），双模块 gofmt/vet/test -race 全绿
 - 遗留移交：①task6 xinjianpan 熔断冷却后重启待验证（curl-impersonate 已重装，指纹策略应复活）②task3 23qb 17k 章长跑中（关键词扩展+车道记忆+自动恢复三层已部署，观察下次熔断的分类与恢复行为）③渲染器吞 [x 序列问题已三度制造假警报，建议永久记录为「输出通道不可信」原则
+
+---
+Task ID: 33（主线·main·补记·部署期实战修复）
+Agent: main (Z.ai Code)
+Task: 热替换部署期实战暴露的 3 个新缺口修复（列表瞬态失败打终态/自愈竞态/部署顺序）
+
+Work Log:
+- 【缺口① 列表阶段瞬态失败误判终态（P1）】resume/restart 的任务重入 phase0 时若引擎主机熔断未冷（60s 窗口）或引擎刚重启不可达，「列表页未提取到书籍条目」直接把带 2.5 万章进度的任务打成 failed 终态（task1/2/3 实证）——恢复成本全由人工承担。修复：fetchListPage 返回值追加错误文本（engineclient.go），runList 对零条目路径判 isRateLimitErrText/isSoftBlockErrText/引擎不可达/引擎超时 → paused（含「限流/空壳软拦截」措辞=自动恢复资格）而非 failed
+- 【缺口② ensureEngine pkill/spawn 自愈竞态（P1）】旧实现两条异步 runBash：「pkill 旧引擎」与「spawn 新引擎」fire-and-forget 并发——pkill 的 0.3s sleep 未结束时 spawn 的新引擎可能被同一模式击杀（Task 13 TS 版自杀 bug 的 Go 异步残留形态）。实证：引擎死后 ensureEngine 数分钟未能拉起，手动跑同命令秒起。修复：新增 runBashSync（限时 Wait，超时转后台收敛防 zombie），pkill 同步完成后再 spawn；修复后实证 backend 拉起 35s 内引擎自动复活（无人工干预）
+- 【缺口③ 部署顺序】引擎未就绪时 restart 任务 → 立即 failed（引擎不可达不计熔断）。修复后顺序=等双 /api/health ok → 再恢复任务；瞬态分类已扩容兜底（引擎不可达/超时 → paused）
+- 【部署】第三轮热替换（worker/engineclient/runner + 双二进制）→ 6 任务全部 restart/resume → 全部 running（task5 3542 章/task3 16751 章骨架重入，phase1 逐书推进中）
+
+Stage Summary:
+- 部署期实战闭环：3 缺口修复全落地并实证（尤其 ensureEngine 自愈竞态——此前多次「引擎失联」事故的可能根因）
+- 任务面：6 任务 running、138 书、153.8 万字基线；自动恢复/车道记忆/瞬态 paused 三层新机制待长跑观察

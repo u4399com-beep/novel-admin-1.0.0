@@ -1084,12 +1084,12 @@ func firstChapterPreview(novelID int) string {
 
 // collectListItems 列表页翻页收集（模板优先、连续失败快速终止、合并去重、任务上限截断）。
 // 返回 (条目, 最后命中的列表页 URL 作 referer)。
-func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, string) {
+func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, string, string) {
 	run.Log("抓取列表页第 1 页…")
-	first := fetchListPage(run, task.TargetURL, rule, "")
+	first, firstErr := fetchListPage(run, task.TargetURL, rule, "")
 	if len(first) == 0 {
 		run.Log("列表页未提取到书籍条目")
-		return nil, task.TargetURL
+		return nil, firstErr, task.TargetURL
 	}
 	run.Log(fmt.Sprintf("第 1 页提取 %d 条", len(first)))
 
@@ -1107,7 +1107,7 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
 		got := 0
 		hit := false
 		for _, v := range buildPageVariants(rule.ListRule, task.TargetURL, k) {
-			pageItems := fetchListPage(run, v, rule, "")
+			pageItems, _ := fetchListPage(run, v, rule, "")
 			if len(pageItems) > 0 {
 				got = len(pageItems)
 				hit = true
@@ -1147,7 +1147,7 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
 		merged = merged[:MAX_BOOKS_PER_TASK]
 		run.Log(fmt.Sprintf("条目数超出单任务上限（%d），已截断", MAX_BOOKS_PER_TASK))
 	}
-	return merged, currentListURL
+	return merged, firstErr, currentListURL
 }
 
 // ==================== 两种模式 ====================
@@ -1156,12 +1156,20 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
 // Task 32-b: storageMode 由 runTask 从任务行读出透传（db|txt|both）
 func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 	// ---- Phase 0：列表页 ----
-	collected, currentListURL := collectListItems(run, task, rule)
+	collected, firstListErr, currentListURL := collectListItems(run, task, rule)
 	if reason := stopState(run.TaskID); reason != "" {
 		finalizeStopped(run, reason, "任务已取消", "已暂停（列表阶段中断，进度保留，可恢复继续）")
 		return
 	}
 	if len(collected) == 0 {
+		// Task 33: 首页抓取失败若是熔断/软拦截形态（引擎主机冷却中，瞬态非真失效），任务转
+		// paused 而非 failed——resume/自动恢复冷却后重新入队即可续传；旧逻辑把带 2.5 万章
+		// 进度的任务打成 failed 终态（列表重入撞 60s 熔断窗口），恢复成本全由人工承担
+		if isRateLimitErrText(firstListErr) || isSoftBlockErrText(firstListErr) ||
+			strings.Contains(firstListErr, "引擎不可达") || strings.Contains(firstListErr, "引擎请求超时") {
+			finalize(run, "paused", "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
+			return
+		}
 		finalize(run, "failed", "列表页未提取到书籍条目")
 		return
 	}

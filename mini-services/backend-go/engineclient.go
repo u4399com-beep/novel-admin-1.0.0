@@ -224,7 +224,9 @@ func fetchBookPage(run *Run, u string, rule LoadedRule, referer string, quiet bo
 }
 
 // fetchListPage 抓取并提取一个列表页；失败时记录日志并返回空数组（翻页场景失败可跳过）
-func fetchListPage(run *Run, u string, rule LoadedRule, referer string) []ListItem {
+// Task 33: 返回值追加错误文本——调用方（runList）需区分「选择器失效/空页」与「引擎主机
+// 熔断/软拦截冷却中」：后者是瞬态，任务应转 paused（自动恢复资格）而非 failed 终态。
+func fetchListPage(run *Run, u string, rule LoadedRule, referer string) ([]ListItem, string) {
 	res := callEngine[struct {
 		List *struct {
 			Items []ListItem `json:"items"`
@@ -232,7 +234,7 @@ func fetchListPage(run *Run, u string, rule LoadedRule, referer string) []ListIt
 	}]("/api/test", engineRuleBody(u, map[string]any{"listRule": rule.ListRule}, rule, referer))
 	if !res.OK {
 		run.Log(fmt.Sprintf("列表页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
-		return nil
+		return nil, res.Error
 	}
 	if len(res.Warnings) > 0 {
 		run.LogWarnings(res.Warnings)
@@ -245,7 +247,7 @@ func fetchListPage(run *Run, u string, rule LoadedRule, referer string) []ListIt
 			}
 		}
 	}
-	return items
+	return items, ""
 }
 
 // fetchCatalogChapters 抓取完整目录页并提取章节链接（配合 bookRule.catalogLinkSelector）。
