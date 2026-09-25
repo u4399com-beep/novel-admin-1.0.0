@@ -68,7 +68,7 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 
 ## 六、Go 引擎下策略链现状（Task 24/25，现行权威）
 
-> TS 版 scraper-service 已退役（仅作回滚备份，严禁与 Go runner 并存运行）；现行引擎为 `mini-services/scraper-go`（:3030，go1.22），策略链/提取器/清洗链逐行移植自 TS 版并做下列增强。本节为现行权威描述，上文一至五节保留作选型存档。
+> TS 版 scraper-service 已退役（目录已于 Task 33-c 确认零活引用后删除）；现行引擎为 `mini-services/scraper-go`（:3030，go1.22），策略链/提取器/清洗链逐行移植自 TS 版并做下列增强。本节为现行权威描述，上文一至五节保留作选型存档。
 
 ### 6.1 现行策略链（7 级，顺序与 TS 版一致、中间扩容）
 

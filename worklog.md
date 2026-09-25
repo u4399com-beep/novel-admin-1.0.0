@@ -1491,3 +1491,52 @@ Stage Summary:
 - 9 项指令闭环：①友链+内链轮+pseo 跟随主题（10 主题模板+按 Host 分站点渲染）②t2s 三态繁转简入库 ③TXT 文件存储（db/txt/both 三模式+三级回落读+全书导出）④ChapterContent 垂直分表+4 项性能 pragma ⑤15 规则字段核查+aijjxs 改版重写 ⑥智能填充四级回退+智能完结+简介回填 ⑦-⑧幽灵 3 修复接线补齐+gofmt 全绿 ⑨git 推送
 - 关键实证：both 模式真站全链路（10 书 25+章 TXT+分表双写）；pseo 按 Host 跨主题渲染；SSRF/清洗/白名单防线全部按设计工作
 - 遗留：①任务 4 phase2 长跑中（60s 缓存/限速合规）②回环 E2E 因 SSRF 防护放弃（改真站实证）③t2s 繁体源站活体验证待 101kks 可达窗口（单测 12 断言已绿）④101kks/ixdzs8 phase2 效果待长跑观察（32-d 限流记忆+软拦截降档已部署）
+
+---
+Task ID: 33-c
+Agent: code-cleanup
+Task: 清理整合精简整体代码
+
+Work Log:
+- 【scripts/archive/ 整体删除（45 文件/3331 行）】全为 Next.js/TS 时代一次性探针脚本（probe-*/check-*/dump-*/forensic-*/fix-* 及 dev-supervisor.sh/worker-runner.ts 旧监督件）。删前 rg 全仓验证活引用：仅 docs/deployment.md（历史性提及，已同步改写）、tsconfig.json exclude、eslint.config.mjs ignores（后两者随本轮一并删除，引用随之消亡）；scripts/*.sh、Caddyfile、mini-services 全部 .go、.zscripts/*.sh 零引用；ps 确认无进程使用该目录。删后 rg "scripts/archive" 仅剩 worklog 与 docs 历史注记
+- 【mini-services/scraper-service/ 整体删除（3549 文件：31 源文件 6076 行 + node_modules 3518 文件）】旧 TS 采集引擎，已被 scraper-go :3030 逐行移植取代（types.go 注释"移植自…~4700 行"为证）。删前 rg 'scraper-service' 全仓分类甄别：①scraper-go 各 .go 命中均为移植溯源注释与 /api/health 的 service 名字符串字面量（非目录依赖，且属禁改辖区）；②scripts/ensure-services.sh:27 为注释（"TS 版仅作回滚备份不再运行"，脚本只拉起 scraper-go.bin）；③Caddyfile / .zscripts/*.sh 零引用（.zscripts 仅存旧日志文件名 mini-service-scraper-service.log）；④docs 三处均为带时效说明的历史存档表述，无运行指令。删后双服务健康（backend-go :3000 + scraper-go :3030 均 ok），6 个采集任务未被干扰（ps 实证双进程 start=05:18:47/48 早于本轮，零重启）
+- 【Next.js 残留甄别处置】①src/：根目录已不存在（历史任务已拆），无处置项；②tsconfig.json（27 行）删除：include 仅覆盖 scripts/**/*.mjs|ts 与 tests/**/*，全仓无任何管道运行 tsc，rg "tsconfig" 活引用为零；③eslint.config.mjs（35 行）删除：全部规则显式 "off" 的空转配置，唯一调用方 package.json "lint" 脚本一并删除（rg "run lint" 仅 docs 一处表格行，已同步删行）；④根 package.json 精简：删 lint/db:migrate/db:reset 三条死脚本（prisma migrate 无 migrations 目录从未可用；rg 确认 .zscripts/scripts/run*.sh 零调用），保留 dev/build/start/build:css/db:push/db:generate——**极简版（仅 name/version）被否决**：dev-go.sh 必须经 `bun run dev` 链路进入（脚本头注释明示）、.zscripts/dev.sh 依 `bun run db:push`（set -euo pipefail，脚本缺失会中断整条沙箱 dev 链）、build-go.sh 内置 `bun run build:css`、build-web-css.mjs import postcss/@tailwindcss/postcss（node_modules 仍需）；⑤bun.lock 保留：.zscripts/build.sh:24 与 dev.sh 均执行 `bun install`，锁文件是依赖复现凭据；⑥.env 保留：DATABASE_URL 为 Prisma CLI（db:push/db:generate）读取项，属 fresh 建表链路而非死文件
+- 【prisma/ 保留（有疑虑项，非删除）】rg "prisma" mini-services/ 实证：backend-go 全部命中为契约对齐注释，但 db.go:106 明言"生产库由 Prisma 建表保证存在"（Go 侧仅幂等建 ChapterContent/SiteSite 两表），db:push 是 fresh 部署建表权威路径（docs §6.1 + dev.sh 链路）；scripts/engine-rule-test.mjs（worklog 7 次提及的活体规则试测工具）import @prisma/client 且依赖 `bun run db:generate`。删除 prisma 需向 Go 移植全部建表 DDL（触碰禁改的 backend-go）——超出清理辖区，故整体保留并留档
+- 【tests/ 全保留（3 文件）】甄别结论非沙箱一次性产物：python-runtime-build.sh / python-runtime-container.sh 是 .zscripts/python-runtime-build.sh 的回归测试（后者被活体 .zscripts/build.sh:53 调用，render.py python 渲染策略部署链在用）；database-runtime-build.sh 测试 .zscripts/database-runtime-build.sh 的 db:push 建库产物（prisma 链保留故仍自洽）。按"不确定就保留"落档
+- 【download/ 保留（README 外 696 文件为活数据非测试残留）】txtdir.go:31 生产 TXT_ROOT 恒为 download/novels；本轮实测运行中任务 storageMode=both 正在持续写入（会话期间 98→697 文件，均为任务产物）。download/README.md 为沙箱约定文件，一并保留
+- 【admin-fleet.js / admin.js 只清点不删】mini-services/backend-go/web/static/js/ 下活代码（Task 30 站群 tab + 后台交互主文件，admin.html 引用），属禁改 web/ 辖区
+- 【docs 同步（防断言腐化）】deployment.md 6 处：服务表 scraper-service 行改"已删除（Task 33-c rg 验证零活引用）"、目录树删 scraper-service 行、scripts 行注明 archive 已删、§12.4 历史脚本注记改写、§12.5 删 lint 行、FAQ Q9 补"新环境不再出现该日志"；anti-anti-crawl.md §六导语"仅作回滚备份"改"目录已删除"；scrape-rules.md:5 为"（当时）"历史句式保留不动
+- 【约束遵守】未 kill/重启任何进程（ps 实证 backend-go.bin/scraper-go.bin 自 05:18 持续运行，dev-go.sh 自愈循环存活）；未 git commit/push；未触碰 mini-services/{backend-go,scraper-go} 的 .go/web/seed、Caddyfile、scripts 四活脚本、.zscripts（沙箱辖区）、skills/（平台目录）、db/、public/covers（coversx.go 活体落盘目录）
+
+Stage Summary:
+- 删除 3596 文件 ≈9,472 源码行（scripts/archive 45 文件/3,331 行 + scraper-service 31 源文件/6,076 行 + tsconfig/eslint/3 死脚本 62 行），另随目录清除其内 3,518 个 vendored node_modules 文件；全仓文件数 11,321→8,366（净 -2,955 = 删 3,596 − 新增 641，新增主要为采集任务 TXT 产物：download/ 98→697）；非 vendored 源码余量 96,795 行
+- 保留理由存档：prisma/+bun.lock/.env（fresh 建表链 + dev.sh 契约 + engine-rule-test 依赖）、tests/（.zscripts 活体管线回归测试）、download/novels（TXT 存储模式生产落盘）、public/covers（封面活体落盘）、tool-results/.task28a（并行 Agent 会话产物，mtime 当日活跃，不属本任务辖区）、admin*.js（活代码）
+- 甄别亮点：三处"看似该删"实际 load-bearing 的活链路（bun run dev 入口契约、db:push 建表权威、build:css tailwind 依赖）全部实证后保留，避免清理动作破坏沙箱 dev 链与 fresh 部署能力
+- 全部删除批后验证：rg 断引用归零、三个活脚本 bash -n 通过、双 go.mod 无跨目录依赖（backend-go: x/image+modernc sqlite；scraper-go: goquery+cascadia+x/net，无 replace）、双服务 /api/health ok、任务面未受扰动（会话期间任务自然熔断转 paused 属既定契约，与本次清理无关，resume 即续传）
+---
+Task ID: 33（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 4 项指令——①规则字段实证核查（分类/封面/作者）②智能分类/完结/填充增强 ③采集+反反爬增强+逐行深度抓bug ④代码精简 ⑤git 推送
+
+Work Log:
+- 【环境恢复（第 5 次沙箱清库）】Go 工具链重装（/home/z/go-sdk/go go1.22.10）；git 变更甄别=纯权限漂移（100644→100755，内容零变化）归一；DB 清空后 seed 自动恢复（规则 15+分类 9）；curl-impersonate 21 二进制被清后经 scripts/install-curl-impersonate.sh 重装（引擎 JA3 指纹策略复活）
+- 【真实采集数据面重建】创建 6 个 list 任务（aijjxs/ddyueshu/23qb/huangjinwu/ggd66/xinjianpan，storageMode=both），最终产出 138 书/153.8 万字/1336 分表行=1336 TXT 文件（双写完美对账）
+- 【幽灵收编 33-a】scraper-go 5 处修复全收编（chain.go 代理游标负下标防护/cookies.go Max-Age inf+NaN 毒化防护/ratelimit.go 间隔上界 60s 护栏+P1 级 getHostSlot 无条件刷新 lastUsedNano 致 5min 空闲 AIMD 复位死代码修复/util.go clampTimeout ±Inf 防护）+audit33a_test.go；go vet/test -race 绿
+- 【幽灵收编 33-b】backend-go 8 文件修复全收编：api_chapters.go 章节编辑 txt 同步改成功路径（旧 defer 在失败路径也写文件造成 DB/文件漂移）+P1 级目录修复 audit 去重+重排改单事务原子执行（旧版忽略错误会留 -1000000 僵尸序号+去重删行 txt 残留致串章）；txtdir.go writeChapterTxt 改 tmp+rename 原子落盘+新增 reindexChapterTxtFiles（两段式 rename 防 swap 互覆）+removeNovelTxtAll（删书孤儿文件清理，挂 handleNovelDelete）；coversx.go P1 级 fc/fd/fe80 前缀误判公网域名（fcxxx.com 等）为私网致封面静默下载失败；api_novels/api_pseo/api_scrape_tasks TEXT 时间戳容错（normalizeMillis）+task detail 补 storageMode 字段；seed.go normalizeLegacyRuleTimestamps 启动归一（幂等）；新增 4 测试文件；gofmt 归一空格污染+修复幽灵未竟笔误（sqlRows→sql.Rows）
+- 【幽灵收编 33-c】清理 ~9,472 行：scripts/archive/ 45 文件 3,331 行、旧 TS 引擎 scraper-service/ 31 文件 6,076 行+3,518 vendored 文件、tsconfig/eslint 空转配置；prisma/bun.lock/tests/ 经引用甄别保留（db:push 是建表权威路径+build.sh 硬依赖）；全仓 11,321→8,366 文件
+- 【反反爬增强①关键词扩展】23qb 六站实采实证根因：引擎顶层失败文案「budget-exhausted（限速排队后预算耗尽）」「目标主机熔断中」不含旧词表（429/503/限流/rate）→ 车道降档永不触发（熔断时活跃车道仍 12）+熔断误分类「封禁/不可达」；isRateLimitErrText/isSoftBlockErrText 提取为包级函数+扩容（限速/预算耗尽/budget-exhausted/熔断/整链失败），表驱动测试锁定真实失败文案样本
+- 【反反爬增强②车道跨 resume 持久化】gLaneFloor sync.Map 任务级车道下限记忆（只降不升+LoadOrStore 防并发首写覆盖——单测 TestLaneFloorConcurrent 抓出裸 Store 竞态后修复）；resume 起步延续历史降档经验，终结「resume 即全速烧穿再熔断」抖动循环
+- 【反反爬增强③有界自动恢复】runner 每 30s 扫描「限流软拦截」类熔断 paused 任务，静默 ≥3min 自动重新入队（条件 UPDATE 防竞态），每任务每进程至多 4 次防抖动烧预算；非限流类（封禁/不可达）不自动恢复需人工介入
+- 【智能增强①智能完结补强】storex 注释宣称「description+末章标题」判定但实现只有 description——worker.go 新增 smartCompleteStatus（finalize 前）补末章标题路径：serial+末章命中 novelStatusFinishedRE+简介/标题无进行时负向词 → 升级 finished（单向升级，限 20 本/任务）
+- 【智能增强②全库智能补全】GET/POST /api/novels/smart-fill：GET 四类不完整面体检（junkAuthor/emptyDescription/fallbackCategory/serialWithFinishedEnding）；POST 有界批量修复（≤50/批）：空简介（首章预览→LLM 生成）、占位作者（LLM 推断）、其他分类滞留（本地关键词→LLM 归类迁移）、智能完结（独立批次限 100，零 LLM 开销）；admin 书籍管理工具栏新增「智能补全」按钮（体检 confirm→执行→toast 结果）
+- 【规则实证核查（指令①）】72 书字段落位全绿：author 72/72 真实（0 占位）、description 72/72、category 0 本滞留「其他」（7 规范类命中：都市 30/玄幻 22/武侠 9/历史 4/游戏 3/科幻 3/轻小说 1）、封面 36 真图+36 渐变 token 兜底（0 空 0 坏）、status 33 finished/39 serial 合理分布
+- 【规则修复①aijjxs】Task 32 重写的 div.listbg 规则失效——站点在 ul.lines-books li（旧版）与 div.listbg（新版）两套模板间翻转；实测书页两套均兼容不动，listRule 改双结构逗号兼容（itemSelector "ul.lines-books li, div.listbg" 等）；task1 重启实测 62 条提取（原 0）
+- 【规则修复②huangjinwu】瞬态残页致 book-card 模块全空失败——itemSelector 补 .ranking-item 排行模块备选（37 条更稳）；关键教训：linkSelector 必须缺省（引擎缺省 a[href] 走 pickHref 的 IsMatcher 分支兼容「item 本体即锚点」与「后代锚点」两种形态，显式配 .book-title 类 div 选择器取不到 href→url:null 实测复现后修正）；task4 重启实测 24 条全带 URL
+- 【渲染伪影三连假警报记录】链式教训：Bash/rg 输出中 proxyPool]/hostSlotsost]/ost-health]/引擎n 等「缺字」全部为渲染器吞 [x 序列的显示伪影（worklog Task 31-a 曾记录）——本轮以 python ord() 数值通道裁决（ord_of_prev_chars=[34,91,104] 即 "[h" 完好）终结误判；今后任何字符串类工具输出不可信，裁决必须走数字通道
+- 【部署+E2E】双二进制重建热替换（backend-go 19.2MB+scraper-go 10.6MB）→ pkill→dev-go.sh 自愈拉起→双 /api/health ok；浏览器 E2E：首页 68 书卡+nav/footer、/book/2 元尊页（作者+14 章链）、/chapter/388 正文 5321 字符、admin 智能补全按钮全链路（体检 confirm 显示 2 本疑似完结未标→执行→报告归零）
+- 【task6 xinjianpan】引擎侧主机熔断（challenge-page 形态，裸 curl 直连却 200——指纹门控挑战）；等 437s 冷却后重启验证（失败采样日志实证「全部可用策略均抓取失败」与 curl-impersonate 缺失相关，重装后待验证）
+
+Stage Summary:
+- 4 项指令闭环：①规则字段实证 72 书全绿+2 个站点改版规则修复（双结构兼容写回 seed+DB）②智能完结末章判定落地+全库智能补全 API+admin UI（E2E 实证 2 本完结标记）③幽灵 33-a/b/c 全收编（13 处 bug 修复+2 个 P1：AIMD 空闲复位死代码/封面私网误判）+反反爬三层增强（关键词扩容/车道跨 resume/有界自动恢复）④代码精简 9,472 行⑤待推送
+- 测试资产：+6 测试文件（worker_smart_test 5 断言组/api_chapters_audit_test/txtdir_test/seed_time_test/coversx_test/audit33a_test），双模块 gofmt/vet/test -race 全绿
+- 遗留移交：①task6 xinjianpan 熔断冷却后重启待验证（curl-impersonate 已重装，指纹策略应复活）②task3 23qb 17k 章长跑中（关键词扩展+车道记忆+自动恢复三层已部署，观察下次熔断的分类与恢复行为）③渲染器吞 [x 序列问题已三度制造假警报，建议永久记录为「输出通道不可信」原则

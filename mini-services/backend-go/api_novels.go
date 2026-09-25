@@ -319,12 +319,19 @@ const novelListCols = `n."id", n."title", n."author", n."description", n."cover"
 const novelListFrom = ` FROM "Novel" n LEFT JOIN "Category" c ON c."id" = n."categoryId"`
 
 // scanNovelListItem 扫一行 → TS NovelListItem 形状的 map（字段名逐一对照 src/lib/types.ts）
+// Task 33-b: updatedAt 扫描改 any + normalizeMillis —— 本库实证存在 TEXT 存储类时间戳行
+// （外部工具 CURRENT_TIMESTAMP 写入，Task 31 事故同源），int64 直扫会 500 整个列表接口
 func scanNovelListItem(rows *sql.Rows) (map[string]any, error) {
-	var id, categoryID, wordCount, clicks, chapterCount, isFeatured, isHot, updatedAt int64
+	var id, categoryID, wordCount, clicks, chapterCount, isFeatured, isHot int64
+	var updatedAtRaw any
 	var title, author, description, cover, status string
 	var catName, lastChapterTitle sql.NullString
-	if err := rows.Scan(&id, &title, &author, &description, &cover, &categoryID, &catName, &status, &isFeatured, &isHot, &wordCount, &clicks, &updatedAt, &chapterCount, &lastChapterTitle); err != nil {
+	if err := rows.Scan(&id, &title, &author, &description, &cover, &categoryID, &catName, &status, &isFeatured, &isHot, &wordCount, &clicks, &updatedAtRaw, &chapterCount, &lastChapterTitle); err != nil {
 		return nil, err
+	}
+	updatedAt := int64(0)
+	if ms, ok := normalizeMillis(updatedAtRaw); ok {
+		updatedAt = ms
 	}
 	categoryName := "未分类"
 	if catName.Valid && catName.String != "" {
@@ -537,12 +544,13 @@ func handleNovelDetail(w http.ResponseWriter, r *http.Request, ps map[string]str
 	if !ok {
 		return
 	}
-	var id, categoryID, wordCount, clicks, chapterCount, isFeatured, isHot, updatedAt int64
+	var id, categoryID, wordCount, clicks, chapterCount, isFeatured, isHot int64
+	var updatedAtRaw any
 	var title, author, description, cover, status string
 	var catName sql.NullString
 	err := queryOne(
 		`SELECT n."id", n."title", n."author", n."description", n."cover", n."categoryId", c."name", n."status", n."isFeatured", n."isHot", n."wordCount", n."clicks", n."updatedAt", (SELECT COUNT(*) FROM "Chapter" ch WHERE ch."novelId" = n."id") FROM "Novel" n LEFT JOIN "Category" c ON c."id" = n."categoryId" WHERE n."id" = ?`,
-		[]any{&id, &title, &author, &description, &cover, &categoryID, &catName, &status, &isFeatured, &isHot, &wordCount, &clicks, &updatedAt, &chapterCount},
+		[]any{&id, &title, &author, &description, &cover, &categoryID, &catName, &status, &isFeatured, &isHot, &wordCount, &clicks, &updatedAtRaw, &chapterCount},
 		nid,
 	)
 	if err != nil {
@@ -552,6 +560,11 @@ func handleNovelDetail(w http.ResponseWriter, r *http.Request, ps map[string]str
 		}
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
+	}
+	// Task 33-b: TEXT 存储类时间戳容错（与 scanNovelListItem 同口径）
+	updatedAt := int64(0)
+	if ms, ok := normalizeMillis(updatedAtRaw); ok {
+		updatedAt = ms
 	}
 
 	// 浏览计数 fire-and-forget（Prisma update 会自动触碰 @updatedAt，故显式 set）
@@ -722,6 +735,9 @@ func handleNovelDelete(w http.ResponseWriter, r *http.Request, ps map[string]str
 		writeJSON(w, 404, map[string]string{"error": "小说不存在或删除失败"})
 		return
 	}
+	// Task 33-b: TXT 存储清理 —— 分章文件目录 + 全书导出合并文件随书删除；
+	// 旧版只在 DB 删行，磁盘孤儿文件永久遗留且同 id 重采会串入旧书正文
+	removeNovelTxtAll(int64(nid))
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 

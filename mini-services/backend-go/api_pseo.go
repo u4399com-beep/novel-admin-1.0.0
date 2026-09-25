@@ -59,9 +59,14 @@ func handlePseoList(w http.ResponseWriter, r *http.Request, _ map[string]string)
 		func(rs *sql.Rows) error {
 			var id int64
 			var keyword, source, status string
-			var updatedAt int64
-			if err := rs.Scan(&id, &keyword, &source, &status, &updatedAt); err != nil {
+			var updatedAtRaw any
+			if err := rs.Scan(&id, &keyword, &source, &status, &updatedAtRaw); err != nil {
 				return err
+			}
+			// Task 33-b: TEXT 存储类时间戳容错（int64 直扫遇历史文本行会 500）
+			updatedAt := int64(0)
+			if ms, ok := normalizeMillis(updatedAtRaw); ok {
+				updatedAt = ms
 			}
 			rows = append(rows, map[string]any{
 				"id":        id,

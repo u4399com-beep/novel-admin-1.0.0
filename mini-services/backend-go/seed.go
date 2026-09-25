@@ -74,11 +74,54 @@ func startSeedIfEmpty() {
 	}()
 }
 
+// normalizeLegacyRuleTimestamps 存量 ScrapeRule TEXT 时间戳归一（Task 33-b，幂等）：
+// 历史种子与外部工具写入的 'YYYY-MM-DD HH:MM:SS' 文本行（本库 updatedAt 实证存在），
+// SQLite 比较规则下 TEXT 恒 > INTEGER、Go 侧 int64 Scan 直接报错——统一归一为 epoch 毫秒
+// 整数。只处理 typeof != 'integer' 的行；无法解析的值按 nowMillis() 兜底（宁归一勿悬挂）。
+func normalizeLegacyRuleTimestamps() {
+	type tsRow struct {
+		id                   int64
+		createdAt, updatedAt any // TEXT / INTEGER 双存储类（recoverStaleTasks 同口径）
+	}
+	var rows []tsRow
+	if err := queryList(
+		`SELECT "id","createdAt","updatedAt" FROM "ScrapeRule" WHERE typeof("createdAt") != 'integer' OR typeof("updatedAt") != 'integer'`,
+		func(rs *sql.Rows) error {
+			var r tsRow
+			if err := rs.Scan(&r.id, &r.createdAt, &r.updatedAt); err != nil {
+				return err
+			}
+			rows = append(rows, r)
+			return nil
+		}); err != nil {
+		return // 表不存在/瞬时锁：下次启动再归一（幂等）
+	}
+	for _, r := range rows {
+		msC := nowMillis()
+		if ms, ok := normalizeMillis(r.createdAt); ok {
+			msC = ms
+		}
+		msU := msC
+		if ms, ok := normalizeMillis(r.updatedAt); ok {
+			msU = ms
+		}
+		if _, err := execRetry(`UPDATE "ScrapeRule" SET "createdAt" = ?, "updatedAt" = ? WHERE "id" = ?`, msC, msU, r.id); err != nil {
+			continue
+		}
+	}
+	if len(rows) > 0 {
+		log.Printf("[seed] ScrapeRule TEXT 时间戳归一 %d 行（CURRENT_TIMESTAMP 历史遗留，Task 33-b）", len(rows))
+	}
+}
+
 func seedIfEmpty() error {
 	var doc seedDoc
 	if err := json.Unmarshal(seedBlob, &doc); err != nil {
 		return err
 	}
+
+	// Task 33-b: 先归一存量 TEXT 时间戳（与播种解耦：表非空时也执行）
+	normalizeLegacyRuleTimestamps()
 
 	// ---------- ScrapeRule：空表才导入 ----------
 	var ruleCount int
@@ -87,11 +130,15 @@ func seedIfEmpty() error {
 	}
 	if ruleCount == 0 && len(doc.Rules) > 0 {
 		for _, r := range doc.Rules {
+			// Task 33-b: 旧版写 CURRENT_TIMESTAMP（SQLite TEXT 存储类）——违反 Task 31
+			// 落档口径「任何 DB 写 updatedAt 必须用 Go nowMillis()，禁用 SQL
+			// CURRENT_TIMESTAMP」（TEXT > INTEGER 比较错位 + int64 Scan 炸 500，
+			// 本库 ScrapeRule.updatedAt 文本行实证即源于此处）。改为显式毫秒参数。
 			_, err := exec(`INSERT INTO "ScrapeRule"
                                 ("id","name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes","createdAt","updatedAt")
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				r.ID, r.Name, r.SiteURL, boolInt(r.Enabled), r.Charset, r.Proxy, boolInt(r.InsecureTLS),
-				r.ListRule, r.BookRule, r.ChapterRule, r.Notes)
+				r.ListRule, r.BookRule, r.ChapterRule, r.Notes, nowMillis(), nowMillis())
 			if err != nil {
 				return err
 			}

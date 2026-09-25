@@ -114,7 +114,12 @@ func isPrivateIp(host string) bool {
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") || strings.HasSuffix(h, ".local") || strings.HasSuffix(h, ".internal") {
 		return true
 	}
-	if h == "::1" || h == "::" || strings.HasPrefix(h, "fc") || strings.HasPrefix(h, "fd") || strings.HasPrefix(h, "fe80") {
+	// Task 33-b: 移除 fc/fd/fe80 无差别前缀判定 —— 函数末尾本就有「含冒号=IPv6 一律拒绝」
+	// 的 catch-all，该前缀判定对含冒号的 IPv6 字面量是死代码，唯一实际作用是把
+	// 「fcxxx.com」「fdzone.org」等公网域名误判私网 → 封面下载恒失败（静默丢封面）。
+	// IPv6 私网段仍由 ①catch-all（:）与 ②DNS 解析后逐地址 isPrivateIp(addr)（addr 恒含冒号）
+	// 两层防线覆盖，防线不弱化。
+	if h == "::1" || h == "::" {
 		return true
 	}
 	if v4m := ipv4TextRE.FindStringSubmatch(h); v4m != nil {

@@ -38,6 +38,8 @@ func init() {
 	register("POST", "/api/novels/recalc-words", handleNovelsRecalcWordsPost)
 	register("GET", "/api/novels/resort-chapters", handleNovelsResortChaptersGet)
 	register("POST", "/api/novels/resort-chapters", handleNovelsResortChaptersPost)
+	register("GET", "/api/novels/smart-fill", handleNovelsSmartFillGet)
+	register("POST", "/api/novels/smart-fill", handleNovelsSmartFillPost)
 }
 
 // ==================== /api/novels/recalc-words ====================
@@ -329,4 +331,186 @@ func handleNovelsResortChaptersPost(w http.ResponseWriter, r *http.Request, _ ma
 		results = append(results, map[string]any{"id": cid, "title": title, "moved": moved})
 	}
 	writeJSON(w, 200, map[string]any{"scanned": len(candidates), "reordered": len(results), "results": results})
+}
+
+// ==================== /api/novels/smart-fill（Task 33 智能补全） ====================
+
+// junkAuthorSQL 占位作者集合的 SQL IN 字面量（与 storex.go junkAuthorSet 口径一致；
+// resolveAuthor 的落库终值「佚名」也在内）
+const junkAuthorSQL = `('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','佚','anonymous','unknown','unknow','none','null')`
+
+// smartFillReport 全库不完整面体检（只读）
+type smartFillReport struct {
+	JunkAuthor   int      `json:"junkAuthor"`
+	EmptyDesc    int      `json:"emptyDescription"`
+	FallbackCat  int      `json:"fallbackCategory"`
+	SerialEnding int      `json:"serialWithFinishedEnding"`
+	Samples      []string `json:"samples"`
+}
+
+func buildSmartFillReport() smartFillReport {
+	var rep smartFillReport
+	_ = queryOne(`SELECT COUNT(*) FROM "Novel" WHERE "author" IN `+junkAuthorSQL, []any{&rep.JunkAuthor})
+	_ = queryOne(`SELECT COUNT(*) FROM "Novel" WHERE TRIM("description") = ''`, []any{&rep.EmptyDesc})
+	_ = queryOne(`SELECT COUNT(*) FROM "Novel" n JOIN "Category" c ON c."id" = n."categoryId" WHERE c."name" = ?`, []any{&rep.FallbackCat}, FALLBACK_CATEGORY)
+	// serial 且末章标题命中完结词（与 smartCompleteStatus 同口径）
+	_ = queryOne(`SELECT COUNT(*) FROM "Novel" n WHERE n."status" = 'serial' AND EXISTS (
+	        SELECT 1 FROM "Chapter" c WHERE c."novelId" = n."id" AND c."idx" = (SELECT MAX("idx") FROM "Chapter" WHERE "novelId" = n."id")
+	          AND (c."title" LIKE '%大结局%' OR c."title" LIKE '%终章%' OR c."title" LIKE '%終章%' OR c."title" LIKE '%全书完%' OR c."title" LIKE '%全書完%' OR c."title" LIKE '%完本%' OR c."title" LIKE '%The End%'))`,
+		[]any{&rep.SerialEnding})
+	rep.Samples = []string{}
+	return rep
+}
+
+// handleNovelsSmartFillGet GET /api/novels/smart-fill：四类不完整面统计
+func handleNovelsSmartFillGet(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	writeJSON(w, 200, map[string]any{"ok": true, "report": buildSmartFillReport()})
+}
+
+// handleNovelsSmartFillPost POST /api/novels/smart-fill {limit?:30}：
+// 有界批量智能修复（单次至多 50 本），逐书四步：
+//  1. 空简介 → 首章正文预览（backfillDescriptions 同源）→ LLM 生成（冷却治理）
+//  2. 占位作者 → LLM 推断（书名+简介）→ 仍失败保留占位（不虚构）
+//  3. 分类=其他 → 本地关键词（标题+简介）→ LLM 推断 → 命中规范类则迁移
+//  4. serial 且末章命中完结词且无进行时负向词 → finished（smartCompleteStatus 同口径）
+//
+// 返回 { scanned, descFilled, authorFilled, categoryMoved, statusFixed }。
+// 幂等可重复调用：每轮只处理仍不完整的书；LLM 失败静默跳过（下轮再试）。
+func handleNovelsSmartFillPost(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	limit := 30
+	if v, ok := readBodyValue(r); ok {
+		if m := bodyMap(v); m != nil {
+			if f, isNum := m["limit"].(float64); isNum && numIsInt(f) && f > 0 {
+				limit = int(f)
+			}
+		}
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	type candRow struct {
+		id      int
+		title   string
+		author  string
+		desc    string
+		catID   int
+		catName string
+	}
+	var cands []candRow
+	err := queryList(`SELECT n."id", n."title", n."author", n."description", n."categoryId", c."name"
+		FROM "Novel" n JOIN "Category" c ON c."id" = n."categoryId"
+		WHERE n."author" IN `+junkAuthorSQL+` OR TRIM(n."description") = '' OR c."name" = '`+FALLBACK_CATEGORY+`'
+		ORDER BY n."id" ASC LIMIT ?`,
+		func(rs *sql.Rows) error {
+			var x candRow
+			if err := rs.Scan(&x.id, &x.title, &x.author, &x.desc, &x.catID, &x.catName); err != nil {
+				return err
+			}
+			cands = append(cands, x)
+			return nil
+		}, limit)
+	if err != nil {
+		failJSON(w, "服务器错误", firstLineErr(err), 500)
+		return
+	}
+	var descFilled, authorFilled, categoryMoved, statusFixed int
+	for _, x := range cands {
+		changed := false
+		// 取末章标题（四步共用）
+		var lastTitle string
+		_ = queryOne(`SELECT "title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" DESC LIMIT 1`, []any{&lastTitle}, x.id)
+		// 1. 空简介
+		if trimSpaceStr(x.desc) == "" {
+			generated := firstChapterPreview(x.id)
+			if trimSpaceStr(generated) == "" {
+				generated = trimSpaceStr(llmGenerateDescription(x.title, x.author))
+			}
+			if trimSpaceStr(generated) != "" {
+				if _, err := execRetry(`UPDATE "Novel" SET "description" = ?, "updatedAt" = ? WHERE "id" = ? AND TRIM("description") = ''`,
+					truncateRunes(trimSpaceStr(generated), novelDescriptionMax), nowMillis(), x.id); err == nil {
+					x.desc = trimSpaceStr(generated)
+					descFilled++
+					changed = true
+				}
+			}
+		}
+		// 2. 占位作者
+		if authorIsJunk(x.author) {
+			if a := trimSpaceStr(llmGuessAuthor(x.title, x.desc)); !authorIsJunk(a) {
+				if _, err := execRetry(`UPDATE "Novel" SET "author" = ?, "updatedAt" = ? WHERE "id" = ?`,
+					truncateRunes(a, novelAuthorMax), nowMillis(), x.id); err == nil {
+					authorFilled++
+					changed = true
+				}
+			}
+		}
+		// 3. 分类滞留「其他」
+		if x.catName == FALLBACK_CATEGORY {
+			canon := classifyBookLocal(x.title, x.desc)
+			if canon == "" {
+				canon = llmClassifyBook(x.title, x.desc)
+			}
+			if canon != "" && canon != FALLBACK_CATEGORY {
+				var targetID int64
+				if qerr := queryOne(`SELECT "id" FROM "Category" WHERE "name" = ?`, []any{&targetID}, canon); qerr == nil {
+					if _, uerr := execRetry(`UPDATE "Novel" SET "categoryId" = ?, "updatedAt" = ? WHERE "id" = ?`,
+						targetID, nowMillis(), x.id); uerr == nil {
+						categoryMoved++
+						changed = true
+					}
+				}
+			}
+		}
+		// 4. 智能完结（末章标题；负向词先行）
+		if lastTitle != "" && novelStatusFinishedRE.MatchString(lastTitle) {
+			if !novelStatusOngoingRE.MatchString(lastTitle) && !novelStatusOngoingRE.MatchString(x.desc) {
+				if _, uerr := execRetry(`UPDATE "Novel" SET "status" = 'finished', "updatedAt" = ? WHERE "id" = ? AND "status" = 'serial'`,
+					nowMillis(), x.id); uerr == nil {
+					statusFixed++
+					changed = true
+				}
+			}
+		}
+		_ = changed
+	}
+	// 独立批次：仅状态不完整的书（简介/作者/分类完好，不占候选配额；纯 DB 判定零 LLM 开销）
+	// 与 runner finalize 的 smartCompleteStatus 同语义，此处面向存量历史数据
+	var serialFix []int
+	_ = queryList(`SELECT n."id" FROM "Novel" n WHERE n."status" = 'serial' AND EXISTS (
+	        SELECT 1 FROM "Chapter" c WHERE c."novelId" = n."id" AND c."idx" = (SELECT MAX("idx") FROM "Chapter" WHERE "novelId" = n."id")
+	          AND (c."title" LIKE '%大结局%' OR c."title" LIKE '%终章%' OR c."title" LIKE '%終章%' OR c."title" LIKE '%全书完%' OR c."title" LIKE '%全書完%' OR c."title" LIKE '%完本%' OR c."title" LIKE '%The End%'))
+	          LIMIT 100`,
+		func(rs *sql.Rows) error {
+			var id int
+			if err := rs.Scan(&id); err != nil {
+				return err
+			}
+			serialFix = append(serialFix, id)
+			return nil
+		})
+	for _, id := range serialFix {
+		var lastTitle, desc string
+		if err := queryOne(`SELECT (SELECT "title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" DESC LIMIT 1), "description" FROM "Novel" WHERE "id" = ?`,
+			[]any{&lastTitle, &desc}, id, id); err != nil {
+			continue
+		}
+		if lastTitle == "" || !novelStatusFinishedRE.MatchString(lastTitle) {
+			continue
+		}
+		if novelStatusOngoingRE.MatchString(lastTitle) || novelStatusOngoingRE.MatchString(desc) {
+			continue
+		}
+		if _, uerr := execRetry(`UPDATE "Novel" SET "status" = 'finished', "updatedAt" = ? WHERE "id" = ? AND "status" = 'serial'`,
+			nowMillis(), id); uerr == nil {
+			statusFixed++
+		}
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok":            true,
+		"scanned":       len(cands),
+		"descFilled":    descFilled,
+		"authorFilled":  authorFilled,
+		"categoryMoved": categoryMoved,
+		"statusFixed":   statusFixed,
+	})
 }

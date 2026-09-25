@@ -107,15 +107,25 @@ func runnerAliveRecent() bool {
 const scrapeTaskListCols = `"id","ruleId","mode","targetUrl","pages","status","total","done","created","updated","chapters","message","createdAt","updatedAt","chaptersDone","chaptersTotal","storageMode"`
 
 // scanTaskListItem 一行 → LIST_SELECT 形状 map（字段名与 TS 完全一致）
+// Task 33-b: createdAt/updatedAt 扫描改 any + normalizeMillis —— 历史工具/外部脚本可能
+// 写入 TEXT 存储类时间戳（Task 31 教训），int64 直扫会 500 整个列表接口
 func scanTaskListItem(rows *sql.Rows) (map[string]any, error) {
 	var id, pages, total, done, created, updated, chapters, chaptersDone, chaptersTotal int64
 	var ruleID sql.NullInt64
 	var mode, targetURL, status, message string
-	var createdAt, updatedAt int64
+	var createdAtRaw, updatedAtRaw any
 	var storageMode string
 	if err := rows.Scan(&id, &ruleID, &mode, &targetURL, &pages, &status, &total, &done,
-		&created, &updated, &chapters, &message, &createdAt, &updatedAt, &chaptersDone, &chaptersTotal, &storageMode); err != nil {
+		&created, &updated, &chapters, &message, &createdAtRaw, &updatedAtRaw, &chaptersDone, &chaptersTotal, &storageMode); err != nil {
 		return nil, err
+	}
+	// Task 33-b: TEXT 存储类时间戳容错（无法解析 → 0 → isoFromMillis 零值时间）
+	createdAt, updatedAt := int64(0), int64(0)
+	if ms, ok := normalizeMillis(createdAtRaw); ok {
+		createdAt = ms
+	}
+	if ms, ok := normalizeMillis(updatedAtRaw); ok {
+		updatedAt = ms
 	}
 	// Task 32-b: 存量行/异常值归一 db（列 DEFAULT 'db'，防御性再归一）
 	switch storageMode {
@@ -378,14 +388,15 @@ func handleScrapeTaskDetail(w http.ResponseWriter, r *http.Request, ps map[strin
 	var idv, pages, total, done, created, updated, chapters, chaptersDone, chaptersTotal int64
 	var ruleID sql.NullInt64
 	var mode, targetURL, status, message, logv string
-	var createdAt, updatedAt int64
+	var createdAtRaw, updatedAtRaw any
+	var storageMode string
 	var ruleRowID sql.NullInt64
 	var ruleName, ruleCharset sql.NullString
 	err := queryOne(
-		`SELECT t."id", t."ruleId", t."mode", t."targetUrl", t."pages", t."status", t."total", t."done", t."created", t."updated", t."chapters", t."message", t."log", t."createdAt", t."updatedAt", t."chaptersDone", t."chaptersTotal", r."id", r."name", r."charset"
+		`SELECT t."id", t."ruleId", t."mode", t."targetUrl", t."pages", t."status", t."total", t."done", t."created", t."updated", t."chapters", t."message", t."log", t."createdAt", t."updatedAt", t."chaptersDone", t."chaptersTotal", t."storageMode", r."id", r."name", r."charset"
                  FROM "ScrapeTask" t LEFT JOIN "ScrapeRule" r ON r."id" = t."ruleId" WHERE t."id" = ?`,
 		[]any{&idv, &ruleID, &mode, &targetURL, &pages, &status, &total, &done, &created, &updated,
-			&chapters, &message, &logv, &createdAt, &updatedAt, &chaptersDone, &chaptersTotal,
+			&chapters, &message, &logv, &createdAtRaw, &updatedAtRaw, &chaptersDone, &chaptersTotal, &storageMode,
 			&ruleRowID, &ruleName, &ruleCharset},
 		id,
 	)
@@ -396,6 +407,20 @@ func handleScrapeTaskDetail(w http.ResponseWriter, r *http.Request, ps map[strin
 		}
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
+	}
+	// Task 33-b: TEXT 存储类时间戳容错 + 补出 storageMode（Task 32-b 只接入了列表/创建，
+	// 详情响应遗漏该字段 —— 与 LIST_SELECT 契约对齐，存量行归一 db）
+	createdAt, updatedAt := int64(0), int64(0)
+	if ms, ok := normalizeMillis(createdAtRaw); ok {
+		createdAt = ms
+	}
+	if ms, ok := normalizeMillis(updatedAtRaw); ok {
+		updatedAt = ms
+	}
+	switch storageMode {
+	case "txt", "both":
+	default:
+		storageMode = "db"
 	}
 	var rid any
 	if ruleID.Valid {
@@ -424,6 +449,7 @@ func handleScrapeTaskDetail(w http.ResponseWriter, r *http.Request, ps map[strin
 			"updatedAt":     isoFromMillis(updatedAt),
 			"chaptersDone":  chaptersDone,
 			"chaptersTotal": chaptersTotal,
+			"storageMode":   storageMode,
 			"rule":          rule,
 		},
 	})

@@ -73,7 +73,7 @@ backend-go ──HTTP──► scraper-go :3030（采集引擎，8 策略链 / G
 | scraper-go | 3030（`SCRAPER_PORT` 可覆盖） | Go ≥1.22 | 反反爬引擎：8 策略链、GBK/GB18030 解码、域名限速、SSRF 防护 | `mini-services/scraper-go/` |
 | SQLite | — | — | 唯一存储 `db/custom.db`（WAL + busy_timeout 5s） | `db/` |
 | Prisma CLI | — | Bun | 仅**建表/同步表结构**（`bun run db:push`）与生成工具用客户端；不参与线上服务 | `prisma/` |
-| scraper-service | — | TS（**已退役**） | 旧 TS 引擎，仅作回滚备份；默认启动会被自守卫拒绝（防止与 Go runner 双写任务） | `mini-services/scraper-service/` |
+| scraper-service | — | TS（**已删除**） | 旧 TS 引擎，已被 scraper-go 逐行移植取代；目录已于 Task 33-c rg 全仓验证零活引用后删除（历史见 git/worklog） | — |
 
 ### 1.3 看护关系（谁拉起谁）
 
@@ -1081,12 +1081,11 @@ novel-admin/
 │  │  ├─ curlimp.go / fetchcurl.go#  TLS 指纹伪装策略（依赖 ~/.local/bin/curl_*）
 │  │  ├─ extract.go / selectors.go#  规则提取器
 │  │  ├─ run.sh / scraper-go.bin
-│  ├─ scraper-service/           # 旧 TS 引擎（退役存档，仅回滚备份；默认启动会被自守卫拒绝）
 ├─ prisma/schema.prisma          # 表结构权威参考（7 模型；db:push 建表/同步用）
 ├─ db/custom.db(-shm/-wal)       # 唯一存储（SQLite WAL）
 ├─ public/covers/                # 采集封面落盘（/covers/ 路由对外）
 ├─ docs/                         # 本文档 + scrape-rules.md + anti-anti-crawl.md + images/
-├─ scripts/                      # 活跃 6 脚本（见 12.4）+ archive/ 44 项历史存档
+├─ scripts/                      # 活跃 6 脚本（见 12.4；archive/ 44 项历史存档已于 Task 33-c 删除）
 ├─ package.json                  # bun run 入口映射（dev/build/build:css/db:push…）
 └─ .zscripts/                    # 沙箱部署产物脚本（build.sh/start.sh：Go 产物模型）
 ```
@@ -1127,7 +1126,7 @@ novel-admin/
 | `engine-rule-test.mjs` | 规则三段试测（读 DB 规则 → 直连 3030，不入库） | `bun scripts/engine-rule-test.mjs <规则名> <URL> [list\|book\|chapter]` |
 | `install-curl-impersonate.sh` | 重装 curl-impersonate 21 个二进制到 ~/.local/bin | `bash scripts/install-curl-impersonate.sh` |
 
-> 历史脚本 44 项归档于 `scripts/archive/`（不再维护，部分可 bun 直跑作核对）。
+> 历史脚本 44 项曾归档于 `scripts/archive/`，已于 Task 33-c 确认零活引用后整体删除（需要时从 git 历史回溯）。
 
 ### 12.5 package.json 命令速查
 
@@ -1139,7 +1138,6 @@ novel-admin/
 | `bun run build:css` | `bun scripts/build-web-css.mjs` | 模板类名变更后必跑 |
 | `bun run db:push` | `prisma db push --accept-data-loss` | 建库/同步 schema |
 | `bun run db:generate` | `prisma generate` | 生成 Prisma Client（engine-rule-test 用） |
-| `bun run lint` | `eslint .` | 守护残余 JS/TS 工具脚本（Go 代码由 go vet/go fmt 把关） |
 
 ### 12.6 沙箱部署产物模型（.zscripts，可选阅读）
 
@@ -1184,7 +1182,7 @@ Phase 1 建骨架快，Phase 2 回填正文受目标站限速约束。
 自动转 `paused`，后台点「恢复」继续，进度不丢（§10.2）。
 
 **Q9：看到 `.zscripts/mini-service-scraper-service.log` 里有 TS 引擎拒绝启动的报错，要处理吗？**
-不用。那是退役 TS 引擎的自守卫在工作（防止与 Go runner 双写任务），属预期行为。
+不用。那是退役 TS 引擎的自守卫在工作（防止与 Go runner 双写任务），属预期行为；TS 引擎目录已 Task 33-c 删除，新环境不会再出现该日志，旧日志可忽略。
 
 **Q10：合规红线？**
 仅采集公开页面；引擎内置域名限速、robots warn-only；不含验证码破解/账号伪装/登录态伪造；

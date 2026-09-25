@@ -543,6 +543,26 @@
     $('#adm-novel-q').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') $('#adm-novel-search').click();
     });
+    // Task 33: 全库智能补全——先体检（GET 报告）确认后执行修复（POST 有界批次）
+    $('#adm-novel-smartfill').addEventListener('click', async function () {
+      var btn = this;
+      btn.disabled = true;
+      try {
+        var rep = await (await fetch('/api/novels/smart-fill')).json();
+        var r = rep && rep.report ? rep.report : {};
+        var total = (r.junkAuthor || 0) + (r.emptyDescription || 0) + (r.fallbackCategory || 0) + (r.serialWithFinishedEnding || 0);
+        if (!total) { toast('体检通过：没有需要补全的书籍', 'ok'); return; }
+        if (!confirm('智能补全体检：占位作者 ' + (r.junkAuthor || 0) + ' 本、空简介 ' + (r.emptyDescription || 0) + ' 本、「其他」分类滞留 ' + (r.fallbackCategory || 0) + ' 本、疑似完结未标 ' + (r.serialWithFinishedEnding || 0) + ' 本。\n\n将按相关信息智能填充（简介取首章预览/LLM 生成、作者 LLM 推断、分类关键词+LLM 归类、完结按末章标题判定），单批至多 50 本。是否执行？')) return;
+        var res = await (await fetch('/api/novels/smart-fill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 50 }) })).json();
+        if (res && res.ok) {
+          toast('智能补全完成：简介 +' + res.descFilled + '、作者 +' + res.authorFilled + '、分类迁移 +' + res.categoryMoved + '、完结标记 +' + res.statusFixed + '（扫描 ' + res.scanned + ' 本）', 'ok');
+          refreshNovels();
+        } else {
+          toast('智能补全失败：' + ((res && res.error) || '未知错误'), 'err');
+        }
+      } catch (e) { handleErr(e); }
+      finally { btn.disabled = false; }
+    });
     $('#adm-novel-prev').addEventListener('click', function () { if (novelsPage > 1) { novelsPage--; refreshNovels(); } });
     $('#adm-novel-next').addEventListener('click', function () { if (novelsPage < novelsTotalPages) { novelsPage++; refreshNovels(); } });
     // Task 30 主线：书籍编辑/章节管理弹层

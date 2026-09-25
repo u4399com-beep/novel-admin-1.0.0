@@ -15,6 +15,7 @@
 package main
 
 import (
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -187,12 +188,19 @@ func parseSetCookieLine(line string, now int64) *parsedCookie {
 			switch strings.ToLower(key) {
 			case "max-age":
 				sec, err := strconv.ParseFloat(val, 64)
-				if err != nil {
+				// Task 33-a: Max-Age=inf/NaN（"inf"/"nan" 可被 ParseFloat 接受）或超大有限值时
+				// int64(sec*1000) 属实现定义转换（amd64 得 MinInt64），now+ms 整型回绕为负 →
+				// cookie 以负过期时间入库、回放侧必删——恶意 Set-Cookie 头可毒化同名会话 cookie。
+				// 非有限值忽略该属性；有限值先在 float 域钳到 TTL 上界再转换，杜绝溢出。
+				if err != nil || math.IsNaN(sec) || math.IsInf(sec, 0) {
 					continue
 				}
 				if sec <= 0 {
 					remove = true
 				} else {
+					if sec > float64(cookieMaxTTLMS)/1000 {
+						sec = float64(cookieMaxTTLMS) / 1000
+					}
 					ms := int64(sec * 1000)
 					if ms > cookieMaxTTLMS {
 						ms = cookieMaxTTLMS

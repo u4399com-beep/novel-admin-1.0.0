@@ -9,10 +9,10 @@
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
-      "listRule": "{\"itemSelector\": \"div.listbg\", \"titleSelector\": \".title a\", \"linkSelector\": \".title a\", \"authorSelector\": \".mainGreen a[title]\"}",
+      "listRule": "{\"itemSelector\": \"ul.lines-books li, div.listbg\", \"titleSelector\": \".line-main a, .title a\", \"linkSelector\": \".line-main a, .title a\", \"authorSelector\": \".author, .mainGreen a[title]\"}",
       "bookRule": "{\"titleSelector\": \"article.panel h3\", \"authorSelector\": \".kv a[title]\", \"descriptionSelector\": \".intro-panel .desc\", \"coverSelector\": \".pic img@src\", \"statusSelector\": \".sfwj\", \"chapterLinkSelector\": \"ul.chapter-list a\", \"catalogLinkSelector\": \"a[href^=\\\"/read/\\\"]\", \"excludeSelector\": \"h1.logo,.search\", \"categorySelector\": \".kv p:contains(书籍分类)\", \"notes\": \"Task 32: +categorySelector 书籍分类（stripFieldLabel 剥前缀→canonicalCategory 直映都市言情）\"}",
       "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#view_content_txt\"}",
-      "notes": "2026-09 实测（Task 32）：站点改版 ul.lines-books li → div.listbg 卡片（含 .title a/.mainGreen 作者）；封面在书页 .pic img 提取 || 原注: 2026-09 实测（Task3 第二轮）：fetch-browser 直连。帝国CMS TXT下载站：书页无章节列表，catalogLinkSelector=a[href^=/read/] 命中「在线阅读全文」，worker 二次抓 /read/{id}/ 目录用 chapterLinkSelector=ul.chapter-list a 提取全章（约140+条，首条为「内容简介」）。列表页 ul.lines-books li（最新上传62条）。章节页 h1 含书名前缀（worker 优先用目录页链接文本）；正文"
+      "notes": "2026-09 Task 33 实测：站点在 ul.lines-books li（旧版）与 div.listbg 卡片（Task 32 实测版）两套模板间翻转——列表选择器改双结构逗号兼容（.line-main a / .title a、.author / .mainGreen a[title]），书页规则实测两套模板均兼容不动"
     },
     {
       "id": 11,
@@ -48,10 +48,10 @@
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
-      "listRule": "{\"itemSelector\":\"a.book-card\",\"titleSelector\":\".book-title\",\"authorSelector\":\".book-author\"}",
+      "listRule": "{\"itemSelector\": \"a.book-card, .ranking-item\", \"titleSelector\": \".book-title, .ranking-title\", \"authorSelector\": \".book-author, .ranking-author\"}",
       "bookRule": "{\"titleSelector\":\"h1.detail-title\",\"authorSelector\":\".detail-meta span\",\"descriptionSelector\":\".detail-intro-content\",\"coverSelector\":\".detail-cover@src\",\"chapterLinkSelector\":\"#chapterList li a\"}",
       "chapterRule": "{\"titleSelector\":\".breadcrumb-item.active\",\"contentSelector\":\"#readerContent\",\"excludeSelector\":\"#readerContent h1,.reader-updated\"}",
-      "notes": "2026-09 实测：fetch-browser 直连（上一轮的 sbrowser 渲染样本与今直连结果一致）。列表页首页 a.book-card（item 即链接本身，linkSelector 省略走默认 a[href] 自匹配）；书页 #chapterList 全目录（73条）；og:novel meta 兜底 status/category。章节页分页 (1/2)：nextUrl=…/2.html，worker fetchChapterPaged 前缀判定自动拼接（引擎 rel=next 误标 bug 已修——该站把上一章锚点标了 rel=next）。excludeSelector=#readerContent h1 去标题行，title 用面包屑 .breadcrumb-item.active（干净无 (1/2)）。\n【28-a 校准 2026-09-24】excludeSelector 增补 .reader-updated——#readerContent 内每页/每章首部有 <p class=\"reader-updated\">更新于 YYYY-MM-DD</p>，旧配置漏杀（存量 72 章残留该行）；书页 /novel/{id} 实测（112 章目录+og meta 全套+详情三件套）；书页无封面书统一返回 /public/nocover.svg 已由引擎占位封面过滤兜底（extract.go rePlaceholderCover）；正文容器内终章按钮 <a id=\"nextChapter\" disabled>没有了</a> 与页间 reader-nav 已由引擎 reADLinkText 增补（content.go Task 28-a）清除。"
+      "notes": "2026-09 Task 33 加固：itemSelector 补 .ranking-item 排行模块备选（book-card 模块条目少且瞬态残页易全空）；linkSelector 必须缺省——引擎缺省 a[href] 走 IsMatcher 分支兼容「item 本体即锚点」的 book-card 与「后代锚点」的 ranking-item，显式配 .book-title 类标题选择器会取不到 href（div 无 href 属性）"
     },
     {
       "id": 14,

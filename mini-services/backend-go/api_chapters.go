@@ -230,12 +230,17 @@ func handleChapterUpdate(w http.ResponseWriter, r *http.Request, ps map[string]s
 			args = append(args, finalTitle)
 		}
 	}
+	contentStr, hasContent := "", false
 	if s, ok2 := body["content"].(string); ok2 {
+		hasContent = true
+		contentStr = s
 		// Task 32-b: 垂直分表 —— 编辑正文写 ChapterContent（chapterId 键），Chapter.content
 		// 列位保留恒空；保存成功后同步重写该章 TXT 分章文件（txt/both 模式书，旧题名文件顺带清理）
 		sets = append(sets, `"wordCount" = ?`)
 		args = append(args, wordCountJS(s))
-		defer func() { syncChapterTxt(int(novelId), int(chIdx), finalTitle, s) }()
+		// Task 33-b: 旧版 defer syncChapterTxt 在 UPDATE/分表写败路径也会执行——
+		// 404 响应的同时 txt 文件已被重写为新内容，文件与 DB 内容漂移（三级回落
+		// 读到旧值、文件却是新值的中间态）。改为成功路径显式同步（见下方）。
 	}
 	if len(sets) > 0 {
 		if _, err := exec(`UPDATE "Chapter" SET `+strings.Join(sets, ", ")+` WHERE "id" = ?`, append(args, cid)...); err != nil {
@@ -243,11 +248,14 @@ func handleChapterUpdate(w http.ResponseWriter, r *http.Request, ps map[string]s
 			return
 		}
 		// Task 32-b: content 编辑同步分表（chapterId 键）
-		if s, ok2 := body["content"].(string); ok2 {
-			if _, err := exec(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`, cid, s); err != nil {
+		if hasContent {
+			if _, err := exec(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`, cid, contentStr); err != nil {
 				writeJSON(w, 404, map[string]string{"error": "章节不存在或更新失败"})
 				return
 			}
+			// Task 33-b: 仅在 DB 双写全部成功后同步 txt 文件（成功路径；旧版 defer
+			// 会把失败路径也同步，文件/DB 漂移）
+			syncChapterTxt(int(novelId), int(chIdx), finalTitle, contentStr)
 		}
 	}
 	// 内容变化同步书籍字数合计并触碰 updatedAt（对齐 TS 语义）
@@ -750,111 +758,160 @@ func handleChapterAuditPost(w http.ResponseWriter, r *http.Request, _ map[string
 		return
 	}
 
-	// ---- 去重：同书同名保留 wordCount 最大（并列取 idx 最小）----
-	removed := 0
-	if action == "dedupe" {
-		type best struct {
-			id, wordCount, idx int64
-		}
-		keep := map[string]best{}
-		for _, x := range rows {
-			b, exists := keep[x.title]
-			if !exists || x.wordCount > b.wordCount || (x.wordCount == b.wordCount && x.idx < b.idx) {
-				keep[x.title] = best{id: x.id, wordCount: x.wordCount, idx: x.idx}
-			}
-		}
-		if len(keep) < len(rows) {
-			keepIDs := map[int64]bool{}
-			for _, b := range keep {
-				keepIDs[b.id] = true
-			}
-			dropIDs := make([]int64, 0)
-			for _, x := range rows {
-				if !keepIDs[x.id] {
-					dropIDs = append(dropIDs, x.id)
-				}
-			}
-			// 分批 IN 删除（SQLite 变量上限防御）
-			for i := 0; i < len(dropIDs); i += 500 {
-				end := i + 500
-				if end > len(dropIDs) {
-					end = len(dropIDs)
-				}
-				part := dropIDs[i:end]
-				ph := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
-				args := make([]any, len(part))
-				for j, idv := range part {
-					args[j] = idv
-				}
-				res, err := exec(`DELETE FROM "Chapter" WHERE "id" IN (`+ph+`)`, args...)
-				if err != nil {
-					writeJSON(w, 500, map[string]string{"error": "目录修复失败", "detail": firstLineErr(err)})
-					return
-				}
-				n, _ := res.RowsAffected()
-				removed += int(n)
-			}
-		}
-	}
-
-	// ---- 重排：有编号按编号升序（稳定），无编号按原相对顺序置后；压实 idx 1..n ----
-	kept := make([]row, 0)
-	if err := queryList(`SELECT "id", "idx", "title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC, "id" ASC`,
-		func(rs *sql.Rows) error {
-			var x row
-			if err := rs.Scan(&x.id, &x.idx, &x.title); err != nil {
-				return err
-			}
-			kept = append(kept, x)
-			return nil
-		}, novelId); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "目录修复失败", "detail": firstLineErr(err)})
+	// ---- 去重 + 重排（Task 33-b: 单事务原子执行）----
+	// 旧版缺陷：①去重 DELETE 与重排两段式 UPDATE 均在事务外且忽略错误——第二段落位
+	// 失败（瞬时锁等）时该章永久滞留负数暂存区 idx=-1000000-i（阅读序消失、TXT/导出
+	// 错位）而 API 仍返回 ok；②去重删除行的 TXT 分章文件未清理，重排压实后新 idx 命中
+	// 已删行的旧文件 → txt 回落读到已删章节内容（串章）。
+	// 修复：sql.Tx 内完成「去重删除 → 负数暂存 → 落位 1..n」，任一步失败整体回滚
+	// 零中间态；提交后按迁移记录同步 txt 文件（删行清理 + 变号改名，txtdir.go）。
+	removed, moved := 0, 0
+	var droppedRows []row         // 去重删除的行（提交后清理其 txt 文件）
+	var txtMoves []chapterTxtMove // idx 变化的行（提交后同步 txt 文件名）
+	db, derr := getDB()
+	if derr != nil {
+		writeJSON(w, 500, map[string]string{"error": "目录修复失败", "detail": firstLineErr(derr)})
 		return
 	}
-	moved := 0
-	type numberedRow struct {
-		r row
-		i int
-		n int64
+	tx, terr := db.Begin()
+	if terr != nil {
+		writeJSON(w, 500, map[string]string{"error": "目录修复失败", "detail": firstLineErr(terr)})
+		return
 	}
-	numbered := make([]numberedRow, 0)
-	unnumbered := make([]row, 0)
-	for i, x := range kept {
-		if n, ok := extractNum(x.title); ok {
-			numbered = append(numbered, numberedRow{r: x, i: i, n: n})
-		} else {
-			unnumbered = append(unnumbered, x)
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
 		}
-	}
-	// 稳定排序（n 升序，并列保持原相对顺序 i）
-	for i := 1; i < len(numbered); i++ {
-		for j := i; j > 0 && (numbered[j].n < numbered[j-1].n); j-- {
-			numbered[j], numbered[j-1] = numbered[j-1], numbered[j]
-		}
-	}
-	ordered := make([]row, 0, len(kept))
-	for _, x := range numbered {
-		ordered = append(ordered, x.r)
-	}
-	ordered = append(ordered, unnumbered...)
-
-	// 两段式重排：先全部移出到负数暂存区（避开目标 idx 被占），再落位 1..n
-	for i, x := range ordered {
-		if x.idx != int64(i+1) {
-			_, _ = exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, -1_000_000-int64(i), x.id)
-		}
-	}
-	for i, x := range ordered {
-		target := int64(i + 1)
-		if x.idx != target {
-			res, err := exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, target, x.id)
-			if err == nil {
-				if n, _ := res.RowsAffected(); n > 0 {
-					moved++
+	}()
+	txErr := func() error {
+		if action == "dedupe" {
+			type best struct {
+				id, wordCount, idx int64
+			}
+			keep := map[string]best{}
+			for _, x := range rows {
+				b, exists := keep[x.title]
+				if !exists || x.wordCount > b.wordCount || (x.wordCount == b.wordCount && x.idx < b.idx) {
+					keep[x.title] = best{id: x.id, wordCount: x.wordCount, idx: x.idx}
+				}
+			}
+			if len(keep) < len(rows) {
+				keepIDs := map[int64]bool{}
+				for _, b := range keep {
+					keepIDs[b.id] = true
+				}
+				dropIDs := make([]int64, 0)
+				for _, x := range rows {
+					if !keepIDs[x.id] {
+						dropIDs = append(dropIDs, x.id)
+						droppedRows = append(droppedRows, x)
+					}
+				}
+				// 分批 IN 删除（SQLite 变量上限防御）
+				for i := 0; i < len(dropIDs); i += 500 {
+					end := i + 500
+					if end > len(dropIDs) {
+						end = len(dropIDs)
+					}
+					part := dropIDs[i:end]
+					ph := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
+					args := make([]any, len(part))
+					for j, idv := range part {
+						args[j] = idv
+					}
+					res, err := tx.Exec(`DELETE FROM "Chapter" WHERE "id" IN (`+ph+`)`, args...)
+					if err != nil {
+						return err
+					}
+					n, _ := res.RowsAffected()
+					removed += int(n)
 				}
 			}
 		}
+
+		// ---- 重排：有编号按编号升序（稳定），无编号按原相对顺序置后；压实 idx 1..n ----
+		// 去重后在事务内重查（必须看到已删行状态）
+		kept, kerr := func() ([]row, error) {
+			krows, kerr := tx.Query(`SELECT "id", "idx", "title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC, "id" ASC`, novelId)
+			if kerr != nil {
+				return nil, kerr
+			}
+			defer krows.Close() // Task 33-b: Commit 前必须关闭（打开 Rows 时 Commit 可能报 in progress）
+			out := make([]row, 0)
+			for krows.Next() {
+				var x row
+				if err := krows.Scan(&x.id, &x.idx, &x.title); err != nil {
+					return nil, err
+				}
+				out = append(out, x)
+			}
+			return out, krows.Err()
+		}()
+		if kerr != nil {
+			return kerr
+		}
+		type numberedRow struct {
+			r row
+			i int
+			n int64
+		}
+		numbered := make([]numberedRow, 0)
+		unnumbered := make([]row, 0)
+		for i, x := range kept {
+			if n, ok := extractNum(x.title); ok {
+				numbered = append(numbered, numberedRow{r: x, i: i, n: n})
+			} else {
+				unnumbered = append(unnumbered, x)
+			}
+		}
+		// 稳定排序（n 升序，并列保持原相对顺序 i）
+		for i := 1; i < len(numbered); i++ {
+			for j := i; j > 0 && (numbered[j].n < numbered[j-1].n); j-- {
+				numbered[j], numbered[j-1] = numbered[j-1], numbered[j]
+			}
+		}
+		ordered := make([]row, 0, len(kept))
+		for _, x := range numbered {
+			ordered = append(ordered, x.r)
+		}
+		ordered = append(ordered, unnumbered...)
+
+		// 两段式重排：先全部移出到负数暂存区（避开目标 idx 被占），再落位 1..n
+		// Task 33-b: 任一步失败即整体回滚（旧版忽略错误会留下 -1000000 僵尸序号）
+		for i, x := range ordered {
+			if x.idx != int64(i+1) {
+				if _, err := tx.Exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, -1_000_000-int64(i), x.id); err != nil {
+					return err
+				}
+			}
+		}
+		for i, x := range ordered {
+			target := int64(i + 1)
+			if x.idx != target {
+				res, err := tx.Exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, target, x.id)
+				if err != nil {
+					return err
+				}
+				if n, _ := res.RowsAffected(); n > 0 {
+					moved++
+					txtMoves = append(txtMoves, chapterTxtMove{ChapterID: x.id, OldIdx: x.idx, NewIdx: target, Title: x.title})
+				}
+			}
+		}
+		return tx.Commit()
+	}()
+	if txErr != nil {
+		writeJSON(w, 500, map[string]string{"error": "目录修复失败", "detail": firstLineErr(txErr)})
+		return
 	}
+	committed = true
+	// Task 33-b: 提交后尽力同步 TXT 分章文件：去重删除行按旧 idx 清理（防压实后新 idx
+	// 命中已删行旧文件串章）；重排变号行按迁移记录改名（txtdir.go 两段式 rename 防 swap 互覆）
+	for _, d := range droppedRows {
+		removeChapterTxt(int(novelId), int(d.idx))
+	}
+	reindexChapterTxtFiles(novelId, txtMoves)
 
 	// 重算字数（去重可能删行；update 触碰 @updatedAt → 显式 set）
 	if removed > 0 {

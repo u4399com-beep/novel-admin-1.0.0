@@ -247,8 +247,14 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		if len(proxyPool) == 0 {
 			return ""
 		}
+		// Task 33-a: int() 转换在 32 位平台字长下会回绕为负，负数取模得负下标 → 切片越界
+		// panic。先取模再补正，使游标轮换与平台字长解耦（64 位下语义不变）。
 		idx := int(proxyCursor.Add(1))
-		return proxyPool[(idx+len(proxyPool)-1)%len(proxyPool)]
+		m := idx % len(proxyPool)
+		if m < 0 {
+			m += len(proxyPool)
+		}
+		return proxyPool[m]
 	}
 
 	for si := 0; si < len(order); si++ {

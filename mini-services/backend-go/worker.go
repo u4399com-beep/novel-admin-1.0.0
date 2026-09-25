@@ -526,6 +526,75 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 
 // ==================== Phase 2：正文填充（跨书平铺并发） ====================
 
+// isRateLimitErrText 限流类失败判定（Task 33: 提取为包级函数供单测与车道控制复用）。
+// Task 33 实证扩容（2026-09-25 23qb 六站实采）：引擎顶层失败文案的主形态是
+// 「fetch-ua-rotate: budget-exhausted（限速排队后预算耗尽）」与「目标主机熔断中」——
+// 旧词表只有「429/503/限流/rate」，这些形态全部不命中 → 车道降档永不触发（熔断时活跃
+// 车道仍 12）、熔断被误分类「封禁/不可达」。补齐：限速（限速排队）/预算耗尽与
+// budget-exhausted（同一形态中英文）/熔断与整链失败（引擎主机熔断期，降档完全正确）。
+// 「timeout-budget」单看可能是慢站而非限流，不纳入（宁窄勿宽，防误降档）。
+func isRateLimitErrText(err string) bool {
+	if err == "" {
+		return false
+	}
+	low := strings.ToLower(err)
+	return strings.Contains(low, "429") || strings.Contains(low, "503") ||
+		strings.Contains(low, "限流") || strings.Contains(low, "rate") ||
+		strings.Contains(low, "限速") || strings.Contains(low, "预算耗尽") ||
+		strings.Contains(low, "budget-exhausted") ||
+		strings.Contains(low, "熔断") || strings.Contains(low, "整链失败")
+}
+
+// isSoftBlockErrText 软拦截判定（Task 31 引入，Task 33 提取为包级函数供单测）：
+// 限流窗口的主要形态是 200 空壳/挑战循环失败，Error 文案不含限流字样。口径：挑战/空壳/正文空。
+func isSoftBlockErrText(err string) bool {
+	if err == "" {
+		return false
+	}
+	low := strings.ToLower(err)
+	return strings.Contains(low, "challenge") || strings.Contains(low, "挑战") ||
+		strings.Contains(low, "空壳") || strings.Contains(low, "正文为空") ||
+		strings.Contains(low, "正文提取为空") || strings.Contains(low, "软拦截")
+}
+
+// gLaneFloor 任务级车道下限记忆（Task 33：跨 resume 持久化）。
+// 根因：laneLimiter 每次 runChapterFillPhase 重建都从 CHAPTER_CONCURRENCY(12) 起步，
+// 熔断前刚降档到 2 车道的知识在 resume 后丢失 → resume 即全速烧穿再熔断的抖动循环
+// （ixdzs8/23qb 实证）。key=任务 id，value=历史最低活跃车道；resume 起步取
+// min(记忆值, 配置值)，成功回开逻辑不变（连续 24 章成功 +2 直到封顶）。
+// 不删除条目：任务量级 ≤百，内存可忽略；同任务重发永远受益于历史降档经验。
+var gLaneFloor sync.Map // map[int]int
+
+// laneFloorLoad 取任务历史车道下限（无记忆返回 0 表示无约束）
+func laneFloorLoad(taskID int) int {
+	if v, ok := gLaneFloor.Load(taskID); ok {
+		if n, ok2 := v.(int); ok2 && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// laneFloorStore 记录任务历史车道下限（只降不升：取历史最小值）
+func laneFloorStore(taskID, limit int) {
+	if limit <= 0 {
+		return
+	}
+	for {
+		cur := laneFloorLoad(taskID)
+		if cur != 0 && cur <= limit {
+			return
+		}
+		if cur == 0 {
+			gLaneFloor.Store(taskID, limit)
+			return
+		}
+		if gLaneFloor.CompareAndSwap(taskID, cur, limit) {
+			return
+		}
+	}
+}
+
 // Phase2Outcome Phase 2 结果
 type Phase2Outcome struct {
 	Filled       int
@@ -580,30 +649,26 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 	//（scraper-go ratelimit.go）配合形成双层自适应：引擎层控制单请求节奏，本层控制并发宽度。
 	laneCtl := newLaneLimiter(CHAPTER_CONCURRENCY)
 	var laneLimit atomic.Int64
-	laneLimit.Store(int64(CHAPTER_CONCURRENCY))
+	// Task 33: 起步车道取历史降档记忆（跨 resume 持久化，防 resume 即全速烧穿循环）
+	if floor := laneFloorLoad(run.TaskID); floor > 0 && floor < CHAPTER_CONCURRENCY {
+		laneLimit.Store(int64(floor))
+		laneCtl.setLimit(floor)
+		run.Log(fmt.Sprintf("[lane-control] 延续历史降档经验，起步活跃车道 %d（成功后逐档回升）", floor))
+	} else {
+		laneLimit.Store(int64(CHAPTER_CONCURRENCY))
+	}
 	var laneShrinks atomic.Int64
 	var laneOKStreak atomic.Int64
 	laneRestoreEvery := int64(24) // 连续成功多少章回开一档（+2 车道）
 
 	isRateLimitErr := func(err string) bool {
-		if err == "" {
-			return false
-		}
-		low := strings.ToLower(err)
-		return strings.Contains(low, "429") || strings.Contains(low, "503") ||
-			strings.Contains(low, "限流") || strings.Contains(low, "rate")
+		return isRateLimitErrText(err)
 	}
 	// Task 31: 软拦截判定——ixdzs8 实证限流窗口的主要形态是 200 空壳/挑战循环失败
 	//（显式 429/503 反而少），这类失败 Error 文案不含"限流"字样，若不单列则车道降档
 	// 与熔断分类（BreakerRateLimit）永不触发，resume 循环烧穿。口径：挑战/空壳/正文空。
 	isSoftBlockErr := func(err string) bool {
-		if err == "" {
-			return false
-		}
-		low := strings.ToLower(err)
-		return strings.Contains(low, "challenge") || strings.Contains(low, "挑战") ||
-			strings.Contains(low, "空壳") || strings.Contains(low, "正文为空") ||
-			strings.Contains(low, "正文提取为空") || strings.Contains(low, "软拦截")
+		return isSoftBlockErrText(err)
 	}
 
 	shrinkLanes := func(errClass string) {
@@ -614,6 +679,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 		}
 		if laneLimit.CompareAndSwap(cur, next) {
 			laneCtl.setLimit(int(next))
+			laneFloorStore(run.TaskID, int(next)) // Task 33: 跨 resume 记忆
 			laneShrinks.Add(1)
 			laneOKStreak.Store(0)
 			run.Log(fmt.Sprintf("[lane-control] 检测到限流类失败（%s），活跃车道 %d→%d（引擎已同步 AIMD 放缓请求间隔）", errClass, cur, next))
@@ -920,6 +986,67 @@ func backfillDescriptions(novelIDs []int) {
 	}
 }
 
+// smartCompleteStatus 智能完结补强（Task 33，finalize 前批量执行）：
+// storex.go 的智能完结注释一直宣称「description+末章标题关键词判定」，但 upsertBook
+// 只实现了简介判定（书骨架阶段拿不到目录）——目录已入库后这里补上末章标题路径：
+// status=serial 的书若末章标题命中完结词表（大结局/终章/全书完/完本/the end 等，
+// novelStatusFinishedRE 同口径），且简介无「连载中/未完」等负向词 → 升级 finished。
+// 单向升级（serial→finished，绝不降级）：源站状态「连载中」但末章已是「大结局」的
+// 站点状态滞后场景，升级即纠偏。每任务限 20 本防 LLM 外的 DB 写放大。
+func smartCompleteStatus(novelIDs []int) {
+	if len(novelIDs) == 0 {
+		return
+	}
+	args := make([]any, 0, len(novelIDs))
+	for _, id := range novelIDs {
+		args = append(args, id)
+	}
+	var rows []struct {
+		id    int
+		title string
+		desc  string
+	}
+	q := `SELECT n."id",
+	             (SELECT c."title" FROM "Chapter" c WHERE c."novelId" = n."id" ORDER BY c."idx" DESC LIMIT 1) AS lastTitle,
+	             n."description"
+	      FROM "Novel" n
+	      WHERE n."status" = 'serial' AND n."id" IN (` + sqlPlaceholders(len(novelIDs)) + `)`
+	_ = queryList(q, func(rs *sql.Rows) error {
+		var r struct {
+			id    int
+			title string
+			desc  string
+		}
+		if err := rs.Scan(&r.id, &r.title, &r.desc); err != nil {
+			return err
+		}
+		rows = append(rows, r)
+		return nil
+	}, args...)
+	fixed := 0
+	for _, r := range rows {
+		if fixed >= 20 {
+			break
+		}
+		lastTitle := trimSpaceStr(r.title)
+		if lastTitle == "" || !novelStatusFinishedRE.MatchString(lastTitle) {
+			continue
+		}
+		// 简介/末章任一命中进行时负向词（连载中/未完/停更）则不动——防「大结局？不，新的开始」式标题误判
+		if novelStatusOngoingRE.MatchString(lastTitle) || novelStatusOngoingRE.MatchString(r.desc) {
+			continue
+		}
+		res, err := execRetry(`UPDATE "Novel" SET "status" = 'finished', "updatedAt" = ? WHERE "id" = ? AND "status" = 'serial'`,
+			nowMillis(), r.id)
+		if err == nil && rowCountOf(res) > 0 {
+			fixed++
+		}
+	}
+	if fixed > 0 {
+		log.Printf("[smart-status] 智能完结：%d 本（末章标题命中完结词，serial→finished）", fixed)
+	}
+}
+
 // firstChapterPreview 首章正文首 200 字（逐行清洗：TrimSpace 去空行后以单空格拼接、截断）。
 // 正文读取 COALESCE 分表兼容（chapterId 键）+ readChapterFromTxt 兜底（txt 存储模式）。
 func firstChapterPreview(novelID int) string {
@@ -1119,6 +1246,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 			fmt.Sprintf("已暂停（正文填充 %d/%d 章，进度保留，可恢复继续）", p2.Filled, p1.FillTotal))
 		return
 	}
+	smartCompleteStatus(p1.NovelIDs)  // Task 33: 智能完结补强（末章标题关键词判定）
 	backfillDescriptions(p1.NovelIDs) // Task 32-b: finalize 前空简介批量回填（限 10 本/任务）
 	if p2.Filled == 0 && p1.FillTotal == 0 {
 		// 可续跑语义：重发已完成任务时骨架全部已有正文（FillTotal=0），Phase 2 无事可做
@@ -1207,6 +1335,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
 		return
 	}
+	smartCompleteStatus(p1.NovelIDs)  // Task 33: 智能完结补强（末章标题关键词判定）
 	backfillDescriptions(p1.NovelIDs) // Task 32-b: finalize 前空简介批量回填（限 10 本/任务）
 	if p2.Filled == 0 && p1.FillTotal == 0 {
 		// 同 runList：骨架已全部有正文的可续跑重发报成功（旧版误报 failed）

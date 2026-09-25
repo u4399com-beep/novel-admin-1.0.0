@@ -160,6 +160,65 @@ func runBash(cmd string) error {
 	return nil
 }
 
+// ==================== 限流类熔断的有界自动恢复（Task 33） ====================
+//
+// 背景（2026-09-25 六站实采实证）：严格限流站（23qb/ggd66/rixsw 等）phase2 几乎必然
+// 触发 60 连败熔断转 paused，此前只能等人工 PATCH resume——夜间/长跑场景吞吐归零。
+// 且熔断前虽已降档（Task 33 起 resume 还延续降档经验），但引擎 AIMD/hosthealth 冷却
+// 仅 60s，几分钟内源站限流窗口通常已过。
+// 策略：限流类熔断（message 含「限流」+「软拦截」特征）的 paused 任务，updatedAt 静默
+// ≥3 分钟后自动重新入队（条件 UPDATE 防与手动操作竞态）；每任务每进程生命周期至多
+// 4 次——防「resume 即熔断」的无限抖动烧预算；4 次后转纯手动。
+// 非限流类熔断（封禁/不可达）不自动恢复：那类站点需要人工介入排查。
+
+const (
+	autoResumeSilentMs   = 3 * 60 * 1000 // 熔断后静默等待（引擎冷却 60s × 3 冗余）
+	autoResumeMaxPerTask = 4             // 每任务自动恢复上限（进程生命周期内）
+)
+
+var autoResumeAttempts = map[int]int{}
+
+func autoResumePausedTasks() {
+	var ids []int
+	err := queryList(
+		`SELECT "id" FROM "ScrapeTask"
+		 WHERE "status" = 'paused' AND "message" LIKE '%限流%软拦截%'
+		   AND "updatedAt" <= ?`,
+		func(rows *sql.Rows) error {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+			return nil
+		}, nowMillis()-autoResumeSilentMs)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		if autoResumeAttempts[id] >= autoResumeMaxPerTask {
+			continue
+		}
+		autoResumeAttempts[id]++
+		n := autoResumeAttempts[id]
+		var logv string
+		_ = queryOne(`SELECT "log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&logv}, id)
+		line := "[" + runTs() + "] 自动恢复（限流冷却结束）：第 " + itoa(n) + "/" + itoa(autoResumeMaxPerTask) + " 次重新入队（车道降档经验已延续，缺失正文自动续传）"
+		if logv != "" {
+			logv += "\n"
+		}
+		logv = lastLines(logv+line, MAX_LOG_LINES)
+		res, err := exec(
+			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（限流冷却结束），等待 runner 领取继续采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+			logv, nowMillis(), id)
+		if err == nil {
+			if cnt, _ := res.RowsAffected(); cnt > 0 {
+				log.Printf("[backend-go-runner] task %d 限流熔断自动恢复（第 %d 次）", id, n)
+			}
+		}
+	}
+}
+
 // startRunner runner 主循环入口（main.go 在 runner/all 模式下 go 调用）
 func startRunner() {
 	log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
@@ -222,6 +281,11 @@ func startRunner() {
 
 			// 未分类慢速归类（0-1 本/轮）
 			_ = recategorizeOne()
+
+			// Task 33: 限流类熔断任务的有界自动恢复（每 15 轮≈30s 扫一次）
+			if tick%15 == 0 {
+				autoResumePausedTasks()
+			}
 		}()
 		tick++
 		time.Sleep(runnerPollInterval)

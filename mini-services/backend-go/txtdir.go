@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // errTxtNotFound readChapterFromTxt 的「文件不存在」哨兵（调用方仅区分有无，不必细分）
@@ -73,13 +74,83 @@ func exportTxtPath(novelID int, bookTitle string) string {
 
 // writeChapterTxt 写分章文件（内容 = 标题 + 空行 + 正文 + \n）。调用方保证目录语义，
 // 这里 MkdirAll 幂等建目录（每章一次 stat 级开销可忽略）。
+// Task 33-b: 旧版 os.WriteFile 直接截断写目标路径——同章并发写（同名书双任务/重发续传
+// 窗口）或并发读（阅读页/导出）会读到截断/交错的半截文件；改为 tmp+rename 原子落盘
+// （coversx.go fetchAndStoreCover 同款，tmp 名带纳秒后缀防碰撞，且不落在
+// readChapterFromTxt 的 {idx}_*.txt glob 结果内——尾缀 .tmp-n ≠ .txt）。
 func writeChapterTxt(novelID, idx int, title, content string) error {
 	dir := novelTxtDir(novelID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	body := trimSpaceStr(title) + "\n\n" + content + "\n"
-	return os.WriteFile(chapterTxtPath(novelID, idx, title), []byte(body), 0o644)
+	final := chapterTxtPath(novelID, idx, title)
+	tmp := final + ".tmp-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, final); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// chapterTxtMove 章节重排（audit reindex/去重压实）的单章 idx 迁移记录（Task 33-b）。
+// 重排只改 idx 不改 title，新旧文件名可由同一 title 推出。
+type chapterTxtMove struct {
+	ChapterID int64
+	OldIdx    int64
+	NewIdx    int64
+	Title     string
+}
+
+// reindexChapterTxtFiles 重排落库后同步分章 txt 文件名（旧 idx → 新 idx，Task 33-b）。
+// 根因：分章文件名内嵌 idx，重排/去重后 DB idx 变了而文件名不变，readChapterFromTxt
+// 按「新 idx」前缀匹配会读到别的章（串章）或读不到（txt 模式书正文“丢失”）。
+// 两段式 rename（旧名 → reidx_{novel}_{chapter}.tmp 唯一暂存名 → 新名）防 swap 场景
+// （A:1→2 且 B:2→1）互覆丢内容；无旧文件的行（db 模式/未落盘）跳过。
+// 尽力而为语义（与 syncChapterTxt/removeChapterTxt 同口径：错误静默，DB 正文仍在分表/存量列）。
+func reindexChapterTxtFiles(novelID int64, moves []chapterTxtMove) {
+	if len(moves) == 0 {
+		return
+	}
+	dir := novelTxtDir(int(novelID))
+	tmpName := func(chapterID int64) string {
+		return filepath.Join(dir, fmt.Sprintf("reidx_%d_%d.tmp", novelID, chapterID))
+	}
+	// pass 1：旧文件 → 暂存名（全部腾位后再落位，swap 安全）
+	for _, mv := range moves {
+		oldPath := chapterTxtPath(int(novelID), int(mv.OldIdx), mv.Title)
+		if _, err := os.Stat(oldPath); err != nil {
+			continue
+		}
+		_ = os.Rename(oldPath, tmpName(mv.ChapterID))
+	}
+	// pass 2：暂存名 → 新名；失败回滚暂存名 → 旧名（尽力保留可用文件）
+	for _, mv := range moves {
+		tmp := tmpName(mv.ChapterID)
+		if _, err := os.Stat(tmp); err != nil {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err == nil {
+			if rerr := os.Rename(tmp, chapterTxtPath(int(novelID), int(mv.NewIdx), mv.Title)); rerr == nil {
+				continue
+			}
+		}
+		_ = os.Rename(tmp, chapterTxtPath(int(novelID), int(mv.OldIdx), mv.Title))
+	}
+}
+
+// removeNovelTxtAll 书籍删除后的 TXT 存储清理（Task 33-b）：分章目录整体移除 +
+// 根目录全书导出合并文件（{novelId}_*.txt，标题任意）逐一删除。否则删书后
+// 磁盘永久遗留孤儿文件，且同 id 复用（重采/自增回绕）会串入旧书正文。幂等。
+func removeNovelTxtAll(novelID int64) {
+	_ = os.RemoveAll(novelTxtDir(int(novelID)))
+	matches, _ := filepath.Glob(filepath.Join(txtNovelsRoot(), strconv.FormatInt(novelID, 10)+"_*.txt"))
+	for _, m := range matches {
+		_ = os.Remove(m)
+	}
 }
 
 // readChapterFromTxt 按 idx 回读分章文件正文（统一 helper：阅读页/章节 API/导出共用）。
@@ -105,7 +176,8 @@ func readChapterFromTxt(novelID, idx int) (string, error) {
 	return strings.TrimRight(lines[2], "\n"), nil
 }
 
-// removeChapterTxt 删除该章全部分章文件（同 idx 多文件一并清理；章删除/改题残留场景）
+// removeChapterTxt 删除该章全部分章文件（同 idx 多文件一并清理；章删除/改题残留场景；
+// Task 33-b 注：audit 去重删行的文件清理与整书删除见 reindexChapterTxtFiles/removeNovelTxtAll）
 func removeChapterTxt(novelID, idx int) {
 	matches, _ := filepath.Glob(filepath.Join(novelTxtDir(novelID), fmt.Sprintf("%05d", idx)+"_*.txt"))
 	for _, m := range matches {

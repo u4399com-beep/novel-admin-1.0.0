@@ -6,11 +6,8 @@
     "dev": "bash scripts/dev-go.sh",
     "build": "bash scripts/build-go.sh",
     "start": "bash scripts/dev-go.sh",
-    "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset",
     "build:css": "bun scripts/build-web-css.mjs"
   },
   "dependencies": {

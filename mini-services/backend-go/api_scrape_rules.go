@@ -125,6 +125,17 @@ func parseProxyField(raw any) proxyFieldResult {
 
 // ==================== 保存（POST/PUT 共用） ====================
 
+// scrapeRuleIDParam 提取校验 body.id（Task 33-b: 2^53 上界判定后再转 int64，与
+// taskRuleIDParam/taskPagesParam 同口径 —— 旧版 int(f) 对 1e20 是实现定义溢出，
+// amd64 得 MinInt64 负值穿透后续判定）。
+func scrapeRuleIDParam(v any) (int64, bool) {
+	f, isNum := v.(float64)
+	if !isNum || !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
+		return 0, false
+	}
+	return int64(f), true
+}
+
 // scrapeRulesBodyOK TS `if (!body) return 400`：null/原始类型失败，数组通过（后续 name 校验兜住）
 func scrapeRulesBodyOK(v any, ok bool) bool {
 	if !ok || v == nil {
@@ -187,8 +198,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 		return
 	}
 	if val, present := body["id"]; present {
-		f, isNum := val.(float64)
-		if !isNum || !numIsInt(f) || f <= 0 {
+		if _, okID := scrapeRuleIDParam(val); !okID {
 			writeJSON(w, 400, map[string]string{"error": "无效 id"})
 			return
 		}
@@ -200,7 +210,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 	// 绝不静默置 {}（Task 24-d 实证：PUT 只传 name+notes 会把三条规则连清）。
 	// 新建路径语义不变：缺失 → {}（对齐 TS Prisma 写入）。
 	isUpdate := false
-	if f, isNum := body["id"].(float64); isNum && numIsInt(f) && f > 0 {
+	if _, okID := scrapeRuleIDParam(body["id"]); okID {
 		isUpdate = true
 	}
 	listObj, listProvided, listErr := ruleFieldObj(body["listRule"], "listRule")
@@ -260,8 +270,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 
 	name = truncateRunes(trimSpaceStr(name), 80)
 
-	if f, isNum := body["id"].(float64); isNum && numIsInt(f) && f > 0 {
-		id := int(f)
+	if id, okID := scrapeRuleIDParam(body["id"]); okID {
 		res, err := exec(
 			`UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
 			name, site.value, enabled, charset, proxy.value, insecureTLS,

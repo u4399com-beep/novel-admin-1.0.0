@@ -57,6 +57,13 @@ func getMinIntervalMs() int64 {
 	if n < 1000 {
 		return 1000
 	}
+	// Task 33-a: 上限护栏——配置值无上界时（如误把秒值写成毫秒 1200000），acquireDomainSlot
+	// 会把 nextAt 一次前跳数天：该主机所有请求方在锁外睡眠等槽（无法被硬时间闸取消），
+	// goroutine 按尝试数堆积且主机吞吐归零。钳到 60s（仍远严于 1 req/s，与 AIMD 上界 8s、
+	// Retry-After 解析上限 30s 同量级）。
+	if n > 60_000 {
+		return 60_000
+	}
 	return int64(n)
 }
 
@@ -92,7 +99,11 @@ func getHostSlot(host string) *hostSlot {
 		slot.lastUsedNano.Store(now.UnixNano())
 		hostSlots[host] = slot
 	}
-	slot.lastUsedNano.Store(now.UnixNano())
+	// Task 33-a（P1）：此处对既有槽位无条件刷新 lastUsedNano，使 acquireDomainSlot 紧随其后的
+	// 「now-lastUsedNano > 5min 空闲复位」恒得 ~0 差值——5 分钟空闲复位（consec/aimdMs/aimdOKStreak）
+	// 是死代码：AIMD 退避位一旦进入便无法经空闲路径退出（仅靠每成功 -50ms 缓慢回落），
+	// 突发抑制计数也永不清零。删除刷新：lastUsedNano 语义回归「上次取槽时刻」，由
+	// acquireDomainSlot 末尾（slot.mu 内、原子写）负责续期，空闲判定与 GC 时钟均据此成立。
 	if len(hostSlots) >= hostSlotGCThreshold {
 		for k, s := range hostSlots {
 			if now.UnixNano()-s.lastUsedNano.Load() > hostSlotIdleMS*int64(time.Millisecond) {

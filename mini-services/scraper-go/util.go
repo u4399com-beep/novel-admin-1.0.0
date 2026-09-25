@@ -227,6 +227,11 @@ func clampTimeout(ms any) int {
 	if n != n { // NaN
 		return 20_000
 	}
+	// Task 33-a: ±Inf（字符串 "inf"/"1e999" 可被 ParseFloat 接受）时 int(n) 是实现定义
+	// 转换（amd64 得 MinInt64），行为悬在未定义边缘；显式按量级守卫拒绝走默认值。
+	if n > 1e15 || n < -1e15 {
+		return 20_000
+	}
 	iv := int(n)
 	if iv < 2_000 {
 		return 2_000

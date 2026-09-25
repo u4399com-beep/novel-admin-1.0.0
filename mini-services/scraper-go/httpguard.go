@@ -193,11 +193,14 @@ func assess(status int, b []byte, contentType string) assessResult {
 			warning: "疑似挑战/拦截页（命中反爬平台特征/小页挑战关键词/0秒跳板之一，响应 " + strconv.Itoa(size) + "B），已按失败处理",
 		}
 	}
-	if status >= 400 {
-		return assessResult{ok: false, blocked: false, size: size, note: "http-" + strconv.Itoa(status)}
-	}
 	if status == 0 {
 		return assessResult{ok: false, blocked: false, size: size, note: "network-error"}
+	}
+	// Task 33-a: 旧实现只把 >=400 判失败——300/304/1xx 等非 2xx 非 4xx 响应若携带响应体
+	// 会被误判 ok=true（fetchWithRedirectGuard 自身按严格 2xx 判 ok，两处口径不一致），
+	// 策略链会把「304/300-with-body」当成功抓取结果入库。收紧为严格 2xx 才算成功。
+	if status < 200 || status >= 300 {
+		return assessResult{ok: false, blocked: false, size: size, note: "http-" + strconv.Itoa(status)}
 	}
 	if size == 0 {
 		return assessResult{ok: false, blocked: false, size: size, note: "empty-body"}
@@ -263,9 +266,17 @@ type transportKey struct {
 	noH2     bool
 }
 
+// Task 33-a: 传输池容量上界——key 含代理串（规则可配任意代理），旧实现只增不减：
+// 每个未见过 (proxy,insecure,noH2) 组合都会新建 Transport 并永久留存（每个自带
+// MaxIdleConns=64 的空闲连接池），经 /api/test 传入互异代理串即可无限撑大 FD/内存。
+// 以插入序 LRU 钳到 transportPoolMax；淘汰时 CloseIdleConnections 释放空闲连接
+// （在用连接不受影响，由各自请求收尾）。
+const transportPoolMax = 64
+
 var (
-	transportMu   sync.Mutex
-	transportPool = map[transportKey]*http.Transport{}
+	transportMu    sync.Mutex
+	transportPool  = map[transportKey]*http.Transport{}
+	transportOrder []transportKey
 )
 
 // ssrfDialControl 连接前最后一道 SSRF 校验（Task 26-d 增强，封堵 DNS rebinding TOCTOU）。
@@ -304,6 +315,14 @@ func transportFor(proxy string, insecure, noH2 bool) (*http.Transport, string) {
 	transportMu.Lock()
 	defer transportMu.Unlock()
 	if tr, ok := transportPool[key]; ok {
+		// 命中同样刷新 LRU 序（对齐 cookies.jar touchOrderLocked 语义）
+		for i, k := range transportOrder {
+			if k == key {
+				transportOrder = append(transportOrder[:i], transportOrder[i+1:]...)
+				break
+			}
+		}
+		transportOrder = append(transportOrder, key)
 		return tr, ""
 	}
 	dialer := &net.Dialer{
@@ -355,6 +374,16 @@ func transportFor(proxy string, insecure, noH2 bool) (*http.Transport, string) {
 		}
 	}
 	transportPool[key] = tr
+	transportOrder = append(transportOrder, key)
+	// Task 33-a: 容量触顶淘汰最久未用组合（LRU），并回收其空闲连接
+	for len(transportPool) > transportPoolMax && len(transportOrder) > 0 {
+		oldest := transportOrder[0]
+		transportOrder = transportOrder[1:]
+		if ev, ok := transportPool[oldest]; ok {
+			ev.CloseIdleConnections()
+			delete(transportPool, oldest)
+		}
+	}
 	return tr, warn
 }
 
