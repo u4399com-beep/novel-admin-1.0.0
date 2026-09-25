@@ -115,6 +115,9 @@
       <span class="text-black/20">|</span><span>Bing</span>
     </p>
   </div>
+  {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
+  {{if .FriendLinks}}<div class="mx-auto w-full max-w-[1150px] border-t border-black/5 px-4 py-2 text-center text-xs text-black/50 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]"><span class="mr-1">友情链接：</span>{{range $i, $l := .FriendLinks}}{{if gt $i 0}}<span class="mx-1.5 text-black/20">|</span>{{end}}<a href="{{$l.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-[#ff2a14]">{{$l.name}}</a>{{end}}</div>{{end}}
+  {{if .FleetLinks}}<div class="mx-auto w-full max-w-[1150px] border-t border-black/5 px-4 py-2 text-center text-xs text-black/50 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]"><span class="mr-1">站群导航：</span>{{range $i, $l := .FleetLinks}}{{if gt $i 0}}<span class="mx-1.5 text-black/20">|</span>{{end}}<a href="{{$l.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-[#ff2a14]">{{$l.siteName}}</a>{{end}}</div>{{end}}
   {{if .Site.footerExtra}}<div class="mx-auto w-full max-w-[1150px] border-t border-black/5 px-4 py-2 text-center text-[11px] text-black/40 md:max-w-[1240px] md:px-6 lg:max-w-[1520px] xl:max-w-[1740px]">{{.Site.footerExtra}}</div>{{end}}
 </footer>
 

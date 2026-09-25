@@ -1,0 +1,42 @@
+{{/* 101kks pseo 聚合页（Task 32-a，繁体風格）：白盒關鍵詞簡介 + 封面結果網格（CoverCard）。
+骨架/類名與 search.html 同源（rounded-[3px] 白盒 + aspect-[3/4] 封面格 + 分類藥丸空態），復用主題類名零新增 CSS。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[1112px] space-y-4 px-3 py-4 sm:px-4">
+
+  {{/* 關鍵詞簡介盒 */}}
+  <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+    <nav aria-label="麵包屑" class="flex flex-wrap items-center gap-1 text-[13px] text-[#888]">
+      <a href="/" class="cursor-pointer text-[#1f6cb2] transition-colors hover:underline">首頁</a>
+      <span class="text-[#bbb]">/</span>
+      <span class="max-w-[240px] truncate">{{.Keyword}}</span>
+    </nav>
+    <h1 class="mt-2 text-xl font-bold text-[#333]">{{.Keyword}}小說大全</h1>
+    <p class="mt-2 text-sm leading-6 text-[#888]">{{.Description}}</p>
+  </section>
+
+  <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+    <div class="flex items-center justify-between gap-3 border-b border-black/10 pb-2">
+      <h2 class="text-base font-bold text-[#333]">「{{.Keyword}}」相關小說</h2>
+      <span class="text-xs text-[#888]">共 {{len .Novels}} 本</span>
+    </div>
+    <div class="mt-4">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {{range .Novels}}<a href="{{bookURL .id}}" class="group min-w-0 cursor-pointer select-none">
+          {{if isLocalCover .cover}}<span class="relative block aspect-[3/4] w-full overflow-hidden rounded-[3px] shadow-[0_1px_3px_rgba(0,0,0,.2)] transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_4px_10px_rgba(0,0,0,.25)]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></span>
+          {{else}}<span class="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-[3px] shadow-[0_1px_3px_rgba(0,0,0,.2)] transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_4px_10px_rgba(0,0,0,.25)] {{gcls .cover}}"><span class="font-bold text-white/90 drop-shadow text-3xl sm:text-4xl" aria-hidden="true">{{title0 .title}}</span></span>{{end}}
+          <span class="mt-1.5 block truncate text-[13px] text-[#333] transition-colors group-hover:text-[#06c]">{{.title}}</span>
+          <span class="block truncate text-xs text-[#888]">{{.author}}</span>
+        </a>{{else}}
+        <div class="col-span-full py-10 text-center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mx-auto h-9 w-9 text-[#bbb]" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></svg>
+          <p class="mt-3 text-sm text-[#888]">暫無相關小說，換個關鍵字試試</p>
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+            {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="inline-flex h-[26px] cursor-pointer items-center whitespace-nowrap rounded-[10px] border border-[#56a6c3] bg-[rgb(232,244,255)] px-2.5 text-[12.8px] text-[#1f6cb2] transition-colors hover:bg-[#dcecfa]">{{$c.name}}</a>{{end}}{{end}}
+          </div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </section>
+</div>
+{{end}}

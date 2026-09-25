@@ -893,6 +893,7 @@
     box.innerHTML = (f.links || []).map(function (l) {
       return footerLinkRowHtml(l.label || '', l.href || '');
     }).join('');
+    renderFriendLinks(f.friendLinks || []); // Task 32-a: 友情链接动态行
   }
 
   function footerLinkRowHtml(label, href) {
@@ -915,7 +916,34 @@
       var href = row.querySelector('.adm-fl-href').value.trim();
       if (label && href) obj.links.push({ label: label, href: href });
     }
+    obj.friendLinks = readFriendLinks(); // Task 32-a: 友情链接随页脚表单一并提交
     return obj;
+  }
+
+  /* Task 32-a: 友情链接动态行（对照 footerLinkRowHtml 同款交互；上限 30 = 后端 footerFriendLinkCount） */
+  function renderFriendLinks(list) {
+    var box = $('#adm-footer-friends');
+    box.innerHTML = (list || []).map(function (l) {
+      return friendLinkRowHtml(l.name || '', l.url || '');
+    }).join('');
+  }
+
+  function friendLinkRowHtml(name, url) {
+    return '<div class="adm-footer-friend flex items-center gap-1.5">' +
+      '<input class="adm-input adm-fr-name w-32" placeholder="名称" maxlength="20" value="' + escapeHtml(name) + '">' +
+      '<input class="adm-input adm-fr-url flex-1" placeholder="https://…" value="' + escapeHtml(url) + '">' +
+      '<button type="button" class="adm-btn-xs adm-danger" data-act="footer-friend-del">删除</button></div>';
+  }
+
+  function readFriendLinks() {
+    var out = [];
+    var rows = $all('#adm-footer-friends .adm-footer-friend');
+    for (var i = 0; i < rows.length && out.length < 30; i++) {
+      var name = rows[i].querySelector('.adm-fr-name').value.trim();
+      var url = rows[i].querySelector('.adm-fr-url').value.trim();
+      if (name && url) out.push({ name: name, url: url });
+    }
+    return out;
   }
 
   function renderSeoForm(seo) {
@@ -1341,6 +1369,13 @@
       box.insertAdjacentHTML('beforeend', footerLinkRowHtml('', ''));
     });
 
+    // Task 32-a: 友情链接添加（上限 30 = 后端 footerFriendLinkCount）
+    $('#adm-footer-friend-add').addEventListener('click', function () {
+      var box = $('#adm-footer-friends');
+      if (box.children.length >= 30) return toast('友情链接最多 30 个', 'err');
+      box.insertAdjacentHTML('beforeend', friendLinkRowHtml('', ''));
+    });
+
     $('#adm-set-seo-save').addEventListener('click', async function () {
       try {
         await api('PATCH', '/api/settings', { seo: readSeoForm() });
@@ -1480,6 +1515,9 @@
       } else if (act === 'footer-link-del') {
         var fl = btn.closest('.adm-footer-link');
         if (fl) fl.remove();
+      } else if (act === 'footer-friend-del') { // Task 32-a: 友情链接行删除
+        var ff = btn.closest('.adm-footer-friend');
+        if (ff) ff.remove();
       } else if (act === 'novel-del') {
         if (!window.confirm('确认删除书籍「' + btn.dataset.title + '」？其章节将一并删除，不可恢复。')) return;
         try {

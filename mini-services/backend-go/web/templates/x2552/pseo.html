@@ -1,0 +1,58 @@
+{{/* x2552 pseo 聚合页（Task 32-a）：左 190 侧栏 + 右 760 关键词 Block + 结果 6 列数据表。
+骨架/类名与 search.html 同源（x25-sidebar / 橙方块标题条 / #2F468F 链接表格），复用主题类名零新增 CSS。 */}}
+{{define "content"}}
+<div class="mt-2 flex items-start justify-between">
+  {{template "x25-sidebar" .}}
+
+  <div class="min-w-0 flex-1 lg:w-[760px] lg:max-w-[760px] lg:flex-none">
+    <div class="border border-[#E4E4E4] bg-white">
+      <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+      <div class="flex h-[30px] items-center gap-1.5 border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-1">
+        <div class="flex items-center gap-1.5 text-[12px] font-bold text-[#333]">
+          <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>{{.Keyword}}小说大全
+        </div>
+      </div>
+      <div class="p-2 text-[12px] leading-[20px] text-[#666]">
+        <a href="/" class="mr-2 cursor-pointer text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">首页</a>» {{.Keyword}}
+        <p class="mt-1">{{.Description}}</p>
+      </div>
+    </div>
+
+    <div class="mt-2">
+      <h2 class="flex h-[30px] items-center gap-1.5 border border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] px-2 text-[14px] font-bold text-[#333]">
+        <span class="inline-block size-[9px] border border-[#E88B00] bg-gradient-to-b from-[#FFB34D] to-[#FF6F08]" aria-hidden="true"></span>
+        <span class="min-w-0 truncate">“{{.Keyword}}” 的相关小说</span>
+        {{if .Novels}}<span class="ml-1 shrink-0 text-[11px] font-normal text-[#999]">共 {{len .Novels}} 本</span>{{end}}
+      </h2>
+      <div class="mt-1">
+        <table class="w-full table-fixed border-collapse border border-[#E4E4E4] bg-white text-[12px]">
+          <thead>
+            <tr class="bg-[#F2F2F2]">
+              <th class="w-[18%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">文章名称</th>
+              <th class="w-[46%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">最新章节</th>
+              <th class="w-[13%] border-b border-[#E4E4E4] px-1 py-[6px] text-left font-bold text-[#333]">作者</th>
+              <th class="w-[8%] border-b border-[#E4E4E4] px-1 py-[6px] text-center font-bold text-[#333]">字数</th>
+              <th class="w-[9%] border-b border-[#E4E4E4] px-1 py-[6px] text-center font-bold text-[#333]">更新</th>
+              <th class="w-[6%] border-b border-[#E4E4E4] px-1 py-[6px] text-center font-bold text-[#333]">状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Novels}}
+            <tr class="border-b border-dotted border-[#E4E4E4] last:border-b-0">
+              <td class="px-1 py-[6px]"><a href="{{bookURL .id}}" class="inline-block w-full cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.title}}</a></td>
+              <td class="px-1 py-[6px]"><a href="{{bookURL .id}}" class="inline-block w-full cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}暂无章节{{end}}</a></td>
+              <td class="truncate px-1 py-[6px] text-[#666]">{{.author}}</td>
+              <td class="px-1 py-[6px] text-center">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</td>
+              <td class="px-1 py-[6px] text-center text-[#999]">{{dateFmt .updatedAt}}</td>
+              <td class="px-1 py-[6px] text-center {{if eq .status "finished"}}text-[#FF6600]{{else}}text-[#999]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</td>
+            </tr>
+            {{else}}
+            <tr><td colspan="6" class="px-2 py-6 text-center text-[#999]">暂无相关小说，浏览<a href="/" class="cursor-pointer text-[#2F468F] hover:text-[#FF6600]">首页推荐</a>吧</td></tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

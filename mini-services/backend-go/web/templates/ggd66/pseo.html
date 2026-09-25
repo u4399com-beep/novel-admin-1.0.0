@@ -1,0 +1,30 @@
+{{/* ggd66 pseo 聚合页（Task 32-a）：面包屑 + 白盒（关键词简介 + 结果 3 列虚线盒）。
+骨架/类名与 search.html 同源（#cdf3eb 面包屑 + #ccc 白盒 + #56ccb5 序号徽章），复用主题类名零新增 CSS。 */}}
+{{define "content"}}
+<div class="mx-auto mt-1 w-[90%] max-w-[1200px]">
+
+  {{/* 面包屑（浅绿底 » 分隔） */}}
+  <ol aria-label="面包屑" class="mb-3 flex flex-wrap items-center gap-1 rounded-[4px] border border-[#ccc] bg-[#cdf3eb] px-3 py-2 text-[13px] text-[#666]">
+    <li class="flex items-center gap-1"><a href="/" class="cursor-pointer text-[#00886d] transition-colors duration-200 hover:text-[#f50]">首页</a></li>
+    <li class="flex items-center gap-1"><span class="px-0.5 text-[#666]">»</span><span class="max-w-[260px] truncate">{{.Keyword}}</span></li>
+  </ol>
+
+  <section class="rounded-[4px] border border-[#ccc] bg-white p-3">
+    <h1 class="mb-2 text-[18px] font-medium text-[#333]">“{{.Keyword}}”小说大全<span class="ml-2 text-[13px] font-normal text-[#999]">共 {{len .Novels}} 本</span></h1>
+    <p class="mb-2 border-b border-[#ccc] pb-[6px] text-[13px] leading-[22px] text-[#888]">{{.Description}}</p>
+
+    <div class="grid gap-4 pt-1 sm:grid-cols-2 lg:grid-cols-3">
+      {{range $i, $n := .Novels}}<div class="group relative flex min-w-0 cursor-pointer items-center gap-3 rounded-[4px] border border-dashed border-[#ccc] p-[10px] transition-colors duration-200 hover:border-[#f50]">
+        <a href="{{bookURL $n.id}}" aria-hidden="true" tabindex="-1" class="absolute left-[10px] top-1/2 grid h-[22px] w-[22px] -translate-y-1/2 place-items-center rounded-[4px] bg-[#56ccb5] text-[12px] font-bold text-[#eee] transition-colors duration-200 group-hover:bg-[#f50]">{{add $i 1}}</a>
+        <div class="min-w-0 flex-1 pl-[28px]">
+          <h4 class="truncate text-[15px] font-bold text-[#00886d] transition-colors duration-200 group-hover:text-[#f50]">{{$n.title}}</h4>
+          <p class="mt-1 truncate text-[12px] text-[#999]">作者：{{$n.author}} · 字数：{{if $n.wordCount}}{{wcFmt $n.wordCount}}{{else}}—{{end}} · 分类：{{$n.categoryName}}</p>
+          <p class="mt-0.5 truncate text-[12px] text-[#999]">更新到：<span class="text-[#00886d]">{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}暂无章节{{end}}</span></p>
+          <p class="mt-1 line-clamp-3 text-[13px] text-[#888]">{{if $n.description}}{{$n.description}}{{else}}暂无简介{{end}}</p>
+        </div>
+        <a href="{{bookURL $n.id}}" class="shrink-0 cursor-pointer rounded-[4px] border border-[#56ccb5] px-3 py-2 text-[13px] text-[#00886d] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]">阅读</a>
+      </div>{{else}}<div class="col-span-full rounded-[4px] border border-dashed border-[#ccc] bg-white p-10 text-center text-[14px] text-[#999]">暂无相关小说，换个关键词试试</div>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}

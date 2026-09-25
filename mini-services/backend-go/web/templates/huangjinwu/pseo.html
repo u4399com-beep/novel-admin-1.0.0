@@ -1,0 +1,28 @@
+{{/* huangjinwu pseo 聚合页（Task 32-a）：面包屑 + 蓝条标题 + 文字书卡网格（hj-textcard）。
+骨架/类名与 search.html 同源（max-w-[1180px] + border-l-4 蓝条标题 + hj-textcard 卡），复用主题类名零新增 CSS。 */}}
+{{define "content"}}
+<div class="mx-auto max-w-[1180px] space-y-5 px-4 py-6">
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="flex flex-wrap items-center gap-1.5 text-[15px]">
+    <a href="/" class="cursor-pointer text-[#64748b] transition-colors duration-200 hover:text-[#2563eb]">首页</a>
+    <span class="text-[#cbd5e1]">/</span>
+    <span class="max-w-[240px] truncate text-[#94a3b8]">{{.Keyword}}</span>
+  </nav>
+
+  {{/* 关键词简介 */}}
+  <div class="rounded-[10px] border border-[#e6edf7] bg-white p-5 shadow-[0_1px_3px_rgba(37,99,235,0.06)]">
+    <h1 class="text-[20px] font-semibold text-[#0f172a]">{{.Keyword}}小说大全</h1>
+    <p class="mt-2 text-[14px] leading-6 text-[#64748b]">{{.Description}}</p>
+  </div>
+
+  <div class="mb-5 flex items-end justify-between gap-3">
+    <h2 class="border-l-4 border-[#2563eb] pl-4 text-[20px] leading-7 font-semibold text-[#0f172a]">{{.Keyword}} · 相关小说<span class="ml-3 text-[13px] font-normal text-[#94a3b8]">共 {{len .Novels}} 本</span></h2>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    {{range .Novels}}{{template "hj-textcard" .}}{{else}}
+    <div class="col-span-full rounded-[10px] border border-dashed border-[#dbe4f0] bg-white/70 p-12 text-center text-[14px] text-[#94a3b8]">暂无相关小说，换个关键词试试</div>
+    {{end}}
+  </div>
+</div>
+{{end}}

@@ -190,6 +190,42 @@ func sanitizeFooterConfig(raw any) map[string]any {
 			out["links"] = links
 		}
 	}
+	// Task 32-a: 友情链接（friendLinks [{name,url}]，≤30 条）——友链语义=站外互链，
+	// url 仅接受 http(s):// 绝对地址（区别于 links 的站内相对路径白名单）；name/url
+	// 非空清洗 + 批内去重，非法项丢弃（与 links 同款「绝不抛错」语义）
+	if arr, ok := r["friendLinks"].([]any); ok {
+		friends := make([]map[string]string, 0)
+		seen := map[string]bool{}
+		for _, item := range arr {
+			if len(friends) >= footerFriendLinkCount {
+				break
+			}
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			name := ""
+			if s, ok := m["name"].(string); ok {
+				name = truncateRunes(trimSpaceStr(s), footerFriendNameMax)
+			}
+			u := ""
+			if s, ok := m["url"].(string); ok {
+				u = truncateRunes(trimSpaceStr(s), footerFriendURLMax)
+			}
+			if name == "" || !hrefAbsRe.MatchString(u) {
+				continue
+			}
+			key := name + "|" + u
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			friends = append(friends, map[string]string{"name": name, "url": u})
+		}
+		if len(friends) > 0 {
+			out["friendLinks"] = friends
+		}
+	}
 	return out
 }
 

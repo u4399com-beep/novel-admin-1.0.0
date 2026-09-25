@@ -1,0 +1,40 @@
+{{/* ddyueshu pseo 聚合页（Task 32-a）：dd-box 关键词简介 + dd-row25 高密度结果列表。
+骨架/类名与 search.html 同源（dd-box/dd-box-title/dd-row25/dd-link），复用主题类名零新增 CSS。 */}}
+{{define "content"}}
+<div>
+  {{/* 关键词简介 */}}
+  <section class="dd-box dd-box-mid mt-1">
+    <div class="dd-box-title bg-[#f6f8fe]">{{.Keyword}}小说大全</div>
+    <div class="p-2">
+      <p class="text-[13px] leading-[22px] text-[#555]">{{.Description}}</p>
+    </div>
+  </section>
+
+  {{/* 结果列表 */}}
+  <section class="dd-box dd-box-strong mt-2">
+    <div class="dd-box-title bg-[#a6d3e8]">“{{.Keyword}}” 的相关小说（共 {{len .Novels}} 本）</div>
+    <div class="bg-[#e1eced] px-2 py-1.5">
+      {{if .Novels}}
+      <div class="dd-row25 flex items-center gap-1.5 px-1 text-[#777]">
+        <span class="w-[70px] flex-none">分类</span>
+        <span class="w-[120px] flex-none">书名</span>
+        <span class="min-w-0 flex-1">最新章节</span>
+        <span class="hidden w-[70px] flex-none sm:block">作者</span>
+        <span class="w-[72px] flex-none text-right">日期</span>
+      </div>
+      {{range .Novels}}
+      <a class="dd-row25 flex items-center gap-1.5 px-1 transition-colors hover:bg-white" href="{{bookURL .id}}">
+        <span class="w-[70px] flex-none truncate text-[#999]">[{{.categoryName}}]</span>
+        <span class="dd-link w-[120px] flex-none truncate">{{.title}}</span>
+        <span class="min-w-0 flex-1 truncate text-[#555]">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}即将更新…{{end}}</span>
+        <span class="hidden w-[70px] flex-none truncate text-[#b3b3b3] sm:block">{{.author}}</span>
+        <span class="w-[72px] flex-none truncate text-right text-[#b3b3b3]">{{dateFmt .updatedAt}}</span>
+      </a>
+      {{end}}
+      {{else}}
+      <p class="dd-hottext py-6 text-center text-[13px]">暂无相关小说，换个关键词试试。</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

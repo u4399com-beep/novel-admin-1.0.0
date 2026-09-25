@@ -65,6 +65,9 @@
   <footer class="bg-[#3E3D43] text-[#FBFBFB]">
     <div class="mx-auto w-full max-w-[960px] px-2 py-5 text-center text-[12px] leading-[22px]">
       <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}} · 找书读书一站直达，每日更新不断档{{end}}</p>
+      {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
+      {{if .FriendLinks}}<p class="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1"><span class="text-[#FBFBFB]/60">友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-[#ED4259]">{{.name}}</a><span class="text-[#FBFBFB]/40">·</span>{{end}}</p>{{end}}
+      {{if .FleetLinks}}<p class="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1"><span class="text-[#FBFBFB]/60">站群导航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors hover:text-[#ED4259]">{{.siteName}}</a><span class="text-[#FBFBFB]/40">·</span>{{end}}</p>{{end}}
       <p class="mt-1">
         <span class="font-medium">简体版</span>
         {{if .Site.footerExtra}}<span class="mx-2 text-[#FBFBFB]/40">·</span><span class="text-[#FBFBFB]/60">{{.Site.footerExtra}}</span>{{end}}

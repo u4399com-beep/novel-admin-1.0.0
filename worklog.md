@@ -1454,3 +1454,17 @@ Work Log:
 Stage Summary:
 - 用户 7 项指令全闭环：①trxsw 宽度（复核零缺陷+4 主题同类问题修复）②ixdzs8（AIMD+车道降档+软拦截判定+失败采样四层增强已部署，phase2 长跑验证中）③弹层关闭修复 E2E✓ ④TDK 18 套+随机刷新 E2E✓ ⑤分类合并✓ ⑥-⑨审查/多Agent/清理/主题核实/噪声清洗全落地
 - 遗留移交：①任务 13 phase2 效果待自然运行观察（失败采样日志会自动揭示形态，isSoftBlockErr 已保证降档触发）②引擎 fetch 失败 Error 未携带 hosthealth 限流上下文（engine 侧信息注入可作下轮增强）③/api/test includeHtml 调试字段未透传 ④trxsw 981-995px 过渡带 ≤6px 瞬态差（有意保留）⑤低置信度噪声 3 处保留（宁多留）
+---
+Task ID: 32（主线·main·前半·规划）
+Agent: main (Z.ai Code)
+Task: 用户 9 项指令——①友情链接+站群内链轮+pseo 跟随主题 ②繁体采集转简体入库 ③TXT 文件存储模式 ④数据库性能/分表 ⑤规则字段核查 ⑥智能分类/完结/填充增强 ⑦持续审查抓bug ⑧代码精简 ⑨git 推送
+
+Work Log:
+- 【沙箱重置应对】发现 /home/z/go-sdk Go 工具链被沙箱清除→重新安装 go1.22.10（/home/z/go-sdk/go）；git 权限位漂移归一（git checkout -- .，内容零变化）；DB 数据面被清（0 小说/0 任务，规则/分类 seed 已自动恢复 15+9）——判定为 Task 32-c 分表重构最佳窗口
+- 【32-b 共享依赖前置】zhconv 1.4.3 (MIT) 从 pypi 下载→生成 mini-services/backend-go/t2stable.go（单字 4704 条纯净映射 + 词条 2481 条：zh2CN 词级校订 + zh2Hans 多字条目）；第一版生成脚本曾用"词条字符对位注入"污染单字表（史→斯/道→尔/文→旺 错误映射，测试拦截）→ 重写为纯净 zh2Hans 单字表后全绿
+- 【t2s.go 转换器】策略=词条最长匹配优先（窗口至多字长度）→ 单字表兜底 → 原样保留；needsT2S 占比判定（CJK 前 2000 rune 采样，繁体特征字占比 ≥0.06 判繁体，简体零开销透传）；t2s_test.go 回归 12 断言全绿（含 皇后 语境保护/简体透传/空串）
+- 【并行规划】git worktree 隔离：/home/z/.wt/32-b（branch task-32-b 后端存储面）+ /home/z/.wt/32-d（branch task-32-d 采集引擎面）+ 32-a 前台模板面留主树；文件所有权严格划分避免活编辑竞态；t2s 基础已提交 main（564a2ed）供 worktree 继承
+
+Stage Summary:
+- 并行分派：32-a（主树：pseo×10 主题+友链+站群轮+admin UI）/ 32-b（worktree：t2s 集成+TXT 模式+ChapterContent 垂直分表+pragma 调优+智能增强）/ 32-d（worktree：15 规则字段核查+反反爬增强+逐行抓 bug）
+- 主线待办：admin 存储模式 UI 集成、合并 worktree 分支、热替换部署、E2E、精简、推送

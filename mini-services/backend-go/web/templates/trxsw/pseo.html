@@ -1,0 +1,38 @@
+{{/* trxsw pseo 聚合页（Task 32-a）：面板化关键词简介 + 六列结果表。
+骨架/类名与 search.html 同源（#a6d3e8 边框面板 + #e1eced 标题条 + #6f78a7 链接行），复用主题类名零新增 CSS。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[980px] px-2 py-3">
+
+  {{/* 关键词面板 */}}
+  <section class="rounded-[10px] border-2 border-[#a6d3e8] bg-[#f7fbfd] p-3">
+    <h1 class="text-[15px] font-bold text-[#333]">“{{.Keyword}}”小说大全</h1>
+    <p class="mt-1.5 text-xs leading-5 text-[#666]">{{.Description}}</p>
+  </section>
+
+  <section class="mt-2 rounded-[10px] border-2 border-[#a6d3e8] bg-[#f7fbfd]">
+    <header class="flex h-[30px] items-center justify-between rounded-t-[8px] border-b border-[#a6d3e8] bg-[#e1eced] px-3">
+      <h2 class="text-sm font-bold text-[#333]">{{.Keyword}} · 相关小说</h2>
+      <span class="text-xs text-[#999]">共 {{len .Novels}} 本</span>
+    </header>
+    <div class="px-2 py-1">
+      {{/* 表头 */}}
+      {{if .Novels}}<div class="hidden bg-[#e1eced] px-2 py-1.5 text-xs font-bold text-[#666] md:grid md:grid-cols-[minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)] md:gap-x-3">
+        <span>书名</span>
+        <span>最新章节</span>
+        <span>作者</span>
+        <span class="text-right">字数</span>
+        <span>更新</span>
+        <span class="text-center">状态</span>
+      </div>{{end}}
+      {{range .Novels}}<a href="{{bookURL .id}}" class="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-dotted border-[#a6d3e8] px-2 py-2 text-xs hover:bg-[#FBFBFB] md:grid-cols-[minmax(0,18fr)_minmax(0,46fr)_minmax(0,13fr)_minmax(0,8fr)_minmax(0,9fr)_minmax(0,6fr)] md:items-center md:py-[7px]">
+        <span class="truncate font-medium text-[#6f78a7]">{{.title}}</span>
+        <span class="hidden truncate text-[#666] md:block">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}—{{end}}</span>
+        <span class="hidden truncate text-[#666] md:block">{{.author}}</span>
+        <span class="hidden text-right text-[#999] md:block">{{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</span>
+        <span class="truncate text-right text-[#999] md:text-left">{{dateFmt .updatedAt}}</span>
+        <span class="hidden text-center md:block {{if eq .status "finished"}}text-[#FF6600]{{else}}text-[#999]{{end}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span>
+      </a>{{else}}<p class="py-10 text-center text-sm text-[#999]">暂无相关小说，换个关键词试试～</p>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}

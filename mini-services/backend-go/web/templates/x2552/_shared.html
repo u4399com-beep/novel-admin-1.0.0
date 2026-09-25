@@ -81,6 +81,9 @@
 {{if $compact}}
   {{/* 书页 #a_footer：顶线 + 网站地图 */}}
   <footer class="mx-auto mt-3 w-full max-w-[960px] border-t border-[#E4E4E4] py-3 text-center text-[12px] text-[#666666]">
+    {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
+    {{if .FriendLinks}}<p class="flex flex-wrap items-center justify-center"><span>友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-0.5 hover:text-[#FF6600] hover:underline">{{.name}}</a>{{end}}</p>{{end}}
+    {{if .FleetLinks}}<p class="flex flex-wrap items-center justify-center"><span>站群导航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-0.5 hover:text-[#FF6600] hover:underline">{{.siteName}}</a>{{end}}</p>{{end}}
     <p>
       网站地图：
       {{range $i, $c := .Nav}}{{if lt $i 10}}<a href="{{catURL $c.id}}" class="mx-0.5 hover:text-[#FF6600] hover:underline">[{{add $i 1}}]</a>{{end}}{{end}}
@@ -93,6 +96,9 @@
   <footer class="mx-auto mt-2 w-full max-w-[960px]">
     <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
     <div class="bg-gradient-to-b from-white to-[#EDEDED] py-3 text-center text-[12px] leading-[20px] text-[#666666]">
+      {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
+      {{if .FriendLinks}}<p class="flex flex-wrap items-center justify-center"><span>友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-1 text-[#666666] hover:text-[#FF6600] hover:underline">{{.name}}</a>{{end}}</p>{{end}}
+      {{if .FleetLinks}}<p class="flex flex-wrap items-center justify-center"><span>站群导航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-1 text-[#666666] hover:text-[#FF6600] hover:underline">{{.siteName}}</a>{{end}}</p>{{end}}
       <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}}（x2552.com）—— 杰奇 CMS 经典结构主题演示{{end}}</p>
       <p>{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本页面为前端结构级主题模板演示，所有数据均来自本地演示库{{end}}</p>
       {{if .Site.footerLinks}}<p>{{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="mx-1 text-[#666666] hover:text-[#FF6600] hover:underline">[{{.label}}]</a>{{end}}</p>{{end}}

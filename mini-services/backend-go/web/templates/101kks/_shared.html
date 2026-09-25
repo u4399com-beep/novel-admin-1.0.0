@@ -151,6 +151,9 @@
     <button type="button" class="kks-fav cursor-pointer hover:text-[#06c]">收藏本站</button>
     {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer hover:text-[#06c]">{{.label}}</a>{{end}}
   </div>
+  {{/* Task 32-a: 友情連結+站群內鏈輪（主題繁體語境；無配置時零 DOM 痕跡） */}}
+  {{if .FriendLinks}}<p class="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#888]" style="line-height:2"><span class="text-[#333]">友情連結：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer hover:text-[#06c]">{{.name}}</a>{{end}}</p>{{end}}
+  {{if .FleetLinks}}<p class="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#888]" style="line-height:2"><span class="text-[#333]">站群導航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer hover:text-[#06c]">{{.siteName}}</a>{{end}}</p>{{end}}
   <p class="mt-1 text-xs text-[#888]" style="line-height:2">{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}} · 界面结构级主题模板（仿 101kks 布局 / 原创实现）{{end}}</p>
   <p class="mt-1 text-xs text-[#888]" style="line-height:2">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}友情連結<span class="mx-2 text-black/20">|</span>使用條款<span class="mx-2 text-black/20">|</span>隱私政策{{end}}</p>
   </div>

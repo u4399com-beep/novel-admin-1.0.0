@@ -8,6 +8,9 @@
  *             footerExtra, footerLinks[]{label,url}}
  *             （seoTitle/seoDescription = seoConfig homeTitle/homeDescription 模板渲染结果，Task 28-b；
  *               各页 <title>/<meta description> 由 pageTitle/pageDescription 承载，见 applyWebTDK）
+ *   .FriendLinks → [{name,url}]（页脚友情链接，Task 32-a，web_footer.go；空则区块不渲染）
+ *   .FleetLinks  → [{host,siteName,url}]（页脚站群内链轮，SiteSite enabled 排除当前 Host，
+ *                  Task 32-a，web_footer.go；空则区块不渲染）
  *   .Nav   → [{id,name,sort,novelCount}]（导航分类，其他=9999 天然最后）
  *   .Path  → 当前请求路径（导航高亮）
  *
@@ -176,6 +179,12 @@ func webCommon(r *http.Request) map[string]any {
 		}
 	}
 
+	// Task 32-a: 页脚扩展区块数据——友链（footerConfig.friendLinks 读取侧防御复检）
+	// 与站群内链轮（SiteSite enabled=1 排除当前 Host，60s 缓存），实现在 web_footer.go；
+	// 空切片时模板 {{if}} 判空 → 区块零 DOM 痕迹。
+	friendLinks := gatherFooterFriendLinks(s.FooterConfig)
+	fleetLinks := gatherFleetLinks(requestHost(r))
+
 	// Task 30-a: 站点档案透传——applyWebTDK/applyWebKeywords/gatherHomeBlocks 经
 	// settingsFromData 取此解析结果（保证同请求内 Site/TDK/页脚/区块口径一致）；
 	// theme 由站点档案决定（renderPage 据此选模板；admin handler 随后覆盖为 "admin"）
@@ -192,6 +201,8 @@ func webCommon(r *http.Request) map[string]any {
 		},
 		"Nav":          nav,
 		"Path":         r.URL.Path,
+		"FriendLinks":  friendLinks,
+		"FleetLinks":   fleetLinks,
 		"siteSettings": s,
 	}
 	// Task 31-d: 主题白名单纵深校验——站点档案 activeTheme 理论上已被写入侧白名单约束

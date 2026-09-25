@@ -56,6 +56,9 @@ body{font-family:"Microsoft YaHei","微软雅黑",simsun,arial,sans-serif}
     <span class="opacity-60">|</span>
     <button type="button" data-gg-favorite title="把本站加入浏览器收藏夹（Ctrl+D）" class="cursor-pointer underline-offset-2 transition-colors hover:underline">收藏本站</button>
   </p>
+  {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
+  {{if .FriendLinks}}<p class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4"><span class="opacity-90">友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="underline-offset-2 hover:underline">{{.name}}</a>{{end}}</p>{{end}}
+  {{if .FleetLinks}}<p class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4"><span class="opacity-90">站群导航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="underline-offset-2 hover:underline">{{.siteName}}</a>{{end}}</p>{{end}}
   <p class="hidden sm:block">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为结构级主题模板演示，页面布局风格仿 ggd66.com，内容均为演示数据{{end}}</p>
   <p class="hidden sm:block">{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}} · 仅用于前端学习与技术交流{{end}}</p>
   {{if .Site.footerLinks}}<p class="flex flex-wrap items-center justify-center gap-x-3 px-4">
