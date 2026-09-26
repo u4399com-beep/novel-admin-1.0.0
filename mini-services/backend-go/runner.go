@@ -299,6 +299,12 @@ func startRunner() {
 			if tick%15 == 0 {
 				autoResumePausedTasks()
 			}
+
+			// Task 44-b: 进程内 running 孤儿自查（每 5 轮≈10s）——running 且不在
+			// gRunning 在册表的悬挂态自动转 paused，防 worker 异常退出路径漏写终态
+			if tick%5 == 0 {
+				sweepOrphanRunningTasks()
+			}
 		}()
 		tick++
 		time.Sleep(runnerPollInterval)

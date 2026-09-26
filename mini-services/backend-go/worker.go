@@ -193,6 +193,42 @@ func recoverStaleTasks() {
 	}
 }
 
+// sweepOrphanRunningTasks 进程内 running 孤儿自查（Task 44-b，recoverStaleTasks 的运行期补位）：
+// gRunning 是本进程 worker 在册表——status='running' 且不在表中，意味着本进程已无 worker
+// 执行该任务（worker 在 finalize 终态写入前因存储瞬时异常提前退出、或任何未来路径漏写
+// 终态），任务将悬挂 running（runner 只轮询 pending，重启前无自愈，管理端 409 拒编辑）。
+// 自查命中 → 条件更新转 paused（进度保留，手动可恢复；文案不含限流字样，不进
+// autoResumePausedTasks 词表）。与 worker 写终态竞态安全：worker 在触发前先登记 gRunning
+// （triggerScrapeTask），退出后才注销；条件更新 WHERE status='running' 保证不覆盖任何终态。
+// 多 runner 进程误配置（Task 19-b 双写事故形态）下，本自查会把另一进程的在跑任务转
+// paused——后者 stopState 250ms 内感知并在安全点停手，把「双跑」收敛为「单跑」，属防护
+// 而非误伤。runner 每 5 轮（≈10s）扫描一次，status 索引查询成本可忽略。
+func sweepOrphanRunningTasks() {
+	var ids []int
+	err := queryList(`SELECT id FROM ScrapeTask WHERE status = 'running'`, func(rows *sql.Rows) error {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		ids = append(ids, id)
+		return nil
+	})
+	if err != nil {
+		return // 查询失败静默跳过（自查为 best-effort 防线，下轮再试）
+	}
+	for _, id := range ids {
+		if runningHas(id) {
+			continue // 本进程 worker 在册执行中
+		}
+		res, err := execRetry(
+			`UPDATE ScrapeTask SET status = 'paused', message = '孤儿运行态自动回收（已无执行中 worker），可恢复继续采集', updatedAt = ? WHERE id = ? AND status = 'running'`,
+			nowMillis(), id)
+		if err == nil && rowCountOf(res) > 0 {
+			log.Printf("[scrape-worker] 孤儿 running 任务 #%d 已自动暂停（进程内无在册 worker）", id)
+		}
+	}
+}
+
 // normalizeMillis DB DateTime 列值 → epoch ms（Task 26-d）。
 // 支持：INTEGER/REAL ms、纯数字文本、ISO（T/Z 形态）、Prisma SQLite 文本
 // （'YYYY-MM-DD HH:MM:SS[.mmm][ ±HH:MM]'）等历史形态；解析失败返回 false。
@@ -1549,6 +1585,14 @@ func runTask(taskID int) {
 	var ruleID sql.NullInt64
 	if err := queryOne("SELECT mode, targetUrl, pages, ruleId, storageMode FROM ScrapeTask WHERE id = ?",
 		[]any{&mode, &targetURL, &pages, &ruleID, &storageMode}, taskID); err != nil {
+		// Task 44-b（P2）：参数读取失败（存储瞬时异常/损坏行存储类不匹配，如 pages 列
+		// 存在历史工具写入的 TEXT 形态）旧版静默 return——此时 pending→running 条件更新
+		// 已完成，无任何 worker 写终态，runner 只轮询 pending、recoverStaleTasks 仅启动
+		// 执行一次 → 任务永久悬挂 running（管理端按执行中 409 拒编辑，进程重启前无自愈）。
+		// 改为：日志留痕 + finalize paused（与崩溃恢复同语义：进度保留可恢复；文案不含
+		// 限流字样，不进 autoResumePausedTasks 词表，恢复路径纯手动）。
+		run.Log("任务参数读取失败: " + truncateRunes(err.Error(), 200))
+		finalize(run, "paused", "任务参数读取失败（存储瞬时异常或损坏行），任务已自动暂停，排查任务配置后可恢复继续采集")
 		return
 	}
 	switch storageMode {
@@ -1592,7 +1636,8 @@ func runTask(taskID int) {
 	}
 }
 
-// triggerScrapeTask fire-and-forget 入口：runner 轮询与任务创建 API 共用，不阻塞调用方
+// triggerScrapeTask fire-and-forget 入口：runner 轮询专用（任务创建 API 不内联执行，
+// runner 2s 轮询领取，见 api_scrape_tasks.go POST 注释），不阻塞调用方
 func triggerScrapeTask(taskID int) {
 	gRunningMu.Lock()
 	if gRunning[taskID] {

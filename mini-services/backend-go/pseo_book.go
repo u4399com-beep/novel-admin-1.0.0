@@ -29,17 +29,23 @@ import (
 // pseoEnrichInterval 书名种子富集循环周期（每周期处理 1 个种子词）
 const pseoEnrichInterval = 12 * time.Second
 
-// enqueuePseoBookSeed 书名种子登记（best-effort：任何失败静默，不影响采集主流程）。
-// source=book 标记来源；status=pending 由 generatePendingPages 消化为 generated/failed。
+// enqueuePseoBookSeed 书名种子登记（best-effort：失败仅记日志，不影响采集主流程；
+// Task 44-b 起非唯一冲突错误落日志可观测）。source=book 标记来源；status=pending 由
+// generatePendingPages 消化为 generated/failed。
 func enqueuePseoBookSeed(title string) {
 	kw := sanitizeKeyword(title)
 	if kw == "" {
 		return
 	}
 	now := nowMillis()
-	_, _ = exec(
+	// Task 44-b: INSERT OR IGNORE 的 error 恒为非唯一冲突类（唯一冲突已被 IGNORE 吞为成功）
+	// ——此前 `_, _ = exec` 全静默，种子链断裂（列缺失/模式漂移/锁超时）零痕迹可排查，
+	// 与 Task 40 占位符错配静默丢整批的教训同族：静默吞错必须可观测
+	if _, err := exec(
 		`INSERT OR IGNORE INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm") VALUES (?,'book','pending',?,?,?)`,
-		kw, now, now, kwNormalize(kw))
+		kw, now, now, kwNormalize(kw)); err != nil {
+		log.Printf("[backend-go-pseo] 书名种子登记失败 keyword=%q: %v", truncateRunes(kw, 40), err)
+	}
 }
 
 // startPseoEnrichLoop 启动后台富集循环（main.go 在 runner/all 模式下 go 调用）

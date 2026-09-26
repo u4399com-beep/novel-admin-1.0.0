@@ -199,6 +199,33 @@ func resolveRenderPy() string {
 	return filepath.Join("mini-services", "scraper-go", "scripts", "render.py")
 }
 
+// browserCookieEnv browser 策略的 cookie 注入环境值：主路径回放 hostOf 桶的 Cookie 头形态，
+// 主路径为空时以 Playwright 注入格式取同一桶兜底（过期与 Secure 过滤两路径口径一致）。
+// Task 44-a（FIX-2 P3）：回退路径旧实现传 tu.Host 原样——38-a 已把 jar 桶 key 统一为 hostOf
+// （小写），URL 大写变体时回退查询必 miss（隐性桶分裂，38-a hostOf 契约的最后漏网点）。
+// 两路径过滤口径相同，该差异当前不可达（回退仅兜底），归一 key 消除隐患并使契约可测
+// （锁定测试 TestBrowserCookieEnvKeyNormalization / TestBrowserCookieEnvSecureFiltered）。
+func browserCookieEnv(targetURL string) string {
+	tu, _ := urlParse(targetURL)
+	if tu == nil {
+		return ""
+	}
+	https := tu.Scheme == "https"
+	key := hostOf(targetURL)
+	if cookieEnv := cookieHeaderFor(key, https); cookieEnv != "" {
+		return cookieEnv
+	}
+	injected := cookiesForPlaywright(key, https)
+	if len(injected) == 0 {
+		return ""
+	}
+	parts := []string{}
+	for _, c := range injected {
+		parts = append(parts, c.Name+"="+c.Value)
+	}
+	return strings.Join(parts, "; ")
+}
+
 var browserStrategy = strategyDef{
 	name:         "browser",
 	description:  "Playwright + Chromium 真实渲染（经 Python Playwright 桥接），对抗 JS 挑战/动态渲染；环境不可用时优雅跳过",
@@ -209,20 +236,7 @@ var browserStrategy = strategyDef{
 		// Cookie 会话：渲染前注入引擎 jar 中该主机的 cookie（SCRAPER_COOKIES 环境变量透传），
 		// 渲染后把浏览器上下文 cookie 回存。命中「首访种 cookie、二访放行」的站点时，
 		// 前序 fetch 策略种下的会话在这里直接生效。
-		var tu, _ = urlParse(targetURL)
-		cookieEnv := ""
-		if tu != nil {
-			https := tu.Scheme == "https"
-			cookieEnv = cookieHeaderFor(hostOf(targetURL), https)
-			// 注入格式 cookie 同样经 SCRAPER_COOKIES 透传（render.py 兼容两种格式）
-			if injected := cookiesForPlaywright(tu.Host, https); len(injected) > 0 && cookieEnv == "" {
-				parts := []string{}
-				for _, c := range injected {
-					parts = append(parts, c.Name+"="+c.Value)
-				}
-				cookieEnv = strings.Join(parts, "; ")
-			}
-		}
+		cookieEnv := browserCookieEnv(targetURL)
 		return renderViaPython(targetURL, timeoutMs, &warnings, ctx.referer, cookieEnv, ctx.proxy)
 	},
 }

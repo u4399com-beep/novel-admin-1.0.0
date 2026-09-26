@@ -167,6 +167,30 @@ func curlResolvePin(tu *url.URL) string {
 	return host + ":" + port + ":" + ip
 }
 
+// curlHeaderProfileFor Task 44-a（FIX-1 P2·反反爬）：按伪装二进制的浏览器家族返回同族请求头画像。
+// 根因：旧实现把 chromeDesktopProfile 硬编码进 curl-impersonate 车道，而二进制按 JA3 家族轮换
+// （curl_chrome*/curl_ff*/curl_safari*/curl_edge*，binScore 排序+游标轮转）——轮到 curl_ff* 时
+// 是「Firefox TLS/JA3 配 Chrome UA + sec-ch-ua 客户端提示」的跨家族指纹矛盾（Firefox/Safari
+// 从不发送客户端提示），服务端可直接识别；多二进制 JA3 轮换反而变成「每轮都自曝矛盾」。
+// fetchcurl.go 的普通 curl 用 chrome 画像不受影响（诚实客户端设计本意，无 TLS 伪装面）。
+// UA 版本仍取进程级保鲜画像（Task 39-a E1 决策：JA3 与 UA 的跨版本差异是弱信号，
+// UA 版本陈旧才是白名单型 WAF 的强拒绝信号），只对齐家族。锁定测试见 audit44_test.go。
+func curlHeaderProfileFor(binBase string) headerProfile {
+	name := strings.ToLower(binBase)
+	switch {
+	case strings.Contains(name, "chrome"):
+		return chromeDesktopProfile
+	case strings.Contains(name, "firefox"), strings.Contains(name, "ff"):
+		return firefoxDesktopProfile
+	case strings.Contains(name, "edge"):
+		return edgeDesktopProfile
+	case strings.Contains(name, "safari"):
+		return safariDesktopProfile
+	default:
+		return chromeDesktopProfile // 泛名 curl-impersonate 默认即 chrome 系
+	}
+}
+
 var curlImpersonateStrategy = strategyDef{
 	name:         "curl-impersonate",
 	description:  "调用系统 curl_chrome*/curl-impersonate-* 二进制（TLS/JA3 指纹级浏览器伪装，多二进制时轮换指纹），HTTP/2 失败自动降级 --http1.1；需另行安装二进制，检测不到则不可用",
@@ -275,7 +299,8 @@ var curlImpersonateStrategy = strategyDef{
 				if ctx.insecureTLS {
 					args = append(args, "--insecure")
 				}
-				for k, v := range chromeDesktopProfile.headers(targetURL, true, explicitReferer) {
+				imp := curlHeaderProfileFor(filepath.Base(bin))
+				for k, v := range imp.headers(targetURL, imp.withReferer, explicitReferer) {
 					args = append(args, "--header", k+": "+v)
 				}
 				https := tu.Scheme == "https"

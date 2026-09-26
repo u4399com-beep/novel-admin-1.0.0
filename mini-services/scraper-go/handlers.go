@@ -172,7 +172,7 @@ func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 		},
 		"compliance": map[string]any{
 			"rateLimit":          "默认每域名 1200ms±300ms（< 1 req/s），环境变量 SCRAPER_MIN_INTERVAL_MS 可调但不允许低于 1000ms；跨域重定向跳同样逐跳限速",
-			"robotsCheck":        "warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断",
+			"robotsCheck":        "warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断；Crawl-delay 高于基础礼貌间隔时采纳为该主机请求间隔下限（只升不降，上界 30s）",
 			"ssrfGuard":          "文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + redirect manual 逐跳校验",
 			"maxResponseBytes":   maxBytes,
 			"challengeDetection": "四层检测：反爬平台强特征（任意体积，扫描前 32KB，含国产 WAF JS 挑战壳 token acw_sc__v2/__jsl_clearance/__jsluid/yunsuo/wzws）→ 近空可见正文（<80 字符）JS 跳板/「JS 计算 cookie + 原地 reload」壳/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理",

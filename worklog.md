@@ -1957,3 +1957,58 @@ Stage Summary:
 - 简介清洗扩至七家族：转码 ? 装饰（用户上一轮贴文「[]」病灶的同族转码损失——源站符号经 charset 转换后分别落为 ？实体/FFFD/ASCII ? 三种形态，现已全覆盖）洗掉或转换闭环
 - 环境韧性实证：第 9 次回收后 schema 引导+seed 播种+任务重建全流程 <5 分钟自愈（对比 TS 时代依赖 Prisma push 的不可恢复）
 - 架构防线新增：未提交文件丢失类 P1（titlePattern）——undefined+panic 双特征识别法与 \u 预处理实现已入库，后续沙箱回收不再有此类盲区
+---
+Task ID: 44-b
+Agent: backend-deep-review
+Task: backend-go 采集编排链路与数据完整性逐行深审+修复（worker/runner/pool/engineclient/storex/pSEO 全辖区）
+
+Work Log:
+- 【辖区与基线】通读 worklog 39-b/40/41/42-b/43 历史修复（toId 非整数截断/负数暂存区/introx 七家族/kwNorm+seed 血缘等零重复）；逐行深读全辖区 30+ 文件：worker（三阶段状态机/finalize 五分支/persistChapterFill 三态写序/lane 软起步）/runner（轮询/心跳/互监护/autoResume 词表匹配逐条比对）/pool（runPoolDynamic 锁序 limiter.mu→throttle.mu 无环+watchdog kick）/engineclient（body 闭环/超时分类/分页拼接护栏）/storex（upsertBook 并发冲突三路回读/骨架分片锁/逐条退化回查）/pSEO 全链（insertKeywords→generatePendingPages→novelPseoTags 双通道）/db/schema/web/web_data/txtdir/cleanx/titlex/t2s/categoryx/llm/api_*。基线 build/vet/test -race 全绿后动工
+- 【过检无新增破口（重点方向）】SQL 全占位符零拼接注入面（FALLBACK_CATEGORY 为编译期常量）；全部 INSERT 占位符/参数数逐一清点匹配（Task 40 病灶族复核）；rows/body 全闭环（queryList defer Close、engineclient/scrapeProxy/suggest/covers/llm defer Close）；goroutine 生命周期（runPoolDynamic watchdog 收链/llm 超时缓冲通道/fetchAndStoreCover CloseIdleConnections）；竞态面（gRunning/gLaneFloor/catCache/throttledCheck/lastFlush CAS 全对齐）；分页钳制无溢出；finalize 五分支状态机与 API cancel/pause/resume/restart 条件更新闭环（暂停确认不触碰进度/终态绝不复活/pending 条件领取）；autoResume LIKE '%限流%软拦截%' 与 worker 三处自动暂停文案全匹配、手动暂停/崩溃恢复/重启文案正确不入表；storageMode db/txt/both 三态失败语义双向无「已采但正文丢失」（db 先写 txt 后写；txt 先文件后行）；SSR html/template 自动转义+TDK 白名单+sitemap xmlEscape 在位
+- 【修复① P2 worker.go runTask：任务参数读取失败 → 任务永久悬挂 running】根因：pending→running 条件更新完成后，参数 SELECT（扫描 pages int 等）遇存储瞬时异常/损坏行存储类不匹配（SQLite 宽松类型，历史工具可写 TEXT 进 INTEGER 列——Task 26-d/33-b 同族真实可达面）时静默 return：无 worker 写终态、runner 只轮询 pending、recoverStaleTasks 仅启动执行一次 → 任务永久 running（管理端 409 拒编辑，重启前无自愈）。修复：日志留痕 + finalize(run,"paused")（与崩溃恢复同语义：进度保留可恢复；文案不含限流字样，不进 autoResumePausedTasks 词表）。测试先红后绿：TestRunTaskParamFailurePausesTask 以 pages='abc' 损坏行走真实 runTask 路径，修复前实测状态滞留 running（红），修复后 paused+message+log 三断言绿
+- 【修复② P2 worker.go+runner.go：新增 sweepOrphanRunningTasks 进程内 running 孤儿自查（类闭合防线）】根因：running 孤儿类不止①一条路径（finalize 状态预读遇 busy 静默放弃等 fail-open 设计同样可漏终态）。gRunning 为进程权威在册表——running 且不在表=本进程无 worker 执行 → 条件更新转 paused（WHERE status='running' 防与 worker 终态竞态；worker 先登记后触发、退出才注销，构造上无误伤窗口）。runner 每 5 轮（≈10s）扫描，status 索引查询零负担；多 runner 误配置（Task 19-b 双写形态）下把另一进程在跑任务转 paused、其 worker 250ms 内安全点停手——把「双跑」收敛为「单跑」，属防护。测试 TestSweepOrphanRunningTasks 三分支（孤儿→paused/在册→不触碰/pending→不触碰）+幂等复扫
+- 【修复③ P3 pseo_book.go enqueuePseoBookSeed：静默吞错补日志】INSERT OR IGNORE 的 error 恒为非唯一冲突类（唯一冲突已被 IGNORE 吞为成功），旧版 `_, _ = exec` 全静默——种子链断裂（列缺失/模式漂移/锁超时）零痕迹，与 Task 40 占位符错配静默丢整批教训同族；失败落 [backend-go-pseo] 日志。函数头注释同步（「任何失败静默」→「失败仅记日志」）
+- 【修复④ P3 worker.go triggerScrapeTask 注释漂移】「与任务创建 API 共用」与事实不符（POST /api/scrape-tasks 不内联执行，runner 2s 领取唯一触发方），注释纠偏防误导后续审查
+- 【留档不修（有意）】①finalize 状态预读 fail-open（DB 故障时不误写终态）——孤儿类已由修复②兜底，无需引入查询重试复杂度②both 模式 TXT 写失败仍计已填充（DB 正文在，仅文件缺）——按既定指令「写文件失败不影响任务状态机」，且读路径优先分表③storageMode 三态在重启后靠 Phase 1 骨架重扫续传（FillRows 仅驻内存）——TS 同源设计④scrapeTaskRestart 不清 created/updated 计数（新 Run 首次 Flush 即覆盖为 0，仅窗口期展示残留）⑤phase2Fill 骨架查询错误吞为空数组——TS catch 同源语义，重发任务自愈⑥novelPseoTags kwNorm LIKE 不转义 _——与 Prisma contains 行为一致（api_novels.go 头注差异 2 已载），召回优先语义
+- 【生产库只读核查】6 running 任务 updatedAt 均新鲜（live worker）、pages/storageMode 无异常存储类、Chapter idx≤0 零行——修复面当前生产无存量损伤，属「恢复路径补全+类闭合」性质
+
+Stage Summary:
+- 采集编排状态机闭环补全：running 孤儿悬挂类（P2×2——参数读取失败路径根修 + 进程内孤儿自查兜底）+ 静默吞错可观测（P3）+ 注释纠偏（P3）；「pending/running/paused/终态」外部语义与 API 路由形状零变更，autoResume 词表契约保持（新文案均不入表，纯手动恢复）
+- 测试资产：+worker_orphan_test.go 2 用例（红→绿实证：损坏行走真实 runTask 路径复现悬挂；自查三分支+幂等）；go build/vet 全净、go test -race -count=1 全绿、gofmt -l 全清、backend-go.bin 已重建（未启停任何进程，8 个在跑任务不受影响）
+- 部署提示：热替换后 recoverStaleTasks 会把 6 个 running 任务转 paused（既定行为，主线统一 resume 即续传）；新增自查在生产首日关注 [scrape-worker] 孤儿日志——若高频出现说明存在未知的 worker 提前退出路径，需按日志定位
+---
+Task ID: 44-a
+Agent: scraper-deep-review
+Task: scraper-go 逐行深审修复 + 反反爬能力增强（26 源文件复扫 + 3 项修复 + 1 项合规/反反爬双面增强）
+
+Work Log:
+- 【辖区与基线】scraper-go 全部 26 个非测试 .go（9697 行）逐行复扫（chain/strategies/httpguard/ratelimit/hosthealth/cookies/challenge/profiles/strategies/curlimp/fetchcurl/browser/charsetx/ssrf/affinity/jsontoc/jstext/extract/selectors/content/cleanx/handlers/main/types/util/helpers），对照 worklog 38-a/39-a 已修清单零重复劳动；基线 build/vet/test -race 全绿后动工
+- 【修复① P2·反反爬 curl-impersonate 车道 UA/TLS 家族指纹错配（curlimp.go）】根因：车道内 chromeDesktopProfile 被硬编码（:278 旧行），而二进制按 JA3 家族轮换（curl_chrome*/curl_ff*/curl_safari*/curl_edge*，binScore 排序+游标轮转）——轮到 curl_ff* 时是「Firefox TLS/JA3 配 Chrome UA+sec-ch-ua 客户端提示」的跨家族指纹矛盾（Firefox/Safari 从不发客户端提示），服务端可直接识别；多二进制 JA3 轮换反而变成「每轮都自曝矛盾」。修复：新抽 curlHeaderProfileFor(binBase)（chrome/ff|firefox/edge/safari 四家族→同族画像，泛名 curl-impersonate 默认 chrome 系），UA 版本仍取 39-a E1 保鲜画像（JA3 与 UA 跨版本是弱信号，版本陈旧才是白名单型 WAF 强拒绝信号）。先红后绿：stub 恒 chrome 时 TestCurlImpersonateProfileFamilyAlignment/NoCrossFamilyHints 双红（实证 ff/safari 二进制拿到 sec-ch-ua="Chromium;v=148"），修复后全绿
+- 【修复② P3·browser cookie 回退注入路径桶 key 未归一（browser.go）】根因：回退路径 cookiesForPlaywright(tu.Host) 传原样 Host——38-a 已把 jar 桶 key 统一为 hostOf（小写），URL 大写变体时回退查询必 miss（hostOf 契约最后漏网点；两路径过期/Secure 过滤口径相同，差异当前不可达，属隐性隐患修复）。修复：抽 browserCookieEnv(targetURL)（主路径 cookieHeaderFor(hostOf) 优先，回退同 hostOf key 取 Playwright 注入格式），run 闭包从 14 行内联收敛为单调用；测试 TestBrowserCookieEnvKeyNormalization（大小写变体回放一致）+TestBrowserCookieEnvSecureFiltered（Secure 双向）锁定
+- 【增强 E2·反反爬/合规双面 robots.txt Crawl-delay 采纳（ratelimit.go+chain.go）】根因：parseRobots 已解析 Crawl-delay 但只用于 warnings 提示——源站明示的采集节奏被无视，以 1.2s 高频直打声明 5s/10s crawl-delay 的站点是自找 429/封禁（合规与反反爬双输）。修复：noteCrawlDelayFloor(host,delayMs) 采纳为主机 AIMD 礼貌间隔下限——只升不降（不覆盖更高 429/Retry-After 退避位）、低于基础间隔不采纳、上界 30s（与 parseRetryAfterMs 外部指令上限同口径）；接线点 fetchPage checkRobots 之后（robots 10min 缓存内随请求自动维持，空闲 5min 复位后重新施加）；robots warn-only 契约不变（不阻断任何请求只放慢节奏）；两处 Crawl-delay warning 文案补「已采纳为该主机请求间隔下限」+/api/strategies compliance.robotsCheck 说明同步。先红后绿：stub no-op 时 TestNoteCrawlDelayFloor/TestParseRobotsCrawlDelayAdoption 红，实现后绿（含 500ms 拒采纳/3000ms 不回退/120s 钳 30s/Retry-After 20s 优先四向量）
+- 【Retry-After 遵循全车道过检（任务书重点）】fetch 系（fetchWithRedirectGuard :524 解析）→ got 系（gotStrategyRun :313）→ curlimp/fetchcurl（headerLines("Retry-After")）四车道解析齐全；链层消费三路：同链策略间退避取 max(delay,RA)（chain.go :435-441）、noteRateLimited penalty（RA 优先，上界 15s）、noteAdaptiveRateLimited AIMD 直接采纳（上界 30s）；无缺口，未改
+- 【深审过检面】并发锁序（transportMu/cookies jar/healthMu/hostSlotsMu/dnsCacheMu 全单锁无嵌套零死锁）；goroutine 生命周期（runWithHardGate buffered chan+timer.Stop+hardCtx 取消链完整）；资源闭环（res.Body 三分支 Close/robots/jsontoc/tocHTTPClient/临时文件双清理）；RE2 无灾难回溯（全部定长量词/边界锥定）；溢出面（clampTimeout/noteChainFailure 移位/getHostSlot GC 均有守卫）；charsetx/extract/selectors/cleanx 边界逐项过检在位；promoteRateLimitedStatus/netErrNote/SSRF 逐跳+dial 钉死（39-a 修复零回归）
+- 【验证】gofmt -l 全清；go build/vet 零输出；go test -race -count=1 ./... 全绿（+audit44_test.go 6 用例）；go build -o scraper-go.bin . 产物已重建（11:06 mtime，含全部修复待主线热替换）；生产进程 PID 8430 未触碰、零 kill/重启、零 git 操作、backend-go 零改动
+
+Stage Summary:
+- 2 项修复（P2 反反爬 curl-impersonate UA/TLS 家族对齐——本轮最大指纹面收敛；P3 browser cookie 回退桶 key 归一）+ 1 项 E2 增强（robots Crawl-delay 采纳为礼貌间隔下限：合规上「遵循服务端指令」，反反爬上「源头减少 429/WAF 触发」）+ 1 项 P3 留档（fetchcurl 普通 curl 恒 chrome 画像为设计本意不属错配）
+- 反反爬体系增量：JA3 轮换车道不再自曝跨家族矛盾、robots 明示节奏进入限速决策链；Retry-After 四车道遵循链复核完整（解析→链层退避→健康记忆→AIMD 采纳）
+- 测试资产：audit44_test.go 6 用例全绿锁定；scraper-go.bin 产物就绪待主线统一部署
+---
+Task ID: 44
+Agent: main (Z.ai Code)
+Task: 用户 4 点指令——①Next.js/TS 残留复查+全面 Go 化确认 ②采集+反反爬逐行深审全修 ③清理整合精简 ④推送 git
+
+Work Log:
+- 【①残留复查=零】无 src/ 目录、无 next.config/tsconfig/eslint/jest、git 零跟踪 TS/TSX/JSX；JS 仅 web/static 运行时主题脚本（浏览器直跑非构建期）+ build-web-css.mjs（唯一保留构建工具）+ engine-rule-test.mjs
+- 【③死工具复活】engine-rule-test.mjs 依赖已拆除的 @prisma/client 彻底坏死（Task 39 留档项）→ 改造为 backend API（/api/scrape-rules）读规则，零 Node DB 依赖；正向实测 ok:true 16 items（23qb list 段），负路径如实报告（trxsw 此刻源站 EOF 警告打印）
+- 【②44-a 子代理·scraper-go 逐行深审】P2：curl-impersonate 车道 JA3↔UA 跨家族指纹矛盾（二进制按 curl_chrome*/curl_ff*/curl_safari*/curl_edge* 轮换但 UA 画像硬编码 chromeDesktop，轮到 curl_ff* 即「Firefox TLS 配 Chrome UA+sec-ch-ua」自曝矛盾）→ curlHeaderProfileFor 四家族→同族画像接线；P3：browser.go cookie 回退注入 hostOf 归一漏网（大写 Host 变体必 miss）→ browserCookieEnv 同口径；反反爬增强：robots.txt Crawl-delay 采纳为主机 AIMD 礼貌间隔下限（noteCrawlDelayFloor：只升不降/<1.2s 不采纳/上界 30s 与 Retry-After 同口径，warn-only 契约不变）——源站明示节奏此前被无视；Retry-After 四车道+三路消费复核无缺口；测试先红后绿（stub 复现 ff 二进制拿到 Chromium 客户端提示）+audit44_test.go 6 用例
+- 【②44-b 子代理·backend-go 采集编排逐行深审】P2×2：①runTask 参数 SELECT 失败静默 return 而 pending→running 条件更新已完成→任务永久悬挂 running（409 拒编辑、重启前无自愈）→finalize paused（进度保留可手动恢复）+②新增 sweepOrphanRunningTasks 每 10s 进程内自查（gRunning 权威表：running 且不在册=本进程无 worker，条件更新转 paused，WHERE status='running' 防竞态；生产首日「偶发=防线生效，高频=未知退出路径」监测指引）；P3×2：③enqueuePseoBookSeed INSERT OR IGNORE 错误全静默（pSEO 种子链断裂零痕迹）→非唯一冲突落日志 ④triggerScrapeTask 注释漂移纠偏；生产库 ro 核查零存量损伤
+- 【部署+E2E】build-go.sh 全绿（gofmt 触碰文件全清）→ 双服务热替换 → 8 任务自动恢复机制实证（限流熔断冷却自动重新入队：7 running+task2 冷却中+task7 partial 16 章失败属源站正文页异常）；浏览器 E2E：书 1 简介?噪声零残留+13 chips、新书 237（一剑惊天下）14 chips+TDK、首页 56 book links、pseo 聚合页 200、390×844 无横向溢出、console/errors 零输出
+- 【仓库卫生收尾】Task 43 .gitignore 已加 *.bin 但未解除已跟踪文件的索引 → 本轮 git rm --cached backend-go.bin/scraper-go.bin 补全（19MB+10MB 产物彻底出库）
+
+Stage Summary:
+- 残留复查连续三轮（39/43/44）=零，纯 Go 栈架构自持闭环稳定（schema 引导+seed+任务重建 <5 分钟自愈再实证）
+- 本轮 5 项修复（scraper P2×1+P3×1 / backend P2×2+P3×2）+2 项反反爬增强（JA3↔UA 家族对齐=指纹面最大收敛、Crawl-delay 礼貌下限=尊重源站明示节奏）
+- 可观测性增量：pSEO 种子入库失败落日志、孤儿 running 自查（悬挂类永久闭合）——「静默吞错必须可观测」纪律再落地两处
+- 死工具复活：engine-rule-test.mjs 经 backend API 零 DB 依赖可用（规则校准/排障链路恢复）

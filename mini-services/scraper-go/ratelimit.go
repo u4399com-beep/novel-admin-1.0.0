@@ -398,6 +398,35 @@ func parseRetryAfterMs(raw string) *int64 {
 	return nil
 }
 
+// crawlDelayAdoptMaxMS robots.txt Crawl-delay 采纳上界（与 parseRetryAfterMs 的 30s 外部指令
+// 上限同口径；60s 级 crawl-delay 属极端敌意配置，采纳到 30s 已远严于基础礼貌间隔）
+const crawlDelayAdoptMaxMS = 30_000
+
+// noteCrawlDelayFloor Task 44-a（E2·反反爬/合规增强）：robots.txt Crawl-delay 采纳为该主机
+// AIMD 礼貌间隔下限。根因：parseRobots 已解析 Crawl-delay 但只用于 warnings 提示——源站明示的
+// 采集节奏被无视，以 1.2s 高频直打声明了 5s/10s crawl-delay 的站点是自找 429/封禁（合规与
+// 反反爬双输）。采纳语义：只升不降（不覆盖更高的 429/Retry-After 退避位）、低于基础礼貌间隔
+// 时不采纳（默认节奏已更严）、上界 30s；robots warn-only 契约不变（不阻断任何请求，只放慢节奏）。
+// 空闲 5min 复位后由 fetchPage 每次 checkRobots（10min 缓存内）重新施加，活动期自动维持。
+// 接线点：chain.go fetchPage 的 checkRobots 之后。锁定测试见 audit44_test.go。
+func noteCrawlDelayFloor(host string, delayMs int64) {
+	if host == "" || delayMs <= 0 {
+		return
+	}
+	if delayMs > crawlDelayAdoptMaxMS {
+		delayMs = crawlDelayAdoptMaxMS
+	}
+	if delayMs < getMinIntervalMs() {
+		return // 低于基础礼貌间隔：无需采纳（默认节奏已更严格）
+	}
+	slot := getHostSlot(host)
+	if cur := slot.aimdMs.Load(); cur >= delayMs {
+		return // 只升不降（不覆盖 429/Retry-After 的更高退避位）
+	}
+	slot.aimdMs.Store(delayMs)
+	slot.aimdOKStreak.Store(0)
+}
+
 // ==================== robots.txt ====================
 
 const (
@@ -564,7 +593,7 @@ func checkRobots(targetURL string) robotsResult {
 			warnings = append(warnings, "robots.txt 禁止抓取该路径 ("+pathname+")。本服务仅提示不阻断，请自行确认采集授权与合规性")
 		}
 		if info.crawlDelayMs != nil && *info.crawlDelayMs > float64(getMinIntervalMs()) {
-			warnings = append(warnings, "robots.txt Crawl-delay="+strconv.Itoa(int(*info.crawlDelayMs/1000))+"s 高于当前限速 "+strconv.FormatInt(getMinIntervalMs(), 10)+"ms，建议降低采集频率")
+			warnings = append(warnings, "robots.txt Crawl-delay="+strconv.Itoa(int(*info.crawlDelayMs/1000))+"s 高于当前限速 "+strconv.FormatInt(getMinIntervalMs(), 10)+"ms，已采纳为该主机请求间隔下限（建议降低采集频率）")
 		}
 		return robotsResult{info: info, warnings: warnings}
 	}
@@ -658,7 +687,7 @@ func checkRobots(targetURL string) robotsResult {
 				warnings = append(warnings, "robots.txt 禁止抓取该路径 ("+pathname+")。本服务仅提示不阻断，请自行确认采集授权与合规性")
 			}
 			if delay != nil && *delay > float64(getMinIntervalMs()) {
-				warnings = append(warnings, "robots.txt Crawl-delay="+strconv.Itoa(int(*delay/1000))+"s 高于当前限速 "+strconv.FormatInt(getMinIntervalMs(), 10)+"ms，建议降低采集频率")
+				warnings = append(warnings, "robots.txt Crawl-delay="+strconv.Itoa(int(*delay/1000))+"s 高于当前限速 "+strconv.FormatInt(getMinIntervalMs(), 10)+"ms，已采纳为该主机请求间隔下限（建议降低采集频率）")
 			}
 		}
 	}

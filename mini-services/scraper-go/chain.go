@@ -183,6 +183,12 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 
 	robots := checkRobots(rawURL)
 	warnings = append(warnings, robots.warnings...)
+	// Task 44-a（E2·反反爬/合规增强）：robots.txt Crawl-delay 采纳为主机礼貌间隔下限——
+	// 源站明示的采集节奏优先于本地 1.2s 默认（只升不降、上界 30s，warn-only 不变）。
+	// 见 ratelimit.go noteCrawlDelayFloor 注；active 期由本调用点随 robots 缓存自动维持
+	if robots.info.crawlDelayMs != nil && *robots.info.crawlDelayMs > 0 {
+		noteCrawlDelayFloor(host, int64(*robots.info.crawlDelayMs))
+	}
 
 	// 主机限流记忆：最近被 429/503 的主机先主动退避一拍再进链（Retry-After 优先），
 	// 退避时长受剩余预算约束（至少留 3s 给真实尝试），预算不够时跳过退避。
