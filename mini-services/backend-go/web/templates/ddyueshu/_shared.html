@@ -103,7 +103,7 @@
     </div>
     {{/* Task 31-a: 版权两行同样限宽 980px 对齐导航（原 px-4 无限宽） */}}
     {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
-    {{if .FriendLinks}}<p class="mx-auto mt-3 w-full max-w-[980px] flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]"><span class="text-[#b2b2b2]">友情链接：</span>{{range .FriendLinks}}<a class="dd-greenlink" href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.name}}</a>{{end}}</p>{{end}}
+    {{if or .FriendLinks .WheelLinks}}<p class="mx-auto mt-3 w-full max-w-[980px] flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]"><span class="text-[#b2b2b2]">友情链接：</span>{{range .FriendLinks}}<a class="dd-greenlink" href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.name}}</a>{{end}}{{range .WheelLinks}}<a class="dd-greenlink" href="{{.url}}">{{.name}}</a>{{end}}</p>{{end}}
     {{if .FleetLinks}}<p class="mx-auto mt-2 w-full max-w-[980px] flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]"><span class="text-[#b2b2b2]">站群导航：</span>{{range .FleetLinks}}<a class="dd-greenlink" href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.siteName}}</a>{{end}}</p>{{end}}
     <p class="mx-auto mt-3 w-full max-w-[980px] px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]">{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说站主题演示项目，全部书籍与章节内容仅用于技术学习与界面还原测试。{{end}}</p>
     <p class="mx-auto w-full max-w-[980px] px-2 text-center text-[12px] leading-[20px] text-[#b2b2b2]">{{if .Site.footerText}}{{.Site.footerText}}{{else}}Copyright © {{.Site.siteName}} · 主题版式致敬经典笔趣阁{{end}}</p>

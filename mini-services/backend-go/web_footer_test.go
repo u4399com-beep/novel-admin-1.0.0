@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,12 @@ func TestSharedFooterBlocksRender(t *testing.T) {
 	}
 	withData["FriendLinks"] = []map[string]string{{"name": "友链甲", "url": "https://f.example.com/"}}
 	withData["FleetLinks"] = []map[string]string{{"host": "b.example.com", "siteName": "站点B", "url": "http://b.example.com/"}}
+	// Task 46: 链轮三类型渲染断言样本
+	withData["WheelLinks"] = []map[string]string{
+		{"name": "轮书甲", "url": "/book/1", "kind": "book"},
+		{"name": "轮站乙", "url": "http://w.example.com/", "kind": "fleet-home"},
+		{"name": "轮书乙", "url": "http://w.example.com/book/2", "kind": "fleet-book"},
+	}
 
 	for _, theme := range themeNames {
 		shared := filepath.Join(templatesRoot, theme, "_shared.html")
@@ -276,6 +283,13 @@ func TestSharedFooterBlocksRender(t *testing.T) {
 		if !strings.Contains(out, fleetTitle) || !strings.Contains(out, "站点B") || !strings.Contains(out, `href="http://b.example.com/"`) {
 			t.Fatalf("%s 应渲染站群导航区块（%s/站点B/http://b.example.com/）", theme, fleetTitle)
 		}
+		// Task 46: 链轮三类型链接随友链区块渲染（站内相对书链 + 群书页绝对链）
+		if !strings.Contains(out, `href="/book/1"`) || !strings.Contains(out, "轮书甲") {
+			t.Fatalf("%s 应渲染链轮站内随机书籍页链接", theme)
+		}
+		if !strings.Contains(out, `href="http://w.example.com/book/2"`) || !strings.Contains(out, "轮书乙") {
+			t.Fatalf("%s 应渲染链轮站群随机书籍页链接", theme)
+		}
 		// 无数据 → 区块零 DOM 痕迹（以「标题：」带冒号的区块内文案为准——101kks 默认
 		// footerExtra 兜底文案本就含「友情連結」字样，不能只查标题）
 		b.Reset()
@@ -284,6 +298,164 @@ func TestSharedFooterBlocksRender(t *testing.T) {
 		}
 		if strings.Contains(b.String(), title+"：") || strings.Contains(b.String(), fleetTitle+"：") {
 			t.Fatalf("%s 无数据时不应出现友链/链轮区块", theme)
+		}
+	}
+}
+
+// ---------- Task 46: 链轮三类型（站内随机书籍页/站群随机首页/站群随机书籍页） ----------
+
+// resetWheelCache 清空链轮书籍池缓存（测试隔离；与 resetFleetCache 同款口径）
+func resetWheelCache() {
+	wheelPoolMu.Lock()
+	wheelPoolCache = nil
+	wheelPoolExpiry = time.Time{}
+	wheelPoolMu.Unlock()
+}
+
+// mustSeedWheelNovels 插入 n 本链轮测试书（依赖 Category 999001；t.Cleanup 回收全部残留）
+func mustSeedWheelNovels(t *testing.T, n int) {
+	t.Helper()
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("open temp db: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name","sort") VALUES (999001,'链轮测试分类',0)`); err != nil {
+		t.Fatalf("seed category: %v", err)
+	}
+	for i := 0; i < n; i++ {
+		if _, err := db.Exec(`INSERT OR IGNORE INTO "Novel" ("title","author","categoryId") VALUES (?,?,999001)`,
+			"链轮测试书"+strconv.Itoa(i), "链轮作者"); err != nil {
+			t.Fatalf("seed novel %d: %v", i, err)
+		}
+	}
+	t.Cleanup(func() {
+		db.Exec(`DELETE FROM "Novel" WHERE "categoryId" = 999001`)
+		db.Exec(`DELETE FROM "Category" WHERE "id" = 999001`)
+	})
+	resetWheelCache()
+}
+
+// TestPickWheelSamples 纯抽样：数量钳制 4/2/2、排除当前 Host、相对/绝对路径形态、
+// 全局 nid 去重、空群退化仅站内、空池零输出、小池钳制不重复。
+func TestPickWheelSamples(t *testing.T) {
+	pool := make([]map[string]string, 0, 6)
+	for i := 1; i <= 6; i++ {
+		pool = append(pool, map[string]string{"nid": strconv.Itoa(i), "title": "书" + strconv.Itoa(i)})
+	}
+	fleet := []map[string]string{
+		{"host": "a.example.com", "siteName": "站点A", "url": "http://a.example.com/"},
+		{"host": "b.example.com", "siteName": "站点B", "url": "http://b.example.com/"},
+	}
+	out := pickWheelSamples(pool, fleet, "")
+	if len(out) != wheelInnerBooks+wheelFleetHomes+wheelFleetBooks {
+		t.Fatalf("满池应 8 条（4+2+2），got %d: %v", len(out), out)
+	}
+	books, homes, fleetBooks := 0, 0, 0
+	for _, l := range out {
+		switch l["kind"] {
+		case "book":
+			books++
+			if !strings.HasPrefix(l["url"], "/book/") {
+				t.Fatalf("站内书链应为相对路径 /book/{nid}，got %q", l["url"])
+			}
+		case "fleet-home":
+			homes++
+			if !strings.HasPrefix(l["url"], "http://") || !strings.HasSuffix(l["url"], "/") {
+				t.Fatalf("群首页应为 http://{host}/，got %q", l["url"])
+			}
+		case "fleet-book":
+			fleetBooks++
+			if !strings.Contains(l["url"], "/book/") || !strings.HasPrefix(l["url"], "http://") {
+				t.Fatalf("群书页应为 http://{host}/book/{nid}，got %q", l["url"])
+			}
+		default:
+			t.Fatalf("未知 kind: %v", l["kind"])
+		}
+		if l["name"] == "" {
+			t.Fatalf("锚文本不应为空: %v", l)
+		}
+	}
+	if books != wheelInnerBooks || homes != wheelFleetHomes || fleetBooks != wheelFleetBooks {
+		t.Fatalf("三类数量应 4/2/2，got %d/%d/%d", books, homes, fleetBooks)
+	}
+	seen := map[string]bool{}
+	for _, l := range out {
+		if l["kind"] == "book" || l["kind"] == "fleet-book" {
+			id := l["url"][strings.LastIndex(l["url"], "/")+1:]
+			if seen[id] {
+				t.Fatalf("nid %s 重复出现（去重失效）: %v", id, out)
+			}
+			seen[id] = true
+		}
+	}
+	for _, host := range []string{"a.example.com", "b.example.com"} {
+		for _, l := range pickWheelSamples(pool, fleet, host) {
+			if strings.Contains(l["url"], host) {
+				t.Fatalf("当前 Host %s 不应出现在群链轮: %v", host, l)
+			}
+		}
+	}
+	if n := len(pickWheelSamples(pool, nil, "")); n != wheelInnerBooks {
+		t.Fatalf("空群应只剩站内 %d 条，got %d", wheelInnerBooks, n)
+	}
+	if out4 := pickWheelSamples(nil, fleet, ""); len(out4) != 0 {
+		t.Fatalf("空池应返回空，got %v", out4)
+	}
+	ids := map[string]bool{}
+	for _, l := range pickWheelSamples(pool[:2], fleet, "") {
+		if l["kind"] == "book" || l["kind"] == "fleet-book" {
+			id := l["url"][strings.LastIndex(l["url"], "/")+1:]
+			if ids[id] {
+				t.Fatalf("小池 nid %s 重复: %v", id, l)
+			}
+			ids[id] = true
+		}
+	}
+}
+
+// TestGatherWheelLinks 集成：临时库播种书籍+站点 → 排除当前 Host、三类齐全；
+// 清空站点表后退化仅站内书链（fail-open 形态）。
+func TestGatherWheelLinks(t *testing.T) {
+	resetFleetCache()
+	resetWheelCache()
+	mustInitSiteSiteRows(t, []struct {
+		host, name string
+		enabled    int64
+	}{
+		{"a.example.com", "站点A", 1},
+		{"b.example.com", "站点B", 1},
+	})
+	mustSeedWheelNovels(t, 5)
+
+	got := gatherWheelLinks("a.example.com")
+	if len(got) == 0 {
+		t.Fatal("有书有站时链轮不应为空")
+	}
+	kinds := map[string]bool{}
+	for _, l := range got {
+		if strings.Contains(l["url"], "a.example.com") {
+			t.Fatalf("当前 Host 不应出现: %v", l)
+		}
+		kinds[l["kind"]] = true
+	}
+	if !kinds["book"] {
+		t.Fatal("应包含站内随机书籍页（book）")
+	}
+	if !kinds["fleet-home"] || !kinds["fleet-book"] {
+		t.Fatalf("应包含群首页+群书页（站点 B enabled），got %v", got)
+	}
+	// 清空站点表（mustInitSiteSiteRows 传 nil 不清既有行，需手动 DELETE）→ 仅站内书链
+	if db, err := getDB(); err != nil {
+		t.Fatalf("open temp db: %v", err)
+	} else {
+		if _, err := db.Exec(`DELETE FROM "SiteSite"`); err != nil {
+			t.Fatalf("clear SiteSite: %v", err)
+		}
+	}
+	resetFleetCache()
+	for _, l := range gatherWheelLinks("") {
+		if l["kind"] != "book" {
+			t.Fatalf("空群应只剩 book，got %v", l)
 		}
 	}
 }

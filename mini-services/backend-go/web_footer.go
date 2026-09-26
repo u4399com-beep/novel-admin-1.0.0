@@ -24,6 +24,8 @@ package main
 import (
 	"database/sql"
 	"html"
+	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,4 +144,134 @@ func fleetSitesCached() []map[string]string {
 	fleetLinksCache = sites
 	fleetLinksExpiry = now.Add(fleetCacheTTL)
 	return sites
+}
+
+// ---------- Task 46 链轮三类型：站内随机书籍页 / 站群随机首页 / 站群随机书籍页 ----------
+
+// 链轮规模护栏：站内书 4 + 群首页 2 + 群书页 2（每页页脚随机入口总量 ≤8，权重分流可控）；
+// 候选池 60 本（最新 id 降序 = 主键索引零排序成本，新书即时入池）；TTL 与站群缓存对齐 60s。
+const (
+	wheelInnerBooks = 4
+	wheelFleetHomes = 2
+	wheelFleetBooks = 2
+	wheelPoolSize   = 60
+)
+
+var (
+	wheelPoolMu     sync.Mutex
+	wheelPoolCache  []map[string]string // 书籍候选池 [{nid,title}]（nid 十进制字符串）
+	wheelPoolExpiry time.Time
+)
+
+// wheelNovelPoolCached 链轮书籍候选池：最新 wheelPoolSize 本（id 降序 LIMIT 常量，
+// 无字符串拼接面）。60s TTL；查询故障回旧缓存/nil（fail-open，绝不阻塞渲染）。
+func wheelNovelPoolCached() []map[string]string {
+	wheelPoolMu.Lock()
+	defer wheelPoolMu.Unlock()
+	now := time.Now()
+	if wheelPoolCache != nil && now.Before(wheelPoolExpiry) {
+		return wheelPoolCache
+	}
+	pool := []map[string]string{}
+	err := queryList(`SELECT "id","title" FROM "Novel" ORDER BY "id" DESC LIMIT `+strconv.Itoa(wheelPoolSize), func(rows *sql.Rows) error {
+		var nid int64
+		var title string
+		if err := rows.Scan(&nid, &title); err == nil && nid > 0 && strings.TrimSpace(title) != "" {
+			pool = append(pool, map[string]string{"nid": strconv.FormatInt(nid, 10), "title": title})
+		}
+		return nil
+	})
+	if err != nil {
+		return wheelPoolCache
+	}
+	wheelPoolCache = pool
+	wheelPoolExpiry = now.Add(fleetCacheTTL)
+	return pool
+}
+
+// gatherWheelLinks Task 46 链轮三类型数据（web_data.go 接线为 .WheelLinks）：
+//
+//	kind=book        站内随机书籍页 /book/{nid}（相对路径，锚文本=书名）
+//	kind=fleet-home  站群随机首页 http://{host}/（排除当前 Host，锚文本=站名）
+//	kind=fleet-book  站群随机书籍页 http://{host}/book/{nid}（排除当前 Host，锚文本=书名）
+//
+// 随机性=每请求抽样（不缓存随机结果——蜘蛛每次抓取发现不同内链入口，链轮价值所在）；
+// 候选池/站点列表走 TTL 缓存，DB 压力恒定。池空/查询故障 → 空切片零 DOM 痕迹。
+func gatherWheelLinks(currentHost string) []map[string]string {
+	return pickWheelSamples(wheelNovelPoolCached(), fleetSitesCached(), currentHost)
+}
+
+// pickWheelSamples 纯抽样（可测）：rand.Perm 全量洗牌取位。
+// 防重复：usedNid 全局去重（同书不重复出现，站内/群内共享去重域）；
+// fleet-home 与 fleet-book 在随机排列上正/反向取位天然错开 host。
+func pickWheelSamples(pool, fleet []map[string]string, currentHost string) []map[string]string {
+	out := []map[string]string{}
+	usedNid := map[string]bool{}
+	// ① 站内随机书籍页（相对路径：无论默认站/站群命中站，恒指向本站）
+	idx := rand.Perm(len(pool))
+	for _, i := range idx {
+		if len(out) >= wheelInnerBooks {
+			break
+		}
+		b := pool[i]
+		if usedNid[b["nid"]] {
+			continue
+		}
+		usedNid[b["nid"]] = true
+		out = append(out, map[string]string{
+			"name": truncateRunes(strings.TrimSpace(b["title"]), footerFriendNameMax),
+			"url":  "/book/" + b["nid"],
+			"kind": "book",
+		})
+	}
+	// 站群池（排除当前 Host：自站首页/书页由 ① 覆盖，不重复计入群链轮）
+	fleetAvail := []map[string]string{}
+	for _, s := range fleet {
+		if currentHost != "" && s["host"] == currentHost {
+			continue
+		}
+		fleetAvail = append(fleetAvail, s)
+	}
+	if len(fleetAvail) == 0 || len(pool) == 0 {
+		return out
+	}
+	fidx := rand.Perm(len(fleetAvail))
+	// ② 站群随机首页
+	n := wheelFleetHomes
+	if len(fleetAvail) < n {
+		n = len(fleetAvail)
+	}
+	for k := 0; k < n; k++ {
+		s := fleetAvail[fidx[k]]
+		out = append(out, map[string]string{
+			"name": truncateRunes(strings.TrimSpace(s["siteName"]), footerFriendNameMax),
+			"url":  s["url"],
+			"kind": "fleet-home",
+		})
+	}
+	// ③ 站群随机书籍页（host 反向取位与 ② 错开；nid 顺取未用位）
+	m := wheelFleetBooks
+	if len(fleetAvail) < m {
+		m = len(fleetAvail)
+	}
+	pidx := rand.Perm(len(pool))
+	pi := 0
+	for k := 0; k < m; k++ {
+		s := fleetAvail[fidx[len(fidx)-1-k]]
+		for pi < len(pidx) && usedNid[pool[pidx[pi]]["nid"]] {
+			pi++
+		}
+		if pi >= len(pidx) {
+			break
+		}
+		b := pool[pidx[pi]]
+		pi++
+		usedNid[b["nid"]] = true
+		out = append(out, map[string]string{
+			"name": truncateRunes(strings.TrimSpace(b["title"]), footerFriendNameMax),
+			"url":  "http://" + s["host"] + "/book/" + b["nid"],
+			"kind": "fleet-book",
+		})
+	}
+	return out
 }

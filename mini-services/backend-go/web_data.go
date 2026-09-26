@@ -185,6 +185,8 @@ func webCommon(r *http.Request) map[string]any {
 	// 空切片时模板 {{if}} 判空 → 区块零 DOM 痕迹。
 	friendLinks := gatherFooterFriendLinks(s.FooterConfig)
 	fleetLinks := gatherFleetLinks(requestHost(r))
+	// Task 46: 链轮三类型（站内随机书籍页/站群随机首页/站群随机书籍页，每请求随机抽样）
+	wheelLinks := gatherWheelLinks(requestHost(r))
 
 	// Task 30-a: 站点档案透传——applyWebTDK/applyWebKeywords/gatherHomeBlocks 经
 	// settingsFromData 取此解析结果（保证同请求内 Site/TDK/页脚/区块口径一致）；
@@ -204,6 +206,7 @@ func webCommon(r *http.Request) map[string]any {
 		"Path":         r.URL.Path,
 		"FriendLinks":  friendLinks,
 		"FleetLinks":   fleetLinks,
+		"WheelLinks":   wheelLinks,
 		"siteSettings": s,
 		// Task 36-b: 缺省空串——个别主题 home 模板消费 {{.Q}}（101kks 首页搜索框），
 		// map 缺键时 html/template 会渲染字面量「<no value>」而非空串；搜索页随后覆盖。

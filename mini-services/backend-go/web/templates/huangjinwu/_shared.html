@@ -74,7 +74,7 @@
       {{range .Site.footerLinks}}<span class="flex items-center gap-2"><span class="text-[#94a3b8]">|</span><a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors duration-200 hover:text-[#2563eb]">{{.label}}</a></span>{{end}}
     </div>
     {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
-    {{if .FriendLinks}}<p class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1"><span class="text-[#1e293b]">友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors duration-200 hover:text-[#2563eb]">{{.name}}</a>{{end}}</p>{{end}}
+    {{if or .FriendLinks .WheelLinks}}<p class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1"><span class="text-[#1e293b]">友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors duration-200 hover:text-[#2563eb]">{{.name}}</a>{{end}}{{range .WheelLinks}}<a href="{{.url}}" class="transition-colors duration-200 hover:text-[#2563eb]">{{.name}}</a>{{end}}</p>{{end}}
     {{if .FleetLinks}}<p class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1"><span class="text-[#1e293b]">站群导航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="transition-colors duration-200 hover:text-[#2563eb]">{{.siteName}}</a>{{end}}</p>{{end}}
     <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}© {{.Site.siteName}} · 结构级主题模板演示，布局风格仿 huangjinwu.org{{end}}</p>
     <p>{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站所有小说与章节均为演示数据，仅用于前端效果展示。{{end}}</p>

@@ -74,7 +74,7 @@
       {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="text-[#666] hover:text-[#FF6600]">{{.label}}</a>{{end}}
     </p>
     {{/* Task 32-a: 友情链接+站群内链轮（无配置时零 DOM 痕迹） */}}
-    {{if .FriendLinks}}<p class="mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1"><span class="text-[#666]">友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="text-[#666] hover:text-[#FF6600]">{{.name}}</a>{{end}}</p>{{end}}
+    {{if or .FriendLinks .WheelLinks}}<p class="mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1"><span class="text-[#666]">友情链接：</span>{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="text-[#666] hover:text-[#FF6600]">{{.name}}</a>{{end}}{{range .WheelLinks}}<a href="{{.url}}" class="text-[#666] hover:text-[#FF6600]">{{.name}}</a>{{end}}</p>{{end}}
     {{if .FleetLinks}}<p class="mb-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1"><span class="text-[#666]">站群导航：</span>{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="text-[#666] hover:text-[#FF6600]">{{.siteName}}</a>{{end}}</p>{{end}}
     <p>{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说 CMS 结构级主题演示，界面按经典杰奇蓝白风格重建，内容均来自演示数据，仅供学习交流。{{end}}</p>
     <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}{{.Site.siteName}} · 源站 pilishuwu.com（重建模板）{{end}}</p>
