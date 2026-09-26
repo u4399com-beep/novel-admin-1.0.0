@@ -37,7 +37,7 @@
 
 {{/* 固定宝蓝顶栏 */}}
 <header class="fixed inset-x-0 top-0 z-50 h-[50px] bg-[#1f6cb2] text-white lg:h-[75px]">
-  <div class="mx-auto flex h-full max-w-[1250px] items-center gap-2 px-3 sm:gap-3 lg:gap-5">
+  <div class="mx-auto flex h-full max-w-[1112px] items-center gap-2 px-3 sm:gap-3 lg:gap-5">{{/* Task 42-a: 顶栏内层 1250→1112 与页面统一容器（ui.tsx Container）同口径，Logo/搜索/导航与下方内容卡左缘对齐 */}}
     <button type="button" id="kks-drawer-btn" aria-label="菜单" aria-expanded="false" aria-controls="kks-drawer" class="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[3px] transition-colors hover:bg-white/15 lg:hidden">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
     </button>
@@ -126,8 +126,8 @@
 <div class="min-w-0 flex-1 pt-[50px] lg:pt-[75px]">{{/* Task 28-c: flex-1 使页脚 sticky（body flex-col） */}}
   {{if .Site.notice}}
   <div class="flex h-[30px] items-center justify-center overflow-hidden bg-[#fff2df] px-3 text-xs text-[#8a6d3b] lg:h-[40px] lg:text-[13px]">
-    {{/* Task 31-a: 公告内容限宽跟随顶栏导航 1250px */}}
-    <p class="w-full max-w-[1250px] truncate">
+    {{/* Task 42-a: 公告限宽 1250→1112 与下方内容区同宽（原 Task 31-a 口径 1250 随顶栏一并更新） */}}
+    <p class="w-full max-w-[1112px] truncate">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 inline h-3.5 w-3.5 align-[-2px]" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
       {{.Site.notice}}
     </p>
@@ -139,8 +139,8 @@
 
 {{/* 页脚：白底居中三行 */}}
 <footer class="mt-8 bg-white py-6 text-center">
-  {{/* Task 31-a: 页脚网站地图链接区+版权区限宽跟随顶栏导航 1250px */}}
-  <div class="mx-auto w-full max-w-[1250px]">
+  {{/* Task 42-a: 页脚限宽 1250→1112 与页面统一容器同口径（原 Task 31-a 口径 1250 随顶栏一并更新） */}}
+  <div class="mx-auto w-full max-w-[1112px]">
   <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-[#333]" style="line-height:2">
     <a href="/" title="演示模板：未提供全站排行頁" class="cursor-pointer hover:text-[#06c]">排行</a>
     <a href="/" title="演示模板：未提供全站最新頁" class="cursor-pointer hover:text-[#06c]">最新</a>

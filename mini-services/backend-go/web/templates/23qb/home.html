@@ -47,9 +47,9 @@
     </section>
 
     {{/* 后台可配置的首页自定义图文区块：置于「分类热度榜单」上方；
-        解除区块自带 max-w-6xl 限制，与主题 1240-1740px 宽容器对齐 */}}
-    <div class="mt-7 [&>div]:max-w-none [&>div]:px-0">
-      {{if .HomeBlocks}}<div class="mx-auto w-full max-w-6xl px-4">
+        Task 42-a: 区块容器统一主题宽口径（原 max-w-6xl px-4 曾靠 [&>div] 中和，现直接改 w-full 与同级板块同宽） */}}
+    <div class="mt-7">
+      {{if .HomeBlocks}}<div class="w-full">
         {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
           <div class="mb-3 flex items-center gap-2 border-l-4 border-[#ff2a14] pl-2.5">
             <span aria-hidden="true" class="text-[#ff2a14]"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>

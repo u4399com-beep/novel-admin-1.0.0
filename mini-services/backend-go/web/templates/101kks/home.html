@@ -37,7 +37,7 @@
 
   {{/* 后台自定义图文区块（小编精选等）—— theme-extras 中性样式，契约位：熱門書單上方 */}}
   {{if .HomeBlocks}}
-  <div class="mx-auto w-full max-w-6xl px-4">
+  <div class="w-full">{{/* Task 42-a: 原 mx-auto w-full max-w-6xl px-4 嵌套于 1112 统一容器内失效且 px-4 内缩错位；改 w-full 与兄弟板块同宽 */}}
     {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
       <div class="mb-3 flex items-center gap-2 border-l-4 border-[#1f6cb2] pl-2.5">
         <span aria-hidden="true" class="text-[#1f6cb2]"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>

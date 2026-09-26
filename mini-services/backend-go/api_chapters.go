@@ -879,9 +879,23 @@ func handleChapterAuditPost(w http.ResponseWriter, r *http.Request, _ map[string
 
 		// 两段式重排：先全部移出到负数暂存区（避开目标 idx 被占），再落位 1..n
 		// Task 33-b: 任一步失败即整体回滚（旧版忽略错误会留下 -1000000 僵尸序号）
+		// Task 42-b: 暂存区改取 min(0, 全书最小 idx) - 1 起算的连续负数段。旧版固定
+		// -1_000_000-i 会与存量滞留行相撞——旧二进制段落位失败曾把章永久留在
+		// -1_000_000-i（上文 33-b 所述病灶，本系统自身历史损伤类），对这类书 reindex
+		// 的暂存 UPDATE 必撞 (novelId,idx) 唯一约束 → 整个事务回滚 500，该损伤类永久
+		// 不可 reindex（P2-9「再次 reindex 即修复」的恢复路径失效）。压到全书最小 idx
+		// 之下后，暂存值与任何存量 idx（含滞留负数行）及落位目标 1..n 均无交集
+		//（kept 即事务内全书快照、无并发写），碰撞在构造上不可能。
+		stageBase := int64(0)
+		for _, x := range kept {
+			if x.idx < stageBase {
+				stageBase = x.idx
+			}
+		}
+		stageBase--
 		for i, x := range ordered {
 			if x.idx != int64(i+1) {
-				if _, err := tx.Exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, -1_000_000-int64(i), x.id); err != nil {
+				if _, err := tx.Exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, stageBase-int64(i), x.id); err != nil {
 					return err
 				}
 			}

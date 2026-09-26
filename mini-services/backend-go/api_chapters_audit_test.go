@@ -12,6 +12,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -158,6 +159,143 @@ func TestAuditReindexReordersAndSyncsTxt(t *testing.T) {
 		}
 	}
 	_ = filepath.Join // 保持 import 精简
+}
+
+// TestAuditReindexRepairsLegacyStuckNegativeRows Task 42-b 回归：旧二进制两段式重排的
+// 段落位失败曾把章永久滞留在 idx=-1_000_000-i（本文件头注 33-b 所述病灶，属本系统自身
+// 历史损伤类）。固定 -1_000_000-i 暂存值与滞留行相撞：待暂存行落到滞留行已占的
+// (novelId,idx) → UNIQUE 冲突 → 整个事务回滚 500，该损伤类永久不可 reindex
+// （P2-9「再次 reindex 即修复」的恢复路径失效）。暂存区压到全书最小 idx 之下后必须可修复。
+func TestAuditReindexRepairsLegacyStuckNegativeRows(t *testing.T) {
+	mustInitAuditTables(t)
+	t.Setenv("TXT_ROOT", t.TempDir())
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("open temp db: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9004,'测试分类4')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (4,'滞留行修复书','测试作者',9004,?)`, nowMillis()); err != nil {
+		t.Fatalf("insert novel: %v", err)
+	}
+	// 滞留行（旧版段落位失败的遗留形态）+ 正数行乱序：
+	// 按标题序 ordered = [第1章(idx2), 第2章(idx=-1000000), 第3章(idx1)]，
+	// 旧版暂存 i=0 即把「第1章」落到 -1_000_000 —— 与滞留行相撞。
+	insertAuditChapter(t, 4, 2, "第1章", 10)
+	insertAuditChapter(t, 4, -1_000_000, "第2章", 10)
+	insertAuditChapter(t, 4, 1, "第3章", 10)
+	// txt 仅正数旧 idx 行有文件（reindexChapterTxtFiles 对无文件行自动跳过）
+	if err := writeChapterTxt(4, 2, "第1章", "body1"); err != nil {
+		t.Fatalf("write txt: %v", err)
+	}
+	if err := writeChapterTxt(4, 1, "第3章", "body3"); err != nil {
+		t.Fatalf("write txt: %v", err)
+	}
+
+	code, resp := postAuditAction(t, `{"action":"reindex","novelId":4}`)
+	if code != 200 {
+		t.Fatalf("对滞留行损伤书 reindex 应 200（恢复路径必须存在），got %d（%v）", code, resp)
+	}
+	if moved, _ := resp["moved"].(float64); int(moved) != 3 {
+		t.Fatalf("moved = %v, want 3（三行全部变号）", resp["moved"])
+	}
+	got := chapterIdxByTitle(t, 4)
+	for title, want := range map[string]int64{"第1章": 1, "第2章": 2, "第3章": 3} {
+		if got[title] != want {
+			t.Fatalf("章节 %s idx = %d, want %d（全表：%v）", title, got[title], want, got)
+		}
+	}
+	// 无负数 idx 残留（滞留行被一并压实进 1..n）
+	var neg int64
+	if err := queryOne(`SELECT COUNT(*) FROM "Chapter" WHERE "novelId" = 4 AND "idx" < 1`, []any{&neg}); err != nil || neg != 0 {
+		t.Fatalf("负数 idx 残留 %d（err=%v）", neg, err)
+	}
+	// txt 内容跟随新 idx；滞留行（无文件）位置 2 读不到属预期
+	if body, err := readChapterFromTxt(4, 1); err != nil || body != "body1" {
+		t.Fatalf("txt 位置 1 = (%q,%v), want body1", body, err)
+	}
+	if _, err := readChapterFromTxt(4, 2); !errors.Is(err, errTxtNotFound) {
+		t.Fatalf("位置 2（滞留行无文件）应 errTxtNotFound，got %v", err)
+	}
+	if body, err := readChapterFromTxt(4, 3); err != nil || body != "body3" {
+		t.Fatalf("txt 位置 3 = (%q,%v), want body3", body, err)
+	}
+}
+
+// TestAuditReindexEdges 边界回归（表驱动）：断档压实（含大 idx 间隙）/ 单章原位 / 全部未编号。
+// 断档用例同时锁定 Task 42-b 暂存区下压语义：暂存值必须低于落位目标 1..n，
+// 大间隙书（min idx 远大于章数）暂存不得落进正数区与落位相撞。
+func TestAuditReindexEdges(t *testing.T) {
+	mustInitAuditTables(t)
+	t.Setenv("TXT_ROOT", t.TempDir())
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("open temp db: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9005,'测试分类5')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	cases := []struct {
+		name    string
+		novelID int64
+		rows    []struct {
+			idx   int64
+			title string
+		}
+		wantIdx map[string]int64
+	}{
+		{
+			name:    "大间隙断档压实",
+			novelID: 11,
+			rows: []struct {
+				idx   int64
+				title string
+			}{{1, "第1章"}, {2, "第2章"}, {5000, "未编号番外"}},
+			wantIdx: map[string]int64{"第1章": 1, "第2章": 2, "未编号番外": 3},
+		},
+		{
+			name:    "单章原位不动",
+			novelID: 12,
+			rows: []struct {
+				idx   int64
+				title string
+			}{{1, "唯一一章"}},
+			wantIdx: map[string]int64{"唯一一章": 1},
+		},
+		{
+			name:    "全未编号按原序压实",
+			novelID: 13,
+			rows: []struct {
+				idx   int64
+				title string
+			}{{7, "甲"}, {9, "乙"}, {20, "丙"}},
+			wantIdx: map[string]int64{"甲": 1, "乙": 2, "丙": 3},
+		},
+	}
+	for _, c := range cases {
+		// Novel(title,author) 唯一约束 → 每本书独立书名
+		if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (?,?,'测试作者',9005,?)`, c.novelID, c.name, nowMillis()); err != nil {
+			t.Fatalf("%s: insert novel: %v", c.name, err)
+		}
+		for _, r := range c.rows {
+			insertAuditChapter(t, c.novelID, r.idx, r.title, 10)
+		}
+		code, resp := postAuditAction(t, `{"action":"reindex","novelId":`+itoa(int(c.novelID))+`}`)
+		if code != 200 {
+			t.Fatalf("%s: reindex 应 200，got %d（%v）", c.name, code, resp)
+		}
+		got := chapterIdxByTitle(t, c.novelID)
+		for title, want := range c.wantIdx {
+			if got[title] != want {
+				t.Fatalf("%s: 章节 %s idx = %d, want %d（全表：%v）", c.name, title, got[title], want, got)
+			}
+		}
+		var neg int64
+		if err := queryOne(`SELECT COUNT(*) FROM "Chapter" WHERE "novelId" = ? AND "idx" < 1`, []any{&neg}, c.novelID); err != nil || neg != 0 {
+			t.Fatalf("%s: 负数 idx 残留 %d（err=%v）", c.name, neg, err)
+		}
+	}
 }
 
 // TestAuditDedupeRemovesTxtFiles dedupe：删重复行 + 该行 txt 文件一并清理 + 压实不串章

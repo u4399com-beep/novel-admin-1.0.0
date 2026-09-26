@@ -1902,3 +1902,40 @@ Stage Summary:
 - 简介清洗从「零」到「六家族全覆盖+幂等回填」：用户贴文的 &#091；全角分号实体病灶转换为可读 [轻松军旅] 形，「相关小说」尾块洗掉的同时**转换**为 279 个 pSEO 长尾词（书籍页 chips 内链+聚合页 TDK），SEO 长尾覆盖面扩大一个量级
 - 架构增量：introx.go 成为简介清洗唯一权威（engine 基础修复→backend 全量清洗+转换的二级流水线），幂等契约保证回填/重采零写放大
 - 工程教训：引擎侧截断会毁灭编排侧的转换原料——双侧流水线的职责切分必须先于编码决定；RE2 转义细节（\x{FFFD} raw string）与守卫正则的重写遗漏（纯数字）靠测试向量当场抓获
+
+---
+Task ID: 42-a
+Agent: frontend-width
+Task: 主题宽度统一修复——10 主题「内容主容器 vs 页顶+公告+页脚」逐主题审计统一（用户指令：公告区块宽度做限制要和下方一致；页顶+页脚宽度也要限制）
+
+Work Log:
+- 【审计方法】rg -n 'max-w-|w-\[|mx-auto' 逐主题全量扫描（10 主题+_fallback 共 78 模板），先定每主题 _shared 页顶/公告/页脚口径，再比对 7 类页面模板（home/category/book/toc/chapter/search/pseo）的内容容器；并以 git 历史（dc56172 原 TSX 主题源码）核对每处宽度是移植事实还是笔误，避免误改「忠实移植」的有意设计
+- 【病灶① HomeBlocks 外来容器（7 主题同源复制病）】theme-extras 图文区块容器 `mx-auto w-full max-w-6xl px-4` 被原样复制进 7 个主题的 home.html，但该 div 均嵌套在各主题统一容器（980/1112/1180/1200/960px）之内——max-w-6xl(1152px) 恒失效，唯一实效是 px-4 使区块两侧内缩 16px、与兄弟板块（如 trxsw 分类导航+双榜 964px）错位断裂。修复：统一改为 `w-full`（填满主题容器、与兄弟板块同宽），去除外来 max-w-6xl/px-4。涉及：trxsw/home.html:99（生产激活主题，实证病灶行）、pilishuwu:7、ggd66:10、101kks:40、huangjinwu:33、x2552:9
+- 【病灶② 23qb 中和 hack 清理】23qb/home.html:51-52 曾用 `<div class="mt-7 [&>div]:max-w-none [&>div]:px-0">` 父选择器中和自带的 max-w-6xl px-4（Task 早期方案）——渲染正确但 DOM 留死类。清理为 `<div class="mt-7">` + 内层 `w-full`，渲染不变、语义归一
+- 【病灶③ 101kks 反向情形（页顶宽、内容窄 138px）】原 TSX 即双口径：chrome（顶栏内层/公告/页脚）max-w-[1250px]（Layout.tsx+Task 31-a 两次统一），内容页 max-w-[1112px]（ui.tsx Container，7 页共用）——宽屏下公告/页顶/页脚与内容卡左缘错位 138px，恰是用户「公告要和下方一致」病灶。按多数口径统一：_shared.html 3 处 1250→1112（顶栏内层:40/公告条:130/页脚:143），内容侧 1112 七处不动；chapter 独立沉浸阅读容器（无 chrome）维持 1112 不受影响
+- 【过检为零改动项（留档）】aijjxs search/pseo 的 max-w-[860px] 为原 Search.tsx 忠实移植的窄居中搜索栏设计（chrome 公告/页脚均 1220 已一致）不动；aijjxs/toc.html 1200 卡片、23qb home 680 hero 与 chapter 680 阅读宽、各主题 chapter 阅读宽（760/800/820/900/1080）均为设计口径不动；ddyueshu（Task 31-a 已修 980 全对齐）/shipsay 960/_fallback .fb-wrap 1080/23qb 响应式 1150-1740 四档全主题一致，零改动；trxsw 公告条内层 max-w-[980px] px-3 已限宽与内容同口径（px-3=页顶/页脚惯例）不动
+- 【验证】/tmp 独立 Go 程序以 webFuncMap 同名函数表 ParseFiles 全量解析 11 主题×7 页=77 组模板 ALL PARSE OK（未动仓库 Go 代码）；bun run build:css 全绿（133.9KB，产物净 -3 行=唯一失引用的 max-w-[1250px] 规则清除，max-w-[1112px]/[980px]/6xl 均在）；curl 实证 :3000 生产站（trxsw）：首页 7 处 max-w-[980px]、max-w-6xl 零残留、HomeBlocks 已渲染 `<div class="w-full">`（模板 mtime 缓存自愈，无需重启），served tw.css=新产物 137108B
+- 【工程约束】仅改 8 个模板 HTML 类名+注释（7×home.html + 101kks/_shared.html）与重建 tw.css；toc.html 全部 11 份、admin/ 目录、Go 代码、JS 零触碰；零 git 操作、零进程重启
+
+Stage Summary:
+- 10 主题宽度口径审计闭环：7 处 HomeBlocks 外来 max-w-6xl px-4 容器统一为 w-full（嵌套容器内 max-w-6xl 本就失效，px-4 的 32px 内缩才是视觉断裂根源——主线病灶描述的「宽 172px」实为失效类+内缩复合表象）+23qb 中和 hack 清理+101kks 页顶/公告/页脚 1250→1112 反向统一（3 处）
+- 每主题最终口径：trxsw/pilishuwu 980、ddyueshu/x2552/shipsay 960、101kks 1112、ggd66 90%×1200、huangjinwu 1180、aijjxs 1220（search/pseo 860 为源站设计）、23qb 1150-1740 响应式四档、_fallback 1080——页顶+公告+页脚+内容主容器全部一主题一口径
+- 留档给主线：tw.css 构建 @source 含 web/static 自身，被删类名可因 CSS 自扫描残留（本轮 max-w-none 即此，无害）；aijjxs search/pseo 860 若产品侧要求与全站同宽需单独决策（动它将改变源站还原设计）
+---
+Task ID: 42-b
+Agent: reorder-review
+Task: 乱序重排功能逐行深检（辖区：chapterorder.go / api_chapters.go audit 端点 / api_noveltools.go resort-chapters / txtdir.go 联动 / storex.go 只读联动 / 前端契约只读核对）
+
+Work Log:
+- 【辖区复核面】chapterorder.go（ordering.ts 逐行对照 /tmp/my-project/src/lib/scrape/ordering.ts：NUMBERED_MIN/DISORDER_RATIO/中文数字解析/sortKeys 0.5 锚定/fixLeadingDescendingBlock Task 26-d 溢出放弃，全部忠实）；audit GET/POST 与 TS route 逐字段对照（响应字段/状态码/keep 规则「wordCount 最大并列取 idx 小」/scanned=全局候选数语义，一致）；resort GET/POST 与 TS route 对照（moved=len(order)、409 守卫、novelId 正整数过滤，一致）；txtdir.go 两段式 rename（pass1 腾位→pass2 落位+回滚）与文件名内嵌 title 的推演（同 idx 双文件 swap 安全：路径含 title 恒互异）
+- 【并发深检结论】Go 侧 audit reindex（Task 33-b）与 resort（$transaction 对齐）均为单事务——负数暂存值对并发读者不可见（WAL 快照隔离），TS 时代「暂存可见→骨架 MAX(idx) 读到全负集」的 P2-9 窗口在 Go 已闭合；storeChapter 插入（MAX_IDX_BUMPS≤4 顺延）与重排落位目标 1..n 数学上无交集（新插 idx=MAX+1>MAX≥行数≥落位上限），碰撞仅剩存量负数 idx 行一种形态；BUSY_SNAPSHOT（audit 事务先读后写升级）与 5s busy_timeout 下长事务挤占均为瞬时 500+回滚，无损坏
+- 【确证缺陷 P1→修复】两段式负数暂存区与存量滞留行相撞 → 恢复路径失效：旧二进制（Task 33-b 修复前）两段式段落位失败曾把章永久留在 idx=-1_000_000-i（api_chapters.go 33-b 头注记载的自身历史损伤类）；对这类书，现行 audit reindex 固定暂存值 -1_000_000-i、resort 固定 -(i+1)-1_000_000 的暂存 UPDATE 必撞 (novelId,idx) 唯一约束 → 整个事务回滚 500，该书永久不可修复（恰是 P2-9「再次 reindex 即修复」承诺的损伤类）。失败用例先行实证：两条新测试在旧代码下均 500（UNIQUE constraint failed: Chapter.novelId, Chapter.idx，贴真实输出）。修复：暂存区改取 min(0, 全书最小 idx)-1 起算的连续负数段（audit 从事务内 kept 快照取 min；resort 事务外 MIN(idx) 查询——并发删最小行只会抬高存量 idx、并发新插 idx=MAX+1>MIN，碰撞构造上不可能）；生产库实证当前 0 行 idx≤0（只读核查），属「修复工具对自身历史损伤类失效」的恢复路径补全
+- 【边界测试补齐】TestAuditReindexEdges 表驱动：大 idx 间隙断档压实（暂存值必须低于落位 1..n，锁定下压语义）/单章原位 moved=0/全未编号按原序压实；滞留行修复用例含 txt 同步断言（正数行文件随 idx 改名、滞留行无文件位置 errTxtNotFound）
+- 【前端契约只读核对】现行 Go admin（admin.html/admin.js）无 /api/chapters/audit、/api/novels/resort-chapters、/api/novels/recalc-words 任何调用——TS 时代 AuditTab.tsx（全站体检/去重/重排按钮）未随 TS→Go 迁移移植，重排三端点当前 UI 孤儿（resort/recalc 在 TS 时代也无调用方）；admin.js 章节编辑 PUT /api/chapters/{id} 恒传 title+content（内容预填自三级回落 GET）→「仅改标题不传 content 致 txt 文件名滞留旧题」的直接 API 边角在 UI 不可达
+- 【留档不修】①resort POST 409 守卫（ScrapeTask pending/running 计数）与守卫后采集任务创建之间存在 TOCTOU 窗口——TS 同源设计取舍（P2-9），且 Go 事务原子性已使后果降为「守卫后新章被一并压实/重排后 transient 冲突」，无数据丢失 ②reindexChapterTxtFiles「尽力而为」语义（rename 失败静默回滚/跳过，DB 提交与文件改名间崩溃窗口 → txt 书串章/丢读，需重跑一次编辑保存或重采自愈）——跨 DB/FS 原子性属架构级改造 ③「仅标题 PUT」（不带 content）致 txt 文件名滞留旧题 + 后续重排后同 idx 双文件 glob 可能命中旧题残留——UI 不可达，建议后续在 handleChapterUpdate 对 title-only 编辑也调 syncChapterTxt（属章节编辑端点，非重排辖区）④并发 audit/resort 同书互跑可能 BUSY_SNAPSHOT 500（用户重试即恢复）⑤resort 多书循环中后书失败前书已提交（逐书原子，目录自洽）
+- 【工程纪律】gofmt -w 四个触碰文件（Edit 工具写入会整文件空格化的环境特性，复 Task 18/40 先例归一为 tab）；未触碰 schema.go/db.go/storex.go/web*.go/api_settings.go/templates；生产库仅 mode=ro 只读核查；backend-go.bin 已重建（修复生效待主线重启部署，进程未动）；全量 build/vet/test -race 全绿
+
+Stage Summary:
+- 乱序重排链路（chapterorder 纯函数 + audit 两段式重排 + resort + txt 迁移）逐行深检完成：算法与 TS 逐行一致、两阶段事务原子性成立、TXT 两段式 rename 无互覆路径、并发交互仅剩瞬时失败形态
+- 唯一确证缺陷修复：负数暂存区固定值与旧版自身遗留滞留行相撞使损伤类书永久不可修复——暂存区下压至全书最小 idx 之下，恢复路径闭合，4 条新测试锁定（含 txt 同步与断档边界）
+- 前端缺口留档主线：Go admin 缺失 TS 时代「目录体检」面板，重排端点无 UI 入口，建议随分卷设置一并补齐

@@ -21,7 +21,9 @@
  *
  * 移植语义差异：
  * 1. Prisma update/novel.update 自动触碰 @updatedAt → 显式 set updatedAt=nowMillis()
- * 2. Prisma $transaction → sql.Tx；两阶段负数暂存区 -(i+1)-1_000_000 与 TS 完全一致
+ * 2. Prisma $transaction → sql.Tx；两阶段负数暂存区 Task 42-b 起取 min(0,全书最小idx)-1
+ *    起算的连续负数段（旧固定值 -(i+1)-1_000_000 与存量滞留行 idx=-1000000-k 相撞，
+ *    见 resortApplyReorder 注）
  * 3. 响应字段名与 TS 完全一致（前端管理后台按字段消费）
  */
 package main
@@ -232,11 +234,26 @@ func resortAudit() (books int, candidates []map[string]any, err error) {
 
 // resortApplyReorder 两阶段事务改号：先整体移入负数区（互不冲突），再按新顺序写回正数 idx。
 // 返回 moved = len(order)。
+// Task 42-b: 暂存区取 min(0, 全书最小 idx) - 1 起算的连续负数段——旧版固定 -(i+1)-1_000_000
+// 自 -1_000_001 起算，与存量滞留行（旧二进制 audit 两段式段落位失败遗留的 idx=-1_000_000-k
+// 损伤类）相撞 → UNIQUE 冲突 → 事务回滚 500，该书永久不可重排。压到全书最小 idx 之下后，
+// 暂存值与任何存量 idx（含滞留负数行）及落位目标 1..n 均无交集，碰撞在构造上不可能。
+// MIN(idx) 在事务外读取即安全：并发删最小行只会让实际存量 idx 更大（暂存值仍更低）；
+// 并发新插入 idx=MAX(idx)+1 > MAX ≥ MIN > 暂存值，同样无交集。
 func resortApplyReorder(novelID int64, order []int64) (int, error) {
 	db, err := getDB()
 	if err != nil {
 		return 0, err
 	}
+	var minIdx sql.NullInt64
+	if err := queryOne(`SELECT MIN("idx") FROM "Chapter" WHERE "novelId" = ?`, []any{&minIdx}, novelID); err != nil && !isNoRows(err) {
+		return 0, err
+	}
+	stageBase := int64(0)
+	if minIdx.Valid && minIdx.Int64 < stageBase {
+		stageBase = minIdx.Int64
+	}
+	stageBase--
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, err
@@ -248,7 +265,7 @@ func resortApplyReorder(novelID int64, order []int64) (int, error) {
 		}
 	}()
 	for i := 0; i < len(order); i++ {
-		if _, err := tx.Exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, -(int64(i)+1)-1_000_000, order[i]); err != nil {
+		if _, err := tx.Exec(`UPDATE "Chapter" SET "idx" = ? WHERE "id" = ?`, stageBase-int64(i), order[i]); err != nil {
 			return 0, err
 		}
 	}

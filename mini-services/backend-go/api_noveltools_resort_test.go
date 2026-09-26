@@ -10,6 +10,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -92,6 +93,82 @@ func TestResortChaptersReorderSyncsTxtFiles(t *testing.T) {
 		if strings.Contains(e.Name(), "reidx_") {
 			t.Fatalf("存在暂存残留文件 %s", e.Name())
 		}
+	}
+}
+
+// TestResortChaptersRepairsLegacyStuckNegativeRows Task 42-b 姊妹回归（resort 暂存区碰撞）：
+// 旧固定暂存值 -(i+1)-1_000_000 自 -1_000_001 起算——与存量滞留行（旧二进制 audit 两段式
+// 段落位失败遗留的 idx=-1_000_001 损伤类）相撞 → UNIQUE 冲突 → 事务回滚 500，该书永久不可重排。
+// 暂存区压到全书最小 idx 之下后必须可修复（滞留行一并压实进 1..n）。
+func TestResortChaptersRepairsLegacyStuckNegativeRows(t *testing.T) {
+	mustInitAuditTables(t)
+	mustInitScrapeTaskTable(t) // 重排守卫查询 ScrapeTask pending/running（须为空）
+	t.Setenv("TXT_ROOT", t.TempDir())
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("open temp db: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9006,'测试分类6')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (5,'滞留行重排书','测试作者',9006,?)`, nowMillis()); err != nil {
+		t.Fatalf("insert novel: %v", err)
+	}
+	// idx 1..9 存「第9章」..「第1章」+ 滞留行 idx=-1_000_001 存「第10章」：
+	// 旧版暂存 i=0 即把「第1章」落到 -1_000_001 —— 与滞留行相撞。
+	for i := 1; i <= 9; i++ {
+		title := fmt.Sprintf("第%d章", 10-i)
+		if _, err := db.Exec(`INSERT INTO "Chapter" ("novelId","idx","title","content","wordCount","createdAt") VALUES (5,?,?,'',10,?)`,
+			i, title, nowMillis()); err != nil {
+			t.Fatalf("insert chapter idx=%d: %v", i, err)
+		}
+		if err := writeChapterTxt(5, i, title, "body"+itoa(10-i)); err != nil {
+			t.Fatalf("write txt idx=%d: %v", i, err)
+		}
+	}
+	insertAuditChapter(t, 5, -1_000_001, "第10章", 10)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/novels/resort-chapters", strings.NewReader(`{"novelId":5}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handleNovelsResortChaptersPost(rec, req, nil)
+	if rec.Code != 200 {
+		t.Fatalf("对滞留行损伤书 resort 应 200（恢复路径必须存在），got %d（%s）", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resp: %v", err)
+	}
+	results, _ := resp["results"].([]any)
+	if len(results) != 1 {
+		t.Fatalf("results = %v, want 1 本", resp["results"])
+	}
+	r0, _ := results[0].(map[string]any)
+	if moved, _ := r0["moved"].(float64); int(moved) != 10 {
+		t.Fatalf("moved = %v, want 10（含滞留行全部变号）", r0["moved"])
+	}
+	// DB idx 压实后与标题序号一致（滞留行一并归位）
+	got := chapterIdxByTitle(t, 5)
+	for n := 1; n <= 10; n++ {
+		title := fmt.Sprintf("第%d章", n)
+		if got[title] != int64(n) {
+			t.Fatalf("章节 %s idx = %d, want %d（全表：%v）", title, got[title], n, got)
+		}
+	}
+	var neg int64
+	if err := queryOne(`SELECT COUNT(*) FROM "Chapter" WHERE "novelId" = 5 AND "idx" < 1`, []any{&neg}); err != nil || neg != 0 {
+		t.Fatalf("负数 idx 残留 %d（err=%v）", neg, err)
+	}
+	// txt 内容跟随新 idx；滞留行无文件 → 位置 10 读不到属预期
+	for n := 1; n <= 9; n++ {
+		want := "body" + itoa(n)
+		body, err := readChapterFromTxt(5, n)
+		if err != nil || body != want {
+			t.Fatalf("txt 位置 %d = (%q,%v), want %q", n, body, err, want)
+		}
+	}
+	if _, err := readChapterFromTxt(5, 10); !errors.Is(err, errTxtNotFound) {
+		t.Fatalf("位置 10（滞留行无文件）应 errTxtNotFound，got %v", err)
 	}
 }
 
