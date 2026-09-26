@@ -327,7 +327,9 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		var buf strings.Builder
 		if err := t.ExecuteTemplate(&buf, "layout", data); err == nil {
-			_, _ = w.Write([]byte(buf.String()))
+			// Task 45-a: 渲染层对抗后置处理（实现唯一权威 obfuscate.go）——页面结构混淆/
+			// 关键词转码/干扰注入，视觉与交互零变化；admin 后台页跳过，panic 兜底回原文
+			_, _ = w.Write([]byte(obfMaybe(buf.String(), page)))
 			return
 		} else if th == theme {
 			log.Printf("[web] 模板渲染失败 %s/%s: %v（降级 _fallback）", theme, page, err)

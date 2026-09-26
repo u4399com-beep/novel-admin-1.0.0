@@ -1,11 +1,21 @@
 {{define "content"}}
 <div class="fb-panel">
   <h2 class="fb-h2">{{.Novel.title}} · 全部章节 <span style="font-size:13px;color:#737373;font-weight:400">共 {{len .Chapters}} 章</span></h2>
+  {{$vols := .Volumes}}{{if $vols}}{{/* Task 45-b: 有分卷时按卷分块渲染（渲染序=平铺 idx 序插卷头）；无卷回退平铺零变化 */}}{{range $vol := $vols}}
+  <h3 style="margin:14px 0 4px;font-size:14px;border-bottom:1px solid #e5e5e5;padding-bottom:4px">{{if $vol.name}}{{$vol.name}}{{else}}未分卷{{end}} <small style="color:#999;font-weight:400">({{len $vol.chapters}} 章)</small></h3>
+  <ul class="fb-rank">
+    {{range $vol.chapters}}<li style="display:flex;justify-content:space-between;align-items:center">
+      <a class="fb-novel-title" href="{{chapterURL .id}}">{{.title}}</a>
+      {{if .wordCount}}<span class="fb-novel-meta">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
+    </li>{{end}}
+  </ul>
+  {{end}}{{else}}
   <ul class="fb-rank">
     {{range .Chapters}}<li style="display:flex;justify-content:space-between;align-items:center">
       <a class="fb-novel-title" href="{{chapterURL .id}}">{{.title}}</a>
       {{if .wordCount}}<span class="fb-novel-meta">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
     </li>{{else}}<li>暂无章节</li>{{end}}
   </ul>
+  {{end}}
 </div>
 {{end}}

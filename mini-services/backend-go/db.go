@@ -106,6 +106,17 @@ func getDB() (*sql.DB, error) {
 		if err := backfillNovelIntroClean(db); err != nil {
 			log.Printf("[db] 简介噪声清洗回填失败（存量简介噪声暂存，重启重试）: %v", err)
 		}
+		// Task 45-b: Chapter.volume 分卷列（存量库幂等加列，Task 40 kwNorm/seed 先例）
+		if err := ensureColumn(db, "Chapter", "volume",
+			`ALTER TABLE "Chapter" ADD COLUMN "volume" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] Chapter.volume 加列失败（分卷分组渲染降级为平铺，功能不受影响）: %v", err)
+		}
+		// Task 45-b: 存量章节「第X卷」前缀回填（幂等：只处理命中行且与入库链路
+		// detectVolume 同口径，回填后存量标题与新采集标题归一一致——Phase 2 续传按
+		// 标题匹配空骨架，双侧口径必须一致）。失败不阻断启动，重启重试
+		if err := backfillChapterVolume(db); err != nil {
+			log.Printf("[db] Chapter.volume 存量回填失败（存量卷前缀标题暂存，重启重试）: %v", err)
+		}
 		// 存量正文迁移（幂等、分批 500 行防长锁；空库秒级完成，存量 3.5 万章首次启动秒级~十秒级）
 		if err := migrateChapterContentSplit(db); err != nil {
 			log.Printf("[db] Chapter 存量正文迁移 ChapterContent 失败（存量正文仍可经 COALESCE 读取）: %v", err)
@@ -186,6 +197,51 @@ func migrateChapterContentSplit(db *sql.DB) error {
 		}
 	}
 	return fmt.Errorf("迁移循环超出硬上限（异常数据形态）")
+}
+
+// backfillChapterVolume 存量章节分卷回填（Task 45-b，幂等）：
+// 全扫 title 命中「第X卷+分隔符」前缀模式的行（LIKE '第%卷%' 预滤，命中行极少）→
+// volume=卷名、title=剥前缀后的剩余标题，与入库链路 storex.go 的 detectVolume 同口径。
+// 归一双侧一致的硬约束：Phase 2 续传按标题精确匹配空骨架（worker fillRows），若存量行
+// 保留卷前缀而新采集 refs 已剥前缀，续传必然 miss 并造成重复骨架行。
+// 纯卷标题行（剥后为空，detectVolume 契约返回原标题）只记 volume 不动标题；
+// 有变化才 UPDATE（幂等零写放大）；只扫 volume=” 行（Task 40 kwNorm 回填先例）——
+// 已回填/已由入库链路识别的行不再触碰，构造上杜绝二次剥前缀。
+// ⚠ getDB once 回调内必须以传入局部 db 句柄直写（Task 30 P1 递归自锁教训，严禁经 getDB）。
+func backfillChapterVolume(db *sql.DB) error {
+	type volRow struct {
+		id    int64
+		title string
+	}
+	hits := make([]volRow, 0)
+	rows, err := db.Query(`SELECT "id", "title" FROM "Chapter" WHERE "volume" = '' AND "title" LIKE '第%卷%'`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r volRow
+		if err := rows.Scan(&r.id, &r.title); err != nil {
+			rows.Close()
+			return err
+		}
+		hits = append(hits, r)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, r := range hits {
+		vol, rest := detectVolume(r.title)
+		if vol == "" {
+			continue // 「第X卷」仅作子串出现（如「画卷/卷轴」），非前缀形态
+		}
+		if _, err := db.Exec(`UPDATE "Chapter" SET "volume" = ?, "title" = ? WHERE "id" = ?`,
+			vol, rest, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // siteSiteDDL 站群站点档案表（Task 30-a「站群模式」：一库多站按 Host 分站点渲染）。

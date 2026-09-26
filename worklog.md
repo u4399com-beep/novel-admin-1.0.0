@@ -2012,3 +2012,25 @@ Stage Summary:
 - 本轮 5 项修复（scraper P2×1+P3×1 / backend P2×2+P3×2）+2 项反反爬增强（JA3↔UA 家族对齐=指纹面最大收敛、Crawl-delay 礼貌下限=尊重源站明示节奏）
 - 可观测性增量：pSEO 种子入库失败落日志、孤儿 running 自查（悬挂类永久闭合）——「静默吞错必须可观测」纪律再落地两处
 - 死工具复活：engine-rule-test.mjs 经 backend API 零 DB 依赖可用（规则校准/排障链路恢复）
+---
+Task ID: 45
+Agent: main (Z.ai Code)
+Task: 用户 6 点指令——①公告/页顶/页脚宽度限制对齐导航 ②页面结构混淆每页唯一 ③关键词/句子转码 ④干扰+伪原创不重复 ⑤Next.js/TS 继续深化 ⑥分卷设置+乱序重排检查
+
+Work Log:
+- 【①宽度实测=已对齐】agent-browser 1440×900 实测 trxsw：页顶内层/公告内层/页脚内层/内容容器全部 left=230 right=1210（980px 精确同宽）——Task 42-a 修复在位，本轮零改动（用户感知滞后或缓存，实测定论）
+- 【②③④渲染层对抗（45-a 产物+主线收口）】obfuscate.go 584 行唯一权威：每页唯一随机注释 3-6 条（安全锚点 </head>/</body> 前）+ body 随机 data-* 指纹属性（多态源码）；关键词/句子转码=长文本段（≥12 rune）随机 20-60% 字符实体化（&#NNNN; 十进制/&#xHHHH; 十六进制混选）+ U+200B 零宽注入（仅落非 ASCII 边界，避开既有实体序列）；干扰=长文本段尾 <i style="font-size:0;position:absolute;left:-9999px" aria-hidden>（视觉零影响，弃 display:none 降反作弊信号）；安全边界全锁定：class/id 零改写（主题 JS 钩子）、<script>/<style>/<textarea> 逐字节透传、短 UI 文本零变化、panic 兜底回原文。配置 4 键入 seoConfig 白名单（obfuscateEnable/Ratio/ZeroWidth/Noise 默认全开）+10s TTL 缓存
+- 【主线修复①：obfuscate.go 注释内 Tailwind 类名 space-y-*/:last-child 的 */ 意外闭合块注释→go 解析崩】（子代理超时遗留，探针定位后改写注释）
+- 【④伪原创（pseo_gen.go）】标题/描述/关键词三变体池（8/7/4 套句式），pickPseoTpl 仅对内置默认模板启用（自定义模板原样保留、pseoDescTplDefaultAlt 孪生形态同覆盖）、lastIdx 游标相邻页强制错开
+- 【主线修复②：变体分布塌缩 P2】直用小整数 tick 作盐与 FNV 基底奇偶共振——探针实证 6 词仅 2 句式交替（(base+tick)%n 同毫秒批量下奇偶主导）；修复=keyword|tick 联合哈希雪崩^nowMillis；复测 24 词 8/8 句式全覆盖+同词跨批轮换；TestPseoVariantDistribution 固化（≥6 句式/自定义不覆盖/相邻错开）
+- 【主线修复③：obfMaybe 配置门控测试缺口】obfMaybe 读生产 TTL 缓存不可注入，测试改为 obfuscatePageHTML 层门控+生产路径视觉等价断言
+- 【⑥分卷闭环（45-b 产物）】Chapter.volume TEXT 列（schema DDL+ensureColumn 存量迁移）；storeChapter 双路径（批量 INSERT+逐条退化）detectVolume 随行入库；getDB once 幂等回填；web_data TOC 按卷分组 .Volumes 新字段（.Chapters 向后兼容）；trxsw+_fallback toc.html 分卷渲染（无卷书平铺零变化）；admin 新「章节工具」tab（选书→分卷结构表+目录体检 6 卡+去重/重排/重算按钮，books 列表行直达）；存量回填实证=0 行（3000 章抽查零卷前缀，数据本无卷，逻辑就绪待带卷源站）
+- 【⑥乱序重排检查】42-b 修复回归全绿（TestAudit*/TestResort*）；audit 端点生产实况：书 1 共 832 章/重复 0/断档 0/空骨架 25/编号乱序=是（真实数据形态）；volume 列与负数暂存区无交互冲突
+- 【⑤TS 深化】零残留复核（第 4 轮）；本轮 JS 面再收窄：engine-rule-test.mjs 已零 DB 依赖（上轮改造）；剩余唯一构建期 Node=build-web-css.mjs（Tailwind npm 包，Go 化需重写完整 Tailwind 算法，成本>>收益，留档说明）
+- 【部署+E2E】双 bin 重建热替换；生产实证：两次请求 book/1 md5 不同（POLYMORPHIC_OK）+实体化/零宽实况（&#x4f55; 等 9 处零宽）+13 chips+TOC 845 章节链+admin chapters tab 体检端点 200+console/errors 零输出；go build/vet/test -race 全量绿（含 obfuscate_test 5 用例+volume_test 6 用例+pseo 变体分布）
+
+Stage Summary:
+- 渲染层对抗三特性上线（结构每页唯一/转码/干扰+伪原创），视觉与交互零破坏经测试与生产双重锁定；变体分布塌缩缺陷的「探针→根因→修复→固化」闭环是本轮质量样板
+- 分卷功能从「detectVolume 孤岛」到「存储/回填/TOC 分组/admin 工具」全链闭环，乱序重排 42-b 修复回归在位
+- 宽度疑虑以像素实测终结（230-1210 全对齐）；TS 零残留连续四轮
+- 工程教训：子代理超时可能遗留「编译不过的中间态」（注释内 */ 崩编译+未接线游标+测试缺口三连），主线必须全量 build+探针收口后才可部署

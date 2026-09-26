@@ -62,6 +62,10 @@ CREATE TABLE IF NOT EXISTS "Chapter" (
         "novelId" INTEGER NOT NULL,
         "idx" INTEGER NOT NULL,
         "title" TEXT NOT NULL,
+        -- Task 45-b: 分卷列（''=无卷/未分组；入库链路 storex.go detectVolume 识别「第X卷+分隔符」
+        -- 前缀后落库，存量库由 db.go ensureColumn + backfillChapterVolume 幂等补齐）。
+        -- 仅加列不动既有镜像契约：其余列/约束/索引与 Prisma 历史产物逐列一致
+        "volume" TEXT NOT NULL DEFAULT '',
         "content" TEXT NOT NULL DEFAULT '',
         "wordCount" INTEGER NOT NULL DEFAULT 0,
         "createdAt" INTEGER NOT NULL DEFAULT 0,

@@ -5,13 +5,15 @@
  * 1. 顶部 tab 切换（原生 display 切换）
  * 2. fetch 封装 api()：502 后端不可达提示 + 非 2xx 读 JSON error/detail → toast
  * 3. 轻量 toast（右下角）
- * 4. 七个 tab 的全部交互：总览健康探测 / 规则 CRUD / 任务生命周期（状态机控件 +
+ * 4. 各 tab 的全部交互：总览健康探测 / 规则 CRUD / 任务生命周期（状态机控件 +
  *    行展开日志与编辑 + 10s 可见轮询）/ 书籍搜索分页删除 / 分类 CRUD+智能归并 /
+ *    章节工具（Task 45-b：分卷结构/目录体检/乱序重排/字数重算）/
  *    PSEO 搜索生成删除 / 站点设置（基础+页脚 JSON+SEO JSON+homeConfig 区块编辑器）
  *
  * XSS：所有动态拼 HTML 的用户数据必须过 escapeHtml()；静态部分由 html/template 转义。
  * 契约对照：api_scrape_rules.go / api_scrape_tasks.go / api_novels.go / api_categories.go /
- *           api_categories_merge.go / api_pseo.go / api_settings.go / api_health.go
+ *           api_categories_merge.go / api_pseo.go / api_settings.go / api_health.go /
+ *           api_chapters.go（Task 45-b: chapters/audit、chapters/volumes）+ api_noveltools.go（resort/recalc）
  */
 (function () {
   'use strict';
@@ -533,6 +535,7 @@
       '<td class="text-right whitespace-nowrap">' +
       '<button type="button" class="adm-btn-xs" data-act="novel-edit" data-id="' + escapeHtml(n.id) + '">编辑</button> ' +
       '<button type="button" class="adm-btn-xs" data-act="novel-chapters" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">章节</button> ' +
+      '<button type="button" class="adm-btn-xs" data-act="novel-chtools" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">章节工具</button> ' +
       '<button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">删除</button></td></tr>';
   }
 
@@ -1549,6 +1552,10 @@
         openNovelEdit(id);
       } else if (act === 'novel-chapters') {
         openChapters(id, btn.dataset.title || '');
+      } else if (act === 'novel-chtools') { // Task 45-b: 书籍管理 → 章节工具页签联动
+        switchTab('chapters');
+        $('#adm-chtool-novel-id').value = id;
+        loadChTools(id);
       } else if (act === 'chapter-edit') {
         openChapterEdit(id);
       } else if (act === 'modal-close') {
@@ -1668,6 +1675,145 @@
     }
   }
 
+  /* ==================== 章节工具（Task 45-b：分卷结构 / 目录体检 / 乱序重排 / 字数重算） ==================== */
+
+  var chToolsNovelId = 0;
+
+  function chToolStatCard(label, val, warn) {
+    return '<div class="adm-card !mb-0"><p class="text-[11px] text-neutral-500">' + escapeHtml(label) + '</p>' +
+      '<p class="text-lg font-bold tabular-nums' + (warn ? ' text-amber-600' : '') + '">' + escapeHtml(val) + '</p></div>';
+  }
+
+  function renderChToolVolumes(v) {
+    var tbody = $('#adm-chtool-volumes-tbody');
+    if (!tbody) return;
+    var rows = (v && v.volumes) || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="adm-empty">该书暂无分卷（全部章节未识别到「第X卷」前缀）</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(function (g) {
+        return '<tr>' +
+          '<td class="font-medium">' + (g.name ? escapeHtml(g.name) : '<span class="text-neutral-400">未分卷</span>') + '</td>' +
+          '<td class="tabular-nums">' + escapeHtml(g.chapters) + '</td>' +
+          '<td class="tabular-nums text-neutral-500">' + escapeHtml(g.firstIdx) + '</td>' +
+          '<td class="tabular-nums text-neutral-500">' + escapeHtml(g.lastIdx) + '</td></tr>';
+      }).join('');
+    }
+    var summary = $('#adm-chtool-vol-summary');
+    if (summary) summary.textContent = '共 ' + ((v && v.total) || 0) + ' 章 · ' + ((v && v.volumeCount) || 0) + ' 卷 · 未分卷 ' + ((v && v.ungrouped) || 0) + ' 章';
+  }
+
+  function renderChToolAudit(item) {
+    var box = $('#adm-chtool-audit');
+    if (!box) return;
+    if (!item) { box.innerHTML = ''; return; }
+    box.innerHTML =
+      chToolStatCard('章节总数', item.chapters) +
+      chToolStatCard('重复标题组', item.dupGroups, item.dupGroups > 0) +
+      chToolStatCard('重复行', item.dupRows, item.dupRows > 0) +
+      chToolStatCard('idx 断档', item.idxGaps, (item.idxGaps || 0) > 0) +
+      chToolStatCard('空骨架', item.emptyRows, item.emptyRows > 0) +
+      chToolStatCard('编号乱序', item.disordered ? '是' : '否', item.disordered);
+    var samples = item.disorderSamples || [];
+    var sampleBox = $('#adm-chtool-audit-samples');
+    if (sampleBox) sampleBox.textContent = samples.length ? ('乱序样例：' + samples.join('；')) : '';
+  }
+
+  async function runChToolAudit() {
+    var res = await api('GET', '/api/chapters/audit?novelId=' + chToolsNovelId);
+    renderChToolAudit(res && res.item);
+  }
+
+  /** 加载单书分卷结构 + 目录体检（体检失败不阻断分卷展示；错误 message 原样 toast） */
+  async function loadChTools(novelId) {
+    chToolsNovelId = novelId;
+    var body = $('#adm-chtool-body');
+    if (body) body.classList.remove('hidden');
+    var label = $('#adm-chtool-novel');
+    if (label) label.textContent = '加载中…';
+    $('#adm-chtool-volumes-tbody').innerHTML = '<tr><td colspan="4" class="adm-empty">加载中…</td></tr>';
+    renderChToolAudit(null);
+    try {
+      var v = await api('GET', '/api/chapters/volumes?novelId=' + novelId);
+      if (label) label.textContent = '#' + novelId + '《' + (v.title || '') + '》';
+      renderChToolVolumes(v);
+    } catch (e) {
+      if (label) label.textContent = '';
+      $('#adm-chtool-volumes-tbody').innerHTML = '<tr><td colspan="4" class="adm-empty">加载失败</td></tr>';
+      handleErr(e);
+      return;
+    }
+    try { await runChToolAudit(); } catch (e) { handleErr(e); }
+  }
+
+  function initChTools() {
+    var loadBtn = $('#adm-chtool-load');
+    if (loadBtn) loadBtn.addEventListener('click', withBusy(loadBtn, async function () {
+      var id = parseInt($('#adm-chtool-novel-id').value, 10);
+      if (!id || id <= 0) { toast('请输入书籍 ID（正整数）', 'err'); return; }
+      await loadChTools(id);
+    }));
+
+    var auditRun = $('#adm-chtool-audit-run');
+    if (auditRun) auditRun.addEventListener('click', withBusy(auditRun, async function () {
+      if (!chToolsNovelId) return toast('请先加载书籍', 'err');
+      await runChToolAudit();
+      toast('目录体检完成', 'ok');
+    }));
+
+    var dedupeBtn = $('#adm-chtool-dedupe');
+    if (dedupeBtn) dedupeBtn.addEventListener('click', withBusy(dedupeBtn, async function () {
+      if (!chToolsNovelId) return toast('请先加载书籍', 'err');
+      if (!window.confirm('确认对本书执行同名去重？每名保留字数最大的行（并列取 idx 小），删除行不可恢复。')) return;
+      var res = await api('POST', '/api/chapters/audit', { action: 'dedupe', novelId: chToolsNovelId });
+      toast('去重完成：删除 ' + res.removed + ' 行、压实 ' + res.moved + ' 行', 'ok');
+      renderChToolAudit(res.audit);
+    }));
+
+    var reindexBtn = $('#adm-chtool-reindex');
+    if (reindexBtn) reindexBtn.addEventListener('click', withBusy(reindexBtn, async function () {
+      if (!chToolsNovelId) return toast('请先加载书籍', 'err');
+      if (!window.confirm('确认按「第N章」编号重排并压实 idx 1..n？未编号章节将置后（原相对顺序）。')) return;
+      var res = await api('POST', '/api/chapters/audit', { action: 'reindex', novelId: chToolsNovelId });
+      toast('重排完成：压实 ' + res.moved + ' 行（两阶段事务）', 'ok');
+      renderChToolAudit(res.audit);
+      // 重排改写 idx → 分卷结构表随之刷新
+      try { renderChToolVolumes(await api('GET', '/api/chapters/volumes?novelId=' + chToolsNovelId)); } catch (e2) { /* 刷新失败不阻断 */ }
+    }));
+
+    var resortBtn = $('#adm-chtool-resort');
+    if (resortBtn) resortBtn.addEventListener('click', withBusy(resortBtn, async function () {
+      if (!chToolsNovelId) return toast('请先加载书籍', 'err');
+      var msgBox = $('#adm-chtool-resort-msg');
+      if (msgBox) msgBox.textContent = '执行中…';
+      try {
+        var res = await api('POST', '/api/novels/resort-chapters', { novelId: chToolsNovelId });
+        var rows = (res && res.results) || [];
+        var line = rows.length
+          ? ('《' + rows[0].title + '》已重排，移动 ' + rows[0].moved + ' 章')
+          : '本书未被判定为乱序（序号齐全或编号章节不足 8 章），无需重排';
+        if (msgBox) msgBox.textContent = '扫描 ' + res.scanned + ' 本候选 · ' + line;
+        toast('乱序重排完成', 'ok');
+      } catch (e) {
+        if (msgBox) msgBox.textContent = e.message; // 409 守卫等服务端 message 原样展示
+        handleErr(e);
+      }
+    }));
+
+    var recalcBtn = $('#adm-chtool-recalc');
+    if (recalcBtn) recalcBtn.addEventListener('click', withBusy(recalcBtn, async function () {
+      var msgBox = $('#adm-chtool-recalc-msg');
+      try {
+        var res = await api('POST', '/api/novels/recalc-words');
+        if (msgBox) msgBox.textContent = '全站 ' + res.books + ' 本 · 不符 ' + res.mismatched + ' 本 · 已修正 ' + res.fixed + ' 本';
+        toast('字数重算完成', 'ok');
+      } catch (e) {
+        if (msgBox) msgBox.textContent = e.message;
+        handleErr(e);
+      }
+    }));
+  }
+
   /* ==================== 启动 ==================== */
 
   function init() {
@@ -1677,6 +1823,7 @@
     initSettings();
     initActions();
     initStaticButtons(); // Task 36-b: 死按钮接线（规则表单/添加分类/归并建议/PSEO 生成）
+    initChTools(); // Task 45-b: 章节工具页签（分卷结构/目录体检/乱序重排/字数重算）
 
     checkHealth();
     setInterval(checkHealth, 30000);

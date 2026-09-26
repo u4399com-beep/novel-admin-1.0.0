@@ -24,7 +24,9 @@ import (
 	"database/sql"
 	"log"
 	"math"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode"
 )
 
@@ -372,6 +374,111 @@ func matchNovels(keyword string) ([]map[string]any, error) {
 	return novels, nil
 }
 
+// ==================== pSEO 文本句式变体（Task 45-a 伪原创） ====================
+//
+// 聚合页为程序生成内容，默认模板下全部页面共用同一句式骨架（「{keyword}小说推荐_关于
+// {keyword}的小说 - {siteName}」× N 页），属典型同质化信号。句式变体池让同类页面文本
+// 结构互不相同（伪原创），同时保留关键词与站点信息（SEO 语义不变）。
+//
+// 选择机制：base = FNV-1a(keyword)，salt = 全局单调 tick + 当前毫秒 ——
+//   - 同词不同次生成：tick/时间不同 → 变体必然轮换；
+//   - 同批相邻页：lastIdx 错位强制相邻页变体下标不同（双保险）。
+// 仅当后台配置仍为内置默认模板时启用变体（pool[0] 即内置默认句式；pseoDescTplDefaultAlt
+// 为 admin TDK 预设保存的直引号孪生形态，同视为默认）；用户自定义模板原样保留，绝不覆盖
+// 后台配置意图。pageData 结构契约（novelIds/title/description/keywords）零变更。
+
+var pseoTitleVariants = []string{
+	defaultSeo["pseoTitle"], // 与出厂默认一致（保底句式保留在池中）
+	"{keyword}相关小说大全_{keyword}热门小说推荐 - {siteName}",
+	"精选{keyword}题材小说合集_{count}本热门作品 - {siteName}",
+	"{keyword}小说哪里看？{siteName}收录{count}本热门作品免费阅读",
+	"{keyword}小说排行榜_必看{keyword}小说推荐 - {siteName}",
+	"关于{keyword}的小说免费阅读_{siteName}全本精选",
+	"{keyword}小说免费在线阅读_今日精选{count}本 - {siteName}",
+	"{keyword}完结小说大全_{siteName}热门{keyword}作品集",
+}
+
+var pseoDescVariants = []string{
+	defaultSeo["pseoDescription"], // 与出厂默认一致
+	"关于{keyword}的小说大全：{siteName}共收录{count}本相关作品，《{novelTitle}》等热门佳作免费在线阅读，每日更新。",
+	"本站汇集{count}本{keyword}题材小说，《{novelTitle}》领衔，{keyword}相关作品持续更新，欢迎免费阅读。",
+	"{keyword}小说推荐专区——{siteName}精选{count}部相关小说，涵盖热门完结与连载新作，全本免费畅读。",
+	"想找{keyword}相关的小说？{siteName}聚合{count}本人气作品，《{novelTitle}》等佳作随时在线阅读。",
+	"{siteName}整理{keyword}主题书单：{count}本高分小说一键直达，支持全本免费在线阅读。",
+	"精选{keyword}相关小说{count}本，《{novelTitle}》等热门作品收录其中，全站免费在线阅读。",
+	"{siteName}为书友推荐{keyword}题材佳作{count}本，《{novelTitle}》领衔热榜，免费在线阅读。",
+}
+
+var pseoKeywordsVariants = []string{
+	defaultSeo["pseoKeywords"], // 与出厂默认一致
+	"{keyword},{keyword}小说大全,{keyword}免费阅读",
+	"{keyword}小说,{keyword}推荐,{keyword}排行榜",
+	"{keyword}小说推荐,{keyword}热门小说,{keyword}合集",
+}
+
+// pseoDescTplDefaultAlt admin「TDK 预设」保存的描述模板（直引号形态，与出厂默认弯引号
+// 孪生）——命中同样启用变体池，避免预设保存后伪原创失效
+const pseoDescTplDefaultAlt = `{siteName}为您精选与"{keyword}"相关的小说合集，包含 {count} 本热门作品，在线免费阅读。`
+
+// pseoVariantTick 全局单调计数（原子）：同批相邻页 tick 连续 → 变体必然错开
+var pseoVariantTick uint64
+
+// fnv1a64 FNV-1a 64 位哈希（keyword → 稳定基底，跨重启一致）
+func fnv1a64(s string) uint64 {
+	h := uint64(14695981039346656037)
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	return h
+}
+
+// pseoVariantPick 纯函数：(base + salt) mod n —— 测试可注入盐值确定性验证
+func pseoVariantPick(base, salt uint64, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return int((base + salt) % uint64(n))
+}
+
+// pseoVariantIndex 关键词变体下标。盐 = 关键词|tick 联合哈希（FNV 雪崩）^ 当前毫秒：
+// 直用小整数 tick 作盐会与基底哈希的奇偶分量共振（(base+tick)%n 在同毫秒批量生成时
+// 塌缩为 2 句式交替——生产实证），联合哈希充分打散后同批相邻页错开、同词跨批次轮换。
+func pseoVariantIndex(keyword string, n int) int {
+	tick := atomic.AddUint64(&pseoVariantTick, 1)
+	salt := fnv1a64(keyword+"|"+strconv.FormatUint(tick, 10)) ^ uint64(nowMillis())
+	return pseoVariantPick(fnv1a64(keyword), salt, n)
+}
+
+// pseoTplIsDefault 配置模板是否仍为内置默认形态（pool[0] 或附加孪生形态）
+func pseoTplIsDefault(configured string, pool []string, alts []string) bool {
+	if configured == pool[0] {
+		return true
+	}
+	for _, a := range alts {
+		if configured == a {
+			return true
+		}
+	}
+	return false
+}
+
+// pickPseoTpl 配置模板为内置默认 → 从变体池按 keyword 选取（伪原创）；自定义模板原样保留。
+// lastIdx 记录同批上一页下标，强制相邻页错开（可 nil）。
+func pickPseoTpl(configured string, pool []string, alts []string, keyword string, lastIdx *int) string {
+	if !pseoTplIsDefault(configured, pool, alts) {
+		return configured
+	}
+	idx := pseoVariantIndex(keyword, len(pool))
+	if lastIdx != nil && idx == *lastIdx {
+		idx = (idx + 1) % len(pool)
+	}
+	if lastIdx != nil {
+		*lastIdx = idx
+	}
+	return pool[idx]
+}
+
 // generatePendingPages 为 pending 关键词生成 PSEO 聚合页数据（自动 TDK 模板），返回生成数
 func generatePendingPages(limit int) (int, error) {
 	take := limit
@@ -411,6 +518,8 @@ func generatePendingPages(limit int) (int, error) {
 
 	generated := 0
 	now := nowMillis()
+	// Task 45-a: 句式变体轮转游标（同批相邻页变体下标强制错开）
+	lastTitleIdx, lastDescIdx, lastKwIdx := -1, -1, -1
 	for _, row := range pending {
 		novels, err := matchNovels(row.keyword)
 		if err != nil {
@@ -436,10 +545,12 @@ func generatePendingPages(limit int) (int, error) {
 			"author":     author,
 		}
 		pageData := map[string]any{
+			// Task 45-a 伪原创：内置默认模板时从变体池按 keyword 选取（相邻页游标错开），
+			// 自定义模板原样保留（pickPseoTpl 内部判定）
 			"novelIds":    novelIDs,
-			"title":       renderTpl(seoTitle, vars),
-			"description": renderTpl(seoDesc, vars),
-			"keywords":    renderTpl(seoKeywords, vars),
+			"title":       renderTpl(pickPseoTpl(seoTitle, pseoTitleVariants, nil, row.keyword, &lastTitleIdx), vars),
+			"description": renderTpl(pickPseoTpl(seoDesc, pseoDescVariants, []string{pseoDescTplDefaultAlt}, row.keyword, &lastDescIdx), vars),
+			"keywords":    renderTpl(pickPseoTpl(seoKeywords, pseoKeywordsVariants, nil, row.keyword, &lastKwIdx), vars),
 		}
 		if _, err := exec(
 			`UPDATE "PseoKeyword" SET "status" = 'generated', "pageData" = ?, "updatedAt" = ? WHERE "id" = ?`,

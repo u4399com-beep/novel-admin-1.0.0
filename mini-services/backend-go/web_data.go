@@ -526,16 +526,19 @@ func handleWebToc(w http.ResponseWriter, r *http.Request, ps map[string]string) 
 	data["Novel"] = novel
 	chapters := []map[string]any{}
 	_ = queryList(
-		`SELECT "id","idx","title","wordCount" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`,
+		`SELECT "id","idx","title","volume","wordCount" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`,
 		func(rows *sql.Rows) error {
 			var id, idx, wc int64
-			var t string
-			if err := rows.Scan(&id, &idx, &t, &wc); err == nil {
-				chapters = append(chapters, map[string]any{"id": id, "idx": idx, "title": t, "wordCount": wc})
+			var t, vol string
+			if err := rows.Scan(&id, &idx, &t, &vol, &wc); err == nil {
+				chapters = append(chapters, map[string]any{"id": id, "idx": idx, "title": t, "volume": vol, "wordCount": wc})
 			}
 			return nil
 		}, nid)
+	// Task 45-b: .Chapters 原样保留（向后兼容——11 主题模板未全适配分卷渲染，未适配主题
+	// 仍走平铺分支零变化）；.Volumes 新增分卷分组（无卷书为空切片，模板判空回退平铺）
 	data["Chapters"] = chapters
+	data["Volumes"] = groupChaptersByVolume(chapters)
 	title, _ := novel["title"].(string)
 	s := data["Site"].(map[string]any)
 	siteName, _ := s["siteName"].(string)
@@ -544,6 +547,45 @@ func handleWebToc(w http.ResponseWriter, r *http.Request, ps map[string]string) 
 	applyWebTDK(data, "tocTitle", "tocDescription", map[string]string{"novelTitle": title},
 		title+" 全部章节目录 - "+siteName, "")
 	renderPage(w, r, "toc", data)
+}
+
+// groupChaptersByVolume 目录分卷分组（Task 45-b，前台 TOC 与 admin 分卷结构共用口径）：
+// 按 idx 升序的「连续同卷运行段」切组——渲染序恰为平铺序插卷头，阅读顺序零变化；
+// 同卷名不连续（劣质数据）自然拆为多块，不做归并。
+//   - 组 name=volume 列值；name=""（未分卷章）只在书内存在至少一个分卷时作为独立块出现
+//     （模板负责展示名「未分卷」）
+//   - 全书无卷（分卷列全空，绝大多数书）→ 返回空切片，模板判空回退平铺渲染零变化
+func groupChaptersByVolume(chapters []map[string]any) []map[string]any {
+	hasVol := false
+	for _, c := range chapters {
+		if v, _ := c["volume"].(string); v != "" {
+			hasVol = true
+			break
+		}
+	}
+	if !hasVol {
+		return []map[string]any{}
+	}
+	vols := make([]map[string]any, 0)
+	var curName string
+	var cur []map[string]any
+	flush := func() {
+		if cur != nil {
+			vols = append(vols, map[string]any{"name": curName, "chapters": cur})
+			cur = nil
+		}
+	}
+	for _, c := range chapters {
+		v, _ := c["volume"].(string)
+		if cur == nil || v != curName {
+			flush()
+			curName = v
+			cur = make([]map[string]any, 0, 8)
+		}
+		cur = append(cur, c)
+	}
+	flush()
+	return vols
 }
 
 // ---------- 阅读页 ----------

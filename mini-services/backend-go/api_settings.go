@@ -75,6 +75,9 @@ var seoStringKeys = []string{
 	"pseoTitle", "pseoDescription", "pseoKeywords",
 }
 
+// obfuscateEncodeRatioDefault 对抗模式实体化比例默认值（Task 45-a，落在任务要求的 20%-60% 区间）
+const obfuscateEncodeRatioDefault = 40
+
 var tplVarRe = regexp.MustCompile(`\{(\w+)\}`)
 
 // renderTpl 模板变量替换：命中替换，未命中 {xxx} → 空串（与 TS renderTpl 一致）
@@ -89,12 +92,20 @@ func renderTpl(tpl string, vars map[string]string) string {
 }
 
 // sanitizeSeoConfig TDK 白名单清洗：非字符串回落默认并 1000 截断；pseo 对象原样透传；未知键丢弃
+// Task 45-a: 新增「对抗模式」组 4 键（obfuscateEnable/obfuscateEncodeRatio/obfuscateZeroWidth/
+// obfuscateNoise，默认全开——用户明确要求生效）：与 TDK 同存 seoConfig JSON，GET "seo" 透出、
+// PATCH seo 合并写回（不带键=保持现值）；admin 表单不展示（admin.js 只提交白名单 TDK 键，
+// 本组键经「读旧合并写回」天然保持），配置走 API+文档说明。
 func sanitizeSeoConfig(raw any) map[string]any {
 	out := map[string]any{}
 	for _, k := range seoStringKeys {
 		out[k] = defaultSeo[k]
 	}
 	out["autoFromContent"] = true
+	out["obfuscateEnable"] = true
+	out["obfuscateEncodeRatio"] = obfuscateEncodeRatioDefault
+	out["obfuscateZeroWidth"] = true
+	out["obfuscateNoise"] = true
 	r, ok := raw.(map[string]any)
 	if !ok {
 		return out
@@ -106,6 +117,19 @@ func sanitizeSeoConfig(raw any) map[string]any {
 	}
 	if b, ok := r["autoFromContent"].(bool); ok {
 		out["autoFromContent"] = b
+	}
+	// 对抗模式键清洗（类型守卫 + 比例钳制 0-100；bool 键非 bool 丢弃回落默认）
+	if b, ok := r["obfuscateEnable"].(bool); ok {
+		out["obfuscateEnable"] = b
+	}
+	if f, ok := r["obfuscateEncodeRatio"].(float64); ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+		out["obfuscateEncodeRatio"] = clampInt(int(f), 0, 100)
+	}
+	if b, ok := r["obfuscateZeroWidth"].(bool); ok {
+		out["obfuscateZeroWidth"] = b
+	}
+	if b, ok := r["obfuscateNoise"].(bool); ok {
+		out["obfuscateNoise"] = b
 	}
 	if p, ok := r["pseo"].(map[string]any); ok {
 		out["pseo"] = p

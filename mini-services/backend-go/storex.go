@@ -418,6 +418,9 @@ type ChapterRow struct {
 	Title     string
 	Content   string
 	WordCount int
+	// Volume 分卷名（Task 45-b）：调用方已在原始标题上识别时直接传入（骨架链路）；
+	// 留空则 storeChapter 内对标题调 detectVolume 兜底识别（直连调用方零改造）
+	Volume string
 }
 
 // MAX_IDX_BUMPS 首次尝试外最多顺延 4 次（共 5 次尝试）
@@ -431,11 +434,19 @@ const MAX_IDX_BUMPS = 4
 // 非空正文写入 ChapterContent（chapterId=Chapter.id 主键，idx 重排/顺延不致正文错位）；
 // cc 写败则回滚刚建的 Chapter 行（防出现「已采但正文丢失」的僵尸行），错误原样上抛由
 // 调用方计入失败/顺延重试。
+// Task 45-b: 分卷落库 —— row.Volume 非空直接采用（骨架链路已在原始标题上识别）；
+// 留空则对 row.Title 调 detectVolume 兜底（直连调用方零改造）。识别契约：必须在任何
+// 前缀剥离之前的原始标题上做（detectVolume 自身即剥卷前缀者，幂等：剥后二次识别不再
+// 命中）；vol 非空才存，rest 作 title（纯卷标题行 rest==原标题，标题原样保留防空题）。
 func storeChapter(run *Run, novelID, idx int, row ChapterRow) (usedIdx int, ok bool, message string) {
+	vol, chTitle := row.Volume, row.Title
+	if vol == "" {
+		vol, chTitle = detectVolume(row.Title)
+	}
 	attempt := func(idxVal int) error {
 		chID, err := execRetryReturningID(
-			"INSERT INTO Chapter (novelId, idx, title, content, wordCount, createdAt) VALUES (?,?,?,'',?,?)",
-			novelID, idxVal, row.Title, row.WordCount, nowMillis())
+			"INSERT INTO Chapter (novelId, idx, title, volume, content, wordCount, createdAt) VALUES (?,?,?,?, '',?,?)",
+			novelID, idxVal, chTitle, vol, row.WordCount, nowMillis())
 		if err != nil {
 			return err
 		}
@@ -538,6 +549,8 @@ func lockNovelSkeleton(novelID int) func() {
 // - 全新标题 → 建骨架（content=”、wordCount=0），title 为空用「第{idx}章」占位
 // - 同名但 wordCount=0（历史中断遗留的空骨架） → 不重建，其 title/URL 计入 fillRows 续传
 // - 同名且 wordCount>0 → 跳过
+// Task 45-b: refs 原始 TOC 标题先经 detectVolume 识别分卷（vol 非空时 rest 作归一标题），
+// volume 随行入库（批量多值 INSERT 与逐条退化路径双覆盖）；fillRows 携带归一后标题。
 // 并发同书建骨架撞 (novelId,idx) 唯一约束时退化为逐条顺延重试（复用 storeChapter）；
 // 非唯一冲突错误返回 error（TS 语义为向上抛 → 任务按 failed 收尾）。
 func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) (SkeletonOutcome, error) {
@@ -545,11 +558,20 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 	unlock := lockNovelSkeleton(novelID)
 	defer unlock()
 
-	// 批内按标题去重（同书同名章只保留首个 URL；保持首次出现顺序——idx 分配与 TS Map 序一致）
+	// 批内按标题去重（同书同名章只保留首个 URL；保持首次出现顺序——idx 分配与 TS Map 序一致）。
+	// Task 45-b: 分卷识别在原始 TOC 标题上先行（必须在任何前缀剥离之前；detectVolume 幂等：
+	// 剥前缀后二次识别不再命中）——vol 非空时 rest 作归一标题参与去重/入库/续传（fillRows
+	// 标题与 DB 行标题双侧一致，Phase 2 按标题匹配空骨架才不 miss）；纯卷标题行 rest==原标题
+	// 原样保留。存量库旧前缀标题由 db.go backfillChapterVolume 同口径归一，续传不受影响
 	var order []string
 	urlByTitle := map[string]string{}
+	volByTitle := map[string]string{}
 	for _, r := range refs {
 		t := trimSpaceStr(r.Title)
+		if v, rest := detectVolume(t); v != "" {
+			volByTitle[rest] = v
+			t = rest
+		}
 		if _, ok := urlByTitle[t]; !ok {
 			urlByTitle[t] = r.URL
 			order = append(order, t)
@@ -612,9 +634,10 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 		idx = int(maxIdx.Int64) + 1
 	}
 	type skelRow struct {
-		idx   int
-		title string
-		url   string
+		idx    int
+		title  string
+		volume string
+		url    string
 	}
 	data := make([]skelRow, 0, len(fresh))
 	for _, r := range fresh {
@@ -622,7 +645,7 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 		if t == "" {
 			t = "第" + itoa(idx) + "章"
 		}
-		data = append(data, skelRow{idx: idx, title: t, url: r.URL})
+		data = append(data, skelRow{idx: idx, title: t, volume: volByTitle[t], url: r.URL})
 		idx++
 	}
 
@@ -633,14 +656,14 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 		end := min(i+skeletonChunk, len(data))
 		chunk := data[i:end]
 		var sb strings.Builder
-		sb.WriteString("INSERT INTO Chapter (novelId, idx, title, content, wordCount, createdAt) VALUES ")
-		args := make([]any, 0, len(chunk)*4)
+		sb.WriteString("INSERT INTO Chapter (novelId, idx, title, volume, content, wordCount, createdAt) VALUES ")
+		args := make([]any, 0, len(chunk)*5)
 		for j, r := range chunk {
 			if j > 0 {
 				sb.WriteByte(',')
 			}
-			sb.WriteString("(?,?,?,'',0,?)")
-			args = append(args, novelID, r.idx, r.title, nowMillis())
+			sb.WriteString("(?,?,?,?, '',0,?)")
+			args = append(args, novelID, r.idx, r.title, r.volume, nowMillis())
 		}
 		res, err := execRetry(sb.String(), args...)
 		if err != nil {
@@ -674,7 +697,7 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 			fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
 			continue
 		}
-		_, ok, msg := storeChapter(run, novelID, row.idx, ChapterRow{Title: row.title, Content: "", WordCount: 0})
+		_, ok, msg := storeChapter(run, novelID, row.idx, ChapterRow{Title: row.title, Volume: row.volume, Content: "", WordCount: 0})
 		if ok {
 			okStored++
 			fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})

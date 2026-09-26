@@ -38,6 +38,8 @@ func init() {
 	register("POST", "/api/chapters/clean-all", handleChapterCleanAllPost)
 	register("GET", "/api/chapters/audit", handleChapterAuditGet)
 	register("POST", "/api/chapters/audit", handleChapterAuditPost)
+	// Task 45-b: 分卷结构只读端点（admin「章节工具」面板；volume 列分组与前台 TOC 同口径）
+	register("GET", "/api/chapters/volumes", handleChapterVolumesGet)
 }
 
 // handleChapterByID /api/chapters/{id} 方法分发（GET/PUT/DELETE，HEAD 走 GET）
@@ -943,5 +945,77 @@ func handleChapterAuditPost(w http.ResponseWriter, r *http.Request, _ map[string
 		"removed": removed,
 		"moved":   moved,
 		"audit":   after,
+	})
+}
+
+// ==================== GET /api/chapters/volumes（Task 45-b 分卷结构只读端点） ====================
+
+// handleChapterVolumesGet 单书分卷结构（admin「章节工具」面板数据源）：
+// GET /api/chapters/volumes?novelId=N →
+//
+//	{ novelId, title, total, volumeCount, ungrouped,
+//	  volumes: [{name, chapters, firstIdx, lastIdx}] }
+//
+// 分组复用 groupChaptersByVolume（web_data.go，与前台 TOC 渲染同口径：idx 升序连续同卷
+// 运行段切组，name="" 为未分卷块）。路由风格与 handleChapterAuditGet 一致（jsParseFloat
+// 校验 novelId、404 书不存在、500 带首行错误）。
+func handleChapterVolumesGet(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	novelIdParam := r.URL.Query().Get("novelId")
+	f, ok := jsParseFloat(novelIdParam)
+	if !ok || !numIsInt(f) || f <= 0 {
+		writeJSON(w, 400, map[string]string{"error": "novelId 非法"})
+		return
+	}
+	novelId := int64(f)
+	var title string
+	if err := queryOne(`SELECT "title" FROM "Novel" WHERE "id" = ?`, []any{&title}, novelId); err != nil {
+		if isNoRows(err) {
+			writeJSON(w, 404, map[string]string{"error": "书籍不存在"})
+			return
+		}
+		writeJSON(w, 500, map[string]string{"error": "分卷结构读取失败", "detail": firstLineErr(err)})
+		return
+	}
+	chapters := make([]map[string]any, 0)
+	if err := queryList(`SELECT "idx", "title", "volume" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`,
+		func(rs *sql.Rows) error {
+			var idx int64
+			var t, vol string
+			if err := rs.Scan(&idx, &t, &vol); err != nil {
+				return err
+			}
+			chapters = append(chapters, map[string]any{"idx": idx, "title": t, "volume": vol})
+			return nil
+		}, novelId); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "分卷结构读取失败", "detail": firstLineErr(err)})
+		return
+	}
+	groups := groupChaptersByVolume(chapters)
+	volumes := make([]map[string]any, 0, len(groups))
+	volumeCount, ungrouped := 0, 0
+	for _, g := range groups {
+		name, _ := g["name"].(string)
+		chs, _ := g["chapters"].([]map[string]any)
+		firstIdx, _ := chs[0]["idx"].(int64)
+		lastIdx, _ := chs[len(chs)-1]["idx"].(int64)
+		if name == "" {
+			ungrouped += len(chs)
+		} else {
+			volumeCount++
+		}
+		volumes = append(volumes, map[string]any{
+			"name": name, "chapters": len(chs), "firstIdx": firstIdx, "lastIdx": lastIdx,
+		})
+	}
+	if len(groups) == 0 {
+		ungrouped = len(chapters) // 全书无卷：groups 为空，未分组=全部章节
+	}
+	writeJSON(w, 200, map[string]any{
+		"novelId":     novelId,
+		"title":       title,
+		"total":       len(chapters),
+		"volumeCount": volumeCount,
+		"ungrouped":   ungrouped,
+		"volumes":     volumes,
 	})
 }

@@ -157,3 +157,30 @@ func TestBackfillPseoKeywordNorm(t *testing.T) {
 		t.Fatalf("backfill idempotent: %v", err)
 	}
 }
+
+// TestPseoVariantDistribution 锁定 Task 45-a 伪原创变体分布：
+// 小整数 tick 盐与 FNV 基底奇偶共振曾致同毫秒批量生成塌缩为 2 句式交替（生产探针实证），
+// 联合哈希雪崩后 24 词必须覆盖 ≥6 种句式，且同词跨批次（tick 推进）必然轮换。
+func TestPseoVariantDistribution(t *testing.T) {
+	configured := defaultSeo["pseoTitle"]
+	seen := map[string]bool{}
+	for i := 0; i < 24; i++ {
+		got := pickPseoTpl(configured, pseoTitleVariants, nil, "分布测试词"+itoa(i)+"号", nil)
+		seen[got] = true
+	}
+	if len(seen) < 6 {
+		t.Fatalf("24 词仅覆盖 %d 种句式（池 %d），分布塌缩", len(seen), len(pseoTitleVariants))
+	}
+	// 自定义模板不被变体池覆盖
+	custom := "自定义句式_{keyword}"
+	if got := pickPseoTpl(custom, pseoTitleVariants, nil, "任意词", nil); got != custom {
+		t.Fatalf("自定义模板被改写: %q", got)
+	}
+	// 相邻页错开（lastIdx 游标）
+	last := -1
+	a := pickPseoTpl(configured, pseoTitleVariants, nil, "相邻词甲", &last)
+	b := pickPseoTpl(configured, pseoTitleVariants, nil, "相邻词乙", &last)
+	if a == b && len(pseoTitleVariants) > 1 {
+		t.Fatalf("相邻页句式未错开: %q", a)
+	}
+}
