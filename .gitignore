@@ -31,3 +31,9 @@ db/custom.db-wal
 public/covers/
 download/novels/
 upload/
+
+# go build artifacts (目录同名二进制与 .bin 产物不进仓库)
+mini-services/backend-go/backend-go
+mini-services/backend-go/backend-go.bin
+mini-services/scraper-go/scraper-go
+mini-services/scraper-go/scraper-go.bin

@@ -14,6 +14,9 @@
  *  6. 「【书友群：QQ号】」推广尾 → 截断（含截断后尾部孤立开括号剥除）
  *  7. 整条 SEO 元信息样板（「XX免费在线阅读，作者：…，字数：…万字，章节：N章。」）
  *     → 全清空（元信息与 DB 字段完全重复，无叙事价值）
+ *  8. 转码失败占位符「?」装饰（书 1 实证「??本文只有三个世界。」「。）?世界一:」）：
+ *     源站特殊符号（⭐/◆ 类）charset 转换失败落为 ASCII ?，呈串首/段界装饰形态 →
+ *     剥除（语气问号「什么？？？」不误伤，见 introAskDecoRE 锚点保守性）
  *
  * 双侧分工：scraper-go 引擎侧 cleanDescription 只做基础修复（实体归一/FFFD/标签，
  * Task 41 同步增强）——「相关小说」尾块与分隔线等**不在引擎侧截断**，完整送达
@@ -51,6 +54,15 @@ var (
 	introBrRE = regexp.MustCompile(`(?i)<br\s*/?>`)
 	// introTagRE 其余 HTML 标签剥除（含 </p>，换行语义已由 BrRE 先行转换）
 	introTagRE = regexp.MustCompile(`(?i)</?[a-z][^>]{0,80}>`)
+	// introAskRunRE 转码问号家族 a)：4+ 连续半角 ? 必为转码噪声（正常语气问号叠用
+	// 极少超 3 个；全角 ？ 叠用是正常语气，不参与）
+	introAskRunRE = regexp.MustCompile(`\?{4,}`)
+	// introAskDecoRE 转码问号家族 b)：串首/句末标点（含闭引闭括号）后的 1-3 个半角 ?
+	// 为段首装饰（书 1 实证「??本文…」「。）?世界一:」）。锚点保守性：语气问号
+	// （「什么？？？」「真的吗??」「你确定？！」）前缀均为文字或后随非 ?，不命中。
+	// RE2 无前瞻，捕获组保留锚点；(?m) 使 ^ 覆盖行首（多行简介行首装饰同剥）。
+	// 必须在标签剥除之后调用——源 HTML「<p>?世界」剥标签后 ? 才与句末标点相邻
+	introAskDecoRE = regexp.MustCompile(`(?m)(^|[。！？…；）)”"』」])\?{1,3}`)
 	// introMetaTplRE 整条 SEO 元信息样板（书 150/164 实证）。锚定首尾全串匹配才清空：
 	// 「免费在线阅读，作者：…，分类：…，状态：…，字数：…，章节：N章。」固定键序，
 	// 正常叙事简介不可能整体命中（局部出现时仅因未全串命中而保守保留）
@@ -105,6 +117,8 @@ func cleanNovelIntro(desc string) (string, []string) {
 	s = introFFFDRE.ReplaceAllString(s, "")
 	s = introBrRE.ReplaceAllString(s, "\n")
 	s = introTagRE.ReplaceAllString(s, "")
+	s = introAskRunRE.ReplaceAllString(s, "")
+	s = introAskDecoRE.ReplaceAllString(s, "$1")
 
 	// 3) 「相关小说」族尾块：截断 + 提取长尾词（用户指令「直接加到pSEO中」）。
 	//    必须先于 promo/sep 截断——若推广尾拼在相关块之后，先截 promo 会连带吃掉词表

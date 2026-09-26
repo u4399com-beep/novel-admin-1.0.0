@@ -18,34 +18,50 @@
 package main
 
 import (
+	"regexp"
+	"strconv"
 	"strings"
 )
 
 var (
 	// titleLeadingRE 章节名前缀样板：正文/正文卷/VIP章节/最新章节/章节目录
-	titleLeadingRE = regexpTitle(`^(?:正文(?:卷)?|VIP章节|VIP正文|最新章节|章节目录|作品正文)[:：\s]*`)
+	titleLeadingRE = newTitlePattern(`^(?:正文(?:卷)?|VIP章节|VIP正文|最新章节|章节目录|作品正文)[:：\s]*`)
 	// titlePageMarkRE 分页尾标：「(2/4)」「（2/4）」（reDePage 引擎侧同源）
-	titlePageMarkRE = regexpTitle(`[\(（]\s*\d{1,4}\s*[／/]\s*\d{1,4}\s*[\)）]\s*$`)
+	titlePageMarkRE = newTitlePattern(`[\(（]\s*\d{1,4}\s*[／/]\s*\d{1,4}\s*[\)）]\s*$`)
 	// titleBracketIdxRE 章节序号后的序号方括号：「第1章 [1]xxx」→「第1章 xxx」
 	// （仅限紧跟 第X章/回/节 前缀之后，防误伤正文含 [2019] 等合法年份标记的标题）
-	titleBracketIdxRE = regexpTitle(`^(第[0-9〇零一二三四五六七八九十百千两]+[章回节][\s：:]*)[\[【〔]\d{1,4}[\]】〕]\s*`)
+	titleBracketIdxRE = newTitlePattern(`^(第[0-9〇零一二三四五六七八九十百千两]+[章回节][\s：:]*)[\[【〔]\d{1,4}[\]】〕]\s*`)
 	// titlePromoTailRE 标题尾 SEO 样板（可重复、可带分隔符；书籍名/章节名共用）
-	titlePromoTailRE = regexpTitle(`(?i)(?:\s*[-_|·～~]?\s*(?:笔趣阁|顶点小说|飞卢小说网?|无弹窗|全文阅读|全本阅读|在线阅读|最新章节(?:列表)?|txt下载|全本txt|无错小说|手机阅读|免费阅读|章节目录))+$`)
+	titlePromoTailRE = newTitlePattern(`(?i)(?:\s*[-_|·～~]?\s*(?:笔趣阁|顶点小说|飞卢小说网?|无弹窗|全文阅读|全本阅读|在线阅读|最新章节(?:列表)?|txt下载|全本txt|无错小说|手机阅读|免费阅读|章节目录))+$`)
 	// titleVolumeRE 分卷前缀：「第一卷 第1章 宝宝满月」「第六卷·嬗变者」「第3卷：风起」
-	titleVolumeRE = regexpTitle(`^(第[0-9〇零一二三四五六七八九十百千两]+卷)(?:[·．.\s_\-—：:]|(?:[·．.\s_\-—：:]+))(.*)$`)
+	titleVolumeRE = newTitlePattern(`^(第[0-9〇零一二三四五六七八九十百千两]+卷)(?:[·．.\s_\-—：:]|(?:[·．.\s_\-—：:]+))(.*)$`)
 	// titleAuthorTailRE 引擎侧同源作者尾巴（防御性二次剥）
-	titleAuthorTailRE = regexpTitle(`(?i)作者[:：][^《》]{1,30}$`)
+	titleAuthorTailRE = newTitlePattern(`(?i)作者[:：][^《》]{1,30}$`)
 	// titleBookWrapRE 书名《》整包裹
-	titleBookWrapRE = regexpTitle(`^《(.+?)》$`)
+	titleBookWrapRE = newTitlePattern(`^《(.+?)》$`)
 	// titleSepCut 标题首尾分隔符集合（trailing 剥离用）
 	titleSepCut = "-_|·：:～~ \t\u00a0\u3000"
 	// titleCJKSpaceRE 连续空白折叠
-	titleCJKSpaceRE = regexpTitle(`[\s\u00a0\u3000]+`)
+	titleCJKSpaceRE = newTitlePattern(`[\s\u00a0\u3000]+`)
 )
 
-// regexpTitle 占位（保持与 cleanx/introx 相同的字面量风格：直接 regexp.MustCompile
-// 需要引入 regexp 包；此处用变量包装函数集中管理，避免散落 import）
-func regexpTitle(expr string) *titlePattern { return newTitlePattern(expr) }
+// titlePattern 标题族正则类型别名（= regexp.Regexp，方法集一致）。
+type titlePattern = regexp.Regexp
+
+// titleUnicodeEscRE 识别 \uXXXX 转义：Go regexp（RE2）不支持 \u，需先展开为实际字符。
+var titleUnicodeEscRE = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
+
+// newTitlePattern 编译标题族正则：先展开 \uXXXX 转义（如 \u00a0/\u3000）再交 MustCompile。
+func newTitlePattern(expr string) *titlePattern {
+	expanded := titleUnicodeEscRE.ReplaceAllStringFunc(expr, func(m string) string {
+		code, err := strconv.ParseUint(m[2:], 16, 32)
+		if err != nil {
+			return m // 非法转义原样保留，交 MustCompile 报错
+		}
+		return string(rune(code))
+	})
+	return (*titlePattern)(regexp.MustCompile(expanded))
+}
 
 // detectVolume 从章节名识别并剥分卷前缀，返回（卷名, 剥前缀后的标题）。
 // 纯卷标题行（剥前缀后为空）返回原标题（卷名仍识别，供 TOC 分组；标题不动防空题）。

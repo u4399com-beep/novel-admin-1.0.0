@@ -1939,3 +1939,21 @@ Stage Summary:
 - 乱序重排链路（chapterorder 纯函数 + audit 两段式重排 + resort + txt 迁移）逐行深检完成：算法与 TS 逐行一致、两阶段事务原子性成立、TXT 两段式 rename 无互覆路径、并发交互仅剩瞬时失败形态
 - 唯一确证缺陷修复：负数暂存区固定值与旧版自身遗留滞留行相撞使损伤类书永久不可修复——暂存区下压至全书最小 idx 之下，恢复路径闭合，4 条新测试锁定（含 txt 同步与断档边界）
 - 前端缺口留档主线：Go admin 缺失 TS 时代「目录体检」面板，重排端点无 UI 入口，建议随分卷设置一并补齐
+---
+Task ID: 43
+Agent: main (Z.ai Code)
+Task: 会话续接收尾——①第 9 次沙箱回收后环境重建（db/ 目录+Go 工具链双丢失）②简介第七噪声家族（转码 ? 装饰）清洗 ③丢失未提交文件 titlePattern 定义恢复 ④8 采集任务重建+E2E ⑤worklog+git push
+
+Work Log:
+- 【第 9 次沙箱回收诊断】进程全灭+db/ 目录被清（第 9 次，历史只清数据不清整库）；mkdir db/covers/novels/upload + download 后 ensure-services 拉起，schema 纯 Go 引导自动建表+播种（15 规则/9 分类/homeConfig 默认区块）全部自愈成功；Novel/章节/PseoKeyword 业务数据归零，按 Task 39 先例重建 8 个 list 采集任务
+- 【第七噪声家族发现+清洗】新采集书 1《论如何用抄来的才华养鱼塘》简介实况「??本文只有三个世界。（…）?世界一:」——ASCII ?（U+003F）转码占位装饰（源站 ⭐/◆ 类符号 charset 损失），Task 41 六家族零命中属新家族。introx.go 增两段正则（固定顺序保幂等）：introAskRunRE `\?{4,}`（4+ 连续必为噪声）+ introAskDecoRE `(?m)(^|[。！？…；）)"』」])\?{1,3}`（串首/句末标点后 1-3 个 ? 段首装饰，捕获组保留锚点补 RE2 无前瞻）；锚点保守性：语气问号「什么？？？」「真的吗??」「你确定？！」前缀均为文字不命中（生产实证书 1 残留 2 个 ? 即作者语气词「食用??）」正确保留）；必须在标签剥除后调用（<p>?世界 剥标签后 ? 才与句末标点相邻）
+- 【丢失未提交文件恢复 P1】go build 报 titlePattern/newTitlePattern undefined——HEAD 本身不编译！42-b 曾「全量 build 全绿」证明定义文件当时存在但未 git add，被沙箱回收删除（未跟踪文件会丢，铁律：子代理产物必须及时 commit）。恢复 titlex.go 就地补齐：type titlePattern = regexp.Regexp 别名 + newTitlePattern 内置 \uXXXX 展开（Go RE2 不支持 \u 转义——titleCJKSpaceRE `[\s\u00a0\u3000]` 直交 MustCompile 必 panic，原丢失实现必含此预处理；strconv.ParseUint+string(rune(code)) 展开）。教训实锤：undefined 符号+init panic 双特征=丢失文件含「非常规」实现，直通 MustCompile 复原不够
+- 【工程卫生】8 文件 mode 100755→644 恢复（子代理误 chmod）；go build ./... 在包目录生成的目录同名二进制 backend-go/scraper-go 历史上被 git 跟踪（19MB+10MB 仓库毒瘤）→ git rm --cached + .gitignore 补 *.bin 与同名二进制规则；gofmt -w 归一 router/runner/web/web_data + titlex/introx 全清
+- 【验证】go build/vet 全绿；backend-go go test -race 全绿（含 introx 新增 4 向量：书 1 实证清洗/语气保留/4+ 剥除/多行行首）；scraper-go go test -race 全绿；build-go.sh 全绿；双服务热替换（scraper ensure-services + backend 手动再拉，注意 ensure-services 直拉进程无自愈循环包裹，kill 后须手动再拉）
+- 【生产实证】回填日志「1 行修正」=书 1；浏览器 E2E：书籍页简介「??本文…）?世界一:」→「本文…）世界一:」全部消失、相关标签 13 chips（书名+作者+11 个 pSEO 下拉词「鱼塘里养田螺技术」等）、点击 chip → /pseo/ 聚合页 200+TDK「鱼塘里养田螺技术小说推荐_…」、首页正常、390×844 无横向溢出、console/errors 零输出
+- 【采集任务】8 任务（trxsw/pilishuwu/ddyueshu/23qb/huangjinwu/ggd66/101kks/ixdzs8）全部 running；pSEO 链路自动运转实证：种子书下拉词 +11/+12/批量生成聚合页 14-16 个/轮
+
+Stage Summary:
+- 简介清洗扩至七家族：转码 ? 装饰（用户上一轮贴文「[]」病灶的同族转码损失——源站符号经 charset 转换后分别落为 ？实体/FFFD/ASCII ? 三种形态，现已全覆盖）洗掉或转换闭环
+- 环境韧性实证：第 9 次回收后 schema 引导+seed 播种+任务重建全流程 <5 分钟自愈（对比 TS 时代依赖 Prisma push 的不可恢复）
+- 架构防线新增：未提交文件丢失类 P1（titlePattern）——undefined+panic 双特征识别法与 \u 预处理实现已入库，后续沙箱回收不再有此类盲区
