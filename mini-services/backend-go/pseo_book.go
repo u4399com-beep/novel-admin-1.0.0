@@ -62,6 +62,14 @@ func enrichOneBookSeed() {
 		`SELECT "id","keyword" FROM "PseoKeyword" WHERE "source" = 'book' AND "status" = 'pending' ORDER BY "id" ASC LIMIT 1`,
 		[]any{&id, &keyword})
 	if err != nil {
+		// Task 41: 无待富集书名种子时，词池仍可能有 pending（intro 提取词/手工添加词）——
+		// 照常消化聚合页，否则简介长尾词会滞留 pending（存量书种子均已 generated 实证此路径）
+		var anyPending int
+		if e2 := queryOne(`SELECT COUNT(*) FROM "PseoKeyword" WHERE "status" = 'pending'`, []any{&anyPending}); e2 == nil && anyPending > 0 {
+			if g, gerr := generatePendingPages(20); gerr == nil && g > 0 {
+				log.Printf("[backend-go-pseo] 无书名种子待富集，直接消化 pending 词池 +%d 页", g)
+			}
+		}
 		return
 	}
 	cfg, cerr := getPseoConfig()

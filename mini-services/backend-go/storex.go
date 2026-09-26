@@ -279,7 +279,11 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 		return fail("书籍标题为空，入库中止", false)
 	}
 	author := resolveAuthor(book.Author, fallbackAuthor, title, book.Description, t2sMode, true)
-	description := truncateRunes(t2sField(t2sMode, book.Description), novelDescriptionMax)
+	// Task 41: 简介噪声清洗 + 「相关小说」长尾词提取（用户指令：洗掉或转换；词转 pSEO）。
+	// 清洗在 t2s 之后（规则面向简体词面）、截断之前（噪声词块可能占简介大半，先截断会把
+	// 噪声留在库内）。清洗幂等，引擎侧已清的文本零改动
+	cleanDesc, introWords := cleanNovelIntro(t2sField(t2sMode, book.Description))
+	description := truncateRunes(cleanDesc, novelDescriptionMax)
 
 	var novelID int64
 	createdNew := false
@@ -399,6 +403,11 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 	// PSEO 书名种子：每本书入库（新建或更新）即登记书名关键词（source=book，pending），
 	// runner 的 pseoEnrichLoop 异步取下拉词并生成聚合页（网络调用不阻塞采集热路径）
 	enqueuePseoBookSeed(title)
+	// Task 41: 简介提取的「相关小说」长尾词转 pSEO（source=intro、seed=书名；
+	// pending → generatePendingPages 自动消化为聚合页）。best-effort，失败已记日志
+	if n := insertIntroKeywords(title, introWords); n > 0 {
+		run.Log(fmt.Sprintf("简介提取相关长尾词 +%d（已入 pSEO 词池）", n))
+	}
 	return UpsertOutcome{OK: true, Canceled: false, NovelID: int(novelID), CreatedNew: createdNew, Title: title}
 }
 

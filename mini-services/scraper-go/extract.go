@@ -105,10 +105,25 @@ var reDescPrefix = regexp.MustCompile(`^(?:关于[《〈]?.{1,40}?[》〉]?|内�
 // 正常叙事文本几乎不可能命中）。不加 (?s)：pickText 已 collapse 为单行文本，无需跨行匹配。
 var reDescBoilerplate = regexp.MustCompile(`《[^》]{1,50}》是.{1,25}精心创作.{0,300}$`)
 
+// Task 41: 简介基础噪声修复（引擎侧第一道；「相关小说：」尾块等**不在引擎侧截断**——
+// 编排侧 introx.go 需要完整尾块提取长尾词转 pSEO，引擎先截断则转换无从谈起）：
+//   - reDescEntityFix 全角分号实体归一「&#091；」→「&#091;」（源站模板收尾写成全角「；」，
+//     decodeResidualEntities 等任何实体解码器都不认，书 67 实证「&#091；轻松军旅&#093；」原样入库）
+//   - reDescFFFD 解码残损字符「�」剥除（「【」残臂实证）
+//   - reDescBrTag 换行语义标签 <br> → 空格、其余 HTML 标签剥除（书 46 实证「<br />」残留）
+var reDescEntityFix = regexp.MustCompile(`&#([xX]?)([0-9a-fA-F]+)[；﹔]`)
+var reDescFFFD = regexp.MustCompile(`\x{FFFD}+`)
+var reDescBr = regexp.MustCompile(`(?i)<br\s*/?>`)
+var reDescTag = regexp.MustCompile(`(?i)</?[a-z][^>]{0,80}>`)
+
 func cleanDescription(t string) string {
 	// Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
 	// 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
+	t = reDescEntityFix.ReplaceAllString(t, `&#${1}${2};`)
 	t = decodeResidualEntities(t)
+	t = reDescFFFD.ReplaceAllString(t, "")
+	t = reDescBr.ReplaceAllString(t, " ")
+	t = reDescTag.ReplaceAllString(t, "")
 	t = trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
 	return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }

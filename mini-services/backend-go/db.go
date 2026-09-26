@@ -101,6 +101,11 @@ func getDB() (*sql.DB, error) {
 		if err := backfillPseoKeywordNorm(db); err != nil {
 			log.Printf("[db] PseoKeyword.kwNorm 存量回填失败（书籍页标签归一匹配暂不可用，重启重试）: %v", err)
 		}
+		// Task 41: 存量简介噪声清洗回填（幂等：cleanNovelIntro 幂等保证已清洗行零写放大；
+		// 「相关小说」尾块转换进 PseoKeyword）。失败不阻断启动，下次重启重试
+		if err := backfillNovelIntroClean(db); err != nil {
+			log.Printf("[db] 简介噪声清洗回填失败（存量简介噪声暂存，重启重试）: %v", err)
+		}
 		// 存量正文迁移（幂等、分批 500 行防长锁；空库秒级完成，存量 3.5 万章首次启动秒级~十秒级）
 		if err := migrateChapterContentSplit(db); err != nil {
 			log.Printf("[db] Chapter 存量正文迁移 ChapterContent 失败（存量正文仍可经 COALESCE 读取）: %v", err)
