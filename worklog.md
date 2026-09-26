@@ -2092,3 +2092,20 @@ Stage Summary:
 - 重试轮定性：上轮 46-a 实为「已完成但报告未返回」，本轮收敛复核证实其产物完整无编译中间态；追加 1 项反反爬增强（E5 AJAX XHR 头族一致性）
 - 修复统计：本轮 0 新增 bug（8 面复核零新破口）+1 增强（E5）；46-a 累计（上轮+本轮）5 修复（P2×1+P3×4）+3 增强（E3/E4/E5）+8 精简
 - 验证三连全绿（build/vet/test -race）；未覆盖面：charsetx/content/selectors/cleanx/jstext/affinity 未本轮逐行重扫（上轮 46-a 已覆盖且测试全绿，低风险留档）
+---
+Task ID: 46
+Agent: main (Z.ai Code)
+Task: 用户 5 点指令——①链轮三类型入友情链接模块（站内随机书籍页/站群随机首页/站群随机书籍页）②采集+反反爬逐行深审抓bug全修复③清理精简④推送git⑤列表页抓取失败自动恢复消息确认
+
+Work Log:
+- 【Wave1 双子代理深审（46-a/46-b 已各自记录）】46-a：上轮超时实为「已完成未返回报告」——5 修复+E3/E4 增强+8 精简在码，本轮复核零新 bug+追加 E5 AJAX XHR 头族指纹一致性（jsontoc Referer/Origin/Sec-Fetch-* 补齐+测试锁定）；46-b：P2 softBlock 接线（引擎 200 空壳档案 backend 从未消费→列表/书页空壳误判 failed 终态，自动恢复永不接手）+ 5 处终态文案校准（「非封禁」→「按错误形态判为瞬态」，补「至多 4 次，多次未果请人工检查」）+ router 顶层 panic 兜底 500 + admin 状态机脚注补自动恢复说明 + 9 死函数精简；三连全绿+worker_autorecovery_test.go 3 用例固化
+- 【46-⑤ 审计结论】worker.go:1290 消息链路四点闭环：a「非封禁」=文案词表启发式非保证（已校准措辞）；b 4 次上限已提示；c 进度保留逐环确认无清空路径（paused→pending→骨架续传）；d 空壳误判路径实锤并修复（softBlock 接线+端到端测试）
+- 【46-① 链轮三类型（主线自做）】web_footer.go 新增 wheelNovelPoolCached（最新 60 本 id 降序主键索引零排序/60s TTL/fail-open）+ gatherWheelLinks/pickWheelSamples（站内书×4 相对 /book/{nid} 锚文本=书名 + 群首页×2 + 群书页×2 绝对链，rand.Perm 每请求抽样不缓存随机结果，排除当前 Host，nid 全局去重域，正/反取位错开 host）；web_data.go 接线 .WheelLinks；10 主题 _shared.html 11 处（{{if or}}+wheel range 复用主题样式，内链不加 nofollow/_blank）；admin 友链段补链轮自动注入说明；web_footer_test.go +2 用例（TestPickWheelSamples 纯抽样 7 断言面/TestGatherWheelLinks 集成）+TestSharedFooterBlocksRender 扩展三类渲染断言
+- 【测试教训两枚】go build 不编译 _test.go（strconv 缺失只有 vet/test 抓得到）；mustInitSiteSiteRows(t,nil) 不清既有行（只注册 cleanup）——集成测试清表需手动 DELETE；Edit 与 go test 并行发会写盘竞态假红
+- 【部署】build-go.sh 双 bin+tw.css 重建；scraper pkill→ensure→:3030 ok；backend pkill→sleep 12→手动 ensure→:3000 health ok
+- 【E2E 实证】链轮随机性：两次首页请求 href md5 不同+书页页脚两次四本书全不同；三类齐全：临时插演示站点（POST /api/sites）→62s 缓存过期→http://fleet-demo.example.com/ + /book/268→/book/287 随机轮换 →DELETE 后 62s 零痕迹回退；45 混淆/转码与链轮共存（锚文本 &#xNNNN; 实体化+零宽字符在链轮书名上生效）；agent-browser：首页/书页/章节页 console+errors 零输出，页脚链轮视觉自然融合，移动端 390px no-h-overflow；章节页无页脚=历史沉浸式设计（chapter.html 73 行无 _shared 引用，非缺陷）；dev.log 零 panic
+
+Stage Summary:
+- 五点全落地：链轮三类型上线（生产实证+测试锁定）；采集/反反爬双域 10 修复+3 增强（E3/E4/E5）+14 死函数精简；自动恢复消息机制审计闭环+文案校准
+- 生产状态：283+ 书、双服务健康、console 零错误、SiteSite 空表时群链轮零 DOM 痕迹（用户配站即自动生效）
+- TS 第五轮零残留；验证三连（backend+scraper）全绿；提交链 …→b9e04fb→c99b3be(45)→5e2030e(Wave1)→5c0f67a(46-①)
