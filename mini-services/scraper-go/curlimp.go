@@ -26,16 +26,25 @@ import (
 var reCurlImpersonate = regexp.MustCompile(
 	`(?i)^(curl_chrome[\w.]*|curl_ff[\w.]*|curl_edge[\w.]*|curl_safari[\w.]*|curl-impersonate(?:-(?:chrome|ff|firefox|edge|safari)[\w.-]*)?)$`)
 
+// binScore 正则（Task 46-a 提为包级）：旧实现在函数体内 MustCompile，且本函数被
+// detectCurlImpersonates 的 O(n²) 排序逐对比较调用——每次比较重复编译 3 个正则。
+// 语义不变，仅提级。
+var (
+	reBinChrome  = regexp.MustCompile(`(?i)chrome`)
+	reBinFF      = regexp.MustCompile(`(?i)ff|firefox`)
+	reBinVersion = regexp.MustCompile(`(\d{2,4})`)
+)
+
 // binScore chrome 最新版优先，其次 firefox，再次 edge/safari
 func binScore(name string) int {
 	browser := 1
-	if regexp.MustCompile(`(?i)chrome`).MatchString(name) {
+	if reBinChrome.MatchString(name) {
 		browser = 3
-	} else if regexp.MustCompile(`(?i)ff|firefox`).MatchString(name) {
+	} else if reBinFF.MatchString(name) {
 		browser = 2
 	}
 	ver := 0
-	if m := regexp.MustCompile(`(\d{2,4})`).FindStringSubmatch(name); m != nil {
+	if m := reBinVersion.FindStringSubmatch(name); m != nil {
 		ver, _ = strconv.Atoi(m[1])
 	}
 	return browser*10000 + ver
@@ -112,14 +121,18 @@ var (
 	curlBinCursor int
 )
 
-// headerLines 从 -D 抓包文本提取响应头（HTTP/2 头为小写，大小写不敏感匹配；同名多头全量返回）
+// headerLines 从 -D 抓包文本提取响应头（HTTP/2 头为小写，大小写不敏感匹配；同名多头全量返回）。
+// Task 46-a：旧实现每次调用动态 MustCompile（每跳 ×3 类头）——改为逐行冒号前名 EqualFold
+// 等价判定（语义与 ^name:\s*(.*)$ 一致：冒号紧跟头名、值 TrimSpace、\r 已被剔除），零编译开销。
 func headerLines(hdrText, name string) []string {
-	re := regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(name) + `:\s*(.*)$`)
 	out := []string{}
 	for _, line := range strings.Split(hdrText, "\n") {
-		if m := re.FindStringSubmatch(strings.TrimRight(line, "\r")); m != nil {
-			out = append(out, strings.TrimSpace(m[1]))
+		line = strings.TrimRight(line, "\r")
+		idx := strings.Index(line, ":")
+		if idx <= 0 || !strings.EqualFold(line[:idx], name) {
+			continue
 		}
+		out = append(out, strings.TrimSpace(line[idx+1:]))
 	}
 	return out
 }

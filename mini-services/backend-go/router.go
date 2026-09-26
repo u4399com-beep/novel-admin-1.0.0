@@ -8,6 +8,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"strings"
 )
@@ -103,6 +104,16 @@ func routeHasParam(segs []string) bool {
 
 // dispatch 总入口（main.go 挂到 http.Server）
 func dispatch(w http.ResponseWriter, r *http.Request) {
+	// Task 46-b: 顶层 panic 兜底——net/http 自带的连接级 recover 只保证进程不死
+	//（连接中断 + stderr 裸日志），这里补齐结构化处置：统一 500 JSON + 带方法/路径
+	// 的进程日志（栈经 %v 打印调用点），排障面与客户端体验双收敛。
+	// 响应头已写出的场景（流式/半途 panic）WriteHeader 补写会静默失败，无副作用。
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("[backend-go] handler panic 已兜底 %s %s: %v", r.Method, r.URL.Path, rec)
+			writeJSON(w, 500, map[string]string{"error": "服务器内部错误"})
+		}
+	}()
 	// Task 37 教训回退：Task 36 曾将跨源请求一律 403（Origin vs Host 同源校验），
 	// 但沙箱预览链路的中间层会改写 Host（Origin=外部预览域名 vs Host=localhost），
 	// 合法同源用户全部被误伤——「站点设置所有功能保存 403」。回退原因：

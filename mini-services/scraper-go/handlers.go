@@ -83,8 +83,7 @@ func pageFailureResponse(w http.ResponseWriter, page fetchPageResult, baseURL st
 	writeJSON(w, 502, resp)
 }
 
-// robotsSummaryJSON robots 摘要（crawlDelayMs 恒带，可能为 null）
-func robotsSummaryJSON(r RobotsSummary) RobotsSummary { return r }
+// robotsSummaryJSON 已删除（Task 46-a 清理：恒等函数无调用点，robots 摘要直接透传 page.robots）
 
 // handleHostHealth GET /api/host-health（Task 31-b 新增可观测端点）：
 // 返回基础限速参数与 AIMD 自适应状态。带 ?host= 时返回单主机明细（自适应间隔/限流退避/熔断剩余），
@@ -175,7 +174,7 @@ func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 			"robotsCheck":        "warn-only：解析 robots.txt，命中 Disallow 时在 warnings 中提示，不强制阻断；Crawl-delay 高于基础礼貌间隔时采纳为该主机请求间隔下限（只升不降，上界 30s）",
 			"ssrfGuard":          "文本层（IPv4 全形态/IPv6 内网段）+ DNS 尽力校验 + redirect manual 逐跳校验",
 			"maxResponseBytes":   maxBytes,
-			"challengeDetection": "四层检测：反爬平台强特征（任意体积，扫描前 32KB，含国产 WAF JS 挑战壳 token acw_sc__v2/__jsl_clearance/__jsluid/yunsuo/wzws）→ 近空可见正文（<80 字符）JS 跳板/「JS 计算 cookie + 原地 reload」壳/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理",
+			"challengeDetection": "四层检测：反爬平台强特征（任意体积，扫描前 32KB，含国产 WAF JS 挑战壳 token acw_sc__v2/__jsl_clearance/__jsluid/yunsuo/wzws）→ 近空可见正文（<80 字符）JS 跳板/「JS 计算 cookie + 原地 reload」壳/需启用 JS 壳（任意体积，覆盖 HTTP 200 伪装）→ 极小页(<3KB)挑战关键词（latin1/UTF-8/GB18030 三解码匹配，含中文验证码/滑块/频控类关键词）→ 极小页 0 秒 meta-refresh 跳板；命中即标记 blocked 并按失败处理；未判死的 200 空壳经 softBlock 档案透出弱命中特征（含 captcha-title/captcha-shell/bodyAnomaly，Task 46-a）",
 			"captchaSolving":     "禁止提供",
 			"loginContent":       "禁止采集",
 			"accountSpoofing":    "禁止提供",
@@ -339,17 +338,25 @@ func extractionEmpty(data map[string]any) bool {
 // pageSoftBlockProfile Task 32-d: 200 空壳软拦截页的特征档案（title/长度/可见正文/挑战特征摘要）。
 // 挑战特征复用 challenge.go 四层正则做「弱命中」标注（此时 looksLikeChallenge 未判死，
 // 页面仍是 200 ok——弱命中证据帮助 backend 区分「限流空壳」与「规则选择器失效」）。
+// Task 46-a（E3）：增 bodyAnomaly 字段——大体积 HTML 但可见正文近空（浏览器渲染空壳/
+// 频控覆盖层形态，与「小页挑战」不同族），预计算成明确类别免 backend 自行拼阈值。
 func pageSoftBlockProfile(page fetchPageResult, doc *goquery.Document) map[string]any {
 	title := ""
 	if doc != nil {
 		title = collapse(doc.Find("title").First().Text())
 	}
+	visibleChars := runeLen(visibleBodyText(page.html))
+	htmlLen := runeLen(page.html)
 	prof := map[string]any{
 		"title":        truncateStr(title, 200),
-		"htmlLength":   runeLen(page.html),
+		"htmlLength":   htmlLen,
 		"strategy":     page.strategy,
 		"status":       page.status,
-		"visibleChars": runeLen(visibleBodyText(page.html)),
+		"visibleChars": visibleChars,
+	}
+	// 大页近空：HTML ≥ 8KB（骨架/脚本齐全）但可见正文 < 80 字（正文层被频控覆盖/未渲染）
+	if htmlLen >= 8192 && visibleChars < 80 {
+		prof["bodyAnomaly"] = "large-html-near-empty-body"
 	}
 	if hits := challengeFeatureSummary([]byte(page.html)); len(hits) > 0 {
 		prof["challengeFeatures"] = hits

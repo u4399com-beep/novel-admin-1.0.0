@@ -133,7 +133,7 @@ func sanitizeRule(keys []string, raw any) map[string]string {
 	return out
 }
 
-func ruleMapKeys(m map[string]string) int { return len(m) }
+// ruleMapKeys 已删除（Task 46-a 清理：无调用点的死代码）
 
 // ==================== 字段解析工具 ====================
 

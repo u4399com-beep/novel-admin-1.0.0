@@ -299,11 +299,6 @@ func canonicalCategory(rawName string) string {
 	return canon
 }
 
-// classifyBookByTitle 书名关键词本地归类（零成本）：命中返回规范类，未命中返回 ""
-func classifyBookByTitle(title string) string {
-	return classifyBookLocal(title, "")
-}
-
 // classifyBookLocal 本地关键词分类：标题全量 + 简介前段（Task 27-b 收编增强）。
 // 背景：LLM 凭证失效（401）期间 L3 兜底全灭，晋江系女频书（标题无分类词、简介含
 // 年代/宅斗/修仙等强语义词）大量滞留「其他」。简介截前 descScanChars 字符参与

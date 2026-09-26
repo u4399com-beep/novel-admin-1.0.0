@@ -120,7 +120,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	timeoutMs := clampTimeout(opts.timeoutMs)
 	// 整体预算：单策略超时再多给余量，硬上限 55s（主站代理 60s 超时之内）
 	budget := int64(chainBudgetMS)
-	minBudget := int64(timeoutMs+8_000) * 1
+	minBudget := int64(timeoutMs + 8_000)
 	if minBudget < int64(timeoutMs)*5/2 {
 		minBudget = int64(timeoutMs) * 5 / 2
 	}

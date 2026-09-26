@@ -26,8 +26,10 @@ func trimJSSpace(s string) string {
 }
 
 // collapse 等价 selectors.ts collapse：NBSP→空格、JS 空白折叠、trim
+// （Task 46-a 清理：旧实现折叠后还做一次 NBSP ReplaceAll——reJSWhitespace 字符类已含
+// U+00A0，折叠产物中不可能残留 NBSP，该次替换为无操作，39-a 留档项本轮落地移除）
 func collapse(s string) string {
-	return trimJSSpace(strings.ReplaceAll(reJSWhitespace.ReplaceAllString(s, " "), " ", " "))
+	return trimJSSpace(reJSWhitespace.ReplaceAllString(s, " "))
 }
 
 // runeLen UTF-16 code unit 数（JS String.length 语义）；BMP 内等于字符数
@@ -60,7 +62,4 @@ func splitLines(s string) []string { return strings.Split(s, "\n") }
 // joinLines 单 \n 连接
 func joinLines(lines []string) string { return strings.Join(lines, "\n") }
 
-// jsIndexOfFold 简化大小写无关包含判断（当前未用，保留给 challenge 文本匹配）
-func containsFold(s, sub string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
-}
+// containsFold 已删除（Task 46-a 清理：无调用点死代码——challenge 文本匹配实际走包级正则）

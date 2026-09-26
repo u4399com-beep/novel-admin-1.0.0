@@ -12,8 +12,7 @@ import (
 	"time"
 )
 
-// execCommand 包装 exec.Command
-func execCommand(name string, args ...string) *exec.Cmd { return exec.Command(name, args...) }
+// execCommand 已删除（Task 46-a 清理：无调用点死代码；实际使用的是 execCommandContext）
 
 // execCommandContext 包装 exec.CommandContext（ctx 超时自动 kill 子进程）
 func execCommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {

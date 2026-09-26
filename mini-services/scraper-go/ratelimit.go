@@ -79,9 +79,10 @@ type hostSlot struct {
 	consec atomic.Int64
 	// Task 31-b: AIMD 自适应间隔毫秒（0 = 未进入自适应态，用基础间隔）。
 	// 429/503/Retry-After → 乘性增大或直接采纳；连续成功 → 加性回落；空闲 ≥5 分钟复位。
+	// Task 46-a: 全部写入方改为 CAS 循环（见 aimdRaiseTo）——旧实现 Load→计算→Store 三步
+	// 非原子，同主机多车道并发时（list/chapter 车道同打一站）互相覆盖：floor 车道的低值
+	// 可吞掉另一车道刚写入的更高 429/Retry-After 退避位，违反「只升不降」契约。
 	aimdMs atomic.Int64
-	// Task 31-b: 自适应态下的连续成功计数（加性回落按每次成功逐步进行）
-	aimdOKStreak atomic.Int64
 	// Task 35-b: 排队/准入观测（/api/host-health?host= 透出）。
 	// lastWaitMS 最近一次真实取槽的等待毫秒；sleepers 当前在锁外睡眠等槽的调用方数；
 	// sheds 预算感知准入累计拒绝次数（shed 不占槽不计 consec）。
@@ -106,7 +107,7 @@ func getHostSlot(host string) *hostSlot {
 		hostSlots[host] = slot
 	}
 	// Task 33-a（P1）：此处对既有槽位无条件刷新 lastUsedNano，使 acquireDomainSlot 紧随其后的
-	// 「now-lastUsedNano > 5min 空闲复位」恒得 ~0 差值——5 分钟空闲复位（consec/aimdMs/aimdOKStreak）
+	// 「now-lastUsedNano > 5min 空闲复位」恒得 ~0 差值——5 分钟空闲复位（consec/aimdMs；Task 46-a 清理死状态 aimdOKStreak）
 	// 是死代码：AIMD 退避位一旦进入便无法经空闲路径退出（仅靠每成功 -50ms 缓慢回落），
 	// 突发抑制计数也永不清零。删除刷新：lastUsedNano 语义回归「上次取槽时刻」，由
 	// acquireDomainSlot 末尾（slot.mu 内、原子写）负责续期，空闲判定与 GC 时钟均据此成立。
@@ -149,31 +150,54 @@ func aimdAddStep(cur, floor int64) int64 {
 	return next
 }
 
+// aimdRaiseTo Task 46-a：AIMD 间隔「只升不降」抬升原语（CAS-max）。
+// 旧实现各写入方先 Load 再条件 Store，两步之间存在窗口：同主机另一车道的更高退避位
+// （如 chapter 车道刚采纳的 Retry-After=20s）可被本车道随后 Store 的低值（如 robots
+// Crawl-delay floor=5s）覆盖——限流记忆瞬间降档，下一拍请求以过快节奏直打限流中的站点。
+// CAS 循环把 max(cur, v) 语义原子化：仅当 cur≥v 时跳过，否则抬到 v；被并发插入的更高值
+// 抢先时 CAS 失败重读，永不回退。返回是否发生了抬升。
+func aimdRaiseTo(slot *hostSlot, v int64) bool {
+	for {
+		cur := slot.aimdMs.Load()
+		if cur >= v {
+			return false
+		}
+		if slot.aimdMs.CompareAndSwap(cur, v) {
+			return true
+		}
+	}
+}
+
 // noteAdaptiveRateLimited Task 31-b AIMD「乘性增大」入口：该主机收到 429/503 时调用。
 // 带 Retry-After 时直接采纳其值（仍受 parseRetryAfterMs 的 30s 解析上限约束，且不高于
 // 既有值时取较大者——站点给的窗口优先于本地推断）；无 Retry-After 时 ×1.5 逐步放大。
+// Task 46-a：两条路径均改 CAS 原子化（aimdRaiseTo / CAS 循环）——旧 Load→Store 在同主机
+// 并发 429/503 下会丢步（A 车道 ×1.5 结果被 B 车道的旧 cur 基底覆盖）。
 // 同时清零连续成功计数（回落序列重新开始）。
 func noteAdaptiveRateLimited(host string, retryAfterMs *int64) {
 	if host == "" {
 		return
 	}
 	slot := getHostSlot(host)
-	cur := slot.aimdMs.Load()
 	floor := getMinIntervalMs()
-	var next int64
 	if retryAfterMs != nil && *retryAfterMs > 0 {
-		next = *retryAfterMs
-		if next < floor {
-			next = floor // 合规下限：自适应间隔不得低于基础礼貌间隔
+		raise := *retryAfterMs
+		if raise < floor {
+			raise = floor // 合规下限：自适应间隔不得低于基础礼貌间隔
 		}
-		if cur > next {
-			next = cur // 已在更高退避位时只升不降（限流窗口叠加）
-		}
+		aimdRaiseTo(slot, raise) // 只升不降（限流窗口叠加；并发下原子取大者）
 	} else {
-		next = aimdMulStep(cur, floor)
+		for {
+			cur := slot.aimdMs.Load()
+			next := aimdMulStep(cur, floor)
+			if next == cur {
+				break // 已在上界（8s）：值不变，避免无谓写
+			}
+			if slot.aimdMs.CompareAndSwap(cur, next) {
+				break
+			}
+		}
 	}
-	slot.aimdMs.Store(next)
-	slot.aimdOKStreak.Store(0)
 }
 
 // noteAdaptiveSuccess Task 31-b AIMD「加性回落」入口：该主机一次成功抓取后调用。
@@ -184,17 +208,22 @@ func noteAdaptiveSuccess(host string) {
 		return
 	}
 	slot := getHostSlot(host)
-	cur := slot.aimdMs.Load()
-	if cur <= 0 {
-		return // 未进入自适应态
-	}
 	floor := getMinIntervalMs()
-	next := aimdAddStep(cur, floor)
-	if next <= floor {
-		next = 0 // 已回到基础间隔：退出自适应态
+	// Task 46-a: CAS 循环防丢步——并发成功/限流信号交错时，回落以最新值为基底重算，
+	// 不再覆盖另一车道刚写入的更高退避位（429 后紧跟的成功不应把退避位砍掉）。
+	for {
+		cur := slot.aimdMs.Load()
+		if cur <= 0 {
+			return // 未进入自适应态
+		}
+		next := aimdAddStep(cur, floor)
+		if next <= floor {
+			next = 0 // 已回到基础间隔：退出自适应态
+		}
+		if slot.aimdMs.CompareAndSwap(cur, next) {
+			return
+		}
 	}
-	slot.aimdMs.Store(next)
-	slot.aimdOKStreak.Add(1)
 }
 
 // hostAdaptiveIntervalMs Task 31-b: 当前主机的自适应间隔毫秒（0 = 基础间隔态）。
@@ -269,7 +298,6 @@ func acquireDomainSlotBudgeted(host string, deadlineMs int64, reserveMS int64) (
 	if now.UnixNano()-slot.lastUsedNano.Load() > int64(5*time.Minute) {
 		slot.consec.Store(0) // 空闲复位：突发抑制只针对持续批量
 		slot.aimdMs.Store(0) // Task 31-b: AIMD 同口径空闲复位（限流记忆由 hosthealth penalty 继续承担短期退避）
-		slot.aimdOKStreak.Store(0)
 	}
 	n := slot.consec.Add(1)
 	// Task 31-b: 有效基础间隔 = max(基础礼貌间隔, AIMD 自适应间隔)
@@ -420,11 +448,9 @@ func noteCrawlDelayFloor(host string, delayMs int64) {
 		return // 低于基础礼貌间隔：无需采纳（默认节奏已更严格）
 	}
 	slot := getHostSlot(host)
-	if cur := slot.aimdMs.Load(); cur >= delayMs {
-		return // 只升不降（不覆盖 429/Retry-After 的更高退避位）
-	}
-	slot.aimdMs.Store(delayMs)
-	slot.aimdOKStreak.Store(0)
+	// Task 46-a: 抬升改 aimdRaiseTo（CAS-max）——旧 Load→条件→Store 与并发的
+	// noteAdaptiveRateLimited（429/Retry-After 采纳）互覆，更高退避位可被本函数的低值覆盖。
+	aimdRaiseTo(slot, delayMs) // 只升不降（不覆盖 429/Retry-After 的更高退避位）
 }
 
 // ==================== robots.txt ====================

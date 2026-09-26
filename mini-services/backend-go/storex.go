@@ -495,19 +495,6 @@ func loadChapterContent(chapterID, novelID, idx int64, legacyContent string, wor
 	return ""
 }
 
-// recalcNovelWordCount 重算书籍字数合计（失败静默，不影响任务状态机）
-func recalcNovelWordCount(novelID int) {
-	var sum sql.NullInt64
-	if err := queryOne("SELECT SUM(wordCount) FROM Chapter WHERE novelId = ?", []any{&sum}, novelID); err != nil {
-		return
-	}
-	wc := int64(0)
-	if sum.Valid {
-		wc = sum.Int64
-	}
-	_, _ = execRetry("UPDATE Novel SET wordCount = ?, updatedAt = ? WHERE id = ?", int(wc), nowMillis(), novelID)
-}
-
 // ==================== 两阶段采集：骨架批量入库 ====================
 
 // SkeletonOutcome Phase 1 骨架批量入库结果

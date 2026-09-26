@@ -28,6 +28,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -138,6 +139,15 @@ var tocHTTPClient = &http.Client{
 	Transport: tocTransport(),
 }
 
+// jsonTocSameOrigin chapterListApi 同源判定（Task 46-a F4 抽出）：协议一致 + Host 大小写折叠
+// 后一致（Host 含端口，端口不折叠——不同端口仍拒绝）。纯函数，锁定测试见 audit46_test.go。
+func jsonTocSameOrigin(apiURL, base *url.URL) bool {
+	if apiURL == nil || base == nil {
+		return false
+	}
+	return apiURL.Scheme == base.Scheme && strings.EqualFold(apiURL.Host, base.Host)
+}
+
 // encodeURIComp 等价 JS encodeURIComponent（保留 A-Za-z0-9-_.!~*'()）
 func encodeURIComp(s string) string {
 	const unreserved = "-_.!~*'()"
@@ -182,7 +192,10 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 		*warnings = append(*warnings, "chapterListApi：书页 URL 无法解析")
 		return []BookChapterRef{}
 	}
-	if apiURL.Scheme != base.Scheme || apiURL.Host != base.Host {
+	// Task 46-a（F4）：同源判定归一为小写比较（旧实现 apiURL.Host != base.Host 区分大小写，
+	// 书页 URL 带大写域名变体 http://Example.COM/x 时同源接口被 fail-closed 误拒）。
+	// 归一只折叠大小写；协议/主机/端口仍逐项一致，SSRF 姿态不变（纯函数抽出便于锁定测试）。
+	if !jsonTocSameOrigin(apiURL, base) {
 		*warnings = append(*warnings, "chapterListApi：接口 "+apiURL.Host+" 与书页 "+base.Host+" 非同源，已拒绝（SSRF 防护）")
 		return []BookChapterRef{}
 	}
@@ -190,7 +203,15 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	// 3) 请求（复用引擎 cookie 会话：书页抓取时种下的会话 cookie 是部分站点的放行条件）
 	// 同域请求同样受限速约束（JSON 目录是页面抓取之外的额外请求，不豁免）
 	// Task 38-a: 限速槽 key 归一小写（与链层/策略层 hostOf 同口径，防大小写变体稀释限速）
-	acquireDomainSlot(strings.ToLower(apiURL.Host))
+	// Task 46-a（F9）：取槽改预算感知（5s 上界）——本函数运行在策略链预算之外（链已返回
+	// 成功页后才开始提取），旧无界排队在 AIMD 高退避位/多车道饱和时可在 handler 内额外睡
+	// 8-30s+，叠在 55s 链预算之上突破主站 60s 消费超时；shed 时结构化警告并放弃 JSON 目录
+	//（HTML 目录照常返回，仅影响「接口优于内嵌」的增益路径）。
+	slotDeadline := nowMs() + 5000
+	if _, granted := acquireDomainSlotBudgeted(strings.ToLower(apiURL.Host), slotDeadline, 0); !granted {
+		*warnings = append(*warnings, "chapterListApi：域限速排队超预算，已跳过 JSON 目录提取（引擎准入拒绝，不影响书页内嵌目录）")
+		return []BookChapterRef{}
+	}
 	https := apiURL.Scheme == "https"
 	// Task 38-a: 桶 key 归一 hostOf（小写，与策略层一致，防大小写变体分裂会话）
 	cookie := cookieHeaderFor(hostOf(apiURL.String()), https)
@@ -210,6 +231,26 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	}
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	// Task 46-a（F3·反反爬指纹）：AJAX 端点此前不发 User-Agent —— Go 客户端默认落
+	// "Go-http-client/1.1"，同一会话先以浏览器画像拿书页、紧接的目录接口却自曝爬虫 UA，
+	// 既是指纹矛盾也是 UA 白名单类 WAF 的直接拒绝信号（会话 cookie 白种了）。补引擎
+	// 保鲜桌面 Chrome UA，与被回放的 cookie 会话同族。
+	req.Header.Set("User-Agent", chromeUA)
+	// Task 46-a（E5·反反爬指纹一致性）：真实浏览器的同源 XHR 在书页会话内必然携带
+	// Referer（来源=书页）、Origin（POST 必带）与 Accept-Language、Sec-Fetch-*（XHR 形态
+	// 固定值 dest=empty/mode=cors/site=same-origin）。旧实现裸缺这些头——同一会话先以
+	// 全套浏览器画像拿书页、紧接的目录接口却是「无来路、无语言偏好」的头族，服务端
+	// 画像关联检测（WAF 比对页面视图与 AJAX 请求的头族一致性）可直接识别。全部按真实
+	// 浏览器同源 XHR 形态补齐（同源校验已保证 site=same-origin 陈述为真；Origin 仅 POST
+	// 携带——Chrome 对同源 GET XHR 不发 Origin）。
+	req.Header.Set("Accept-Language", acceptLangZH)
+	req.Header.Set("Referer", baseURL)
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	if cfg.method == "POST" {
+		req.Header.Set("Origin", base.Scheme+"://"+base.Host)
+	}
 	if cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}

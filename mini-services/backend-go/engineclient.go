@@ -74,6 +74,12 @@ type engineResult[T any] struct {
 	Warnings []string
 	Strategy string
 	Attempts *int // 引擎响应缺 attempts 时为 nil
+	// SoftBlock 引擎 softBlock 档案存在标记（Task 46-b 接线）：引擎 handlers 对「HTTP 200
+	// 但规则提取结果全空/正文为空」的成功响应附 softBlock 对象（Task 32-d 专为 backend
+	// 消费而加，旧版从未解析）——该形态下 ok=true 且提取为空，仅看 Error 会误判为
+	// 「规则失效/选择器不命中」failed 终态；凭此标记可归入软拦截（isSoftBlockErrText 同族），
+	// 列表/书页阶段撞限流空壳窗口时任务转 paused 可自动恢复而非烧成终态
+	SoftBlock bool
 }
 
 // engineIsTimeout 判定是否客户端超时（对齐 TS /timeout|abort/i || name==='TimeoutError'）
@@ -125,13 +131,14 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 	rb, _ := readAllLimited(res.Body, 8<<20)
 
 	var env struct {
-		OK       *bool           `json:"ok"`
-		Error    json.RawMessage `json:"error"`
-		Detail   json.RawMessage `json:"detail"`
-		Warnings []any           `json:"warnings"`
-		Strategy json.RawMessage `json:"strategy"`
-		Attempts []any           `json:"attempts"`
-		Data     json.RawMessage `json:"data"`
+		OK        *bool           `json:"ok"`
+		Error     json.RawMessage `json:"error"`
+		Detail    json.RawMessage `json:"detail"`
+		Warnings  []any           `json:"warnings"`
+		Strategy  json.RawMessage `json:"strategy"`
+		Attempts  []any           `json:"attempts"`
+		Data      json.RawMessage `json:"data"`
+		SoftBlock json.RawMessage `json:"softBlock"` // Task 32-d: 200 空壳档案（对象存在即视为命中）
 	}
 	if err := json.Unmarshal(rb, &env); err != nil {
 		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应解析失败(HTTP %d)", res.StatusCode), Warnings: []string{}}
@@ -165,7 +172,7 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 	if err := json.Unmarshal(env.Data, &data); err != nil {
 		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应 data 解析失败(HTTP %d)", res.StatusCode), Warnings: warnings}
 	}
-	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy)}
+	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: len(env.SoftBlock) > 0}
 	if env.Attempts != nil {
 		n := len(env.Attempts)
 		out.Attempts = &n
@@ -218,14 +225,29 @@ func fetchBookPage(run *Run, u string, rule LoadedRule, referer string, quiet bo
 		run.Log(fmt.Sprintf("书页命中策略 %s（尝试 %s 次）", res.Strategy, n))
 	}
 	if res.Data.Book == nil || res.Data.Book.Title == "" {
+		// Task 46-b: 200 空壳误判修正——引擎 ok=true 但附 softBlock 档案时，
+		// 提取为空是「限流软拦截/挑战竞态」而非「规则失效」；旧文案不含任何软拦截
+		// 字样 → isTransientScrapeErr 不命中 → 单本任务书目全败时被烧成 failed 终态
+		//（自动恢复永不接手）。改用软拦截文案让 Phase 1 全败路径转 paused 可自动恢复
+		if res.SoftBlock {
+			return bookPageResult{OK: false, Err: softBlockEmptyErrText}
+		}
 		return bookPageResult{OK: false, Err: "未提取到书籍标题（规则与内置回退均未命中）"}
 	}
 	return bookPageResult{OK: true, Book: *res.Data.Book}
 }
 
+// softBlockEmptyErrText 200 空壳响应的统一失败文案（Task 46-b）。
+// 契约：必须命中 isSoftBlockErrText（含「空壳/软拦截/挑战」任一字样），使列表/书页
+// 阶段的空壳形态进入 isTransientScrapeErr → paused 可自动恢复，而非 failed 终态。
+// 注意改文案时勿丢失这些字样。
+const softBlockEmptyErrText = "HTTP 200 空壳响应（引擎 softBlock 档案：疑似限流软拦截/挑战竞态页，非规则失效）"
+
 // fetchListPage 抓取并提取一个列表页；失败时记录日志并返回空数组（翻页场景失败可跳过）
 // Task 33: 返回值追加错误文本——调用方（runList）需区分「选择器失效/空页」与「引擎主机
 // 熔断/软拦截冷却中」：后者是瞬态，任务应转 paused（自动恢复资格）而非 failed 终态。
+// Task 46-b: 引擎 ok=true 但附 softBlock 档案（200 空壳）时返回软拦截文案——旧版返回
+// 空错误串，首页空壳在 runList 被误判「列表页未提取到书籍条目」failed 终态。
 func fetchListPage(run *Run, u string, rule LoadedRule, referer string) ([]ListItem, string) {
 	res := callEngine[struct {
 		List *struct {
@@ -246,6 +268,9 @@ func fetchListPage(run *Run, u string, rule LoadedRule, referer string) ([]ListI
 				items = append(items, it)
 			}
 		}
+	}
+	if len(items) == 0 && res.SoftBlock { // Task 46-b: 200 空壳 → 软拦截文案（见函数注释）
+		return nil, softBlockEmptyErrText
 	}
 	return items, ""
 }

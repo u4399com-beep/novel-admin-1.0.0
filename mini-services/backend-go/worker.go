@@ -603,6 +603,13 @@ var reRateLimitToken = regexp.MustCompile(`(?:^|[^0-9])(?:429|503)(?:[^0-9]|$)|(
 // 引擎不可达——这些形态重入即可续传，任务应转 paused（自动恢复资格）而非 failed 终态。
 // Task 33 落在 runList Phase 0；Task 35-b 补齐 runList Phase 1 / runSingle 书目全败路径
 // （单书重入撞引擎熔断冷却被误定 failed，数千章进度恢复成本全由人工承担）。
+// 判定依据（Task 46-b 审计载）：引擎无结构化错误类别字段——失败响应仅 error/detail
+// 文本 + challengeSuspected 布尔 + softBlock 档案（200 空壳，Task 46-b 起消费），
+// 故此处只能按错误文案词表启发式判定：429/503/rate/限流/限速/预算耗尽/熔断/整链失败/
+// 全部可用策略（isRateLimitErrText）+ 挑战/空壳/正文空/软拦截（isSoftBlockErrText）+
+// 引擎自状态（不可达/超时）。「瞬态」是概率判断而非保证：持续 403 封禁若以「全部可用
+// 策略」或挑战循环形态呈现也会落入本判定——自动恢复的 4 次上限（runner.go）就是该
+// 不确定性的预算护栏，终态消息措辞用「判为瞬态而非确认封禁」与词表口径一致
 func isTransientScrapeErr(err string) bool {
 	return isRateLimitErrText(err) || isSoftBlockErrText(err) ||
 		strings.Contains(err, "引擎不可达") || strings.Contains(err, "引擎请求超时")
@@ -1287,7 +1294,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// paused 而非 failed——resume/自动恢复冷却后重新入队即可续传；旧逻辑把带 2.5 万章
 		// 进度的任务打成 failed 终态（列表重入撞 60s 熔断窗口），恢复成本全由人工承担
 		if isTransientScrapeErr(firstListErr) {
-			finalize(run, "paused", "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
+			finalize(run, "paused", "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）")
 			return
 		}
 		finalize(run, "failed", "列表页未提取到书籍条目")
@@ -1327,7 +1334,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 35-b: 书目全败若是瞬态（引擎熔断冷却/不可达/限流软拦截），转 paused
 		// 而非 failed（同 Phase 0 口径；列表成功但 Phase 1 撞熔断窗口同样可自动恢复）
 		if isTransientScrapeErr(msg) {
-			finalize(run, "paused", "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
+			finalize(run, "paused", "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）")
 			return
 		}
 		finalize(run, "failed", msg)
@@ -1370,7 +1377,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 29: 限流形态区分处置建议
 		if p2.BreakerRateLimit {
 			// Task 31-b: 分类覆盖面扩到 200 空壳（限流窗口的主要表现形态之一）
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 %d 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
 		} else {
 			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
 		}
@@ -1425,7 +1432,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 35-b: 同 runList——单书重入撞引擎熔断冷却/不可达/限流软拦截（瞬态）转
 		// paused 而非 failed；旧逻辑把带数千章进度的单书任务打成 failed 终态
 		if isTransientScrapeErr(msg) {
-			finalize(run, "paused", "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，非封禁）：任务已自动暂停，自动恢复将在冷却后重新入队（已采进度保留）")
+			finalize(run, "paused", "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）")
 			return
 		}
 		finalize(run, "failed", msg)
@@ -1471,7 +1478,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 29: 限流形态区分处置建议
 		if p2.BreakerRateLimit {
 			// Task 31-b: 分类覆盖面扩到 200 空壳（同 runList）
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，非封禁），已自动暂停防烧穿（成功 %d 章，进度保留；建议稍后恢复续传，引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
+			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 %d 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
 		} else {
 			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
 		}

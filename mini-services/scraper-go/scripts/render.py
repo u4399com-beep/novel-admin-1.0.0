@@ -24,8 +24,10 @@ from urllib.parse import urlparse
 MAX_HTML_BYTES = 8 * 1024 * 1024  # 与主服务 MAX_BYTES 一致
 
 DEFAULT_UA = (
+    # Task 46-a 指纹保鲜：124 → 154（对齐 profiles.go chromeMajor 候选带现势 stable 上界；
+    # 仅 argv 缺省时的兜底，browser.go 常规路径恒传引擎保鲜 UA）
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
 )
 
 # SSRF 守卫：host -> 是否拦截（True=拦截）。渲染单次进程内缓存，避免每子请求做 DNS。

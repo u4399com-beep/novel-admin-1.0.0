@@ -12,6 +12,7 @@
 package main
 
 import (
+	"bytes"
 	"golang.org/x/net/html/charset"
 	"regexp"
 )
@@ -27,7 +28,11 @@ var (
 	// 极小页启发式关键词（挑战专用词，不含裸词 javascript）
 	// Task 38-a: 补「网站防火墙」（宝塔系拦截页标题/正文词；keyword 层自带极小页+近空守卫，
 	// 正常叙事不可能整页只含该词）
-	reChallengeKeyword = regexp.MustCompile(`(?i)verify|challenge|captcha|安全验证|人机验证|请完成验证|网站防火墙`)
+	// Task 46-a（E3·软拦截识别增强）：补滑块/频控类词（滑块/滑动验证/异常流量/访问过于频繁/
+	// 请稍后再试）——滑块型挑战壳与限流提示页此前仅在 softBlock 弱命中层面可见，极小页形态
+	// 直接漏判；keyword 层自带「<3KB + 可见正文<200 字」双守卫，误杀面不变。仅窄义验证码/
+	// 频控词，不收裸「验证」（订单验证/表单验证误杀面大）。
+	reChallengeKeyword = regexp.MustCompile(`(?i)verify|challenge|captcha|安全验证|人机验证|请完成验证|网站防火墙|滑块|滑动验证|异常流量|访问过于频繁|访问频率|请稍后再试`)
 	// 0 秒 meta refresh 跳板。Task 34 (P3-4): 属性顺序无关——旧正则要求 http-equiv 在 content
 	// 之前，content 在前的写法（老式 CMS/手写跳板常见）漏杀；拆成两个独立子匹配同时命中才判
 	reMetaRefreshEquiv = regexp.MustCompile(`(?i)<meta[^>]*http-equiv\s*=\s*["']?refresh["']?`)
@@ -74,7 +79,7 @@ func metaRefreshJumpHit(s string) bool {
 			return true
 		}
 		// 更稳的做法：从 equiv 命中处向后找最近的 '>' 结束本标签，在标签内查 content=0;
-		if gt := indexByte(seg, '>'); gt > 0 {
+		if gt := bytes.IndexByte(seg, '>'); gt > 0 {
 			tag := seg[:gt]
 			if reMetaRefreshZero.Match(tag) {
 				return true
@@ -82,15 +87,6 @@ func metaRefreshJumpHit(s string) bool {
 		}
 	}
 	return false
-}
-
-func indexByte(b []byte, c byte) int {
-	for i, x := range b {
-		if x == c {
-			return i
-		}
-	}
-	return -1
 }
 
 // looksLikeChallenge 挑战页/拦截页检测（四层）。命中即 true（视为失败，继续后续策略）。
@@ -163,6 +159,17 @@ func looksLikeChallenge(b []byte) bool {
 	return false
 }
 
+// 软拦截内容特征（Task 46-a E3）：200 空壳/频控提示页的标题与正文常含验证码/滑块/频控词，
+// 但页面体积/正文形态达不到 looksLikeChallenge 的硬判层。本正则仅供 challengeFeatureSummary
+// 做「弱命中」标注（softBlock 档案附加证据，供 backend 归类），不参与 ok/blocked 判定，
+// 故不设体积守卫也不会误杀——标注错误的最大代价是档案多一个特征项。
+// 词表：验证码/滑块/人机验证/频控提示/主流验证码产品名，全部窄义反爬词汇。
+var reCaptchaShell = regexp.MustCompile(
+	`(?i)captcha|recaptcha|hcaptcha|turnstile|gee\s?test|验证码|滑块|滑动验证|人机验证|安全验证|请完成验证|异常流量|访问过于频繁|访问频率|请稍后再试|请开启.{0,8}(?:cookie|javascript)`)
+
+// reTitleTag 提取 <title> 文本（软拦截标题特征用；限 200 字防超长异常标签）
+var reTitleTag = regexp.MustCompile(`(?i)<title[^>]*>([\s\S]{0,200}?)</title>`)
+
 // challengeFeatureSummary Task 32-d: 200 空壳软拦截页的特征摘要（handlers 的 softBlock 档案用）。
 // 背景：ixdzs8 形态——HTTP 200/19KB、挑战检测四层均未判死（looksLikeChallenge=false）、
 // 但正文选择器命中为空。本函数复用挑战正则做「弱命中」标注，把页面证据交给调用方
@@ -197,6 +204,15 @@ func challengeFeatureSummary(b []byte) []string {
 	}
 	if reChallengeKeyword.MatchString(text) {
 		hits = append(hits, "challenge-keyword")
+	}
+	// Task 46-a（E3·软拦截识别增强）：验证码/滑块/频控词特征——①<title> 命中（如
+	// 「安全验证」「请完成验证后继续访问」，标题层是 WAF 拦截页最强证据）②近空正文命中
+	//（频控提示页正文常仅一句话）。仅追加 softBlock 档案特征项，不改 ok/blocked 判定。
+	if m := reTitleTag.FindStringSubmatch(text); m != nil && reCaptchaShell.MatchString(m[1]) {
+		hits = append(hits, "captcha-title")
+	}
+	if runeLen(visibleBodyText(text)) < 200 && reCaptchaShell.MatchString(text) {
+		hits = append(hits, "captcha-shell")
 	}
 	if metaRefreshJumpHit(scan) {
 		hits = append(hits, "meta-refresh-0s")

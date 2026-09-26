@@ -2034,3 +2034,61 @@ Stage Summary:
 - 分卷功能从「detectVolume 孤岛」到「存储/回填/TOC 分组/admin 工具」全链闭环，乱序重排 42-b 修复回归在位
 - 宽度疑虑以像素实测终结（230-1210 全对齐）；TS 零残留连续四轮
 - 工程教训：子代理超时可能遗留「编译不过的中间态」（注释内 */ 崩编译+未接线游标+测试缺口三连），主线必须全量 build+探针收口后才可部署
+---
+Task ID: 46-b
+Agent: backend-go 深审子代理
+Task: backend-go 逐行深审+抓bug全修复+46-⑤自动恢复链路审计+TS第五轮扫描+精简
+
+Work Log:
+- 【基线】build/vet/test -race 全绿后动工；通读 worklog 44-b/45 历史修复防重复；逐行深读 worker/runner/pool/engineclient/storex/db/schema/router/web/web_data/obfuscate/llm/httpx/titlex/txtdir/api_* 全辖区
+- 【修复① P2·engineclient.go+worker.go：列表/书页阶段 200 空壳被误判 failed 终态（46-⑤ 审计 d 实锤缺口）】根因：引擎 handlers 对「HTTP 200 但规则提取全空」返回 ok=true+softBlock 档案（Task 32-d 专为 backend 消费而加，backend 从未解析——grep 全仓零命中）。fetchListPage 空壳时返回空错误串 → runList 首页空壳走「列表页未提取到书籍条目」failed 终态；fetchBookPage 空壳返回「未提取到书籍标题（规则与内置回退均未命中）」→ Phase 1 全败 failed。两条路径自动恢复永不接手（词表不匹配），与 :1290 文案承诺的「空壳软拦截→paused 自动恢复」矛盾。修法：engineResult 增 SoftBlock bool（解析响应 softBlock 对象存在性）+ softBlockEmptyErrText 统一文案（含空壳/软拦截/挑战字样，isSoftBlockErrText 必命中），fetchListPage（空提取且 SoftBlock）/fetchBookPage（无书名且 SoftBlock）改返回软拦截文案 → isTransientScrapeErr 命中 → paused 可自动恢复。验证：worker_autorecovery_test.go 新增 TestSoftBlockShellNotMisjudgedFailed（httptest stub 引擎 BACKEND_ENGINE_URL 注入，端到端红→绿）+TestSoftBlockEmptyErrTextHitsTransientClassifier
+- 【修复② P3·worker.go:1290/1330/1428/1373/1474 五处终态文案校准（46-⑤ 审计 a+b）】a 判定依据载档：引擎无结构化错误类别字段（仅 error/detail 文本+challengeSuspected 布尔+softBlock 档案），「非封禁」是文案词表启发式而非保证——持续 403 封禁以「全部可用策略均抓取失败」或挑战循环形态呈现时同样落入瞬态判定，绝对化「非封禁」措辞失准。修法：改「按错误形态判为瞬态而非确认封禁」（isTransientScrapeErr 头注同步载明判定边界与 4 次上限护栏的对应关系）；b 4 次上限补提示：五处文案均补「每任务至多 4 次，多次未果请人工检查源站」（admin.html:216 状态机脚注同步补自动恢复上限说明）。硬约束守住：全部新文案保持「限流」先于「软拦截」出现，autoResumePausedTasks 的 LIKE '%限流%软拦截%' 匹配不断链——TestAutoResumeMatcherCoversFinalizeMessages 锁定五处文案入表+六类非限流文案（手动暂停/重启/孤儿/参数失败/封禁熔断）不入表
+- 【修复③ P3·router.go dispatch 顶层 panic 兜底补齐（46-⑤ 附带 API 审计项）】根因：dispatch 直挂 http.Server 无 recover 中间件——net/http 连接级 recover 只保证进程不死（连接中断+stderr 裸日志），无结构化 500 与带路径日志。修法：dispatch 顶部 defer/recover，统一 500 JSON+「handler panic 已兜底 METHOD path」进程日志
+- 【46-⑤ 审计 c 实证（进度保留链路，零改动）】paused 转移链无清进度路径：finalize 暂停确认分支（cur==paused&&status==paused）只写 message/log/updatedAt；resume/pause API 条件 UPDATE 不触进度列（仅 restart 清零，终态专属）；重新入队后 Phase 1 storeChapterSkeletons 按 wordCount=0 识别空骨架入 fillMap 续传、Phase 2 只填 wordCount=0 行；gRunning 先登记后执行防双跑、recoverStaleTasks/sweepOrphanRunningTasks 条件更新 WHERE status='running' 防覆盖终态
+- 【精简 9 死函数（deadcode 工具全仓扫描，逐个 grep 复核零引用后移除）】titlex.go：cleanChapterTitle/cleanNovelTitle/stripBookTitlePrefix+7 个配套正则（titleLeading/PromoTail/PageMark/BracketIdx/AuthorTail/BookWrap/CJKSpace+titleSepCut）——Task 42 编排侧第二道清洗从未接线（引擎侧同规则清洗已在跑），titlex.go 158→53 行只留 detectVolume 权威实现+头注职责收敛说明；categoryx.go classifyBookByTitle（薄包装）；storex.go recalcNovelWordCount（被 recalcWordCountsFor 批量版取代）；obfuscate.go resetObfConfigCache（Task 45 测试改门控层后失伴）；pseo_suggest.go suggestFetchViaEngine（2 行薄包装并入 suggestFetchViaEngineStrategy，3 处文档引用同步）。保留 limitVal/renderFriendLinksBlock（测试引用，职责注释在位）
+- 【过检无新增破口】路由注册 sort|uniq -d 零重复；SQL 零用户输入拼接（novelListCols 等编译期常量+占位符；ORDER BY 全白名单 switch；search LIKE 反斜杠先行转义在位）；goroutine 生命周期（runPoolDynamic watchdog 收链/llm buffered chan/runBashSync zombie 防护）全在位；锁序（limiter.mu→throttledCheck.mu 无环/gRunningMu/laneFloor CAS/obfCfgMu/fleetLinksMu）零嵌套死锁；obfuscate.go 584 行复核：单遍 O(n) 扫描零正则热点（任务书担心的「每请求多次全文正则扫描」不存在）、obfMaybe 命名返回+defer/recover 兜底实证有效（panic 窗口 out 仍持原文）、10s TTL 配置缓存互斥+fail-open 与出厂语义一致；txtdir safeTitle 路径消毒/intx 溢出守卫/web 模板 mtime 缓存竞态安全（map 值不可变）均过检
+- 【生产库零触碰】只改代码；未跑任何 db:push/迁移；生产 backend-go.bin(PID 19214)/scraper-go.bin(PID 12959) 全程存活未启停；backend-go.bin 产物已重建（14:31，temp+rename 覆盖运行中文件安全）待主线统一热替换
+
+Stage Summary:
+- 修复 3 项（P1×0 / P2×1 / P3×2）+ 文案/文档校准 6 处 + 死代码精简 9 函数（净 -约 150 行）+ 测试资产 worker_autorecovery_test.go 3 用例（含 httptest 引擎端到端）
+- 46-⑤ 结论：机制主体可靠（a 文案判定为词表启发式已校准措辞并载档；b 4 次上限已入文案与 admin 脚注；c 进度保留链路逐环实证无清空路径；d 实锤并修复「200 空壳列表/书页误判 failed 终态」缺口——引擎 softBlock 档案从「加了没人用」到接线生效，自动恢复覆盖面补全）
+- TS 第五轮扫描：项目代码零残留（唯一 .ts 命中均在 /skills/ 平台基础设施，非项目代码）；无 src/、无 next/ts 配置、package.json 零 next 引用；JS 面=13 个浏览器运行时主题脚本+build-web-css.mjs（留档唯一构建期 Node）+engine-rule-test.mjs（零 DB 依赖 API 化）
+- 验证三连：go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok backend-go 1.888s，含新增 3 用例）；gofmt -l 全清；deadcode 复扫仅剩 2 个测试引用函数（有意保留）
+
+---
+Task ID: 46-a
+Agent: scraper-go 深审子代理
+Task: scraper-go 逐行深审+抓bug全修复+反反爬增强+精简
+
+Work Log:
+- 【辖区与基线】通读 worklog 38-a/39-a/44-a 历史修复（JA3↔UA 四家族对齐、hostOf 归一、Crawl-delay floor、Retry-After 四车道、指纹保鲜、cookie 优先级、SSRF 尾点等零重复劳动）；逐行复扫 26 源文件（chain/strategies/httpguard/ratelimit/hosthealth/cookies/challenge/profiles/curlimp/fetchcurl/browser/charsetx/ssrf/affinity/jsontoc/jstext/extract/selectors/content/cleanx/handlers/main/types/util/helpers + scripts/render.py）；基线 build/vet/test -race 全绿后动工
+- 【修复① P2·AIMD「只升不降」契约原子化（ratelimit.go）】根因：noteCrawlDelayFloor/noteAdaptiveRateLimited/noteAdaptiveSuccess 对 slot.aimdMs 均为 Load→计算→Store 三步非原子——同主机多车道并发（list+chapter 同打一站）时互相覆盖：robots Crawl-delay floor 车道的低值（5s）可吞掉另一车道刚采纳的更高 Retry-After 退避位（20s），限流记忆瞬间降档，下一拍以过快节奏直打限流中的站点（恰是 44-a 锁定契约「不覆盖更高 429/Retry-After 退避位」在并发下的破口，单线程测试看不见）。修法：新抽 aimdRaiseTo（CAS-max 抬升原语）承接两条「只升不降」路径；×1.5 增大与 -50ms 回落改 CAS 循环防丢步。验证：audit46_test.go 三用例（纯语义+并发 raise 不变量「终值恒=最大者」+floor/Retry-After 并发混打 200 轮），-race 全绿
+- 【修复② P3·解析层循环内重复编译正则（curlimp.go）】根因：binScore 函数体内 MustCompile×3 且被 detectCurlImpersonates 的 O(n²) 排序逐对调用；headerLines 每次调用动态编译（每响应跳 ×3 类头）。修法：binScore 三正则提为包级（语义不变）；headerLines 改逐行冒号前名 EqualFold 判定（与 ^name:\s*(.*)$ 逐用例等价：多头/大小写/CR/伪头/空值/非前缀），零编译开销。验证：TestBinScoreOrdering+TestHeaderLinesParity 表驱动锁定
+- 【修复③ P3·chapterListApi AJAX 端点 UA 指纹自曝（jsontoc.go，反反爬）】根因：extractJsonToc 请求不带 User-Agent——Go 客户端默认落 "Go-http-client/1.1"，同一会话先以浏览器画像拿书页、紧接的目录接口却自曝爬虫 UA（既是指纹矛盾也是 UA 白名单 WAF 的直接拒绝信号，会话 cookie 白种）。修法：补 User-Agent=chromeUA（与被回放 cookie 同族的保鲜桌面 Chrome）。验证：httptest 端到端断言 UA 与 chromeUA 全等
+- 【修复④ P3·chapterListApi 同源判定 fail-closed 误拒（jsontoc.go）】根因：apiURL.Host != base.Host 区分大小写——url.Parse 不改写 Host，书页 URL 带大写域名变体（http://Example.COM/）时同源接口必被拒。修法：抽 jsonTocSameOrigin 纯函数，EqualFold 折叠 Host 大小写（协议/主机/端口仍逐项一致，SSRF 姿态不变）。验证：7 向量表+大写域名端到端回归
+- 【修复⑤ P3·chapterListApi 取槽无界排队可破 handler 时限（jsontoc.go）】根因：acquireDomainSlot(deadline=0) 无界等待，且本函数运行在策略链 55s 预算之外——AIMD 高退避位/多车道饱和时 handler 内可额外睡 8-30s+，叠满突破主站 60s 消费超时。修法：改 acquireDomainSlotBudgeted（5s 上界），shed 时结构化警告并放弃 JSON 目录（HTML 内嵌目录照常，仅影响「接口优于内嵌」增益路径）。验证：编译+全量回归
+- 【增强 E3·软拦截识别增强（challenge.go+handlers.go）】①极小页硬判层 reChallengeKeyword 补滑块/频控词（滑块/滑动验证/异常流量/访问过于频繁/访问频率/请稍后再试）——滑块型挑战壳与限流提示页的极小页形态此前漏判，keyword 层自带 <3KB+近空<200 双守卫误杀面不变；②challengeFeatureSummary 增 captcha-title（<title> 命中验证码/滑块/频控词，WAF 拦截页最强证据）与 captcha-shell（近空正文命中）弱命中特征（reCaptchaShell 窄义词表，仅标注不参与 ok/blocked 判定）；③pageSoftBlockProfile 增 bodyAnomaly=large-html-near-empty-body 预计算字段（HTML≥8KB 但可见正文<80 字的渲染空壳/频控覆盖层形态，免 backend 自行拼阈值）；/api/strategies compliance.challengeDetection 说明同步。验证：3 新用例（极小页硬判+大页弱命中+正常页零误报）
+- 【增强 E4·render.py DEFAULT_UA 指纹保鲜】Chrome/124 → Chrome/154（对齐 profiles.go 现势候选带上界；仅 argv 缺省兜底路径，browser.go 常规路径恒传引擎保鲜 UA）——兜底 UA 陈旧与「UA 版本陈旧才是白名单 WAF 强拒绝信号」（39-a E1 结论）一致
+- 【精简 46-③ 共 8 项（均保持行为不变）】util.go ruleMapKeys（死函数）/types.go fPtr+intToStr 残留注释/jstext.go containsFold（「保留给 challenge」已不成立，实际走包级正则）+collapse 的 NBSP ReplaceAll（无操作冗余，reJSWhitespace 已含 U+00A0——39-a 留档项本轮落地）/helpers.go execCommand/handlers.go robotsSummaryJSON（恒等函数）/challenge.go 自写 indexByte→bytes.IndexByte/chain.go `*1` 死算术/ratelimit.go 写后不读死状态 aimdOKStreak（4 写点 0 读点，字段+全部写点移除）
+- 【深审过检面（重点方向逐项）】软拦截判定路径（200+0 items → extractionEmpty → softBlock 档案 + handleChapter 空正文哨兵 + soft404TitleRe 章节号巧合排除）健全；错误分类四态（限流=近期限流记忆注入/软拦截=挑战+softBlock/熔断=「目标主机熔断中…剩余冷却 Ns」/封禁=全网络级连败 fast-trip）backend 可区分；策略回退顺序与亲和（affinityMu 单锁、strategyDef 值拷贝无共享）并发安全；熔断状态机全锁内、半开并发放行由域槽 ≥1s 串行化+penalty 兜底（不加单探测闸，域值内礼貌性成立）；抖动 ±300ms 全车道覆盖（fetch/got/curlimp/fetchcurl 逐跳+链层+robots+jsontoc 均经 acquireDomainSlot[Budgeted]）；Retry-After 四车道三路消费零回归；body 全闭环（6 策略路径逐一核对 Close）；goroutine 有界（runWithHardGate buffered chan+timer.Stop+hcancel）；429/503 重试上限（maxAttempts=3+selfRetrying 梯子遇 429/503 即停+AIMD 乘性退避）；RE2 无灾难回溯；溢出/钳制守卫在位
+- 【工程约束】仅改 mini-services/scraper-go/ 内 10 源文件+1 新增测试+render.py；scraper-go.bin 已重建（go build -o scraper-go.bin .，含全部修复待主线热替换）；生产进程未触碰、零 kill/重启、零 git 操作、backend-go 零改动
+
+Stage Summary:
+- 5 项修复（P2×1：AIMD 只升不降并发原子化——44-a 契约的并发破口；P3×4：循环内正则编译×2、AJAX UA 指纹自曝、同源判定大小写误拒、JSON 目录取槽无界排队）+2 项反反爬增强（软拦截 captcha/滑块/频控三层识别+E4 兜底 UA 保鲜）+8 项行为不变精简
+- 测试资产：+audit46_test.go 8 用例（CAS-max 不变量 200 轮并发、headerLines 等价性表驱动、UA 端到端、同源 7 向量、滑块/频控三判层、bodyAnomaly）；既有 44/39/35/32 系回归全绿（含 TestNoteCrawlDelayFloor/TestAimdStateMachine/TestHeaderGeneratorHeadersDesktopPool）
+- 验证三连：go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go 3.178s）；gofmt -l 全清（Edit 工具空格化按先例 gofmt -w 归一）
+---
+Task ID: 46-a
+Agent: scraper-go 深审子代理（重试拉起·收敛复核轮）
+Task: scraper-go 深审+抓bug修复+反反爬增强+精简（上轮超时未返回报告的重试：收敛范围快修快验）
+
+Work Log:
+- 【上轮产物核验=完整】发现 worklog 末尾已有完整 46-a 条目（超时发生在报告返回前，代码与 worklog 均已落盘）：基线 build/vet/test -race 全绿；上轮 5 修复（aimdRaiseTo CAS-max、binScore/headerLines 提级、AJAX UA、jsonTocSameOrigin、acquireDomainSlotBudgeted）+E3 软拦截增强+8 项精简全部在码实证（符号 grep+audit46_test.go 8 用例绿），无「编译不过中间态」遗留
+- 【收敛复核（任务书 8 面逐项，不逐行全仓）】①HTTP 生命周期：httpguard readBodyCapped 三分支 Close/重定向跳 Close/transportFor LRU CloseIdleConnections、chain maxAttempts=3+backoffDelay 指数+jitter、runWithHardGate buffered chan+timer.Stop+hcancel 取消链在位；②hosthealth 熔断状态机：全单锁 healthMu 零嵌套、半开并发放行维持 44-a 结论（域槽串行化+penalty 兜底）、noteChainFailure 冷却移位有 ≤0 守卫、健康记忆读全走锁内（撕裂读防线在位）；③AIMD：CAS 原子化在位、±300ms 双向抖动+1000ms 合规钳制在位、Crawl-delay floor/Retry-After 只升不降经 aimdRaiseTo；④curl-impersonate：curlHeaderProfileFor 四家族对齐在位、sec-ch-ua 与 UA 同源 chromeMajor 派生零版本缝隙、fetchcurl 恒 chrome 画像为设计本意；⑤软拦截：E3 三层识别（captcha-title/captcha-shell/bodyAnomaly）在位、对 backend 响应契约（ok/error/detail/challengeSuspected/softBlock）零变更；⑥解析层：全仓 MustCompile 均包级（grep 实证零函数内编译）；⑦API 层：main.go mux defer/recover 兜底+parseBody MaxBytesReader+parseTarget/策略白名单校验在位；⑧精简：上轮 8 项已落地，本轮未发现新死代码
+- 【增强 E5·反反爬指纹一致性（jsontoc.go:239-253，本轮唯一代码改动）】chapterListApi 同源 AJAX 此前仅发 Accept/X-Requested-With/UA/Cookie——同一会话「全套浏览器画像拿书页、裸头族打接口」，WAF 画像关联检测（页面视图 vs AJAX 头族一致性比对）可直接识别。补齐真实浏览器同源 XHR 头族：Accept-Language（acceptLangZH 与页面画像同族）、Referer（=书页 URL 真实来路）、Sec-Fetch-Dest/Mode/Site（empty/cors/same-origin——同源校验已保证 site=same-origin 陈述为真）、Origin（仅 POST 携带，Chrome 对同源 GET XHR 不发 Origin）。测试 TestExtractJsonTocXhrHeaderConsistency（httptest 端到端，POST 五头逐一断言：Referer=书页/Origin=scheme://host/Accept-Language 非空/Sec-Fetch-* 三值）
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go 3.4s，含新增用例）；gofmt -l 全清（Edit 空格化已 gofmt -w 归一）；scraper-go.bin 已重建（go build -o scraper-go.bin .，14:47，含本轮 E5+上轮全部修复，待主线统一热替换）；生产进程零触碰、零 kill/重启、零 git 操作、backend-go 零改动
+
+Stage Summary:
+- 重试轮定性：上轮 46-a 实为「已完成但报告未返回」，本轮收敛复核证实其产物完整无编译中间态；追加 1 项反反爬增强（E5 AJAX XHR 头族一致性）
+- 修复统计：本轮 0 新增 bug（8 面复核零新破口）+1 增强（E5）；46-a 累计（上轮+本轮）5 修复（P2×1+P3×4）+3 增强（E3/E4/E5）+8 精简
+- 验证三连全绿（build/vet/test -race）；未覆盖面：charsetx/content/selectors/cleanx/jstext/affinity 未本轮逐行重扫（上轮 46-a 已覆盖且测试全绿，低风险留档）

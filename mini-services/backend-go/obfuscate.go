@@ -114,14 +114,6 @@ func loadObfConfig() obfConfig {
 	return cfg
 }
 
-// resetObfConfigCache 测试隔离用（清空 TTL 缓存）
-func resetObfConfigCache() {
-	obfCfgMu.Lock()
-	obfCfgCache = obfConfig{}
-	obfCfgAt = time.Time{}
-	obfCfgMu.Unlock()
-}
-
 // newObfSeed 每页渲染新种子（crypto/rand 8 字节摘要；失败回落纳秒时钟）——
 // 页页不同种子 ⇒ 页页不同指纹/转码位（多态输出的根源）
 func newObfSeed() int64 {

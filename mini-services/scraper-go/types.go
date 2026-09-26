@@ -163,14 +163,10 @@ type ChapterData struct {
 	NextUrl    *string  `json:"nextUrl"`
 }
 
-// strPtr / intPtr 小工具：TS 的 null 语义
+// strPtr 小工具：TS 的 null 语义（fPtr 已删除，Task 46-a 清理无调用点死代码）
 func strPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
 	return &s
 }
-
-func fPtr(f float64) *float64 { return &f }
-
-// intToStr 调试用（未使用时编译器会剔除）

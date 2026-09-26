@@ -17,7 +17,7 @@
  * 4. 引擎响应解析失败（非法 JSON）在 TS 为 throw→catch→error 字段；Go 等价处理
  * 5. duckduckgo 直连在 Go TLS 栈下会被 Cloudflare JA3 指纹识别并掐死连接导致超时
  *    （worklog Task 18 已知差异①）→ 其下拉词请求改经 scraper-go 引擎
- *    （127.0.0.1:3030，见 suggestFetchViaEngine）反指纹策略链代理发出；经引擎的
+ *    （127.0.0.1:3030，见 suggestFetchViaEngineStrategy）反指纹策略链代理发出；经引擎的
  *    新路径失败时在 results[].error 如实报告（TS 版 duckduckgo 从未真正成功过，
  *    无历史语义可破坏）；其余引擎（baidu/bing/sogou/so360）保持 Go 直连不动
  */
@@ -171,7 +171,7 @@ func fetchSuggestions(engine, keyword string, timeoutMs int) suggestResult {
 		})
 	case "duckduckgo":
 		// 经 scraper-go 引擎代理（Go TLS 被 Cloudflare JA3 指纹掐死 → 直连超时），
-		// 见 suggestFetchViaEngine；响应仍为 ["查询词",[...]]，解析逻辑不变
+		// 见 suggestFetchViaEngineStrategy；响应仍为 ["查询词",[...]]，解析逻辑不变
 		words, fetchErr = suggestFetchDuckDuckGo(ctx, "https://duckduckgo.com/ac/?q="+q+"&type=list")
 	case "sogou":
 		// 容错解析 JSON/JSONP 混合返回
@@ -325,7 +325,7 @@ func suggestFetchText(ctx context.Context, url string, parse func(string) []stri
 	return parse(string(body)), nil
 }
 
-// suggestFetchViaEngine 经 scraper-go 引擎（127.0.0.1:3030 /api/test）代理抓取 targetURL，
+// suggestFetchViaEngineStrategy 经 scraper-go 引擎（127.0.0.1:3030 /api/test）代理抓取 targetURL，
 // 返回上游原始响应体字节。strategy 非空时作为首选策略传给引擎（链语义：该策略不可用
 // → 引擎自动回退全链；可用但请求失败 → 调用方自行无策略重试一次（见 suggestFetchDuckDuckGo）。
 //
@@ -341,10 +341,7 @@ func suggestFetchText(ctx context.Context, url string, parse func(string) []stri
 //
 // timeoutMs 按 ctx 剩余预算估算（略小于剩余，给引擎响应回传留余量；引擎侧钳制
 // 2s~60s）；请求挂 ctx——外层 suggest 超时预算（单发/生成均 8s）继续作为最终硬闸。
-func suggestFetchViaEngine(ctx context.Context, targetURL string) ([]byte, error) {
-	return suggestFetchViaEngineStrategy(ctx, targetURL, "")
-}
-
+// strategy 空串 = 引擎默认策略链（历史 suggestFetchViaEngine 薄包装已并入本函数）。
 func suggestFetchViaEngineStrategy(ctx context.Context, targetURL, strategy string) ([]byte, error) {
 	timeoutMs := 3000
 	if deadline, ok := ctx.Deadline(); ok {
