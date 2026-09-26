@@ -123,7 +123,8 @@ func handlePseoAdd(w http.ResponseWriter, r *http.Request, _ map[string]string) 
 	for _, kw := range cleaned {
 		entries = append(entries, kwEntry{Word: kw, Engine: "manual"})
 	}
-	added, err := insertKeywords(entries, 500)
+	// Task 40: 手工添加无血缘（seed 空），kwNorm 由 insertKeywords 同步落库
+	added, err := insertKeywords(entries, 500, "")
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -265,12 +266,13 @@ func handlePseoGenerate(w http.ResponseWriter, r *http.Request, _ map[string]str
 	}
 
 	// 2) 关键词入库（基础词最优先，来源标记 manual；去重与竞态容错在 lib 内）
+	//    Task 40: 血缘 seed=keyword（管理端对该关键词手动生成，语义与书籍富集一致）
 	entries := []kwEntry{}
 	if keyword != "" {
 		entries = append(entries, kwEntry{Word: keyword, Engine: "manual"})
 	}
 	entries = append(entries, agg.Words...)
-	added, err := insertKeywords(entries, 200)
+	added, err := insertKeywords(entries, 200, keyword)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -450,20 +452,28 @@ func handlePseoBatch(w http.ResponseWriter, r *http.Request, _ map[string]string
 		}
 	}
 
-	entries := []kwEntry{}
+	// Task 40: 逐种子带血缘入库（seed=该种子）；cap 预算按新增数递减，总预算仍 cfg.MaxKeywords
+	// （旧实现合并后截断含重复计入；预算语义微调仅影响 added 报表口径，入库上限不变）
+	added := 0
+	capLeft := cfg.MaxKeywords
 	for _, o := range outcomes {
-		entries = append(entries, o.words...)
-	}
-	added, err := insertKeywords(entries, cfg.MaxKeywords)
-	if err != nil {
-		failJSON(w, "服务器错误", firstLineErr(err), 500)
-		return
+		if capLeft <= 0 {
+			break
+		}
+		n, ierr := insertKeywords(o.words, capLeft, o.seed)
+		if ierr != nil {
+			failJSON(w, "服务器错误", firstLineErr(ierr), 500)
+			return
+		}
+		added += n
+		capLeft -= n
 	}
 	generated := 0
 	if cfg.AutoGenerate {
-		generated, err = generatePendingPages(50)
-		if err != nil {
-			failJSON(w, "服务器错误", firstLineErr(err), 500)
+		var gerr error
+		generated, gerr = generatePendingPages(50)
+		if gerr != nil {
+			failJSON(w, "服务器错误", firstLineErr(gerr), 500)
 			return
 		}
 	}

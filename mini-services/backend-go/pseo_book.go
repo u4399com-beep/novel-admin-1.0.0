@@ -38,8 +38,8 @@ func enqueuePseoBookSeed(title string) {
 	}
 	now := nowMillis()
 	_, _ = exec(
-		`INSERT OR IGNORE INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt") VALUES (?,'book','pending',?,?)`,
-		kw, now, now)
+		`INSERT OR IGNORE INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm") VALUES (?,'book','pending',?,?,?)`,
+		kw, now, now, kwNormalize(kw))
 }
 
 // startPseoEnrichLoop 启动后台富集循环（main.go 在 runner/all 模式下 go 调用）
@@ -77,7 +77,8 @@ func enrichOneBookSeed() {
 	}
 	entries := []kwEntry{{Word: keyword, Engine: "book"}}
 	entries = append(entries, words...)
-	added, ierr := insertKeywords(entries, cfg.MaxKeywords)
+	// Task 40: 血缘入库——seed=书名种子，书籍页按血缘直取本书的 pseo 下拉词
+	added, ierr := insertKeywords(entries, cfg.MaxKeywords, keyword)
 	if ierr != nil {
 		log.Printf("[backend-go-pseo] 种子《%s》长尾词入库失败: %v", truncateRunes(keyword, 30), ierr)
 	}
@@ -93,10 +94,13 @@ func enrichOneBookSeed() {
 // novelPseoTags 书籍页「相关标签」（前端渲染在简介下方，点击进入对应 PSEO 聚合页）：
 //  1. 书名种子词（必有——聚合页按书名 LIKE 命中本书；未生成时 [kw] 聚合页实时计算兜底）
 //  2. 作者词（聚合页命中该作者全部作品；佚名不作为标签）
-//  3. 搜索引擎下拉词（用户指令「书籍页标签加入搜索引擎下拉词，pseo 词的链接」）：
-//     含书名的已生成长尾词（如「XX全文阅读」「XX笔趣阁」），其中本书书名种子的下拉词
-//     （source='book'）排最前，其他引擎来源（baidu/bing/duckduckgo…）含书名词按词长升序靠后，
-//     最多 12 个
+//  3. 搜索引擎下拉词（用户指令「书籍页标签加入搜索引擎下拉词，pseo 词的链接」；Task 40 强化
+//     「加入 pseo 生成的相关下拉词」）双通道取词：
+//     ① seed 血缘直取——本书种子富集产出的全部下拉词（enrichOneBookSeed 入库时 seed=书名），
+//     不要求词面包含书名（相关推荐词也能上榜），generated 优先（聚合页 TDK 已生成）
+//     ② kwNorm 归一形 LIKE 兜底——覆盖 seed 列引入前的存量词与跨来源含书名词；
+//     全半角/空白/大小写形态差异不再漏配（书 293 实证：全角？书名 vs 半角?下拉词全量漏配）；
+//     归一包含 ⊇ 严格子串包含，旧语义为严格超集，无需第三查询
 //
 // 总上限 14 个；返回 []（JSON 数组）而非 nil（null）。纯 DB 查询（API 热路径），幂等零网络调用。
 func novelPseoTags(title, author string) []string {
@@ -116,19 +120,24 @@ func novelPseoTags(title, author string) []string {
 		add(kwAuthor)
 	}
 	if kwTitle != "" {
-		like := likeWrap(kwTitle)
-		// 下拉词优先序：本书书名种子的下拉词（source='book'）最前，其余引擎来源含书名词
-		// 按词长升序（短词更贴近书名）、同长按 id 稳定
+		scanAdd := func(rows *sql.Rows) error {
+			var kw string
+			if err := rows.Scan(&kw); err != nil {
+				return err
+			}
+			add(kw)
+			return nil
+		}
+		// ① seed 血缘直取：本书种子的下拉词按词长升序（短词更贴近书名）、同长按 id 稳定
 		_ = queryList(
-			`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' AND "keyword" LIKE ? AND "keyword" != ? AND "keyword" != ? ORDER BY ("source" = 'book') DESC, LENGTH("keyword") ASC, "id" ASC LIMIT 12`,
-			func(rows *sql.Rows) error {
-				var kw string
-				if err := rows.Scan(&kw); err != nil {
-					return err
-				}
-				add(kw)
-				return nil
-			}, like, kwTitle, kwAuthor)
+			`SELECT "keyword" FROM "PseoKeyword" WHERE "seed" = ? AND "keyword" != ? AND "keyword" != ?
+                          ORDER BY ("status" = 'generated') DESC, LENGTH("keyword") ASC, "id" ASC LIMIT 12`,
+			scanAdd, kwTitle, kwTitle, kwAuthor)
+		// ② kwNorm 归一形 LIKE 兜底：存量词 + 跨来源含书名词（归一形抹平标点/空白/大小写差异）
+		_ = queryList(
+			`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' AND "kwNorm" LIKE ? AND "keyword" != ? AND "keyword" != ?
+                          ORDER BY ("source" = 'book') DESC, LENGTH("keyword") ASC, "id" ASC LIMIT 12`,
+			scanAdd, likeWrap(kwNormalize(kwTitle)), kwTitle, kwAuthor)
 	}
 	return out
 }

@@ -22,8 +22,10 @@ package main
 
 import (
 	"database/sql"
+	"log"
 	"math"
 	"strings"
+	"unicode"
 )
 
 // pseoRunnerConfig 运行配置（字段名与 TS PseoRunnerConfig 一致）
@@ -213,9 +215,76 @@ func savePseoConfig(patch any) (pseoRunnerConfig, error) {
 	return out, saveErr
 }
 
+// kwNormalize 关键词归一形（Task 40 书籍页「相关标签」鲁棒匹配的基座）：
+//  1. 全角 ASCII 变体（U+FF01–U+FF5E）折叠为半角（？→?，：→:，Ａ→A…）——搜索引擎
+//     返回的下拉词与站内书名在标点宽度上不一致是常态（书 293 实证：书名「二次元画风？」
+//     全角问号 vs 下拉词「二次元画风?笔趣阁」半角问号，严格子串 LIKE 全量漏配）
+//  2. 去除全部空白（unicode.White_Space，含全角空格/Tab/NBSP）——「捡个总裁老婆 小说」
+//     vs 「捡个总裁老婆小说」等空格形态差异同样导致漏配；对标签匹配语义而言召回优先
+//  3. 小写化（Latin 字母场景）
+//
+// 写入侧（insertKeywords/enqueuePseoBookSeed/存量回填）与查询侧（novelPseoTags）共用，
+// 保证归一形口径全局一致。仅用于匹配，不改变 keyword 原文展示。
+func kwNormalize(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		if r >= 0xFF01 && r <= 0xFF5E {
+			r -= 0xFEE0
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToLower(b.String())
+}
+
+// backfillPseoKeywordNorm 存量词一次性归一回填（Task 40，幂等）：kwNorm 列引入前入库的
+// 词全部为空串，补算归一形；只扫 kwNorm=” 行，回填完成后重复调用零开销（空库零开销）。
+// 在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训）。
+// 前提：kwNorm 列已由 ensureColumn 保证存在（kwNormalize 不可能产出空串——keyword
+// 入库前已 sanitize 去空白，归一后再去空白不会变空，空串只可能是未回填标记）。
+func backfillPseoKeywordNorm(db *sql.DB) error {
+	type kwRow struct {
+		id      int64
+		keyword string
+	}
+	rows := make([]kwRow, 0, 256)
+	if err := func() error {
+		rs, err := db.Query(`SELECT "id","keyword" FROM "PseoKeyword" WHERE "kwNorm" = ''`)
+		if err != nil {
+			return err
+		}
+		defer rs.Close()
+		for rs.Next() {
+			var r kwRow
+			if err := rs.Scan(&r.id, &r.keyword); err != nil {
+				return err
+			}
+			rows = append(rows, r)
+		}
+		return rs.Err()
+	}(); err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	for _, r := range rows {
+		if _, err := db.Exec(`UPDATE "PseoKeyword" SET "kwNorm" = ? WHERE "id" = ?`, kwNormalize(r.keyword), r.id); err != nil {
+			return err
+		}
+	}
+	log.Printf("[db] PseoKeyword.kwNorm 存量回填完成（%d 行）", len(rows))
+	return nil
+}
+
 // insertKeywords 关键词按序入库（跳过已存在 + 唯一冲突竞态容错），返回新增数。
 // entries 先截断到 cap 再批内去重；source 取该词首次出现时的引擎标记。
-func insertKeywords(entries []kwEntry, capLimit int) (int, error) {
+// seed（Task 40）：血缘种子（产词来源关键词，如书名种子富集传书名），空串=无血缘
+// （管理端手工添加等）；同时落 kwNorm 归一形供书籍页归一匹配（调用方保证 Word 已 sanitize）。
+func insertKeywords(entries []kwEntry, capLimit int, seed string) (int, error) {
 	engineOf := map[string]string{}
 	ordered := make([]string, 0)
 	for i, e := range entries {
@@ -258,12 +327,17 @@ func insertKeywords(entries []kwEntry, capLimit int) (int, error) {
 		if existingSet[kw] {
 			continue
 		}
-		// TS .catch(() => false)：任何入库错误（含并发撞 UNIQUE）均视为已存在，不中断批次
+		// TS .catch(() => false)：任何入库错误（含并发撞 UNIQUE）均视为已存在，不中断批次；
+		// Task 40: 非 UNIQUE 类错误（如占位符/列数不匹配）补日志——静默吞错会掩盖真实缺陷
+		// （本次开发中 7 占位符 vs 6 参数曾致整批静默丢失，added=0 无任何痕迹）
+		// Task 40: kwNorm 归一形 + seed 血缘同步落库
 		if _, err := exec(
-			`INSERT INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt") VALUES (?,?,'pending',?,?)`,
-			kw, engineOf[kw], now, now,
+			`INSERT INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm","seed") VALUES (?,?,'pending',?,?,?,?)`,
+			kw, engineOf[kw], now, now, kwNormalize(kw), seed,
 		); err == nil {
 			added++
+		} else if !isUniqueConflict(err) {
+			log.Printf("[backend-go-pseo] 关键词入库失败（非唯一冲突）keyword=%q: %v", truncateRunes(kw, 40), err)
 		}
 	}
 	return added, nil

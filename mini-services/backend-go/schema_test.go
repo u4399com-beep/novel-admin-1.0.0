@@ -49,7 +49,7 @@ func TestEnsureBaseSchemaFreshDB(t *testing.T) {
 	wantIdx := []string{
 		"Category_name_key", "Novel_title_author_key", "Novel_categoryId_idx",
 		"Novel_updatedAt_idx", "Novel_clicks_idx", "Chapter_novelId_idx_key",
-		"Chapter_novelId_idx", "PseoKeyword_keyword_key", "ScrapeRule_name_key",
+		"Chapter_novelId_idx", "PseoKeyword_keyword_key", "PseoKeyword_seed_idx", "ScrapeRule_name_key",
 		"ScrapeTask_status_idx",
 	}
 	for _, ix := range wantIdx {

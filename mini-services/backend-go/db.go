@@ -88,6 +88,19 @@ func getDB() (*sql.DB, error) {
 			`ALTER TABLE "ScrapeTask" ADD COLUMN "storageMode" TEXT NOT NULL DEFAULT 'db'`); err != nil {
 			log.Printf("[db] ScrapeTask.storageMode 加列失败（TXT 存储模式不可用，默认 db 不受影响）: %v", err)
 		}
+		// Task 40: PseoKeyword 书籍页标签两列（kwNorm 归一形/seed 血缘）——存量库幂等加列
+		if err := ensureColumn(db, "PseoKeyword", "kwNorm",
+			`ALTER TABLE "PseoKeyword" ADD COLUMN "kwNorm" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] PseoKeyword.kwNorm 加列失败（书籍页标签归一匹配降级为严格子串）: %v", err)
+		}
+		if err := ensureColumn(db, "PseoKeyword", "seed",
+			`ALTER TABLE "PseoKeyword" ADD COLUMN "seed" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] PseoKeyword.seed 加列失败（书籍页标签血缘直取降级为归一匹配）: %v", err)
+		}
+		// Task 40: 存量词一次性归一回填（幂等：只扫 kwNorm='' 行；空池零开销）
+		if err := backfillPseoKeywordNorm(db); err != nil {
+			log.Printf("[db] PseoKeyword.kwNorm 存量回填失败（书籍页标签归一匹配暂不可用，重启重试）: %v", err)
+		}
 		// 存量正文迁移（幂等、分批 500 行防长锁；空库秒级完成，存量 3.5 万章首次启动秒级~十秒级）
 		if err := migrateChapterContentSplit(db); err != nil {
 			log.Printf("[db] Chapter 存量正文迁移 ChapterContent 失败（存量正文仍可经 COALESCE 读取）: %v", err)

@@ -1863,3 +1863,22 @@ Stage Summary:
 - 本轮合计 5 项修复（主线 P1 schema + scraper 3 + backend 1）+2 项指纹保鲜增强+4 项精简
 - 反反爬增量：SSRF 钉死对尾点变体重新生效、WAF cookie 存活语义修复（反复过挑战根因之二）、UA 指纹池现势化
 - 工程约束再实证：全新库引导必须与 seed 时序联动测试（本 P1 在既有测试全绿下仍漏网，靠沙箱回收实战暴露）
+---
+Task ID: 40
+Agent: main (Z.ai Code)
+Task: 用户指令——书籍页「内容简介-相关标签」处加入 pseo 生成的相关下拉词
+
+Work Log:
+- 【根因诊断】书籍页相关标签实况只有 书名+作者 2 词（书 293/141/95 实证）。富集循环正常（00:08:55 为书 293 拉到 +12 下拉词且已 generated），但 novelPseoTags 用 `keyword LIKE '%完整书名%'` 严格子串匹配：搜索引擎返回的下拉词是半角 ?（「画风?笔趣阁」）而书名是全角 ？（「画风？」），13 条已生成下拉词全量漏配；且该匹配天然覆盖不了词面不含书名的相关推荐词。sqlite3 CLI 缺失 → 用 backend API + dev.log + go test（TestMain 临时库）+ python3 sqlite3 三路交叉定位（python 直读 WAL 有快照噪音，以 API/页面实证为准）
+- 【schema】PseoKeyword 增两列（schema.go 建表 DDL + db.go ensureColumn 存量库迁移）：kwNorm=归一形（全半角折叠 U+FF01-FF5E→半角/去全部 unicode 空白/小写，写入侧 insertKeywords+enqueuePseoBookSeed+存量回填与查询侧 novelPseoTags 共用口径）；seed=血缘（该词由哪个种子富集产出）+ PseoKeyword_seed_idx 索引
+- 【取词升级 novelPseoTags 双通道】① seed 血缘直取（enrichOneBookSeed/generate 入库时 seed=关键词）：不要求词面含书名，相关推荐词可上榜，generated 优先 ② kwNorm 归一形 LIKE 兜底：一次性回填存量 681 行（getDB once 内幂等回填迁移），全半角/空白/大小写差异不再漏配；归一包含 ⊇ 严格子串，旧语义为超集无需第三查询。总上限 14 维持，纯 DB 零网络调用不变
+- 【血缘接线】insertKeywords 增 seed 参数：pseo_book 富集传书名种子、api_pseo/generate 传 keyword（管理端对书名手动生成同语义）、batch 改逐种子带血缘入库（cap 预算按新增数递减，总预算不变）、add 手工传空
+- 【开发中自抓 bug】INSERT 占位符 7 个 vs 参数 6 个（多打一个 ?）→ modernc 报参数数不匹配 → 被 TS 移植的 `err == nil` 静默吞掉（added=0 零痕迹，测试实证）；修复占位符数并给非 UNIQUE 冲突错误补日志（静默吞错必须可观测）
+- 【测试资产】pseo_tags_test.go 3 用例：kwNormalize 9 向量（全半角？/空白/大小写/全角字母数字）+ novelPseoTags 集成（血缘词/不含书名相关词/存量无血缘词/干扰词隔离/pending 后置/作者词）+ 回填幂等；schema_test wantIdx 补 seed 索引。go build/vet/test -race 全绿，触碰文件 gofmt 全清
+- 【部署+E2E】build-go.sh 全绿 → backend-go 热替换（回填日志「681 行」实证）→ 书 293 相关标签 2→7、书 141 2→13；Agent Browser 实证：DOM 7/13 chips 渲染、点击「画风?笔趣阁」跳 /pseo/ 聚合页 200（自动 TDK + 相关小说 12 本）、移动端 390×844 无横向溢出、首页/书籍页 console+errors 零输出
+- 【数据面留档】书 95「青山」/书 118 仍 2 词：其种子富集时引擎返回 0 词（词池无该词数据），非本轮回归；血缘通道生效后未来富集的书自动获得完整下拉词，存量书靠归一兜底（有词即上榜）
+
+Stage Summary:
+- 书籍页「相关标签」从「严格子串匹配（标点形态差异全量漏配）」升级为「血缘直取+归一匹配」双通道，pseo 生成的相关下拉词稳定上榜（实证 2→7、2→13）
+- 架构增量：PseoKeyword 词池获得 kwNorm（归一形，匹配基座）+ seed（血缘，可回溯产词来源）两列，为后续按种子清理/报表打基础
+- 工程教训再实证：多 ? 占位符类错误会被既有静默吞错语义掩盖，旁路工具（python 直读 WAL）结果有快照噪音，生产验证以 API/页面实证 + go test 为准

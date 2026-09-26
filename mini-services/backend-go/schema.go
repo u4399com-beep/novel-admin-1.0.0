@@ -87,9 +87,16 @@ CREATE TABLE IF NOT EXISTS "PseoKeyword" (
         "status" TEXT NOT NULL DEFAULT 'pending',
         "pageData" TEXT,
         "createdAt" INTEGER NOT NULL DEFAULT 0,
-        "updatedAt" INTEGER NOT NULL DEFAULT 0
+        "updatedAt" INTEGER NOT NULL DEFAULT 0,
+        -- Task 40: 书籍页「相关标签」鲁棒取词两列（存量库由 db.go ensureColumn + 一次性回填补齐）
+        -- kwNorm = keyword 归一形（全半角折叠+去空白+小写）：全角？书名 vs 半角?下拉词等标点/宽度/
+        -- 空白形态差异导致 LIKE '%完整书名%' 全量漏配（书 293 实证），归一形匹配根除此类病灶
+        -- seed = 血缘：该词由哪个种子（书名）富集产出，书籍页按血缘直取「本书的 pseo 下拉词」
+        "kwNorm" TEXT NOT NULL DEFAULT '',
+        "seed" TEXT NOT NULL DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "PseoKeyword_keyword_key" ON "PseoKeyword" ("keyword");
+CREATE INDEX IF NOT EXISTS "PseoKeyword_seed_idx" ON "PseoKeyword" ("seed");
 
 CREATE TABLE IF NOT EXISTS "ScrapeRule" (
         "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
