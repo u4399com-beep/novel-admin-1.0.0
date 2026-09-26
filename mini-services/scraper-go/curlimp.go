@@ -138,6 +138,16 @@ func curlResolvePin(tu *url.URL) string {
 	if host == "" {
 		return ""
 	}
+	// Task 39-a（FIX-1 P2）：剥尾点必须与 --resolve 匹配口径一致——curl 自身的 URL 解析
+	// 会剥掉主机名尾点再发起连接/匹配 resolve 表（"http://example.com./" 实际连接
+	// "example.com"），钉死参数若保留尾点则永远匹配不上 → --resolve 静默失效，
+	// DNS rebinding 钉死形同虚设。与 cachedPublicIP/assertHostPublic 三方同口径。
+	for strings.HasSuffix(host, ".") { // 与 assertHostPublic 同款循环剥尾点（单一 TrimSuffix 对双尾点失效）
+		host = strings.TrimSuffix(host, ".")
+	}
+	if host == "" {
+		return ""
+	}
 	// IP 字面量主机：连接目标即校验目标，无二次解析窗口
 	if _, isV4 := parseIpv4TextOk(host); isV4 || strings.Contains(host, ":") {
 		return ""

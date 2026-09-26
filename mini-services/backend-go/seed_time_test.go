@@ -20,38 +20,38 @@ func mustInitSeedTables(t *testing.T) {
 		t.Fatalf("open temp db: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS "ScrapeRule" (
-		"id" INTEGER PRIMARY KEY AUTOINCREMENT,
-		"name" TEXT NOT NULL,
-		"siteUrl" TEXT NOT NULL DEFAULT '',
-		"enabled" INTEGER NOT NULL DEFAULT 1,
-		"charset" TEXT NOT NULL DEFAULT '',
-		"proxy" TEXT NOT NULL DEFAULT '',
-		"insecureTLS" INTEGER NOT NULL DEFAULT 0,
-		"listRule" TEXT NOT NULL DEFAULT '{}',
-		"bookRule" TEXT NOT NULL DEFAULT '{}',
-		"chapterRule" TEXT NOT NULL DEFAULT '{}',
-		"notes" TEXT NOT NULL DEFAULT '',
-		"createdAt" INTEGER,
-		"updatedAt" INTEGER
-	)`); err != nil {
+                "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+                "name" TEXT NOT NULL,
+                "siteUrl" TEXT NOT NULL DEFAULT '',
+                "enabled" INTEGER NOT NULL DEFAULT 1,
+                "charset" TEXT NOT NULL DEFAULT '',
+                "proxy" TEXT NOT NULL DEFAULT '',
+                "insecureTLS" INTEGER NOT NULL DEFAULT 0,
+                "listRule" TEXT NOT NULL DEFAULT '{}',
+                "bookRule" TEXT NOT NULL DEFAULT '{}',
+                "chapterRule" TEXT NOT NULL DEFAULT '{}',
+                "notes" TEXT NOT NULL DEFAULT '',
+                "createdAt" INTEGER,
+                "updatedAt" INTEGER
+        )`); err != nil {
 		t.Fatalf("create ScrapeRule: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS "Category" (
-		"id" INTEGER PRIMARY KEY,
-		"name" TEXT NOT NULL,
-		"sort" INTEGER NOT NULL DEFAULT 0
-	)`); err != nil {
+                "id" INTEGER PRIMARY KEY,
+                "name" TEXT NOT NULL,
+                "sort" INTEGER NOT NULL DEFAULT 0
+        )`); err != nil {
 		t.Fatalf("create Category: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS "SiteSetting" (
-		"id" INTEGER PRIMARY KEY,
-		"siteName" TEXT NOT NULL DEFAULT '',
-		"activeTheme" TEXT NOT NULL DEFAULT '',
-		"notice" TEXT NOT NULL DEFAULT '',
-		"seoConfig" TEXT NOT NULL DEFAULT '{}',
-		"footerConfig" TEXT NOT NULL DEFAULT '{}',
-		"homeConfig" TEXT NOT NULL DEFAULT '{}'
-	)`); err != nil {
+                "id" INTEGER PRIMARY KEY,
+                "siteName" TEXT NOT NULL DEFAULT '',
+                "activeTheme" TEXT NOT NULL DEFAULT '',
+                "notice" TEXT NOT NULL DEFAULT '',
+                "seoConfig" TEXT NOT NULL DEFAULT '{}',
+                "footerConfig" TEXT NOT NULL DEFAULT '{}',
+                "homeConfig" TEXT NOT NULL DEFAULT '{}'
+        )`); err != nil {
 		t.Fatalf("create SiteSetting: %v", err)
 	}
 	t.Cleanup(func() {
@@ -102,13 +102,13 @@ func TestNormalizeLegacyRuleTimestamps(t *testing.T) {
 	}
 	before := nowMillis() - 3600_000
 	textMs, _ := parseMillisText("2026-09-23 12:04:11")
-	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","createdAt","updatedAt") VALUES (1,'int行',?,?)`, before, before); err != nil {
+	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","siteUrl","createdAt","updatedAt") VALUES (1,'int行','https://t.example',?,?)`, before, before); err != nil {
 		t.Fatalf("insert int row: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","createdAt","updatedAt") VALUES (2,'text行',?,?)`, "2026-09-23 12:04:11", "2026-09-23 12:04:11"); err != nil {
+	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","siteUrl","createdAt","updatedAt") VALUES (2,'text行','https://t.example',?,?)`, "2026-09-23 12:04:11", "2026-09-23 12:04:11"); err != nil {
 		t.Fatalf("insert text row: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","createdAt","updatedAt") VALUES (3,'乱值行','not-a-date','garbage')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","siteUrl","createdAt","updatedAt") VALUES (3,'乱值行','https://t.example','not-a-date','garbage')`); err != nil {
 		t.Fatalf("insert garbage row: %v", err)
 	}
 	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM "ScrapeRule" WHERE "id" IN (1,2,3)`) })

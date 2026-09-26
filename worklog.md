@@ -1805,3 +1805,61 @@ Stage Summary:
 - Next.js/TS 彻底清场：运行时（Task 27 起）+构建期（本轮）全 Go 化，仓库仅余 Tailwind CSS 构建工具（Go 页面样式管线，无运行时依赖）
 - 本轮合计 8 项修复（scraper 6+backend 2）+4 项反反爬实质增强（会话统一/限流闭环/宝塔 WAF/去节奏指纹）+12 死函数精简（净 -148 行）
 - 反反爬体系增量：WAF 会话跨策略不再分裂（反复过挑战根因之一）、限流站点不再被降级请求追加刺激、宝塔系拦截页识别、间隔分布去指纹
+---
+Task ID: 39-b
+Agent: backend-review2
+Task: backend-go 核心未扫文件逐行深审+精简
+
+Work Log:
+- 【辖区与基线】对照 worklog 35-a/36-a/36-b/38-b 已扫清单，逐行深读指定核心面：router/runner/api_health/api_home/api_categories(+merge)/api_chapters/api_novels/api_scrape/api_scrape_tasks/api_scrape_rules/storex(全函数复扫)/pool/engineclient/limits/cleanx/coversx/pagination/runlog/t2s/web_footer/main（t2stable.go 生成表跳过；schema.go/db.go 为今日主线辖区零触碰）。基线 build/vet/test -race 全绿后动工
+- 【修复① P3 api_categories_merge.go POST /api/categories/merge toId 非整数静默截断→破坏性错误目标合并】旧版 toID 走 httpx.optIntField（裸 float64 断言+int 截断，无 Number.isInteger 判定）：toId=1.5 静默截断为 1 → 书籍全部迁入分类 #1 且源分类被删除（该端点为破坏性操作，错误目标合并不可逆）；toId=1e20 走 int64 溢出实现定义行为（amd64 得 MinInt64，靠 404 兜底属侥幸）。修复：新增共享工具 positiveIntIDField（api_novels.go 共享 JS 语义工具区；float 域 Number.isInteger+2^53 上界判定后再转 int64，与既有 taskRuleIDParam/scrapeRuleIDParam 同口径）；fromId 同口径切换（消灭 int64(1e300) UB 面）；toId 语义对齐 taskRuleIDParam（null/'' 视为未提供回落 toName 分支，其余必须安全正整数否则 400「无效的目标分类 ID」）；optIntField 随之零引用删除。回归测试 api_categories_merge_test.go 3 用例：toId=1.5/1e20 → 400 且源分类在+书籍归属不动、toId=null → 400 缺目标、整数 toId 正路径 moved=1+迁书+删源分类不变、positiveIntIDField 9 向量
+- 【精简 4 死项】rg 全模块（含测试）零调用方且无反射/模板引用：httpx.go optIntField（修复①后失唯一调用方）；limits.go categoryNameMax=50（仅 api_categories.go 头注释提及，实际截断用 TS 内联值 30=categoryNameMaxTS；注释同步改写）；t2s.go t2sSorted（声明即死，t2sInit 只算 t2sMaxLen，线性窗口法不使用）；api_pseo.go pseoBatchLockKey（旧锁 map 键残留，现锁形态为 pseoBatchStartedAt 时间戳）。方法/类型/顶层函数全量扫描零死项
+- 【过检无新增 bug 面（重点方向逐项）】并发竞态：runner 单 goroutine 独占 recatOffset/autoResumeAttempts（map 无并发访问）、pool.go runPoolDynamic/runPool 锁序 pool.mu→throttledCheck.mu 无环+watchdog kick 防挂死、laneLimiter acquire/release/setLimit/kick 语义正确、cleanAllMu 互斥闭环、fleetLinksMu 锁内无嵌套、t2sOnce happens-before 正确、gRunning 防重领取在位；SQL 注入：全部占位符，拼接面仅常量列名/条件白名单/编译期常量，无注入面；rows/资源泄漏：全库仅 2 处直 Query（db.go ensureColumn 与 api_chapters audit 事务内重查）均显式 Close（后者 Commit 前关闭防 in-progress），callEngine/scrapeProxy/coversx body 全闭环，runBashSync 超时后台收尾防 zombie；错误吞并与词表契约：本辖区产出的错误文案（引擎不可达/请求超时/HTTP 429/503/解析失败带状态码等）经 isTransientScrapeErr/isRateLimitErrText 全部正确分类（「不可达(3030)」「超时(60s)」无数值误命中 429/503 词元边界正则），无新文案绕过分类；runner autoResume LIKE '%限流%软拦截%' 与 worker 三处 paused 终态文案全匹配；JSON 解析 panic 面：全 comma-ok 或同函数自产断言（audit 类型断言/chapters volumes 计数/scrape_rules body["id"].(float64) 均有前置守卫），readBodyValue 32MB 限+Uncomma 安全；分页/边界：page/pageSize 全部钳制、(page-1)*pageSize 无溢出、parsePositiveInt/taskPagesParam 2^53 防线在位；事务：merge/audit/seed 三处 committed 标志+defer Rollback 闭环，audit 两段式重排负数暂存区语义正确（不变 idx 行不进暂存、变更行目标位必已腾空）
+- 【有意不动（留档）】router.go OPTIONS ACAO:* 为 Task 37 教训回退的既定取舍（头注释已载明原因）；ensureEngine 对 5xx pkill 重拉为设计取舍（35-a 已留档）；handleNovelUpdate 非 P2025 错误统一 400 文案对齐 TS；pageParamFloor 对 16 进制串微差（38-b 留档）；audit 重排无 pending/running 守卫（33-b 验收行为）；gofmt -l 余 router/runner/web/web_data 四文件为历史空格缩进存量，本轮零触碰维持惯例
+- 【工程约束】仅改 mini-services/backend-go/ 7 个源文件+1 新测试；worker.go 词表/schema.go/db.go 接线零触碰；未 kill/重启任何进程（backend-go.bin/scraper-go.bin 不受影响；go build 惯例副作用仅更新模块根 backend-go 非 .bin 产物，主线部署统一重建）；未 git 操作；未触碰 web/templates+web/static；scraper-go 零触碰
+
+Stage Summary:
+- backend-go 核心辖区 24 文件逐行深审闭环：1 个数据正确性修复（P3：分类合并 toId 非整数截断→破坏性错误目标合并，positiveIntIDField 严格整数校验收口，fromId 同口径消灭 UB）+ 精简 4 死项（optIntField/categoryNameMax/t2sSorted/pseoBatchLockKey）
+- 测试资产：+1 测试文件 3 用例 12 断言点（拒绝路径数据零变动/正路径行为不变/工具函数边界向量）；go build/vet/test -race 全绿，gofmt -l 触碰文件全清（余 4 文件为未触碰历史存量）
+- 结论：历经 35-a/36-a/38-b 三轮深审后，本辖区核心面质量已收敛——并发锁序、SQL 注入、rows/body/事务/goroutine 生命周期、JSON panic 面、分页边界、限流词表契约六个重点方向逐项过检均无新破口；唯一新抓真实缺陷集中在 ID 字段类型转换的边角（与 Task 30-b/33-b 同族病灶的最后一处漏网点）
+---
+---
+Task ID: 39-a
+Agent: scraper-review2
+Task: scraper-go 未扫文件逐行深审+反反爬增强
+
+Work Log:
+- 【辖区与基线】按任务书划定 16 个未深扫文件（affinity/charsetx/cleanx/content/cookies/extract/handlers/helpers/hosthealth/jstext/main/profiles/selectors/ssrf/types/util）逐行读毕；为 SSRF 完整性交叉核对了 chain/strategies/httpguard/curlimp/fetchcurl/jsontoc 的 URL 传递与逐跳校验链路（URL 全部经 Go url.URL.String() 再序列化后才下发 curl/Go client，backslash-authority 类解析分歧被中和）；Task 34/35-b/36-a/38-a 已修项零回归；基线 build/vet/test -race 全绿后动工
+- 【深审过检面】Go 正则=RE2 无灾难回溯（ReDoS 面清零）；ssrf.go IPv4 全文本形态/IPv6 内网段/双尾点剥净/decimal-octal-hex 边界逐例过检；cookies 并发单临界区+真实 LRU 在位；hosthealth 指数退避/熔断溢出钳制（60000<<exp 溢出被 <=0 守卫兑底）在位；affinity key 与 38-a 链层 ToLower(u.Host) 对齐无分裂；charsetx GB18030 兜底+FFFD 守卫+latin1 透传在位；extract/selectors 畸形 HTML 容错（compileSel 非法跳过/sliceSel 防 panic/去重保后位）在位；handlers panic 兜底/1MB body 上限在位；jsontoc 同源校验+拒跟随重定向+ssrfDialControl 在位
+- 【修复① P2·SSRF 尾点域名钉死失效（ssrf.go cachedPublicIP + curlimp.go curlResolvePin）】assertHostPublic 按 Task 34 P3-6 口径剥尾点后落 DNS 缓存（key=example.com），而 cachedPublicIP 查询不剥——URL 带尾点域名（http://example.com./，畸形但合法，规则/重定向 Location 可携带）时 curlResolvePin 必然 miss → curl 系策略 --resolve 参数为空 → Task 26-d 的 DNS rebinding「校验后、连接前 A 记录切内网」钉死防护对尾点变体静默重开；且 curl 自身 URL 解析剥尾点后才匹配 resolve 表，钉死参数保留尾点时同样永远匹配不上（新发现第二层）。修复：两处与 assertHostPublic 三方同口径循环剥尾点；测试 TestCachedPublicIPTrailingDot（6 向量+curlResolvePin 端到端）
+- 【修复② P3·Set-Cookie Max-Age/Expires 优先级错乱（cookies.go parseSetCookieLine）】RFC 6265 §5.3：有效 Max-Age 存在时 Expires（含其删除语义）应完全忽略；旧实现两属性按出现顺序各自生效——「Expires=<past>; Max-Age=3600」前置过期 Expires 的 remove 旗标在后续有效 Max-Age 下仍生效、「Max-Age=3600; Expires=<past>」后置过期 Expires 覆盖 TTL → 带数小时 Max-Age 的 WAF 通关 cookie（__jsl_clearance 系）被误删，「首访种 cookie、二访放行」站点每请求重新过挑战。修复：maxAgeValid 预检（无效 Max-Age=inf/NaN 仍按 §5.2.2 忽略不阻断）+ 有效 Max-Age>0 重置 remove，双向覆盖两种属性顺序；测试 TestParseSetCookieLineMaxAgeExpiresPrecedence（8 向量）+ TestCookieJarMaxAgeSurvivesExpiredExpires（jar 端到端）
+- 【修复③ P3·http.Server 无 IdleTimeout（main.go）】引擎长跑且无 ReadTimeout/IdleTimeout——backend-go 每次重启/热替换遗留的空闲 keep-alive 连接永不回收（服务端 goroutine+FD 缓慢累积）；抽 newServer(addr, handler) 补 IdleTimeout=120s（远大于消费方连接池复用间隔，在途请求不受影响），WriteTimeout 维持不设（55s 策略链预算+主站 60s 兑底的既有决策）；测试 TestNewServerTimeouts（三参数锁定）
+- 【增强① E1·浏览器指纹保鲜（profiles.go）】Chrome 候选集 130-137 → 147-154（2026-09 现势 stable=154，web search 实证 chromereleases/chromestatus），Firefox 126 → 154（现势 stable），Safari 17.4 → 27.0（macOS）/ iOS 18_5 → 27_0；UA 白名单型 WAF 对近期窗口外版本拒绝概率单调上升，本轮以前 130-137 已滞后一年+；UA/Sec-CH-UA/Edg 同源派生一致性不变；测试 TestProfilesFingerprintFreshness（派生一致+保鲜带锁定）
+- 【增强② E2·got 系随机头池扩容（strategies.go headerGeneratorHeaders）】Chrome/Edge 双画像 → +Firefox 三画像轮换——固定双画像在站点侧 UA 统计呈可聚类窄分布，Firefox（无客户端提示、头集差异大）拉开熵距，与 fetch-ua-rotate 画像覆盖对齐；测试 TestHeaderGeneratorHeadersDesktopPool（240 轮三画像覆盖+sec-ch-ua 有无按画像锁定+accept-language 白名单）
+- 【留档不修（有意）】重定向跳 Referer/sec-fetch-site 按浏览器默认 referrer 策略应随跳更新（fetch 系/got 系均为跳间复用首跳画像头）——需触碰 httpguard/strategies 的逐跳头装配且收益依赖 WAF 一致性校验的具体实现，风险>收益；ipv4IsPrivate 未含 TEST-NET/192.0.0.0/24 等文档段（非内网基础设施，与 TS 原版一致）；runeLen 注释称 UTF-16 语义实为 rune 计（astral 字符 ±1，仅观测字段）；trimJSSpace 多含 U+0085（Go 惯性，仅边缘修剪）；jstext collapse 第二段 NBSP ReplaceAll 为无操作冗余；decodeEntityOne &#X 大写分支为死代码（regex 只收小写 x）
+- 【环境约束】仅改 mini-services/scraper-go/ 内 7 文件（6 源+1 新增测试）；go build ./... 惯例副作用重建模块根 ./scraper-go 二进制（含全部修复，主线热替换即可部署）；生产进程 scraper-go.bin 未触碰（mtime 维持 09-25 15:05）、零 kill/重启、零 git 操作、backend-go 零改动
+
+Stage Summary:
+- 16 文件逐行深审闭环：3 项修复（1 个 SSRF 防护完整性 P2：尾点域名令 curl --resolve DNS rebinding 钉死双层静默失效——缓存查询 miss + resolve 表匹配 miss；2 个 P3：cookie Max-Age/Expires 优先级（反反爬连带：WAF 通关 cookie 不再被误删）、server IdleTimeout 空闲连接回收）+ 2 项反反爬增强（指纹保鲜至 2026-09 现势 stable 版本带、got 系画像池三浏览器扩容）
+- 测试资产：+audit39_test.go 6 用例（全表驱动/端到端，风格对齐 audit38_test.go）；go build/vet 零输出、go test -race -count=1 ./... 全绿、gofmt -l 全清（触碰文件含历史空格缩进一并归一）
+- 无 P1 级新发现；ReDoS 面（Go RE2）与既有 SSRF 逐跳校验/dial-level 钉死/cookie 并发结构均过检在位
+---
+---
+Task ID: 39（主线·main·终记）
+Agent: main (Z.ai Code)
+Task: 用户 4 点指令——①复查 Next.js/TS 残留清零 ②采集+反反爬增强+逐行抓 bug ③精简 ④推送 git
+
+Work Log:
+- 【①残留复查=零】全仓扫描无 .ts/.tsx/next.config/tsconfig/eslint/jest 等任何残留；git 跟踪的 JS 仅 2 个构建工具（build-web-css.mjs=Go 页面样式管线 + engine-rule-test.mjs）
+- 【①复查抓出 P1 架构缺口并修复】第 8 次沙箱回收整库文件被删（历史 7 次只清数据），全新建库后仅 2 张 Go 侧表（ChapterContent/SiteSite）——业务表结构历来靠已删除的 Prisma db push 建立，纯 Go 栈不自持 schema（seed 报 no such table: ScrapeRule 实证）。修复：新增 schema.go 纯 Go 全量建表引导（7 基础表+全部索引/唯一约束/FK 镜像 git 历史 prisma/schema.prisma；时间戳列 INTEGER DEFAULT 0 取代 DATETIME——modernc 驱动对 DATETIME 声明列把字符串自动转 time.Time 致 normalizeMillis 失效，且缺省 0 根除 TEXT 时间戳行病灶）；getDB once 回调内同步执行先于异步 seed（时序契约）；schema_test.go 双测试锁定（全新库建表+幂等+FK 级联+getDB 生产路径）；6 个既有测试补齐生产必填列（author/categoryId/targetUrl/siteUrl）
+- 【附帯修复】engine-rule-test.mjs 依赖已删的 Prisma Client 坏死（本轮暂留待后续改造，db:generate 已不存在）
+- 【第 8 次沙箱恢复】Go 工具链重装（/home/z/go-sdk/go 布局修正）；mkdir db/covers/novels/upload；backend 自愈+全新库 schema 引导+播种实证（10 表/15 规则/9 分类）；重建 8 个 list 任务（新增 101kks+ixdzs8）
+- 【39-a 子代理·scraper-go 16 未扫文件】修复 3 项：①P2 SSRF 尾点域名（example.com./）令 curl --resolve DNS rebinding 钉死双层静默失效（缓存 key 与 curl 解析两侧剥尾点不一致）→ 三方同口径 ②P3 cookie Set-Cookie Max-Age/Expires 优先级违反 RFC 6265 §5.3（WAF 通关 cookie __jsl_clearance 系被误删→每请求重过挑战）→ maxAgeValid 预检+优先级复位 ③P3 引擎 http.Server 补 IdleTimeout=120s（空闲连接/FD 累积）；增强 2 项：UA/Sec-CH-UA 指纹池升 2026-09 现势（Chrome 154/Firefox 154/Safari 27）+ got 系加 Firefox 三画像轮换（拉开 UA 统计聚类熵距）；6 测试用例锁定；无 P1（RE2 无 ReDoS/affinity key 已对齐 38-a 归一）
+- 【39-b 子代理·backend-go 核心未扫文件】修复 1 项：P3 /api/categories/merge toId 非整数静默截断（1.5→1 破坏性错向合并）→ positiveIntIDField 共享工具（Number.isInteger+2^53 上界）+fromId 同口径；精简 4 死项（optIntField/categoryNameMax/t2sSorted/pseoBatchLockKey）；六方向过检（锁序/SQL/rows-body-事务-goroutine 生命周期/词表契约/JSON panic/分页）无新破口
+- 【部署+E2E】build-go.sh 全绿 → 双服务热替换 → 8 任务自动 paused（瞬态保护）→ 全部 resume 200 → 25s 增量 +8 章生产中 → 浏览器 E2E：首页/章节页渲染、admin 站点设置写路径落库+恢复双 PASS、console/errors 零输出
+
+Stage Summary:
+- Next.js/TS 残留复查=零；本轮最大成果=纯 Go 栈 schema 自持闭环（P1：建表引导+播种时序+回归锁定，沙箱任意清库不再依赖 Prisma 遗产）
+- 本轮合计 5 项修复（主线 P1 schema + scraper 3 + backend 1）+2 项指纹保鲜增强+4 项精简
+- 反反爬增量：SSRF 钉死对尾点变体重新生效、WAF cookie 存活语义修复（反复过挑战根因之二）、UA 指纹池现势化
+- 工程约束再实证：全新库引导必须与 seed 时序联动测试（本 P1 在既有测试全绿下仍漏网，靠沙箱回收实战暴露）

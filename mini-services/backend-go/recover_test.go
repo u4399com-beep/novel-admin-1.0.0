@@ -32,13 +32,13 @@ func mustInitScrapeTaskTable(t *testing.T) {
 		t.Fatalf("open temp db: %v", err)
 	}
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS ScrapeTask (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		status TEXT NOT NULL DEFAULT 'pending',
-		message TEXT NOT NULL DEFAULT '',
-		log TEXT NOT NULL DEFAULT '',
-		createdAt INTEGER,
-		updatedAt INTEGER
-	)`); err != nil {
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                message TEXT NOT NULL DEFAULT '',
+                log TEXT NOT NULL DEFAULT '',
+                createdAt INTEGER,
+                updatedAt INTEGER
+        )`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	t.Cleanup(func() {
@@ -51,7 +51,7 @@ func insertTask(t *testing.T, status string, createdAt any) int64 {
 	if err != nil {
 		t.Fatalf("open temp db: %v", err)
 	}
-	res, err := db.Exec(`INSERT INTO ScrapeTask (status, message, log, createdAt, updatedAt) VALUES (?, '', '', ?, ?)`,
+	res, err := db.Exec(`INSERT INTO ScrapeTask (status, targetUrl, message, log, createdAt, updatedAt) VALUES (?, 'https://test.example/book/1', '', '', ?, ?)`,
 		status, createdAt, createdAt)
 	if err != nil {
 		t.Fatalf("insert: %v", err)

@@ -64,6 +64,13 @@ func getDB() (*sql.DB, error) {
 			return
 		}
 		gDB = db
+		// Task 39: 纯 Go 全量建表引导（必须最先执行）——历史表结构由 Prisma 建库保证，
+		// Task 38 移除 Prisma 后全新库文件只有空 schema，seed 播种与业务 SQL 全瘫
+		// （第 8 次沙箱回收整库文件被删实证）。同步建表先于 startSeedIfEmpty 的异步播种。
+		// 存量库全部 IF NOT EXISTS 空操作，零影响。
+		if err := ensureBaseSchema(db); err != nil {
+			log.Printf("[db] 基础 schema 建表失败（业务表缺失将不可用）: %v", err)
+		}
 		// Task 30-a fix(30 main): 站群站点档案表幂等建表 —— 必须在 once 回调内用局部 db 直接建表。
 		// 旧版在 once 外调 ensureSiteSiteTable()→exec→getDB→再次 ensureSiteSiteTable，
 		// siteSiteOnce.Do 未完成时重入 → sync.Once 递归自锁（panic dump 实证：goroutine 卡
@@ -102,8 +109,8 @@ const chapterContentDDL = `CREATE TABLE IF NOT EXISTS "ChapterContent" (
 )`
 
 // ensureColumn 幂等加列助手（Task 32-b）：PRAGMA table_info 检查列不存在则 ALTER TABLE ADD COLUMN。
-// 表不存在（0 行返回）时静默跳过——生产库由 Prisma 建表保证存在；测试环境先 getDB 后建表的
-// 场景由测试自行在建表后调用本函数补列。
+// 表不存在（0 行返回）时静默跳过——生产库由 ensureBaseSchema（schema.go，Task 39 起）
+// 同步建表保证存在；测试环境先 getDB 后建表的场景由测试自行在建表后调用本函数补列。
 // ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训）。
 func ensureColumn(db *sql.DB, table, column, alterDDL string) error {
 	rows, err := db.Query(`PRAGMA table_info("` + table + `")`)

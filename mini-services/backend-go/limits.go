@@ -13,6 +13,3 @@ const (
 	novelDescriptionMax = 2000 // 简介上限（Novel.description）
 	chapterTitleMax     = 200  // 章节标题上限（Chapter.title）
 )
-
-// category name 上限（Category.name @unique；与 TS 侧 sanitize 语义对齐）
-const categoryNameMax = 50

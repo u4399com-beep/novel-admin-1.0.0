@@ -176,6 +176,14 @@ func parseSetCookieLine(line string, now int64) *parsedCookie {
 	// 30 分钟后被判过期删除，触发整轮重新挑战，二访放行型站点反复丢会话；7 天上界分支也是死代码
 	secureOnly := false
 	remove := false
+	// Task 39-a（FIX-2 P3）：有效 Max-Age 存在时完全忽略 Expires（RFC 6265 §5.3 存储模型：
+	// max-age 属性优先于 expires，含 expires 的删除语义）。旧实现对两属性按出现顺序各自生效：
+	// ①后置过期 Expires 会覆盖/作废已算出的 Max-Age TTL；②前置过期 Expires 的 remove 旗标
+	// 在后续有效 Max-Age>0 时仍生效（仅 maxAgeSeen 后置序可豁免）→ 「a=1; Expires=<past>;
+	// Max-Age=3600」这种过期 Expires 与长效 Max-Age 并存的 WAF 通关 cookie 被误删
+	// →「首访种 cookie、二访放行」站点每请求都重新过挑战。maxAgeValid 预检 + 正向
+	// Max-Age 重置 remove 双向覆盖两种属性顺序。
+	maxAgeValid := false
 	if semi != -1 {
 		for _, attr := range strings.Split(line[semi+1:], ";") {
 			aeq := strings.Index(attr, "=")
@@ -195,8 +203,9 @@ func parseSetCookieLine(line string, now int64) *parsedCookie {
 				// cookie 以负过期时间入库、回放侧必删——恶意 Set-Cookie 头可毒化同名会话 cookie。
 				// 非有限值忽略该属性；有限值先在 float 域钳到 TTL 上界再转换，杜绝溢出。
 				if err != nil || math.IsNaN(sec) || math.IsInf(sec, 0) {
-					continue
+					continue // 无效 Max-Age 整条属性忽略（RFC 6265 §5.2.2），不影响 expires 生效
 				}
+				maxAgeValid = true
 				if sec <= 0 {
 					remove = true
 				} else {
@@ -208,8 +217,12 @@ func parseSetCookieLine(line string, now int64) *parsedCookie {
 						ms = cookieMaxTTLMS
 					}
 					expiresAt = now + ms
+					remove = false // 有效 Max-Age>0 覆盖此前 Expires（含过期删除）语义
 				}
 			case "expires":
+				if maxAgeValid {
+					continue // 有效 Max-Age 已生效：忽略 Expires（RFC 6265 §5.3，含其删除语义）
+				}
 				if t := parseHTTPDate(val); t > 0 {
 					if t <= now {
 						remove = true

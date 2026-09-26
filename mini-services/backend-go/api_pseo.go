@@ -305,7 +305,6 @@ func handlePseoGenerate(w http.ResponseWriter, r *http.Request, _ map[string]str
 // ==================== POST /api/pseo/batch（种子批量获取） ====================
 
 const (
-	pseoBatchLockKey     = "pseoBatchStartedAt"
 	pseoBatchLockTTLMS   = 180_000 // 仅防僵尸锁：正常完成/异常都在 finally 主动释放
 	pseoBatchConcurrency = 2       // 种子级并发（引擎聚合内部再限 3）
 )

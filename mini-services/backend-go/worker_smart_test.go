@@ -168,8 +168,12 @@ func insertSmartNovel(t *testing.T, id int, title, desc, status string) {
 	if err != nil {
 		t.Fatalf("open temp db: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","description","status","updatedAt") VALUES (?,?,?,?,?)`,
-		id, title, desc, status, nowMillis()); err != nil {
+	// 基础 schema 下 Novel.categoryId NOT NULL+FK：幂等建分类行
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9010,'智能补全测试分类')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","description","status","updatedAt") VALUES (?,?,?,?,?,?,?)`,
+		id, title, "测试作者", 9010, desc, status, nowMillis()); err != nil {
 		t.Fatalf("insert novel %d: %v", id, err)
 	}
 }

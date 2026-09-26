@@ -24,7 +24,6 @@ package main
 
 import (
 	"database/sql"
-	"math"
 	"net/http"
 )
 
@@ -99,15 +98,31 @@ func handleCategoriesMergePost(w http.ResponseWriter, r *http.Request, _ map[str
 	body := bodyMap(v)
 
 	// TS Number.isInteger(fromId) && fromId > 0：非数字/非整数（如 1.5）→ 400
-	var fromID int64
-	if f, isNum := body["fromId"].(float64); isNum && f == math.Trunc(f) {
-		fromID = int64(f)
+	//（positiveIntIDField：float 域整数判定+2^53 上界后再转 int64，杜绝
+	// 非整数截断/越界溢出两类转换事故——Task 39-b 与 toId 同口径收紧）
+	fromID, hasFrom := int64(0), false
+	if body["fromId"] != nil {
+		fromID, hasFrom = positiveIntIDField(body["fromId"])
 	}
-	if fromID <= 0 {
+	if !hasFrom {
 		writeJSON(w, 400, map[string]string{"error": "无效的源分类 ID"})
 		return
 	}
-	toID, hasToID := optIntField(body["toId"])
+	// toId 同口径严格校验（taskRuleIDParam 语义：null/'' 视为未提供，其余必须为
+	// 安全正整数）。旧版 optIntField 对 1.5 静默截断为 1——破坏性合并进错误目标
+	// 分类并删除源分类，属数据正确性事故
+	toID, hasToID := int64(0), false
+	if val, present := body["toId"]; present && val != nil {
+		if s, isStr := val.(string); !isStr || s != "" {
+			var ok bool
+			toID, ok = positiveIntIDField(val)
+			if !ok {
+				writeJSON(w, 400, map[string]string{"error": "无效的目标分类 ID"})
+				return
+			}
+			hasToID = true
+		}
+	}
 	// toName 仅供目标分类尚不存在的建议对使用（如 N次元 → 同人 的「同人」）
 	toName := ""
 	if s, isStr := body["toName"].(string); isStr {
@@ -135,7 +150,7 @@ func handleCategoriesMergePost(w http.ResponseWriter, r *http.Request, _ map[str
 	var targetID int64
 	var targetName string
 	if hasToID {
-		if int64(toID) == fromID {
+		if toID == fromID {
 			writeJSON(w, 400, map[string]string{"error": "源分类与目标分类相同"})
 			return
 		}

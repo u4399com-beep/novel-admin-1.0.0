@@ -35,6 +35,21 @@ import (
 const serviceVersion = "2.0.0"
 const serviceRuntime = "go1.22"
 
+// newServer 引擎 HTTP Server 构造（抽出供超时参数回归锁定，测试见 audit39_test.go）。
+// Task 39-a（FIX-3 P3）：补 IdleTimeout=120s——引擎长跑，旧实现无 ReadTimeout/IdleTimeout，
+// 空闲 keep-alive 连接永不回收：backend-go 每次重启/热替换后遗留的旧连接会一直挂着
+// （服务端 goroutine + FD 缓慢累积；生产实证进程连续运行 7 天+）。120s 远大于消费方
+// 连接池复用间隔，在途请求不受影响；WriteTimeout 维持不设（策略链预算 55s + 主站 60s
+// 消费超时已兜底，服务端再设会切断长抓取，与 TS Bun.serve 行为一致）。
+func newServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+}
+
 func parsePort() int {
 	parsed, err := strconv.Atoi(os.Getenv("SCRAPER_PORT"))
 	if err == nil && parsed > 0 && parsed < 65536 {
@@ -125,13 +140,7 @@ func main() {
 		route(w, r)
 	})
 
-	server := &http.Server{
-		Addr:              fmt.Sprintf("127.0.0.1:%d", port),
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		// 不设 WriteTimeout：策略链预算 55s + 主站 60s 消费超时已兜底，
-		// 服务端再设会切断长抓取（与 TS Bun.serve 行为一致）
-	}
+	server := newServer(fmt.Sprintf("127.0.0.1:%d", port), mux)
 
 	// 引擎自心跳（每 2s utime 一次）：沙箱环境会静默回收「空闲」后台进程，
 	// 周期性文件活动是对冲手段。心跳文件同时供互监护/运维判定引擎存活。

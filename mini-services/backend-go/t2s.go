@@ -21,7 +21,6 @@ import (
 var (
 	t2sOnce   sync.Once
 	t2sMaxLen int
-	t2sSorted []string // 按长度降序的词条键（二分用不上，直接线性窗口法即可）
 )
 
 func t2sInit() {

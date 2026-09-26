@@ -106,7 +106,11 @@ func TestAuditReindexReordersAndSyncsTxt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open temp db: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","updatedAt") VALUES (1,'重排测试书',?)`, nowMillis()); err != nil {
+	// 基础 schema 下 Novel.categoryId NOT NULL+FK：先建分类行
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9001,'测试分类')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (1,'重排测试书','测试作者',9001,?)`, nowMillis()); err != nil {
 		t.Fatalf("insert novel: %v", err)
 	}
 	// idx 顺序与标题序号完全错开（1..4 全部变号）
@@ -164,7 +168,10 @@ func TestAuditDedupeRemovesTxtFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open temp db: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","updatedAt") VALUES (2,'去重测试书',?)`, nowMillis()); err != nil {
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9002,'测试分类2')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (2,'去重测试书','测试作者',9002,?)`, nowMillis()); err != nil {
 		t.Fatalf("insert novel: %v", err)
 	}
 	insertAuditChapter(t, 2, 1, "第1章", 50) // 保留（wordCount 最大）

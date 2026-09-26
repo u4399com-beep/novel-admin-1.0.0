@@ -142,6 +142,18 @@ func parsePositiveInt(v any) (int64, bool) {
 	return int64(f), true
 }
 
+// positiveIntIDField 请求体正整数 ID 字段（JS Number.isInteger 语义 + 2^53 安全整数上界）。
+// 与 scrapeRuleIDParam/taskRuleIDParam 同口径：float 域完成全部判定后再转 int64，
+// 杜绝两类转换事故——①非整数静默截断（1.5 → 1，曾使分类合并 toId=1.5 破坏性合入
+// 错误目标分类并删除源分类）；②越界溢出实现定义行为（1e20 → amd64 得 MinInt64）。
+func positiveIntIDField(v any) (int64, bool) {
+	f, isNum := v.(float64)
+	if !isNum || !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
+		return 0, false
+	}
+	return int64(f), true
+}
+
 // routeIntID 路径段 id 解析（Number(id) 须为整数，可负/零——与 TS Number.isInteger 对齐）。
 // 非法时写 400 {error: errMsg}。
 func routeIntID(w http.ResponseWriter, raw, errMsg string) (int, bool) {

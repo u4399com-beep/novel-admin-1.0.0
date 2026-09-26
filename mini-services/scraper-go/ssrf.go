@@ -482,9 +482,17 @@ func cachedPublicIP(hostname string) string {
 	if allowPrivate {
 		return ""
 	}
+	// Task 39-a（FIX-1 P2）：尾点归一必须与 assertHostPublic 的存储口径一致——入口校验
+	// 剥尾点后以 "example.com" 为 key 落缓存，本函数旧实现不剥，URL 带尾点域名
+	// （http://example.com./，畸形但合法、可被规则/重定向 Location 携带）时查询必然 miss
+	// → curlResolvePin 返回空 → curl 系策略的 --resolve DNS rebinding 钉死静默失效，
+	// 「校验与连接之间的 A 记录切换」窗口（Task 26-d 封堵目标）对尾点变体重开。
 	h := strings.ToLower(strings.TrimSpace(hostname))
 	h = strings.TrimPrefix(h, "[")
 	h = strings.TrimSuffix(h, "]")
+	for strings.HasSuffix(h, ".") { // 与 assertHostPublic 同款循环剥尾点（单一 TrimSuffix 对双尾点失效）
+		h = strings.TrimSuffix(h, ".")
+	}
 	if h == "" {
 		return ""
 	}

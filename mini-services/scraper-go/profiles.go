@@ -24,10 +24,13 @@ type headerProfile struct {
 }
 
 // chromeMajor 进程启动时从近期版本集随机挑选一次，UA 与 Sec-CH-UA 全部由它派生
-// （Task 26-d：候选集刷新到当前活跃大版本带 130-137，降低「陈旧 UA 白名单外被拒」概率；
+// （Task 26-d：候选集对齐当前活跃大版本，降低「陈旧 UA 白名单外被拒」概率；
 // sec-ch-ua 与 UA 同源派生，版本一致性不受候选集变化影响）
+// Task 39-a（E1 指纹保鲜 2026-09）：候选集 130-137 → 147-154（近一年活跃带，现势 stable=154），
+// Firefox 126 → 154（现势 stable=154），Safari 17.4 → 27.0 / iOS 18.x → 27.0 —— UA 白名单型 WAF 对「超出近期窗口」的
+// 浏览器版本拒绝概率随时间单调上升，旧版本画像反而比无画像更可疑。
 var chromeMajor = func() int {
-	candidates := []int{130, 131, 132, 133, 134, 135, 136, 137}
+	candidates := []int{147, 148, 149, 150, 151, 152, 153, 154}
 	return candidates[rand.Intn(len(candidates))]
 }()
 
@@ -97,7 +100,7 @@ var firefoxDesktopProfile = headerProfile{
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer,
-			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0",
 			map[string]string{
 				"sec-fetch-dest":  "document",
 				"sec-fetch-mode":  "navigate",
@@ -115,7 +118,7 @@ var safariDesktopProfile = headerProfile{
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer,
-			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15",
 			map[string]string{
 				"sec-fetch-dest": "document",
 				"sec-fetch-mode": "navigate",
@@ -170,7 +173,7 @@ var iphoneSafariProfile = headerProfile{
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer,
-			"Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+			"Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1",
 			map[string]string{
 				"sec-fetch-dest": "document",
 				"sec-fetch-mode": "navigate",

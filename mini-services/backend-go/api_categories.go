@@ -6,8 +6,8 @@
  *   - src/app/api/categories/[id]/route.ts → handleCategoryUpdate / handleCategoryDelete
  *
  * 移植语义差异：
- *   1. 分类名截断上限沿用 TS 内联值 30（骨架 limits.go 的 categoryNameMax=50 与 TS route.ts
- *      的 slice(0,30) 不一致，此处以 TS 源为准）
+ *   1. 分类名截断上限沿用 TS 内联值 30（TS route.ts 为 slice(0,30)；limits.go 的
+ *      50 上限常量已随死代码清理移除，此处以 TS 源为准）
  *   2. 列表 ORDER BY sort 并列时 TS 顺序未定义，Go 追加 id ASC 兜底（与 SQLite rowid 扫描序一致）
  *   3. PUT 空 data 时 TS 为 Prisma 空更新（返回原行），Go 直接 SELECT 原行等价返回
  */

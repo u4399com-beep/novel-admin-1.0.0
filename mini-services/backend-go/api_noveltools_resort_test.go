@@ -26,7 +26,10 @@ func TestResortChaptersReorderSyncsTxtFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open temp db: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","updatedAt") VALUES (3,'重排TXT书',?)`, nowMillis()); err != nil {
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9003,'测试分类3')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (3,'重排TXT书','测试作者',9003,?)`, nowMillis()); err != nil {
 		t.Fatalf("insert novel: %v", err)
 	}
 	// 9 章完全倒序（≥NUMBERED_MIN(8)，无重复序号，disorder=100%>20% 必触发重排）：

@@ -45,15 +45,6 @@ func strField(v any, maxLen int) string {
 	return s
 }
 
-// optIntField 可选整数字段（存在且为数字返回 true）
-func optIntField(v any) (int, bool) {
-	f, ok := v.(float64)
-	if !ok {
-		return 0, false
-	}
-	return int(f), true
-}
-
 // parseQueryStr 解析 query 参数字符串
 func parseQueryStr(r *http.Request, key string) string {
 	return r.URL.Query().Get(key)

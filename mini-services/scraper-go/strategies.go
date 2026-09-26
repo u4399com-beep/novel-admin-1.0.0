@@ -147,14 +147,20 @@ var fetchSpiderStrategy = makeFetchStrategy("fetch-spider",
 
 // ==================== got-scraping 的 Go 等价实现 ====================
 
-// headerGeneratorHeaders 随机真实桌面头（等价 header-generator chrome/edge 桌面 zh-CN）：
-// 从 Chrome/Edge 桌面画像随机选一，并随机化 Accept-Language 权重形态。
+// headerGeneratorHeaders 随机真实桌面头（等价 header-generator 桌面 zh-CN）：
+// 从 Chrome/Edge/Firefox 桌面画像随机选一，并随机化 Accept-Language 权重形态。
+// Task 39-a（E2 反反爬）：got 系随机头池 Chrome/Edge 双画像 → +Firefox 三画像——
+// 固定双画像在站点侧的 UA 统计里呈可聚类的窄分布（同一 IP 段反复出现同两组 UA+头组合），
+// 补 Firefox（无客户端提示、头集差异大）拉开熵距，与 fetch-ua-rotate 的画像覆盖对齐。
 func headerGeneratorHeaders(firstURL string) map[string]string {
 	var base map[string]string
-	if rand.Intn(2) == 0 {
+	switch rand.Intn(3) {
+	case 0:
 		base = chromeDesktopProfile.headers(firstURL, true, "")
-	} else {
+	case 1:
 		base = edgeDesktopProfile.headers(firstURL, true, "")
+	default:
+		base = firefoxDesktopProfile.headers(firstURL, true, "")
 	}
 	langs := []string{
 		"zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
