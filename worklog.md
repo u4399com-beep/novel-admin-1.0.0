@@ -2109,3 +2109,26 @@ Stage Summary:
 - 五点全落地：链轮三类型上线（生产实证+测试锁定）；采集/反反爬双域 10 修复+3 增强（E3/E4/E5）+14 死函数精简；自动恢复消息机制审计闭环+文案校准
 - 生产状态：283+ 书、双服务健康、console 零错误、SiteSite 空表时群链轮零 DOM 痕迹（用户配站即自动生效）
 - TS 第五轮零残留；验证三连（backend+scraper）全绿；提交链 …→b9e04fb→c99b3be(45)→5e2030e(Wave1)→5c0f67a(46-①)
+---
+Task ID: 47
+Agent: main (Z.ai Code)
+Task: 用户 3 点指令——①源站繁体字入库转简体（书名/目录名/作者/分类/简介/正文等所有获取到的数据，含存量）②聚合页 404 修复 ③友情链接区块沿用模板已有实现不额外增块 + XML sitemaps 网站地图
+
+Work Log:
+- 【现场重估】会话接手时实际进度已超前摘要（Task 45/46 均已完成收官：混淆/分卷/链轮/softBlock 接线在库）；t2s.go/t2stable.go（zhconv 4704 单字+2481 词条）Task 32 起已在，worker 书字段/章题/正文已有 t2sField(auto) 接线、canonicalCategory 分类链已有 t2s——缺口在三处：短字段单繁字阈值漏转/Phase1 骨架章题未转/sitemap 与 pseo 双病灶
+- 【①-a 短字段单歧义字】生产 API 实证残留 "author":"辰東"（auto 短字段 ≥2 特征字阈值下单繁字漏转）→ t2s.go 新增 ambiguousTradRunes 两用字集合（「」『』乾徵於——乾坤/宫商角徵羽/简体引号场景防误伤）+ countTradSplit 单遍两路计数；t2sField(auto) 改为「无歧义繁体字（東學們等，简体文本不可能出现）≥1 即转 / 两用字 ≥2 才转」
+- 【①-b Phase1 骨架章题 t2s（P1 级隐患根修）】storeChapterSkeletons 原样入库原始 TOC 标题——繁体源（101kks/ixdzs8）重采时繁体词面与已填充简体标题去重必 miss → 重复骨架行+重复章节；签名增 t2sMode 参数，refs 标题先 t2sField 再 detectVolume（繁体「第X捲」前缀先归一才能被卷识别命中）；worker 传参/volume_test 适配；新增 t2s_skeleton_test.go（繁体词面与既有简体已填充行精确去重 + 重发零重复建行）
+- 【①-c 存量回填（用户指令的存量面）】db.go 新增 AppMeta KV 表（运行时幂等建表先例）+ backfillT2SExisting：同步面 Category/Novel(title,author,description)/Chapter(title+转换后卷前缀归一)/PseoKeyword(keyword,seed+kwNorm 重算) + 异步 goroutine backfillT2SContent（ChapterContent 大表 keyset 分批 500 不阻塞启动）；守卫标记 t2sBackfillV1 在正文扫描完成后落（中断即无标记重启重扫，已转换行零写入）；统一 t2sField("auto") 同口径（绝不用 t2sForce 直转防「乾坤」被误伤）；唯一冲突跳过留日志。生产实证：**13083 行正文扫描、733 行繁体修正**（此前 API 只见 1 处辰東——正文才是大头，用户反馈完全属实）、2 个 PseoKeyword 唯一冲突正确跳过（繁体词与已存简体词相撞，如「全職獵人:從日之呼吸開始」）
+- 【①-d 收敛循环（47-a 子代理核心发现，主线误 revert 后复原）】t2sPhrases 有 **127 条词条映射 VALUE 本身含繁体特征字**（词级校订有意保留——「蕭乾→萧乾」人名不得被字表 乾→干 破坏）→ 单遍实现 f(f(x))≠f(x)（实证向量「滿拚自盡」首轮词级映射保留拚、次轮字表才拚→拼），破坏存量回填零写放大与重采去重稳定性；t2sField 改 ≤4 次有界收敛循环且循环内保持两路计数口径（无歧义残留迭代转净、两用字残留由 ≥2 阈值保护）；测试锁「滿拚自盡→满拼自尽」+「蕭乾→萧乾」+全向量幂等断言
+- 【② pseo 404 根修】复现：20 书抽样 145 chips 中 6 个 404（12%）。根因两条：novelPseoTags ① 通道（seed 血缘）未过滤 status（pending/failed 词也渲染成链接）+ SSR handleWebPseo 无 API 端已有的实时计算兜底（handlePseoKeywordPage 恒 200 而 SSR 404 的双标）。修复：① 通道加 generated 过滤（chips 内链不得指向潜在 404）；handleWebPseo 重写——二次 PathUnescape 兜底+sanitizeKeyword（与 API 同款；DB 词面经 kwStripRe 洗掉 % 构造上安全）+ 未生成/词池外词经 pseoRealtimeNovels 实时聚合（COUNT 命中门槛→matchNovels，词面零命中仍 404 防垃圾 URL 软 404 页）。复测 6 个原 404 chips 全部 200；浏览器点击链路 book/1 → 13 chips → 聚合页 200+TDK+16 书单
+- 【③ sitemap/robots 规范化 + 友链】Task 36-b 的 sitemap <loc> 全相对地址（搜索引擎整文件拒收=用户视角「没有网站地图」的真身）、robots Sitemap: 相对路径违规 → webBaseURL（X-Forwarded-Proto→TLS→http）+ <loc> 全绝对+书籍行 lastmod+pseo 上限 2000→5000+robots 绝对 Sitemap；生产 2773 条绝对 loc；友情链接区块=Task 46 已落地实现（FriendLinks+WheelLinks 三类链轮 10 主题渲染），本轮零新增块（用户「不要再额外增加」）
+- 【47-a 子代理超时处置】深审子代理超时未返回报告，但落盘产物核查=1 项死代码精简（countTradRunes 唯一调用方已被替换）+1 项关键修复（收敛循环+2 测试向量「滿拚自盡/蕭乾」，注释标注 Task 47-a 深审）——主线曾误判循环为「未授权中间态」 revert 致测试红（幂等断言抓到），复盘后确认子代理修复正确并复原补全文档；验证三连全绿
+- 【部署+E2E】build-go.sh 双 bin；backend 两轮热替换（scraper 零改动全程未动，PID 保持）；两轮 resume（重启自动转 paused 语义，PATCH action=resume）；终态 7 running+1 success（task2 曾自动熔断冷却后自愈）；agent-browser：首页 60 书链+页脚链轮 4 随机书链、书页 13 chips 点击聚合页 200、390×844 无横向溢出、admin 正常、console/errors 零输出
+- 【测试资产】+t2s_skeleton_test.go 2 用例、+web_seo_test.go 1 用例（绝对 URL/lastmod/&amp; 转义/X-Forwarded-Proto）、t2s_test.go +TestT2sFieldAuto 11 向量、pseo_tags_test.go 契约更新（pending 不上榜）
+
+Stage Summary:
+- 繁转简从「新数据入库时」扩展为「全字段+全存量+幂等稳定」闭环：短字段单歧义字规则（辰東 类根修）、Phase1 骨架章题接线（繁体源重采重复章节隐患根修）、存量 13083 行回填 733 修正、127 条词级校订残留的收敛循环保幂等
+- pseo 聚合页 404 类闭合：chips 只链接已生成词 + SSR 实时兜底双保险，内部链接零 404 且垃圾 URL 不产生软 404 页
+- sitemap/robots 进入规范合规态（绝对 URL+lastmod），搜索引擎可整文件收录
+- 工程教训：①子代理「超时未返回」≠「无产物/产物错误」——46-a 完整、47-a 部分产物且含关键修复，处置必须以落盘 diff 逐项核验而非盲目重做或盲目 revert ②幂等性断言（f(f(x))==f(x)）应作为转换器标配测试——本轮正是它抓住了词级/字级双映射的非单遍幂等
+- 提交链：…→f170b36(46)→ed1be0c(47)；生产 283+ 书、7 任务 running、console 零错误
