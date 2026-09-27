@@ -231,6 +231,11 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	}
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	// Task 50-a（E8·反反爬指纹一致性）：AJAX 请求显式声明 Accept-Encoding——旧实现不发
+	// 该键时 Go 传输层自动补「Accept-Encoding: gzip」（单 gzip = 稳定 Go 客户端指纹），
+	// 与 46-a F3 已补的 chromeUA 矛盾；只声明引擎能解的 gzip/deflate，解包在响应侧
+	// contentDecodedReader 承接。
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
 	// Task 46-a（F3·反反爬指纹）：AJAX 端点此前不发 User-Agent —— Go 客户端默认落
 	// "Go-http-client/1.1"，同一会话先以浏览器画像拿书页、紧接的目录接口却自曝爬虫 UA，
 	// 既是指纹矛盾也是 UA 白名单类 WAF 的直接拒绝信号（会话 cookie 白种了）。补引擎
@@ -276,7 +281,15 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	if lines := res.Header.Values("Set-Cookie"); len(lines) > 0 {
 		recordSetCookieLines(hostOf(apiURL.String()), lines, https)
 	}
-	body, tooLarge := readAllCapped(res.Body, maxTocBytes)
+	// Task 50-a（E8）：显式声明 Accept-Encoding 后 tocHTTPClient 不再透明解压，
+	// 响应体统一经 contentDecodedReader 解包（与 readBodyCapped 同一实现）
+	src, decodeClose, derr := contentDecodedReader(res)
+	if derr != nil {
+		*warnings = append(*warnings, "chapterListApi：响应体解包失败 "+derr.Error())
+		return []BookChapterRef{}
+	}
+	body, tooLarge := readAllCapped(src, maxTocBytes)
+	decodeClose() // identity 路径与 defer res.Body.Close 双关幂等，解压路径先关解压器
 	if tooLarge || len(body) == 0 {
 		*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
 		return []BookChapterRef{}

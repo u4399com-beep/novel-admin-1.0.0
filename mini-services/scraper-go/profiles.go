@@ -49,9 +49,15 @@ const acceptLangZH = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
 // baseHeaders 公共头构造；withReferer 时优先显式来路，缺省以目标站自身首页为来源
 func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string]string, explicitReferer string) map[string]string {
 	h := map[string]string{
-		"user-agent":                ua,
-		"accept":                    acceptHTML,
-		"accept-language":           acceptLangZH,
+		"user-agent":      ua,
+		"accept":          acceptHTML,
+		"accept-language": acceptLangZH,
+		// Task 50-a（E8·反反爬头族指纹一致性）：显式声明与真实浏览器一致的压缩能力。
+		// 旧实现不发该键——Go 传输层自动补「Accept-Encoding: gzip」，单 gzip 是稳定的
+		// Go 客户端指纹（真实浏览器恒含 deflate/br），与画像 UA 构成头族矛盾；只声明
+		// 引擎能解的（gzip/deflate，br/zstd 无解压依赖不声明，声明即必须能解）。
+		// 配套 httpguard.contentDecodedReader 透明解包（锁定测试见 audit50_test.go）。
+		"accept-encoding":           "gzip, deflate",
 		"upgrade-insecure-requests": "1",
 	}
 	for k, v := range extra {

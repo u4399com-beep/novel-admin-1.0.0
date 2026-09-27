@@ -2210,3 +2210,59 @@ Stage Summary:
 - 沙箱回收恢复零数据损失（远端基线完整），恢复剧本再验证：fetch 确认远端→reset→工具链→mkdir db→ensure→种子→任务重建
 - 首页友链区块收敛至「站长友链+链轮」纯粹 SEO 用途；双子代理 10+6 修复/增强/精简接续落盘，采集域连续第 11 轮深审无新 P1/P2（收敛效应显著）
 - 提交链：…→f35647b→1d6d14f(48)→本提交(49)
+---
+Task ID: 50-a
+Agent: scraper-go 深审子代理
+Task: scraper-go 逐行深审（第 12 轮收敛扫描）——反反爬细部增强 + 死代码精简，不重做/不回退历史修复
+
+Work Log:
+- 【基线与既往核验】开工先读 worklog 最后 3 个 Task（47/48/49-a/49-b/49）；基线 go build/vet/test -race 全绿后逐行重读 25 个 .go 文件 + scripts/render.py。历史修复逐项在码复核零回退：E1-E7（指纹保鲜/UA 画像池/refineHopHeaders/deriveSecFetchSite）、F1-F4（got 断流证据/robots origin key/runeLen UTF-16/jsonStr 32 位）、AIMD CAS-max（aimdRaiseTo）/预算感知取槽（acquireDomainSlotBudgeted）/±300ms 双向抖动/challenge-loop 终止/传输池 LRU/cookieJar 真实 LRU/ssrfDialControl+--resolve 尾点剥净——全部在位
+- 【E8·反反爬增强（本轮核心）】Go 原生车道头族指纹一致性——Accept-Encoding 压缩协商。威胁模型：fetch 系/got 系画像此前不发 accept-encoding，Go 传输层自动补「Accept-Encoding: gzip」并透明解压，而「单 gzip」是稳定 Go 客户端指纹（真实浏览器恒发 gzip,deflate(,br,zstd)），与画像声称的浏览器 UA 构成头族矛盾自曝（与 E7 同族、头族版）。修法三件套：①profiles.baseHeaders 显式声明 accept-encoding: gzip, deflate（只声明引擎真能解的，br/zstd 无解压依赖不声明——声明即可解是底线）；②httpguard 新增 contentDecodedReader 透明解包（gzip 走 compress/gzip；deflate 兼容 zlib 封装流与历史「裸 deflate」误标流，按 zlib 流头 0x78 判别；声明能力之外原样透传），readBodyCapped 接线——maxBytes 上限计数作用在解包后字节上（8MB 上限语义从「压缩字节」精确到「明文字节」，解压炸弹防护不回退）；声明 gzip 但 0 字节体按空体处理（对齐旧 empty-body 语义）、损坏流 network-error+警告留痕；③jsontoc AJAX 车道同口径接线（46-a F3 已补 chromeUA，本轮补齐压缩协商头族，readAllCapped 前解包）。curl 车道经画像头自然携带 + --compressed 自动解码零改动；browser 车道 Playwright 原生头零改动
+- 【E9·反反爬增强】重定向跳 sec-fetch-user 保真：sec-fetch-user 仅随「用户激活发起的导航」发送（真实 Chrome/Firefox 行为），重定向跳（3xx 自动跟随/JS token 跳转）非用户激活、跳间不携带——旧实现跳间残留首跳的 ?1 与浏览器行为矛盾，属 E6 同族可稳定识别的自曝指纹。refineHopHeaders 在 hop>0 删除已存在的 sec-fetch-user 键（仅删除不注入，无该键画像/spider 零改动；site/referer 改写语义与跳数预算不变）；JS 跳源页同路径覆盖（prevURL 已在 E6 接线）
+- 【精简】selectors.go isSafe 死函数删除（grep 全仓零调用点——scope 自身命中判定由 pickText/firstMatch/pickHref 内联 s.IsMatcher 承担，findSafe 为唯一在用安全封装）；其余符号全量复核（corsHeader/privateHostAllowed/affinityStats/cookieStats/hostSlotStatsFor/readAllCapped/hopHostWithoutPort/latinView/baseName 等均有消费点），零新增死代码
+- 【测试资产】+audit50_test.go 9 用例：TestProfileAcceptEncodingAdvertised（8 画像全声明断言）/TestContentDecodedReaderThreeForms（gzip/zlib/裸 deflate/identity/未声明五形态解包）/TestReadBodyCappedGzipEmptyBody（0 字节 gzip=空体不虚报）/TestReadBodyCappedGzipCorrupt（损坏流 network-error+警告留痕）/TestReadBodyCappedCapCountsDecompressed（明文 8MB+1K 压缩小体积→too-large，解压炸弹防护锁定）/TestFetchLaneAcceptEncodingAndGzipEndToEnd（fetch 车道端到端：请求侧显式 AE+响应侧 gzip 解包）/TestExtractJsonTocGzipEndToEnd（jsontoc 车道端到端）/TestRefineHopHeadersDropsSecFetchUserOnRedirect（E9 单元：删除已存在键+零注入+不影响 E6）/TestGotRunRedirectDropsSecFetchUser（got 车道 302 端到端：首跳 ?1 保留、落站跳无 sec-fetch-user）
+- 【逐行深审过检面】chain 预算/退避/亲和/熔断时序、fetchWithRedirectGuard 跳间 deadline 补偿恒等式（deadline+=waited 后旧 remaining 恰为新剩余，非缺陷）、got/curlimp/fetchcurl 三车道 E6/E7/F1 接线、hosthealth 熔断/退避双 streak 合流、cookies RFC 6265 Max-Age/Expires 优先序、challenge 四层+softBlock 弱命中、ssrf 文本层/DNS 缓存/钉死三方同口径、robots 重定向逐跳校验、extract 去重后位胜出下标重排、cleanx 行长分层闸、render.py 看门狗 alarm 向下取整（永不迟触发）——未发现新 P1/P2 破口与可腐蚀路径
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go 7.1s，含既有全部回归+本轮 9 用例）；gofmt -l 全清（触碰文件空格化已 gofmt -w 归一）；生产进程零触碰（PID 2821 全程存活）、零 kill、零 git 操作、backend-go 零改动；scraper-go.bin 最后一步 temp+rename 重建（08:57，待主线热替换）
+
+Stage Summary:
+- 第 12 轮收敛扫描定性：25 文件+render.py 逐行重读无新 P1/P2——历史 11 轮收敛效应持续，本轮价值集中在「UA↔压缩协商」头族指纹矛盾（E8，真实浏览器行为对齐+解压炸弹防护口径修正）与「跳间 sec-fetch-user 残留」（E9，E6 收尾）
+- 修复统计：2 项反反爬增强（E8 Accept-Encoding 显式声明+contentDecodedReader 透明解包三件套、E9 重定向跳 sec-fetch-user 删除）+1 精简（isSafe 死函数）；API 契约（ok/error/detail/challengeSuspected/softBlock/attempts）零变更，backend 无需适配
+- 部署注意：scraper-go.bin 已含全部变更（temp+rename，08:57）待主线统一热替换；生产进程未触碰
+---
+Task ID: 50-b
+Agent: backend-go 深审子代理
+Task: backend-go 逐行深审（第 12 轮收敛扫描）——Task 50 新增封面补抓链路重点审 + 既有 60+ 文件复扫，不重做/不回退历史修复
+
+Work Log:
+- 【基线与既往核验】开工先读 worklog 最后 3 个 Task（48/49-a/49-b/49，期间 50-a 并行追加）；基线 go build/vet/test -race 全绿后开审。历史修复逐项在码复核零回退：49-b 全家（softBlock 显式 null 防御 engineclient/2^53 上界族×6 处/backfillT2S rows.Err 上返×5/fillPlan 按标题去重合并+分母只累新增/建任务+生命周期写路径 execRetry 六处/parseDigitsASCII 防回绕）、46-b softBlock 文案接线、42-b 两阶段暂存区 min(0,minIdx)-1、48 reorderRefPairs 接线、26-d 解压炸弹守卫/溢出整体放弃、27-c 分页空前缀+page 参数+tmp 去重——全部在位
+- 【Task 50 新代码逐行审】coversx.go isPrivateIp 重构族（isPrivateIPAddr/isPrivateIPv4Text）：v6 真实网段语义正确（回环/ULA/链路本地/文档段/v4-mapped 私网全拦，2606:4700:: 等全球单播放行），文本层八进制/十进制变体由 DNS 逐址校验+coverDialControl 拨号终校验双层兜底，SSRF 防线不弱化（coversx_test.go 50 向量回归绿）；storex.go coverSrc 落库（首写为准守卫条件复核合理——URL 与书页同源稳定，首写失败可由补抓通道重试而非覆盖）；db.go ensureColumn Novel.coverSrc/schema.go DDL 幂等在位；web_data.go chapterMetaBlock 抽取（handleWebBook 顶层契约零变化）+handleWebPseo Featured 装配（novels[0].id 经 queryNovelList 恒 int64 断言安全；Featured+键名前缀与模板三处消费点逐一对照）+trxsw/_fallback pseo.html（html/template 自动转义，gcls/isLocalCover/bookURL 等 funcmap 对 int64/string 入参类型全兼容，Featured 空态零渲染）；web_pseo_render_test.go 双主题四案在位
+- 【修复① P3·backfill 漏扫 g10-g12】api_noveltools.go 旧扫描条件 `LENGTH("cover") = 2 AND "cover" LIKE 'g_'` 只命中 g1-g9——gradientTokenFor/coverTokens 的 token 空间是 g1-g12，3 字符的 g10/g11/g12（1/4 token 面）被永久排除在补抓之外，「杜绝后患」缺口。修法：`("cover" LIKE 'g_' OR "cover" LIKE 'g__')`（LIKE 定长通配自带长度约束，等价 2-3 字符 g 前缀精确覆盖 token 空间；本地 /covers/ 路径长度恒>3 天然不命中；LIKE ASCII 大小写不敏感为无害超集）；扫描抽出 coverBackfillCandidates() 供测试共用。测试 TestCoverBackfillScanCoversAllTokens（g1-g12 全入候选+本地封面/空 coverSrc 排除）
+- 【修复② P2·backfill 总时长无预算 vs WriteTimeout=65s】handleNovelsBackfillCovers 串行下载无总预算——单本最坏 ≈17s（assertPublicHttpURL DNS 5s+COVER_DL_TIMEOUT 12s），main.go WriteTimeout=65s 覆盖「请求头读完→响应写完」全程，默认 limit=20 批次撞 4-6 个慢/死图床即打爆写窗口：客户端响应半途被掐（含 remaining 的循环调用契约断裂）、服务端继续把整批空烧完。修法：coverBackfillBudget=40s 预算（var 供测试注入），耗尽即停止发起新下载，attempted 如实计数、remaining=len(cands)-attempted（未尝试含预算截断部分全部计入），契约字段名零变更。测试 TestNovelsBackfillCoversBudgetStopsNewDownloads（-1ns 注入→attempted=0/remaining 如实）+TestNovelsBackfillCoversBatchingRemaining（limit=1 分批 remaining=1）
+- 【修复③ P3·fetchAndStoreCover 空响应体 nil 解引用】旧代码 `if err != nil || len(buf) == 0` 合并分支在「HTTP 200+空响应体」（coverReadBody 对空体返回 empty,nil 实证）对 nil err 调 err.Error() → nil 指针 panic——被函数头 recover 吞成 "panic: runtime error: invalid memory address..." 假原因入失败明细，掩盖真实形态。修法：拆分独立分支给出真实原因「响应体为空」；响应消费段（状态/Content-Type/限量读/解码/缩放/JPEG 编码）抽为 consumeCoverResponse 使畸形响应可表驱动测试。测试 TestConsumeCoverResponse 八案（空体修复点/404/非图像类型/超限读体/HTML 伪装/边长越界 PNG/像素数越界 PNG（手工 IHDR+CRC32 构造，26-d 解压炸弹守卫回归）/合法 JPEG 成功）
+- 【测试资产】+audit50b_test.go 6 用例全绿（临时库夹具 id≥95100 自清、候选 coverSrc 用私网地址 SSRF 文本层即拒=零网络依赖恒快）；+TestUpsertBookCoverSrcFirstWriteWins 语义锁定（storex 首写为准守卫三写两次覆盖后首写值存留）+TestNovelsBackfillCoversHandlerEndToEnd（scanned/attempted/fixed/failed/remaining 五字段+失败原因透出+失败不改写 cover/coverSrc）
+- 【深审过检无新增破口】全仓模式扫描四路：动态 SQL 拼接仅编译期常量+占位符+sqlPlaceholders（零注入面）；裸 exec 写路径普查（api_chapters 12 处/pseo_gen/seed 等均为 admin 低频或事务内路径，busy→500 无腐蚀，维持 49-b 收敛口径不动）；`err != nil || …err.Error()` 合并条件模式全仓唯一即本轮修复③；14 处 goroutine 生命周期与 recover 布点复核（pool lanes/worker finalize/llm buffered chan/pseo loops 全在位）。runner.go/pool.go/engineclient.go/router.go/web.go/api_novels/api_chapters/api_scrape_tasks/api_pseo/pseo_*/chapterorder/db/schema/storex 线性重读；worker/scraper 消费面与 gofmt 全仓清零
+- 【生产零触碰】backend-go.bin(PID 2990)/scraper-go.bin(PID 2821) 全程存活未启停；零写库/零迁移/零 git 操作；backend-go.bin 最后一步 temp+rename 重建（09:00，含修复①②③+格式归一，strings+grep -a 双验新符号在位）待主线统一热替换
+
+Stage Summary:
+- 第 12 轮收敛扫描（backend-go 侧）：Task 50 新增封面补抓链路 6 文件逐行审出 3 项真缺陷（backfill 漏扫 g10-g12 P3/补抓请求无总时长预算可撞 WriteTimeout=65s P2/空响应体 nil 解引用 P3），全部修复+6 用例回归锁定；既有 60+ 文件复扫无新 P1/P2——12 轮收敛效应持续
+- 新代码其余面过检：isPrivateIp 重构 SSRF 防线完整（文本层+DNS 逐址+拨号终校验三层）、coverSrc 落库幂等语义合理、pseo Featured 装配与模板契约零破口、ensureColumn/schema DDL 幂等在位；SQL 面恒参数化零注入
+- 验证三连：go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok backend-go ≈2.2s 含新增 6 用例）；gofmt -l 清零（Task 50 主线新写 coversx.go/api_noveltools.go 空格缩进已归一）；backend-go.bin 待主线热替换
+---
+---
+Task ID: 50
+Agent: main (Z.ai Code)
+Task: 用户 6 点指令——①pseo 页加书籍页前两区块+相关小说 ②《归义孤狼》目录序号↔章节号不一致根修杜绝后患 ③大量书籍无封面根修杜绝后患 ④持续深审（采集+反反爬）⑤清理精简 ⑥推送 git
+
+Work Log:
+- 【0-第 11 次沙箱回收恢复】进程/bin/Go 工具链/db 全灭；远端基线 857de50 完整 → reset → go1.22.12 重装 → build-go.sh 双 bin → mkdir /home/z/my-project/db（父目录缺失=SQLite CANTOPEN 真因）→ ensure-services 拉起 → 9 任务按 ruleId+siteUrl 重建（targetUrl 必填契约实证；10/11/12/13/14/16/18/19/24）→ 书库重采（收尾 251 本↑，95% 封面覆盖）
+- 【① pseo 主打书区块】handleWebPseo 装配 Featured/FeaturedTags/FeaturedChapters/FeaturedChaptersTotal/FeaturedLastChapter（novels[0]=绑定书置顶最佳匹配；chapterMetaBlock 自 handleWebBook 抽出共用）；trxsw/pseo.html 新增区块一（封面浮左+属性表+末章行+按钮行，书籍页区块一语义复刻）+区块二（《书名》简介+相关标签 chips）；_fallback/pseo.html 同步（fb-pager-btn 实测类名）；web_pseo_render_test.go 3 用例（有数据渲染/空态零渲染/fallback）；E2E 实证「主打推荐/简介/全文阅读/相关标签/相关小说」全在位
+- 【③ 封面缺失根修——实测定位】101kks（CF 站）封面全败而图床直连 200 → 双栈根因坐实：assertPublicHttpURL 的 DNS 逐址校验中 isPrivateIp「含冒号=IPv6 一律拒绝」catch-all 对 AAAA 地址误判私网 → 双栈站点（A+AAAA）封面全站静默失败（TS 原版同病，非移植漂移；aijjxs/ddyueshu/23qb 仅 v4 故成功——站点分布完美吻合）；修复：isPrivateIp 拆 isPrivateIPAddr/isPrivateIPv4Text 函数族（v6 真实网段语义：回环/::/ULA/链路本地/文档段 2001:db8::/32/v4-mapped 私网拦截，2606:4700:: 等全球单播放行；v4-mapped 还原 v4 判定；无递归结构），assertPublicHttpURL/coverDialControl 接线，SSRF 防线不弱化；fetchAndStoreCover 改 (path, failReason) 双返回值（SSRF/HTTP 状态码/CT/解码/落盘等 12 类原因透出）；storex 封面 URL 落库 coverSrc 新列（ensureColumn 幂等迁移+schema DDL，失败也有源可循）；POST /api/novels/backfill-covers 存量补抓端点（g-token 扫描+串行+幂等，50-b 补 40s 预算护栏/g10-g12 漏扫修复）；coversx_test.go 50 向量；实证：新采 300 本 95% 封面覆盖（修复前约半数），补抓端点 fixed=5/failed=3 且原因真实（空响应体/dial timeout）
+- 【② 目录序号↔章节号不一致——三层杜绝后患】（《归义孤狼》源站未采到，按形态学根修）显示面：7 主题（trxsw/pilishuwu/aijjxs/x2552/shipsay/101kks/huangjinwu）toc.html 移除「{{$c.idx}}. 」序号前缀——TS 原版 toc-chapters.tsx 只渲染 c.title（git 考古实证），位置 idx 对分卷重编号/跳号/部分采集书（如骨架未完书目录从「第816章」开始，前缀即显示「1. 第816章」）必然错位，观感争议面根除，阅读顺序由重排体系保障；解析面：chapterNoRe/chapterPrefixRe 全角数字（第１２章）+装饰前缀（【第3章】/（第9回）/「第5话」）覆盖+foldFullwidthDigits 归一（旧版 miss → 乱序检测漏报），9 新向量；数据面：Task 48 reorderRefPairs 管线重排+resort-chapters 存量端点在位复核；Task 26-d「超长头块>60 放弃」为有意保守语义（测试锁定）不动，留档
+- 【④⑤ 双子代理深审】50-a（scraper-go 第 12 轮）：E8 Go 车道 Accept-Encoding 头族指纹一致性（baseHeaders 声明+contentDecodedReader 透明解包+maxBytes 作用于解包后字节+jsontoc 接线）+E9 重定向跳 sec-fetch-user 保真（跳间删除 ？1）+isSafe 死函数精简+9 用例；50-b（backend-go）：Task 50 新代码逐项过审（isPrivateIPAddr 族语义正确/Featured 装配安全/模板零 XSS）+3 修复（backfill 40s 预算护栏 P2/候选扫描 g10-g12 漏扫 P3/空响应体 nil deref P3）+6 用例；双域 12 轮深审无新 P1/P2（收敛显著）
+- 【部署+E2E】build-go.sh → 双服务热替换 → 9 任务恢复（8 running+task8 限流自动恢复车道）→ agent-browser：首页/书籍页（本地封面+chips）/目录页（第817章 起头无序号前缀）/pseo 主打书区块/搜索空态 sticky footer（footerBottom=vh=900）/390px 零横向溢出/console+errors 零输出；双服务日志零 panic；ZWSP 实体确认为 obfuscate.go 反爬混淆有意设计（非 bug）
+
+Stage Summary:
+- 封面缺失=双栈站点 AAAA 误杀（TS 原版固有缺陷）根修+coverSrc 留源+补抓端点+失败原因可观测四件套；95% 覆盖率实证
+- 目录序号↔章节号不一致=TS 原版无序号前缀而 Go 移植自加所致，7 主题回位+全角/装饰编号解析覆盖，三层闭环
+- pseo 聚合页升级为「关键词 TDK+主打书前两区块+相关小说表」完整落地页
+- 提交链：…→1d6d14f(48)→857de50(49)→本提交(50)

@@ -373,14 +373,19 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 	if httpsURLRE.MatchString(book.Cover) {
 		remoteCover = book.Cover
 	}
+	if remoteCover != "" {
+		// Task 50: 远程封面 URL 落库 coverSrc（无论本次下载成败）——补抓通道有源可循
+		//（旧版失败后 URL 只在日志里，存量 token 书无从补抓）
+		_, _ = execRetry("UPDATE Novel SET coverSrc = ? WHERE id = ? AND (coverSrc IS NULL OR coverSrc = '')", remoteCover, novelID)
+	}
 	if remoteCover != "" && (createdNew || (hasExisting && !isLocalCoverPath(existingCover))) {
 		// 封面与目标站常同域同封锁策略：经规则代理出口下载（图床直连不可达时必须走代理）
-		stored := fetchAndStoreCover(int(novelID), remoteCover, proxy)
+		stored, failReason := fetchAndStoreCover(int(novelID), remoteCover, proxy)
 		if stored != "" {
 			_, _ = execRetry("UPDATE Novel SET cover = ?, updatedAt = ? WHERE id = ?", stored, nowMillis(), novelID)
 			run.Log("封面已保存 " + truncateRunes(stored, 40) + "（jpg）")
 		} else {
-			run.Log("封面下载失败，保留渐变封面（" + truncateRunes(remoteCover, 80) + "）")
+			run.Log("封面下载失败（" + truncateRunes(failReason, 100) + "），保留渐变封面（" + truncateRunes(remoteCover, 80) + "）")
 		}
 	}
 

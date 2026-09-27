@@ -13,6 +13,10 @@
 package main
 
 import (
+	"bufio"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -237,6 +241,12 @@ func refineHopHeaders(hdrs map[string]string, prevURL, hopURL string) {
 	if _, ok := hdrs["referer"]; ok {
 		hdrs["referer"] = referer
 	}
+	// Task 50-a（E9·重定向跳头族保真）：sec-fetch-user 仅随「用户激活发起的导航」发送
+	//（真实 Chrome/Firefox 行为），重定向跳（3xx 自动跟随/JS token 跳转）非用户激活、
+	// 跳间不携带该头——跳间残留首跳的 ?1 与浏览器行为矛盾，属 E6 同族可稳定识别的自曝
+	// 指纹。仅删除已存在的键（误杀面控制：无该键的画像/spider 本就不发），site/referer
+	// 改写语义与跳数预算不变。
+	delete(hdrs, "sec-fetch-user")
 }
 
 // deriveSecFetchSite 首跳 sec-fetch-site 派生（Task 49-a·E7·反反爬指纹一致性）：
@@ -310,8 +320,53 @@ type bodyResult struct {
 	size        int // 实际读取字节数（too-large 时为已读总量，供 attempts 明细展示）
 }
 
+// contentDecodedReader Task 50-a（E8·反反爬头族指纹一致性）：Content-Encoding 透明解包。
+// 威胁模型：Go 原生车道（fetch 系/got 系）的请求头此前不含 Accept-Encoding——Go 传输层
+// 自动补「Accept-Encoding: gzip」并透明解压，而「单 gzip」是稳定的 Go 客户端指纹（真实
+// 浏览器恒发 gzip,deflate(,br,zstd)），与画像声称的浏览器 UA 构成头族矛盾自曝。E8 改为
+// 画像显式声明 accept-encoding: gzip, deflate（与引擎真实解压能力一致，声明即可解），
+// 解压由本函数承接：gzip 走 compress/gzip；deflate 兼容 zlib 封装流与历史「裸 deflate」
+// 误标流（按 zlib 流头 0x78 判别，裸流走 compress/flate）。声明能力之外的编码（br/zstd，
+// 无解压依赖故不声明）原样透传不误解包。cleanup 必须被调用（identity 路径即
+// res.Body.Close；解压路径先关解压器再关底层流）；出错路径已自行关闭 res.Body。
+func contentDecodedReader(res *http.Response) (io.Reader, func(), error) {
+	body := res.Body
+	switch strings.ToLower(strings.TrimSpace(res.Header.Get("Content-Encoding"))) {
+	case "gzip":
+		zr, err := gzip.NewReader(body)
+		if err != nil {
+			_ = body.Close()
+			return nil, nil, err
+		}
+		return zr, func() { _ = zr.Close(); _ = body.Close() }, nil
+	case "deflate":
+		br := bufio.NewReader(body)
+		head, perr := br.Peek(2)
+		if perr != nil && perr != io.EOF {
+			_ = body.Close()
+			return nil, nil, perr
+		}
+		if len(head) == 2 && head[0] == 0x78 { // zlib 流头（CM=8/CINFO≤7，常见 78 01/9c/da）
+			zr, zerr := zlib.NewReader(br)
+			if zerr != nil {
+				_ = body.Close()
+				return nil, nil, zerr
+			}
+			return zr, func() { _ = zr.Close(); _ = body.Close() }, nil
+		}
+		fr := flate.NewReader(br)
+		return fr, func() { _ = fr.Close(); _ = body.Close() }, nil
+	default:
+		// 无压缩/identity/声明能力之外（br 等）：原样透传（与旧实现行为一致）
+		return body, func() { _ = body.Close() }, nil
+	}
+}
+
 // readBodyCapped 流式限量读取响应体：超过 maxBytes 立即中止并按 too-large 失败。
 // Content-Length 超限的响应在读取前就放弃；无 Content-Length 的流式响应靠实际字节计数兜底。
+// Task 50-a（E8）：显式声明 Accept-Encoding 后 Go 传输层不再透明解压，统一经
+// contentDecodedReader 解包——maxBytes 计数作用在解包后字节上（上限语义从「压缩字节」
+// 精确到「明文字节」，解压炸弹防护不回退）。
 func readBodyCapped(res *http.Response) bodyResult {
 	contentType := res.Header.Get("Content-Type")
 	declaredLen, _ := strconv.Atoi(res.Header.Get("Content-Length"))
@@ -320,12 +375,22 @@ func readBodyCapped(res *http.Response) bodyResult {
 		return bodyResult{contentType: contentType, note: "too-large", size: declaredLen,
 			warning: "响应过大（Content-Length " + strconv.Itoa(declaredLen) + "B > 上限 " + strconv.Itoa(maxBytes) + "B），已放弃"}
 	}
+	src, decodeClose, derr := contentDecodedReader(res)
+	if derr != nil {
+		if derr == io.EOF {
+			// Content-Encoding 声明压缩但响应体为 0 字节：按空体处理（对齐旧透明
+			// 解压路径的 empty-body 语义，不虚报 network-error）
+			return bodyResult{contentType: contentType, size: 0}
+		}
+		return bodyResult{contentType: contentType, note: "network-error", warning: "响应体解包失败: " + derr.Error()}
+	}
+	defer decodeClose() // identity 路径即 res.Body.Close；解压路径先关解压器再关底层流
 	chunks := make([]byte, 0, 64*1024)
 	total := 0
 	chunk := make([]byte, 64*1024)
 	tooLarge := false
 	for {
-		n, err := res.Body.Read(chunk)
+		n, err := src.Read(chunk)
 		if n > 0 {
 			total += n
 			if total > maxBytes {
@@ -336,13 +401,11 @@ func readBodyCapped(res *http.Response) bodyResult {
 		}
 		if err != nil {
 			if err != io.EOF {
-				_ = res.Body.Close()
 				return bodyResult{contentType: contentType, note: "network-error", warning: "响应体读取中断: " + err.Error()}
 			}
 			break
 		}
 	}
-	_ = res.Body.Close()
 	if tooLarge {
 		return bodyResult{contentType: contentType, note: "too-large", size: total,
 			warning: "响应实际大小超过上限 " + strconv.Itoa(maxBytes) + "B，已中途放弃并断开连接"}

@@ -1,5 +1,6 @@
-{{/* trxsw pseo 聚合页（Task 32-a）：面板化关键词简介 + 六列结果表。
-骨架/类名与 search.html 同源（#a6d3e8 边框面板 + #e1eced 标题条 + #6f78a7 链接行），复用主题类名零新增 CSS。 */}}
+{{/* trxsw pseo 聚合页（Task 32-a）：面板化关键词简介 + 主打书信息盒/简介（Task 50-①，
+书籍页前两区块语义复刻）+ 六列结果表。
+骨架/类名与 search.html/book.html 同源（#a6d3e8 边框面板 + #e1eced 标题条 + #6f78a7 链接行），复用主题类名零新增 CSS。 */}}
 {{define "content"}}
 <div class="mx-auto w-full max-w-[980px] px-2 py-3">
 
@@ -8,6 +9,48 @@
     <h1 class="text-[15px] font-bold text-[#333]">“{{.Keyword}}”小说大全</h1>
     <p class="mt-1.5 text-xs leading-5 text-[#666]">{{.Description}}</p>
   </section>
+
+  {{/* 主打书信息盒（书籍页区块一复刻：封面浮左 + 属性表 + 最新章节行 + 按钮行） */}}
+  {{if .Featured}}<div class="mt-3 border border-[#a6d3e8] bg-white p-4">
+    <div class="flex flex-col gap-4 sm:flex-row">
+      <span aria-hidden="true" class="relative flex h-[150px] w-[120px] shrink-0 select-none items-center justify-center overflow-hidden self-center text-5xl sm:self-start {{gcls .Featured.cover}}">
+        {{if isLocalCover .Featured.cover}}<img src="{{.Featured.cover}}" alt="{{.Featured.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="font-bold tracking-widest text-white/95 drop-shadow-sm text-5xl">{{title0 .Featured.title}}</span>{{end}}
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="text-base font-bold text-[#333]"><a href="{{bookURL .Featured.id}}" class="cursor-pointer text-[#6f78a7] transition-colors hover:text-[#FF6600] hover:underline">{{.Featured.title}}</a><span class="ml-2 align-middle text-[11px] font-normal text-[#FF6600]">主打推荐</span></p>
+        <dl class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs sm:grid-cols-3">
+          <div class="flex gap-1"><dt class="shrink-0 text-[#999]">类别：</dt><dd class="truncate text-[#666]" title="{{.Featured.categoryName}}">{{.Featured.categoryName}}</dd></div>
+          <div class="flex gap-1"><dt class="shrink-0 text-[#999]">作者：</dt><dd class="truncate text-[#666]" title="{{.Featured.author}}">{{.Featured.author}}</dd></div>
+          <div class="flex gap-1"><dt class="shrink-0 text-[#999]">状态：</dt><dd class="truncate text-[#666]">{{if eq .Featured.status "finished"}}完本{{else}}连载{{end}}</dd></div>
+          {{if .Featured.wordCount}}<div class="flex gap-1"><dt class="shrink-0 text-[#999]">字数：</dt><dd class="truncate text-[#666]">{{wcFmt .Featured.wordCount}}</dd></div>{{end}}
+          <div class="flex gap-1"><dt class="shrink-0 text-[#999]">更新时间：</dt><dd class="truncate text-[#666]">{{fullFmt .Featured.updatedAt}}</dd></div>
+          <div class="flex gap-1"><dt class="shrink-0 text-[#999]">总点击：</dt><dd class="truncate text-[#666]">{{.Featured.clicks}}</dd></div>
+        </dl>
+        <p class="mt-2 truncate text-xs text-[#666]">最新章节：{{if .FeaturedLastChapter}}<a href="{{chapterURL .FeaturedLastChapter.id}}" class="cursor-pointer text-[#6f78a7] hover:text-[#FF6600] hover:underline">{{.FeaturedLastChapter.title}}</a>{{else}}<span class="text-[#999]">暂无</span>{{end}}<span class="ml-3 text-[#999]">共 {{.FeaturedChaptersTotal}} 章</span></p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          {{if .FeaturedChapters}}<a href="{{with $fc := index .FeaturedChapters 0}}{{chapterURL $fc.id}}{{end}}" class="cursor-pointer bg-[#FF6600] px-5 py-1.5 text-sm text-white transition-colors hover:bg-[#E05A00]">全文阅读</a>
+          {{else}}<a href="{{tocURL .Featured.id}}" class="cursor-pointer bg-[#FF6600] px-5 py-1.5 text-sm text-white transition-colors hover:bg-[#E05A00]">全文阅读</a>{{end}}
+          <button type="button" data-trx-shelf data-novel-id="{{.Featured.id}}" class="cursor-pointer border px-4 py-1.5 text-sm transition-colors border-[#FF6600] text-[#FF6600] hover:bg-[#FFF3E8]">加入书架</button>
+          <button type="button" data-trx-vote class="cursor-pointer border border-[#FF6600] px-4 py-1.5 text-sm text-[#FF6600] transition-colors hover:bg-[#FFF3E8]">推荐本书</button>
+          <button type="button" disabled title="演示站点不提供下载" class="cursor-not-allowed border border-[#a6d3e8] px-4 py-1.5 text-sm text-[#BBB]">TXT 下载</button>
+        </div>
+      </div>
+    </div>
+  </div>{{end}}
+
+  {{/* 主打书简介（书籍页区块二复刻：灰底标题条 + 相关标签 chips） */}}
+  {{if .Featured}}<section class="mt-3 rounded-[10px] border-2 border-[#a6d3e8] bg-[#f7fbfd]">
+    <header class="flex h-[30px] items-center justify-between rounded-t-[8px] border-b border-[#a6d3e8] bg-[#e1eced] px-3">
+      <h2 class="text-sm font-bold text-[#333]">《{{.Featured.title}}》简介</h2>
+    </header>
+    <div class="p-4">
+      <p class="indent-[2em] text-sm leading-7 text-[#666]">{{if .Featured.description}}{{.Featured.description}}{{else}}作者尚未填写简介。{{end}}</p>
+      {{if .FeaturedTags}}<div class="mt-3 flex flex-wrap items-center gap-1.5">
+        <span class="text-xs font-medium text-neutral-500">相关标签：</span>
+        {{range .FeaturedTags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页" class="cursor-pointer rounded-none border border-[#a6d3e8] bg-[#f7fbfd] px-2.5 py-0.5 text-xs leading-5 text-[#6f78a7] transition-colors hover:border-[#FF6600] hover:text-[#FF6600]">{{.}}</a>{{end}}
+      </div>{{end}}
+    </div>
+  </section>{{end}}
 
   <section class="mt-2 rounded-[10px] border-2 border-[#a6d3e8] bg-[#f7fbfd]">
     <header class="flex h-[30px] items-center justify-between rounded-t-[8px] border-b border-[#a6d3e8] bg-[#e1eced] px-3">

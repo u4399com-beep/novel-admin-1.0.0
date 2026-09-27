@@ -33,6 +33,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func init() {
@@ -42,6 +43,7 @@ func init() {
 	register("POST", "/api/novels/resort-chapters", handleNovelsResortChaptersPost)
 	register("GET", "/api/novels/smart-fill", handleNovelsSmartFillGet)
 	register("POST", "/api/novels/smart-fill", handleNovelsSmartFillPost)
+	register("POST", "/api/novels/backfill-covers", handleNovelsBackfillCovers)
 }
 
 // ==================== /api/novels/recalc-words ====================
@@ -576,5 +578,113 @@ func handleNovelsSmartFillPost(w http.ResponseWriter, r *http.Request, _ map[str
 		"authorFilled":  authorFilled,
 		"categoryMoved": categoryMoved,
 		"statusFixed":   statusFixed,
+	})
+}
+
+// ==================== POST /api/novels/backfill-covers（Task 50 封面补抓） ====================
+
+// coverBackfillItem 补抓结果明细
+type coverBackfillItem struct {
+	ID     int64  `json:"id"`
+	Title  string `json:"title"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// coverBackfillBudget 单次补抓请求的下载总时长预算（Task 50-b）。
+// main.go HTTP server 的 WriteTimeout=65s 覆盖「请求头读完 → 响应写完」全程：本端点
+// 串行下载封面，单本最坏 ≈17s（assertPublicHttpURL DNS 5s + COVER_DL_TIMEOUT 12s），
+// 旧版无总预算——默认 limit=20 的批次只要撞上 4-6 个慢/死图床就会打爆 65s 写窗口，
+// 客户端响应被半途掐断（含 remaining 的循环调用契约断裂），服务端却继续把整批空烧完。
+// 预算 40s：预算耗尽即停止发起新的下载（在途一本最多再 ~17s），响应必在窗口内写回。
+// var（非 const）：测试注入超小预算用（audit50b_test.go），生产路径只读。
+var coverBackfillBudget = 40 * time.Second
+
+// coverBackfillCand 封面补抓候选行
+type coverBackfillCand struct {
+	id       int64
+	title    string
+	coverSrc string
+}
+
+// coverBackfillCandidates 封面补抓候选扫描（Task 50-b 自 handler 抽出供测试共用）：
+// cover 仍为渐变 token 且 coverSrc（Task 50 起落库的源站封面 URL）非空的书，按 id
+// 升序全量返回（分批截断由调用方做）。
+// Task 50-b 修复漏扫：旧条件 `LENGTH("cover") = 2 AND "cover" LIKE 'g_'` 只命中
+// g1-g9——gradientTokenFor/coverTokens 的 token 空间是 g1-g12，g10/g11/g12（3 字符）
+// 的书被永久排除在补抓之外（token 面缺 1/4）。LIKE 'g_'/'g__' 的定长通配自带长度
+// 约束，等价「2-3 字符 g 前缀」精确覆盖 token 空间（SQLite LIKE ASCII 大小写不敏感
+// 为无害超集；本地封面路径 /covers/*.jpg 长度恒 >3 天然不命中）。
+func coverBackfillCandidates() ([]coverBackfillCand, error) {
+	cands := []coverBackfillCand{}
+	err := queryList(
+		`SELECT "id","title","coverSrc" FROM "Novel" WHERE ("cover" LIKE 'g_' OR "cover" LIKE 'g__') AND "coverSrc" != '' ORDER BY "id" ASC`,
+		func(rows *sql.Rows) error {
+			var c coverBackfillCand
+			if err := rows.Scan(&c.id, &c.title, &c.coverSrc); err != nil {
+				return err
+			}
+			cands = append(cands, c)
+			return nil
+		})
+	return cands, err
+}
+
+// handleNovelsBackfillCovers 封面批量补抓（用户指令「很多书没有封面……修复完善，杜绝后患」）：
+// 旧版封面下载对双栈站点（DNS 含 AAAA 记录）被 isPrivateIp 的「含冒号一律拒绝」catch-all
+// 整体误判私网 → 全站静默丢封面（101kks 实证）。根修后新采集自动恢复；本端点消化存量——
+// 扫描 cover 仍为渐变 token 且 coverSrc 非空的书，逐本补抓落盘。串行 + 总时长预算
+// （coverBackfillBudget，防慢/死图床拖爆 WriteTimeout），单次最多 limit 本（缺省 20、
+// 上限 100），响应含 remaining 供循环调用。代理走查询参数（缺省直连；被封锁图床需重采
+// 走规则出口）。幂等：已落盘的书 fetchAndStoreCover 直接复用不重下。
+func handleNovelsBackfillCovers(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	limit := 20
+	if raw := trimSpaceStr(r.URL.Query().Get("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = clampInt(n, 1, 100)
+		}
+	}
+	proxy := trimSpaceStr(r.URL.Query().Get("proxy"))
+
+	cands, err := coverBackfillCandidates()
+	if err != nil {
+		failJSON(w, "服务器错误", firstLineErr(err), 500)
+		return
+	}
+
+	batch := cands
+	if len(batch) > limit {
+		batch = batch[:limit]
+	}
+	start := time.Now()
+	fixed := 0
+	attempted := 0
+	failures := []coverBackfillItem{}
+	for _, c := range batch {
+		// Task 50-b: 总时长预算——超预算即停止发起新下载（未尝试部分计入 remaining，
+		// 循环调用方下次请求自然续上；契约字段零变更）
+		if time.Since(start) > coverBackfillBudget {
+			break
+		}
+		attempted++
+		stored, reason := fetchAndStoreCover(int(c.id), c.coverSrc, proxy)
+		if stored == "" {
+			failures = append(failures, coverBackfillItem{ID: c.id, Title: c.title, Reason: reason})
+			continue
+		}
+		if _, err := execRetry(`UPDATE "Novel" SET "cover" = ?, "updatedAt" = ? WHERE "id" = ?`,
+			stored, nowMillis(), c.id); err != nil {
+			failures = append(failures, coverBackfillItem{ID: c.id, Title: c.title, Reason: firstLineErr(err)})
+			continue
+		}
+		fixed++
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok":        true,
+		"scanned":   len(cands),
+		"attempted": attempted,
+		"fixed":     fixed,
+		"failed":    len(failures),
+		"failures":  failures,
+		"remaining": len(cands) - attempted,
 	})
 }

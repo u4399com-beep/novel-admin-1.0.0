@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS "Novel" (
         "author" TEXT NOT NULL,
         "description" TEXT NOT NULL DEFAULT '',
         "cover" TEXT NOT NULL DEFAULT 'g1',
+        -- Task 50: 源站封面 URL（封面下载失败/未触发时留存，补抓通道数据源；''=未提取到）
+        "coverSrc" TEXT NOT NULL DEFAULT '',
         "categoryId" INTEGER NOT NULL,
         "status" TEXT NOT NULL DEFAULT 'serial',
         "isFeatured" BOOLEAN NOT NULL DEFAULT false,

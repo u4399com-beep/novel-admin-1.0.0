@@ -37,7 +37,6 @@
       {{$total := len .Chapters}}{{$from := sub $total 12}}
       {{range $i, $c := .Chapters}}{{if ge $i $from}}
       <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="flex min-w-0 cursor-pointer items-center gap-2 border-b border-black/5 py-[15px] text-left text-base text-[#333] transition-colors hover:text-[#06c]">
-        <span class="w-8 shrink-0 text-right text-xs text-[#888]">{{$c.idx}}</span>
         <span class="truncate">{{$c.title}}</span>
       </a>
       {{end}}{{end}}
@@ -51,7 +50,6 @@
     <div id="kks-toc-list" class="grid gap-x-6 md:grid-cols-2 lg:grid-cols-3">
       {{range .Chapters}}
       <a href="{{chapterURL .id}}" title="{{.title}}" class="flex min-w-0 cursor-pointer items-center gap-2 border-b border-black/5 py-[15px] text-left text-base text-[#333] transition-colors hover:text-[#06c]">
-        <span class="w-8 shrink-0 text-right text-xs text-[#888]">{{.idx}}</span>
         <span class="truncate">{{.title}}</span>
       </a>
       {{else}}<p class="col-span-full py-10 text-center text-sm text-[#888]">本書暫無章節記錄</p>{{end}}

@@ -58,9 +58,18 @@ func TestChapterOrderParseChapterNo(t *testing.T) {
 		{"序章", 0, false},    // 无编号
 		{"第一章", 1, true},    // 「一」在中文数字类内（JS 实证 parseInt=1，非「不匹配」）
 		{"第2章", 2, true},    // 同上对照：阿拉伯分支
-		{"第1卷", 0, false},   // 卷不在 [章节回话]
-		{"番外 秋游", 0, false}, // 无编号
-		{"第X章", 0, false},   // X 非数字
+		// Task 50：全角数字与装饰前缀形态（旧版解析 miss → 乱序检测漏报）
+		{"第１２章 相遇", 12, true},
+		{"第０章 序", 0, true},
+		{"第３１４８章 暴涨", 3148, true},
+		{"【第3章】试炼", 3, true},
+		{"（第9回）劫难", 9, true},
+		{"「第5话」夤夜", 5, true},
+		{"【第五章】组织", 5, true},
+		{"123４.标题", 1234, true}, // chapterPrefixRe 走 foldFullwidthDigits 归一
+		{"第1卷", 0, false},       // 卷不在 [章节回话]
+		{"番外 秋游", 0, false},     // 无编号
+		{"第X章", 0, false},       // X 非数字
 		{"", 0, false},
 	}
 	for _, c := range cases {

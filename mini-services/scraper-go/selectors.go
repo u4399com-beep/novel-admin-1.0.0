@@ -44,14 +44,8 @@ func findSafe(s *goquery.Selection, sel string) *goquery.Selection {
 	return s.FindMatcher(m)
 }
 
-// isSafe scope 自身是否命中选择器
-func isSafe(s *goquery.Selection, sel string) bool {
-	m := compileSel(sel)
-	if m == nil {
-		return false
-	}
-	return s.IsMatcher(m)
-}
+// isSafe 已删除（Task 50-a 精简：grep 全仓零调用点死代码——scope 自身命中判定由
+// pickText/firstMatch/pickHref 内联的 s.IsMatcher 承担，findSafe 为唯一在用的安全封装）
 
 // sliceSel 前 n 个元素（cheerio .slice(0,n) 自动截断语义；goquery 超长会 panic，故封装）
 func sliceSel(s *goquery.Selection, n int) *goquery.Selection {

@@ -52,7 +52,6 @@
       {{$total := len .Chapters}}{{$from := sub $total 12}}
       {{range $i, $c := .Chapters}}{{if ge $i $from}}
       <li class="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]">
-        <span class="w-[42px] shrink-0 text-right text-[#999]">{{$c.idx}}.</span>
         <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{$c.title}}</a>
       </li>
       {{end}}{{end}}
@@ -70,7 +69,6 @@
     <ul class="grid grid-cols-1 gap-x-6 px-3 py-1 sm:grid-cols-2 lg:grid-cols-4">
       {{range .Chapters}}
       <li class="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]">
-        <span class="w-[42px] shrink-0 text-right text-[#999]">{{.idx}}.</span>
         <a href="{{chapterURL .id}}" title="{{.title}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.title}}</a>
       </li>
       {{else}}<li class="col-span-full"><p class="py-10 text-center text-[12px] text-[#999]">本书暂无章节记录</p></li>{{end}}

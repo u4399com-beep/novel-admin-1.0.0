@@ -33,7 +33,7 @@
     <div id="aj-toc-latest" data-reverse="1" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
       {{$total := len .Chapters}}{{$from := sub $total 12}}
       {{range $i, $c := .Chapters}}{{if ge $i $from}}
-      <a class="block truncate rounded-[8px] border border-[#e5dccd] bg-[#fbf7ee] px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]" href="{{chapterURL $c.id}}" title="{{$c.title}}">{{$c.idx}}. {{$c.title}}</a>
+      <a class="block truncate rounded-[8px] border border-[#e5dccd] bg-[#fbf7ee] px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]" href="{{chapterURL $c.id}}" title="{{$c.title}}">{{$c.title}}</a>
       {{end}}{{end}}
     </div>
   </div>
@@ -43,7 +43,7 @@
   {{if .Chapters}}
   <div id="aj-toc-list" class="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
     {{range .Chapters}}
-    <a class="block truncate rounded-[8px] border border-[#e5dccd] bg-white px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]" href="{{chapterURL .id}}" data-chapter-id="{{.id}}" title="{{.title}}">{{.idx}}. {{.title}}</a>
+    <a class="block truncate rounded-[8px] border border-[#e5dccd] bg-white px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]" href="{{chapterURL .id}}" data-chapter-id="{{.id}}" title="{{.title}}">{{.title}}</a>
     {{end}}
   </div>
   {{else}}

@@ -103,7 +103,13 @@ func isLocalCoverPath(cover string) bool {
 	return strings.HasPrefix(cover, LOCAL_PREFIX)
 }
 
-// isPrivateIp 私有/环回/链路本机地址文本层校验（含十进制、八进制、点分变体的粗防；逐行移植）
+// isPrivateIp 私有/环回/链路本机地址校验（文本层 + IP 语义双轨）。
+// v4 保留文本正则判定（含十进制/八进制变体粗防）；IPv6 按真实网段语义判定
+// （Task 50 修复：旧版「含冒号一律拒绝」catch-all 对 DNS 逐址校验是灾难——
+// 公网站点普遍双栈（如 101kks.com 返回 v4+AAAA），LookupHost 结果含任一 v6
+// 地址即整体误判私网 → 封面下载全站静默失败。现按段放行公网全球单播，
+// SSRF 防线不弱化：私网段（回环/ULA/链路本地/文档段）仍全部拦截，
+// coverDialControl 拨号前最后一道校验共用本函数（真实拨号 IP 逐次把关）。
 func isPrivateIp(host string) bool {
 	if host == "" {
 		return true
@@ -114,14 +120,14 @@ func isPrivateIp(host string) bool {
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") || strings.HasSuffix(h, ".local") || strings.HasSuffix(h, ".internal") {
 		return true
 	}
-	// Task 33-b: 移除 fc/fd/fe80 无差别前缀判定 —— 函数末尾本就有「含冒号=IPv6 一律拒绝」
-	// 的 catch-all，该前缀判定对含冒号的 IPv6 字面量是死代码，唯一实际作用是把
-	// 「fcxxx.com」「fdzone.org」等公网域名误判私网 → 封面下载恒失败（静默丢封面）。
-	// IPv6 私网段仍由 ①catch-all（:）与 ②DNS 解析后逐地址 isPrivateIp(addr)（addr 恒含冒号）
-	// 两层防线覆盖，防线不弱化。
-	if h == "::1" || h == "::" {
-		return true
+	if ip := net.ParseIP(h); ip != nil {
+		return isPrivateIPAddr(ip)
 	}
+	return isPrivateIPv4Text(h)
+}
+
+// isPrivateIPv4Text 点分四段文本层判定（含越界八位组拒绝；仅接受 v4 文本形态）
+func isPrivateIPv4Text(h string) bool {
 	if v4m := ipv4TextRE.FindStringSubmatch(h); v4m != nil {
 		nums := [4]int{}
 		for i := 0; i < 4; i++ {
@@ -159,8 +165,22 @@ func isPrivateIp(host string) bool {
 		_ = d
 		return false
 	}
-	// IPv6 一般形态：全部拒绝（小说封面图床均为公网 v4/域名）
-	if strings.Contains(h, ":") {
+	return false
+}
+
+// isPrivateIPAddr net.IP 语义的私网/保留段判定（无递归：v4 与 v4-mapped 直接
+// 落到点分文本判定；公网全球单播如 2606:4700::（Cloudflare）放行）。
+func isPrivateIPAddr(ip net.IP) bool {
+	if ip4 := ip.To4(); ip4 != nil {
+		// v4 字面量与 ::ffff:a.b.c.d（v4-mapped）统一按点分段语义
+		return isPrivateIPv4Text(ip4.String())
+	}
+	if ip.IsLoopback() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsPrivate() {
+		return true
+	}
+	// 2001:db8::/32 文档保留段（不可路由，真实图床不会出现；保守拒绝）
+	if len(ip) == 16 && ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
 		return true
 	}
 	return false
@@ -168,6 +188,8 @@ func isPrivateIp(host string) bool {
 
 // assertPublicHttpURL SSRF 校验：文本层 + DNS 尽力解析（解析失败视为不可达拒绝）。
 // TS dnsLookup 无显式超时；Go 加 5s 超时防解析卡死（更严格，方向一致）。
+// Task 50: DNS 逐址校验改用 isPrivateIPAddr（v6 真实网段语义）——双栈站点（v4+AAAA）
+// 不再因 AAAA 地址被 catch-all 误判私网而全站丢封面。
 func assertPublicHttpURL(rawURL string) *url.URL {
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
@@ -183,6 +205,12 @@ func assertPublicHttpURL(rawURL string) *url.URL {
 		return nil
 	}
 	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil {
+			if isPrivateIPAddr(ip) {
+				return nil
+			}
+			continue
+		}
 		if isPrivateIp(a) {
 			return nil
 		}
@@ -221,7 +249,7 @@ func coverDialControl(network, address string, _ syscall.RawConn) error {
 	if ip == nil {
 		return fmt.Errorf("cover dial: 非 IP 字面量地址被拒绝: %s", host)
 	}
-	if isPrivateIp(ip.String()) {
+	if isPrivateIPAddr(ip) {
 		return fmt.Errorf("cover dial: 内网地址被拒绝（DNS rebinding 防护）: %s", ip.String())
 	}
 	return nil
@@ -250,30 +278,33 @@ func coverTransport(proxyURL string) *http.Transport {
 }
 
 // fetchAndStoreCover 下载远程封面并落盘为 JPEG。
-// 返回本地路径（`/covers/{novelId}.jpg`）；任何失败返回 ""（调用方保持渐变 token）。
+// 返回本地路径（`/covers/{novelId}.jpg`）与失败原因（成功时 reason 为空；
+// Task 50：旧版静默返回 "" 导致封面缺失无迹可排查，原因现透出给调用方日志）。
 // 已存在本地文件时幂等复用（不重复下载）。
 // proxy：站点级出口代理（规则配置，http(s) 形态）——被封锁站点的图床也需经同一出口访问。
-func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string) {
+// Task 50-b：响应消费段（状态/类型/读体/解码/编码）抽为 consumeCoverResponse，
+// 本函数保留 SSRF 校验/下载/落盘骨架与 panic 兜底。
+func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath, failReason string) {
 	defer func() {
 		if r := recover(); r != nil {
-			localPath = ""
+			localPath, failReason = "", fmt.Sprintf("panic: %v", r)
 		}
 	}()
 	dir := coversDir()
 	localAbs := filepath.Join(dir, itoa(novelID)+".jpg")
 	localPath = LOCAL_PREFIX + itoa(novelID) + ".jpg"
 	if st, err := os.Stat(localAbs); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
-		return localPath
+		return localPath, ""
 	}
 
 	u := assertPublicHttpURL(remoteURL)
 	if u == nil {
-		return ""
+		return "", "SSRF 校验未过（非 http(s)/解析失败/私网地址）"
 	}
 
 	req, err := http.NewRequest("GET", remoteURL, nil)
 	if err != nil {
-		return ""
+		return "", "请求构造失败: " + err.Error()
 	}
 	req.Header.Set("User-Agent", coverUA)
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
@@ -298,24 +329,57 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 	defer client.CloseIdleConnections()
 	res, err := client.Do(req)
 	if err != nil {
-		return ""
+		return "", "请求失败: " + truncateRunes(err.Error(), 120)
 	}
 	defer func() {
 		_ = res.Body.Close()
 		// body 关闭后再释放空闲连接（CloseIdleConnections 只关已归还池的连接）
 		client.CloseIdleConnections()
 	}()
+	ob, reason := consumeCoverResponse(res)
+	if reason != "" {
+		return "", reason
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", "落盘目录创建失败: " + err.Error()
+	}
+	sum := md5.Sum([]byte(itoa(novelID)))
+	// Task 27-c：tmp 名加 novelID+纳秒时间戳去重——并发同书封面下载（同名书多任务
+	// 各自触发）旧版共用同名 .tmp，并发 WriteFile 同路径可交错写坏后 rename 成坏图
+	tmpAbs := filepath.Join(dir, "."+hex.EncodeToString(sum[:])[:8]+"-"+itoa(novelID)+"-"+strconv.FormatInt(time.Now().UnixNano(), 36)+".tmp")
+	if err := os.WriteFile(tmpAbs, ob, 0o644); err != nil {
+		return "", "临时文件写入失败: " + err.Error()
+	}
+	// rename 覆盖：避免并发采集写一半被读到坏图
+	if err := os.Rename(tmpAbs, localAbs); err != nil {
+		if err2 := os.WriteFile(localAbs, ob, 0o644); err2 != nil {
+			return "", "落盘失败: " + err2.Error()
+		}
+	}
+	return localPath, ""
+}
+
+// consumeCoverResponse 消费封面下载响应（Task 50-b 自 fetchAndStoreCover 抽出：
+// 状态/Content-Type/限量读/解码/缩放/JPEG 编码链独立成函数，畸形响应可表驱动单测）。
+// 返回可直接落盘的 JPEG 字节；reason 非空 = 失败（Task 50 失败原因透出契约）。
+// Task 50-b 修复：旧版 `err != nil || len(buf) == 0` 合并分支在「HTTP 200 + 空响应体」
+// 时对 nil err 调 err.Error() → nil 指针 panic（外层 recover 吞成 "panic: runtime
+// error:..." 假原因入失败明细）；拆分独立分支给出真实原因「响应体为空」。
+func consumeCoverResponse(res *http.Response) (ob []byte, reason string) {
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return ""
+		return nil, "HTTP " + itoa(res.StatusCode)
 	}
 	ctype := strings.ToLower(res.Header.Get("Content-Type"))
 	if ctype != "" && !strings.HasPrefix(ctype, "image/") && !strings.Contains(ctype, "octet-stream") {
-		return ""
+		return nil, "非图像响应: " + ctype
 	}
-
 	buf, err := coverReadBody(res.Body, MAX_COVER_BYTES)
-	if err != nil || len(buf) == 0 {
-		return ""
+	if err != nil {
+		return nil, "响应体读取失败: " + truncateRunes(err.Error(), 80)
+	}
+	if len(buf) == 0 {
+		return nil, "响应体为空"
 	}
 
 	// 解码 + 规范化：解码失败（伪装成图片的 HTML/攻击载荷）在此拒绝。
@@ -325,16 +389,16 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 	if err != nil || cfgImg.Width <= 0 || cfgImg.Height <= 0 ||
 		cfgImg.Width > coverMaxPixelsSide || cfgImg.Height > coverMaxPixelsSide ||
 		int64(cfgImg.Width)*int64(cfgImg.Height) > coverMaxPixels {
-		return ""
+		return nil, "图像头校验未过（非图/越界像素）"
 	}
 	img, _, err := image.Decode(bytes.NewReader(buf))
 	if err != nil || img == nil {
-		return ""
+		return nil, "图像解码失败: " + truncateRunes(err.Error(), 80)
 	}
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	if w <= 0 || h <= 0 {
-		return ""
+		return nil, "图像尺寸异常"
 	}
 	out := img
 	if w > coverMaxSide || h > coverMaxSide {
@@ -354,31 +418,14 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath string)
 		xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, b, xdraw.Over, nil)
 		out = dst
 	}
-	var ob bytes.Buffer
-	if err := jpeg.Encode(&ob, out, &jpeg.Options{Quality: 80}); err != nil {
-		return ""
+	var obuf bytes.Buffer
+	if err := jpeg.Encode(&obuf, out, &jpeg.Options{Quality: 80}); err != nil {
+		return nil, "JPEG 编码失败: " + err.Error()
 	}
-	if ob.Len() < 64 {
-		return ""
+	if obuf.Len() < 64 {
+		return nil, "编码输出过小"
 	}
-
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return ""
-	}
-	sum := md5.Sum([]byte(itoa(novelID)))
-	// Task 27-c：tmp 名加 novelID+纳秒时间戳去重——并发同书封面下载（同名书多任务
-	// 各自触发）旧版共用同名 .tmp，并发 WriteFile 同路径可交错写坏后 rename 成坏图
-	tmpAbs := filepath.Join(dir, "."+hex.EncodeToString(sum[:])[:8]+"-"+itoa(novelID)+"-"+strconv.FormatInt(time.Now().UnixNano(), 36)+".tmp")
-	if err := os.WriteFile(tmpAbs, ob.Bytes(), 0o644); err != nil {
-		return ""
-	}
-	// rename 覆盖：避免并发采集写一半被读到坏图
-	if err := os.Rename(tmpAbs, localAbs); err != nil {
-		if err2 := os.WriteFile(localAbs, ob.Bytes(), 0o644); err2 != nil {
-			return ""
-		}
-	}
-	return localPath
+	return obuf.Bytes(), ""
 }
 
 // coverReadBody 限量读响应体：超过 maxBytes 即拒绝（防异常超大文件）

@@ -20,7 +20,7 @@
     <div id="hj-latest-pills" data-reverse="1" class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
       {{$total := len .Chapters}}{{$from := sub $total 12}}
       {{range $i, $c := .Chapters}}{{if ge $i $from}}
-      <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="cursor-pointer truncate rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]"><span class="mr-1 text-[#94a3b8]">{{$c.idx}}.</span>{{$c.title}}</a>
+      <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="cursor-pointer truncate rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]">{{$c.title}}</a>
       {{end}}{{end}}
     </div>
   </section>
@@ -33,7 +33,7 @@
       <a href="{{bookURL .Novel.id}}" class="shrink-0 cursor-pointer rounded-[10px] border-[1.5px] border-[#dbe4f0] bg-white px-5 py-2 text-[13px] text-[#1e293b] transition-colors duration-200 hover:border-[#2563eb] hover:text-[#2563eb]">返回书页</a>
     </div>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-      {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="cursor-pointer truncate rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]"><span class="mr-1 text-[#94a3b8]">{{.idx}}.</span>{{.title}}</a>
+      {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="cursor-pointer truncate rounded-[10px] border border-[#e6edf7] bg-white px-4 py-2.5 text-left text-[14px] text-[#1e293b] shadow-[0_1px_2px_rgba(37,99,235,0.05)] transition-colors duration-200 hover:border-[#2563eb]/40 hover:bg-[#e8f1ff] hover:text-[#2563eb]">{{.title}}</a>
       {{else}}<div class="col-span-full rounded-[10px] border border-dashed border-[#dbe4f0] bg-white/70 p-12 text-center text-[14px] text-[#94a3b8]">暂无章节</div>{{end}}
     </div>
   </section>

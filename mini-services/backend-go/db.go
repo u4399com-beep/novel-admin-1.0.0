@@ -121,6 +121,11 @@ func getDB() (*sql.DB, error) {
 			`ALTER TABLE "Chapter" ADD COLUMN "volume" TEXT NOT NULL DEFAULT ''`); err != nil {
 			log.Printf("[db] Chapter.volume 加列失败（分卷分组渲染降级为平铺，功能不受影响）: %v", err)
 		}
+		// Task 50: Novel.coverSrc 源站封面 URL（封面补抓通道的数据源；存量库幂等加列）
+		if err := ensureColumn(db, "Novel", "coverSrc",
+			`ALTER TABLE "Novel" ADD COLUMN "coverSrc" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] Novel.coverSrc 加列失败（封面补抓降级为重采驱动）: %v", err)
+		}
 		// Task 45-b: 存量章节「第X卷」前缀回填（幂等：只处理命中行且与入库链路
 		// detectVolume 同口径，回填后存量标题与新采集标题归一一致——Phase 2 续传按
 		// 标题匹配空骨架，双侧口径必须一致）。失败不阻断启动，重启重试

@@ -32,7 +32,7 @@
     </header>
     <div class="p-2">
       <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2 md:grid-cols-4">
-        {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="cursor-pointer truncate border-b border-dotted border-[#a6d3e8] px-1 py-[7px] text-left text-xs text-[#6f78a7] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]">{{$c.idx}}. {{$c.title}}</a>{{end}}{{end}}
+        {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="cursor-pointer truncate border-b border-dotted border-[#a6d3e8] px-1 py-[7px] text-left text-xs text-[#6f78a7] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]">{{$c.title}}</a>{{end}}{{end}}
       </div>
     </div>
   </section>{{end}}
@@ -47,11 +47,11 @@
     {{if $vols}}{{range $vol := $vols}}
       <p class="mt-2 mb-1 flex items-center justify-between border-b border-[#a6d3e8] px-1 pb-1 text-xs font-bold text-[#333]"><span>{{if $vol.name}}{{$vol.name}}{{else}}未分卷{{end}}</span><span class="font-normal text-[#999]">{{len $vol.chapters}} 章</span></p>
       <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2 md:grid-cols-4">
-        {{range $vol.chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="cursor-pointer truncate border-b border-dotted border-[#a6d3e8] px-1 py-[7px] text-left text-xs text-[#6f78a7] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]">{{.idx}}. {{.title}}</a>{{end}}
+        {{range $vol.chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="cursor-pointer truncate border-b border-dotted border-[#a6d3e8] px-1 py-[7px] text-left text-xs text-[#6f78a7] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]">{{.title}}</a>{{end}}
       </div>
     {{end}}{{else}}
       <div class="grid grid-cols-1 gap-x-4 sm:grid-cols-2 md:grid-cols-4">
-        {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="cursor-pointer truncate border-b border-dotted border-[#a6d3e8] px-1 py-[7px] text-left text-xs text-[#6f78a7] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]">{{.idx}}. {{.title}}</a>{{else}}<p class="py-10 text-center text-sm text-[#999]">暂无章节数据</p>{{end}}
+        {{range .Chapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="cursor-pointer truncate border-b border-dotted border-[#a6d3e8] px-1 py-[7px] text-left text-xs text-[#6f78a7] transition-colors hover:bg-[#FFF7F0] hover:text-[#FF6600]">{{.title}}</a>{{else}}<p class="py-10 text-center text-sm text-[#999]">暂无章节数据</p>{{end}}
       </div>
     {{end}}
     </div>

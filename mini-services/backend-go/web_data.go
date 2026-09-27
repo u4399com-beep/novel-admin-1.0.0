@@ -429,6 +429,31 @@ func handleWebCategory(w http.ResponseWriter, r *http.Request, ps map[string]str
 
 // ---------- 书籍页 ----------
 
+// chapterMetaBlock 书籍页/聚合页主打书区块共用的章节元数据（Task 50-① 自 handleWebBook
+// 抽出）：12 章预览（idx 升序）+ 总数 + 末章。键名与 handleWebBook 顶层契约一致。
+func chapterMetaBlock(nid int64) map[string]any {
+	chapters := []map[string]any{}
+	var chaptersTotal int64
+	_ = queryOne(`SELECT COUNT(*) FROM "Chapter" WHERE "novelId" = ?`, []any{&chaptersTotal}, nid)
+	_ = queryList(
+		`SELECT "id","idx","title","wordCount" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC LIMIT 12`,
+		func(rows *sql.Rows) error {
+			var id, idx, wc int64
+			var t string
+			if err := rows.Scan(&id, &idx, &t, &wc); err == nil {
+				chapters = append(chapters, map[string]any{"id": id, "idx": idx, "title": t, "wordCount": wc})
+			}
+			return nil
+		}, nid)
+	block := map[string]any{"Chapters": chapters, "ChaptersTotal": chaptersTotal}
+	var lastID, lastIdx int64
+	var lastTitle string
+	if err := queryOne(`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" DESC LIMIT 1`, []any{&lastID, &lastIdx, &lastTitle}, nid); err == nil {
+		block["LastChapter"] = map[string]any{"id": lastID, "idx": lastIdx, "title": lastTitle}
+	}
+	return block
+}
+
 func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	data := webCommon(r)
 	nid, err := strconv.ParseInt(ps["id"], 10, 64)
@@ -445,27 +470,8 @@ func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	title, _ := novel["title"].(string)
 	author, _ := novel["author"].(string)
 	data["Tags"] = novelPseoTags(title, author)
-
-	chapters := []map[string]any{}
-	var chaptersTotal int64
-	_ = queryOne(`SELECT COUNT(*) FROM "Chapter" WHERE "novelId" = ?`, []any{&chaptersTotal}, nid)
-	_ = queryList(
-		`SELECT "id","idx","title","wordCount" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC LIMIT 12`,
-		func(rows *sql.Rows) error {
-			var id, idx, wc int64
-			var t string
-			if err := rows.Scan(&id, &idx, &t, &wc); err == nil {
-				chapters = append(chapters, map[string]any{"id": id, "idx": idx, "title": t, "wordCount": wc})
-			}
-			return nil
-		}, nid)
-	data["Chapters"] = chapters
-	data["ChaptersTotal"] = chaptersTotal
-
-	var lastID, lastIdx int64
-	var lastTitle string
-	if err := queryOne(`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" DESC LIMIT 1`, []any{&lastID, &lastIdx, &lastTitle}, nid); err == nil {
-		data["LastChapter"] = map[string]any{"id": lastID, "idx": lastIdx, "title": lastTitle}
+	for k, v := range chapterMetaBlock(nid) {
+		data[k] = v
 	}
 
 	related, _ := queryNovelList(
@@ -771,6 +777,23 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	s := data["Site"].(map[string]any)
 	siteName, _ := s["siteName"].(string)
 	data["siteName"] = siteName
+
+	// Task 50-①: 主打书区块（书籍页前两区块语义复刻：封面属性盒 + 简介/标签）——
+	// novels[0] 即绑定书置顶的最佳匹配（generated 按 novelIds 原序；实时兜底按 matchNovels 序）。
+	// 章节元数据借 chapterMetaBlock（与书籍页同口径），键名加 Featured 前缀避免与顶层契约撞车。
+	if len(novels) > 0 {
+		fn := novels[0]
+		if fid, _ := fn["id"].(int64); fid > 0 {
+			data["Featured"] = fn
+			ft, _ := fn["title"].(string)
+			fa, _ := fn["author"].(string)
+			data["FeaturedTags"] = novelPseoTags(ft, fa)
+			for k, v := range chapterMetaBlock(fid) {
+				data["Featured"+k] = v
+			}
+		}
+	}
+
 	// Task 28-b: TDK 改由 seoConfig pseoTitle/pseoDescription 模板渲染（与聚合页生成链路同变量集）
 	vars := map[string]string{"keyword": kw, "count": itoa(len(novels))}
 	applyWebTDK(data, "pseoTitle", "pseoDescription", vars,
