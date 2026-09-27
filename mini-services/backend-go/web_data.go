@@ -39,6 +39,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -711,6 +712,12 @@ func handleWebSearch(w http.ResponseWriter, r *http.Request) {
 
 func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	kw := ps["kw"]
+	// Task 47: 与 api_pseo handlePseoKeywordPage 同款二次解码兜底（路由已解码一次，
+	// 此处仅对残留 % 序列生效；畸形转义回退原值）
+	if decoded, err := url.PathUnescape(kw); err == nil {
+		kw = decoded
+	}
+	kw = sanitizeKeyword(kw)
 	if kw == "" {
 		web404(w, r, "聚合页不存在")
 		return
@@ -719,33 +726,40 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	var status string
 	var pageData sql.NullString
 	err := queryOne(`SELECT "status","pageData" FROM "PseoKeyword" WHERE "keyword" = ?`, []any{&status, &pageData}, kw)
-	if err != nil || status != "generated" || !pageData.Valid || pageData.String == "" {
-		web404(w, r, "聚合页不存在")
-		return
-	}
+	generated := err == nil && status == "generated" && pageData.Valid && pageData.String != ""
 	var saved struct {
 		Description string    `json:"generatedDescription"`
 		NovelIDs    []float64 `json:"novelIds"`
 	}
-	if err := json.Unmarshal([]byte(pageData.String), &saved); err != nil {
-		web404(w, r, "聚合页数据损坏")
-		return
-	}
-	// 按 novelIds 原序取书（绑定书置顶=最佳匹配语义，与 api_pseo 一致）
-	novels := []map[string]any{}
-	seen := map[int64]bool{}
-	for _, fid := range saved.NovelIDs {
-		id := int64(fid)
-		if id <= 0 || seen[id] {
-			continue
+	generated = generated && json.Unmarshal([]byte(pageData.String), &saved) == nil
+	var novels []map[string]any
+	desc := ""
+	if generated {
+		// 按 novelIds 原序取书（绑定书置顶=最佳匹配语义，与 api_pseo 一致）
+		seen := map[int64]bool{}
+		for _, fid := range saved.NovelIDs {
+			id := int64(fid)
+			if id <= 0 || seen[id] {
+				continue
+			}
+			seen[id] = true
+			v, err := webNovelFull(id)
+			if err == nil {
+				novels = append(novels, v)
+			}
 		}
-		seen[id] = true
-		v, err := webNovelFull(id)
-		if err == nil {
-			novels = append(novels, v)
+		desc = saved.Description
+	} else {
+		// Task 47: 实时计算兜底（与 API handlePseoKeywordPage 语义对齐，消灭 chips→404）：
+		// 词池 pending/failed 行、生成窗口期的书名词/作者词（不入池）均实时聚合并渲染；
+		// 词面零命中的任意 URL 仍 404（防垃圾词软 404 页堆积）
+		rt, ok := pseoRealtimeNovels(kw)
+		if !ok {
+			web404(w, r, "聚合页不存在")
+			return
 		}
+		novels = rt
 	}
-	desc := saved.Description
 	if desc == "" {
 		s := data["Site"].(map[string]any)
 		siteName, _ := s["siteName"].(string)
@@ -764,6 +778,32 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	// Task 28-c: 后台 seoConfig pseoKeywords 模板 → <meta name="keywords">（28-b 移交项）
 	applyWebKeywords(data, "pseoKeywords", vars, kw+","+kw+"小说,"+kw+"推荐")
 	renderPage(w, r, "pseo", data)
+}
+
+// pseoRealtimeNovels 聚合页实时兜底取书（Task 47）：关键词词面确有命中书目（标题/作者/
+// 简介/分类 LIKE ≥1）时返回 matchNovels 聚合结果；零命中返回 false（调用方 404，
+// 防任意垃圾 URL 软 404 页）。词池 pending/failed 行与不入池的作者词均由此获得有效页面。
+func pseoRealtimeNovels(kw string) ([]map[string]any, bool) {
+	parts := splitJSSpace(kw)
+	if len(parts) == 0 {
+		return nil, false
+	}
+	conds := make([]string, 0, len(parts))
+	args := make([]any, 0, len(parts)*4)
+	for _, p := range parts {
+		conds = append(conds, `(n."title" LIKE ? OR n."author" LIKE ? OR n."description" LIKE ? OR c."name" LIKE ?)`)
+		like := likeWrap(p)
+		args = append(args, like, like, like, like)
+	}
+	var total int64
+	if err := queryOne(`SELECT COUNT(*) FROM "Novel" n LEFT JOIN "Category" c ON c."id" = n."categoryId" WHERE `+strings.Join(conds, " OR "), []any{&total}, args...); err != nil || total <= 0 {
+		return nil, false
+	}
+	novels, err := matchNovels(kw)
+	if err != nil {
+		return nil, false
+	}
+	return novels, true
 }
 
 // ---------- 管理后台 ----------

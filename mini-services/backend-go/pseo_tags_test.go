@@ -70,7 +70,8 @@ func TestNovelPseoTagsSeedAndNorm(t *testing.T) {
 		kwNormalize("测试之书?最新章节")); err != nil {
 		t.Fatalf("insert legacy row: %v", err)
 	}
-	// 未生成词（pending）：血缘直取通道允许上榜（聚合页实时计算兜底），但排在 generated 之后
+	// 未生成词（pending）：Task 47 起血缘直取通道仅取 generated——pending 词不上榜
+	// （SSR 聚合页实时计算兜底负责其渲染，chips 内链不得指向潜在 404）
 	if _, err := db.Exec(
 		`UPDATE "PseoKeyword" SET "status" = 'pending' WHERE "keyword" = '测试之书?TXT下载'`); err != nil {
 		t.Fatalf("set pending: %v", err)
@@ -96,11 +97,15 @@ func TestNovelPseoTagsSeedAndNorm(t *testing.T) {
 		}
 		return false
 	}
-	// ① 血缘直取：含书名变体与不含书名字面的相关词都必须上榜
-	for _, kw := range []string{"测试之书?笔趣阁", "类似测试之书的小说推荐", "测试之书?TXT下载"} {
+	// ① 血缘直取：含书名变体与不含书名字面的相关词都必须上榜（generated 行）
+	for _, kw := range []string{"测试之书?笔趣阁", "类似测试之书的小说推荐"} {
 		if !has(kw) {
 			t.Errorf("血缘/归一通道漏词 %q，tags=%v", kw, tags)
 		}
+	}
+	// ①-b pending 词不得上榜（Task 47：chips 只链接已生成聚合页，防 404 内链）
+	if has("测试之书?TXT下载") {
+		t.Errorf("pending 词不应上榜（chips 指向 404），tags=%v", tags)
 	}
 	// ② kwNorm 兜底：无血缘存量词（半角?变体）必须上榜
 	if !has("测试之书?免费阅读") || !has("测试之书?最新章节") {
@@ -115,18 +120,7 @@ func TestNovelPseoTagsSeedAndNorm(t *testing.T) {
 	if len(tags2) < 2 || tags2[1] != "作者甲" {
 		t.Errorf("第二标签必须是作者词，got %v", tags2)
 	}
-	// ⑤ pending 词排在 generated 血缘词之后（generated 优先序）
-	idxOf := func(kw string) int {
-		for i, x := range tags {
-			if x == kw {
-				return i
-			}
-		}
-		return -1
-	}
-	if p, g := idxOf("测试之书?TXT下载"), idxOf("测试之书?笔趣阁"); p >= 0 && g >= 0 && p < g {
-		t.Errorf("pending 词(%d) 不应排在 generated 词(%d) 之前，tags=%v", p, g, tags)
-	}
+	// ⑤ Task 47 后无独立排序断言：pending 词已整体从 chips 摘除（见①-b）
 }
 
 func TestBackfillPseoKeywordNorm(t *testing.T) {

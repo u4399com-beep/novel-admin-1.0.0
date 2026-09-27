@@ -106,12 +106,13 @@ func enrichOneBookSeed() {
 }
 
 // novelPseoTags 书籍页「相关标签」（前端渲染在简介下方，点击进入对应 PSEO 聚合页）：
-//  1. 书名种子词（必有——聚合页按书名 LIKE 命中本书；未生成时 [kw] 聚合页实时计算兜底）
+//  1. 书名种子词（必有——聚合页按书名 LIKE 命中本书；未生成时 SSR 聚合页实时计算兜底）
 //  2. 作者词（聚合页命中该作者全部作品；佚名不作为标签）
 //  3. 搜索引擎下拉词（用户指令「书籍页标签加入搜索引擎下拉词，pseo 词的链接」；Task 40 强化
 //     「加入 pseo 生成的相关下拉词」）双通道取词：
 //     ① seed 血缘直取——本书种子富集产出的全部下拉词（enrichOneBookSeed 入库时 seed=书名），
-//     不要求词面包含书名（相关推荐词也能上榜），generated 优先（聚合页 TDK 已生成）
+//     不要求词面包含书名（相关推荐词也能上榜），仅取 generated（Task 47：pending/failed 词
+//     不再上榜——聚合页对未生成词由 SSR 实时计算兜底渲染，但 chips 内链不得指向潜在 404）
 //     ② kwNorm 归一形 LIKE 兜底——覆盖 seed 列引入前的存量词与跨来源含书名词；
 //     全半角/空白/大小写形态差异不再漏配（书 293 实证：全角？书名 vs 半角?下拉词全量漏配）；
 //     归一包含 ⊇ 严格子串包含，旧语义为严格超集，无需第三查询
@@ -144,8 +145,8 @@ func novelPseoTags(title, author string) []string {
 		}
 		// ① seed 血缘直取：本书种子的下拉词按词长升序（短词更贴近书名）、同长按 id 稳定
 		_ = queryList(
-			`SELECT "keyword" FROM "PseoKeyword" WHERE "seed" = ? AND "keyword" != ? AND "keyword" != ?
-                          ORDER BY ("status" = 'generated') DESC, LENGTH("keyword") ASC, "id" ASC LIMIT 12`,
+			`SELECT "keyword" FROM "PseoKeyword" WHERE "seed" = ? AND "status" = 'generated' AND "keyword" != ? AND "keyword" != ?
+                          ORDER BY LENGTH("keyword") ASC, "id" ASC LIMIT 12`,
 			scanAdd, kwTitle, kwTitle, kwAuthor)
 		// ② kwNorm 归一形 LIKE 兜底：存量词 + 跨来源含书名词（归一形抹平标点/空白/大小写差异）
 		_ = queryList(

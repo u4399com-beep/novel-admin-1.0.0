@@ -41,6 +41,35 @@ func isTradRune(r rune) bool {
 	return ok
 }
 
+// ambiguousTradRunes 两用字集合：在 t2sChars 繁→简映射中、又可能合法出现在简体文本的
+// 字符（乾→干/乾坤乾隆、徵→征/宫商角徵羽、於→于/书面语，以及繁体引号 「」『』——
+// 简体标题/正文亦可能使用）。这类字符单字出现不足以判定文本为繁体，t2sField 短字段
+// 判定需与「无歧义繁体字」（東/學/們 等，简体文本中不可能出现）分开计数（countTradSplit）。
+var ambiguousTradRunes = map[rune]bool{
+	0x300C: true, // 「
+	0x300D: true, // 」
+	0x300E: true, // 『
+	0x300F: true, // 』
+	0x4E7E: true, // 乾
+	0x5FB5: true, // 徵
+	0x65BC: true, // 於
+}
+
+// countTradSplit 单遍统计繁体特征字符：返回 (歧义两用字数, 无歧义繁体字数)。
+// 无歧义字在简体文本中不可能出现，出现 1 个即足以判定繁体；两用字维持 ≥2 阈值。
+func countTradSplit(s string) (amb, unamb int) {
+	for _, r := range s {
+		if _, ok := t2sChars[r]; ok {
+			if ambiguousTradRunes[r] {
+				amb++
+			} else {
+				unamb++
+			}
+		}
+	}
+	return amb, unamb
+}
+
 // tradRatio 估算文本繁体特征字符占比（0~1）。
 // 规则：遍历前 limitRunes 个 CJK 字符，繁体特征字 / CJK 总数。
 // 文本过短（CJK < 8）不参与判定，返回 0。

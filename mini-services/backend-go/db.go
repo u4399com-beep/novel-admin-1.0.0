@@ -84,6 +84,10 @@ func getDB() (*sql.DB, error) {
 		if _, err := db.Exec(chapterContentDDL); err != nil {
 			log.Printf("[db] ChapterContent 建表失败（正文退化存储于 Chapter.content，COALESCE 读路径兼容）: %v", err)
 		}
+		// Task 47: 一次性迁移守卫标记表（backfillT2SExisting 存量繁转简回填进度）
+		if _, err := db.Exec(appMetaDDL); err != nil {
+			log.Printf("[db] AppMeta 建表失败（t2s 存量回填守卫降级为每次启动重扫，幂等零写放大）: %v", err)
+		}
 		if err := ensureColumn(db, "ScrapeTask", "storageMode",
 			`ALTER TABLE "ScrapeTask" ADD COLUMN "storageMode" TEXT NOT NULL DEFAULT 'db'`); err != nil {
 			log.Printf("[db] ScrapeTask.storageMode 加列失败（TXT 存储模式不可用，默认 db 不受影响）: %v", err)
@@ -100,6 +104,12 @@ func getDB() (*sql.DB, error) {
 		// Task 40: 存量词一次性归一回填（幂等：只扫 kwNorm='' 行；空池零开销）
 		if err := backfillPseoKeywordNorm(db); err != nil {
 			log.Printf("[db] PseoKeyword.kwNorm 存量回填失败（书籍页标签归一匹配暂不可用，重启重试）: %v", err)
+		}
+		// Task 47: 存量数据繁转简一次性回填（AppMeta 守卫；分类/书字段/章题/关键词
+		// 同步面 + 正文大表后台 goroutine 分批转换；幂等零写放大。置于简介清洗回填
+		// 之前——繁体简介先转简，本轮简介清洗同 boot 即可对转换后文本提取长尾词）
+		if err := backfillT2SExisting(db); err != nil {
+			log.Printf("[db] t2s 存量回填失败（存量繁体字段暂存，重启重试）: %v", err)
 		}
 		// Task 41: 存量简介噪声清洗回填（幂等：cleanNovelIntro 幂等保证已清洗行零写放大；
 		// 「相关小说」尾块转换进 PseoKeyword）。失败不阻断启动，下次重启重试
@@ -135,6 +145,13 @@ const chapterContentDDL = `CREATE TABLE IF NOT EXISTS "ChapterContent" (
         "chapterId" INTEGER NOT NULL PRIMARY KEY,
         "content" TEXT NOT NULL DEFAULT '',
         FOREIGN KEY ("chapterId") REFERENCES "Chapter"("id") ON DELETE CASCADE
+)`
+
+// appMetaDDL Task 47: 轻量运行时元数据表（一次性迁移守卫标记存储；SiteSite/ChapterContent
+// 先例：Go 侧运行时幂等建表管理，schema.go 不重复）。当前仅承载 t2sBackfillV1 标记。
+const appMetaDDL = `CREATE TABLE IF NOT EXISTS "AppMeta" (
+        "key" TEXT NOT NULL PRIMARY KEY,
+        "value" TEXT NOT NULL DEFAULT ''
 )`
 
 // ensureColumn 幂等加列助手（Task 32-b）：PRAGMA table_info 检查列不存在则 ALTER TABLE ADD COLUMN。
@@ -197,6 +214,260 @@ func migrateChapterContentSplit(db *sql.DB) error {
 		}
 	}
 	return fmt.Errorf("迁移循环超出硬上限（异常数据形态）")
+}
+
+// ==================== Task 47: 存量数据繁转简一次性回填 ====================
+
+// t2sBackfillKey AppMeta 守卫键
+const t2sBackfillKey = "t2sBackfillV1"
+
+// t2sBackfillDone 守卫标记读取（表缺失/行缺失均视为未完成）
+func t2sBackfillDone(db *sql.DB) bool {
+	var v string
+	if err := db.QueryRow(`SELECT "value" FROM "AppMeta" WHERE "key" = ?`, t2sBackfillKey).Scan(&v); err != nil {
+		return false
+	}
+	return v == "done"
+}
+
+// markT2SBackfillDone 写守卫标记（best-effort；失败=下次启动重扫，幂等零写放大）
+func markT2SBackfillDone(db *sql.DB) {
+	_, _ = db.Exec(`INSERT OR REPLACE INTO "AppMeta" ("key","value") VALUES (?, 'done')`, t2sBackfillKey)
+}
+
+// backfillT2SExisting 存量数据繁转简（Task 47，用户指令「源站繁体字的入库转简体，包括
+// 书名、目录名、作者、分类、简介等所有获取到的数据」对存量行的补全）：
+//   - 同步面（启动路径，量小）：Category.name / Novel(title,author,description) /
+//     Chapter(title+转换后卷前缀归一) / PseoKeyword(keyword,seed+kwNorm 重算)
+//   - 异步面（后台 goroutine，正文大表不阻塞启动）：ChapterContent.content keyset 分批扫描
+//   - 幂等：t2sField(auto) 输出不再含无歧义繁体字，重扫零写放大；守卫标记在正文扫描
+//     完成后落（中断即无标记 → 下次启动重扫，已转换行零写入）
+//   - 唯一冲突（转换后 title+author / keyword 与既有行相撞）跳过并留日志，绝不覆盖他人行
+//   - TXT 镜像文件不回写（下载面历史文件词面暂存旧形，重采/编辑自愈）
+//
+// ⚠ getDB once 回调内必须以传入局部 db 句柄直写（Task 30 P1 递归自锁教训，严禁经 getDB）。
+func backfillT2SExisting(db *sql.DB) error {
+	if t2sBackfillDone(db) {
+		return nil
+	}
+	if err := backfillT2SMeta(db); err != nil {
+		return err
+	}
+	go func() {
+		if err := backfillT2SContent(db); err != nil {
+			log.Printf("[db] t2s 正文存量回填失败（不落守卫标记，重启重试）: %v", err)
+			return
+		}
+		markT2SBackfillDone(db)
+		log.Printf("[db] t2s 存量回填完成（正文扫描收尾，守卫标记已落）")
+	}()
+	return nil
+}
+
+// backfillT2SMeta 存量元数据繁转简（分类/书字段/章题/pSEO 关键词；同步启动路径。
+// 转换统一走 t2sField("auto") 与采集入库同口径——绝不用 t2sForce 直转，防止「乾坤」
+// 类简体词面被 乾→干 误伤）。
+// Task 47-a 深审：行级非冲突失败（busy/IO 等）不再只留日志后吞掉——记录首个错误并
+// 继续处理其余行（本轮收益最大化），末尾向上返回 → backfillT2SExisting 不启动正文
+// goroutine、不落守卫标记 → 下次启动整段重试。否则守卫可在个别行转换失败时照常
+// 落位，失败行永久滞留繁体（守卫短路后无重试路径）。
+func backfillT2SMeta(db *sql.DB) error {
+	var rowErr error
+	recordRowErr := func(id int64, table string, err error) {
+		log.Printf("[db] t2s 回填 %s#%d 失败: %v", table, id, err)
+		if rowErr == nil {
+			rowErr = err
+		}
+	}
+	// ① Category.name（规范类名恒简体，防御历史行/手改行）
+	type idName struct {
+		id   int64
+		name string
+	}
+	cats := []idName{}
+	rows, err := db.Query(`SELECT "id","name" FROM "Category"`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r idName
+		if err := rows.Scan(&r.id, &r.name); err != nil {
+			rows.Close()
+			return err
+		}
+		cats = append(cats, r)
+	}
+	rows.Close()
+	for _, r := range cats {
+		if s := t2sField("auto", r.name); s != r.name && s != "" {
+			if _, err := db.Exec(`UPDATE "Category" SET "name" = ? WHERE "id" = ?`, s, r.id); err != nil {
+				recordRowErr(r.id, "Category", err)
+			}
+		}
+	}
+
+	// ② Novel(title,author,description)——title+author 参与唯一键，冲突跳过留日志
+	type novelRow struct {
+		id     int64
+		title  string
+		author string
+		desc   string
+	}
+	books := []novelRow{}
+	rows, err = db.Query(`SELECT "id","title","author","description" FROM "Novel"`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r novelRow
+		if err := rows.Scan(&r.id, &r.title, &r.author, &r.desc); err != nil {
+			rows.Close()
+			return err
+		}
+		books = append(books, r)
+	}
+	rows.Close()
+	for _, r := range books {
+		nt := trimSpaceStr(t2sField("auto", r.title))
+		na := t2sField("auto", r.author)
+		nd := t2sField("auto", r.desc)
+		if nt == r.title && na == r.author && nd == r.desc {
+			continue
+		}
+		if nt == "" {
+			nt = r.title // 防御：转换产物不得为空（空标题行本不该存在）
+		}
+		if _, err := db.Exec(`UPDATE "Novel" SET "title" = ?, "author" = ?, "description" = ? WHERE "id" = ?`, nt, na, nd, r.id); err != nil {
+			if isUniqueConflict(err) {
+				log.Printf("[db] t2s 回填 Novel#%d 唯一冲突（转换后 title+author 与既有行相撞）跳过: %q/%q", r.id, truncateRunes(nt, 30), truncateRunes(na, 20))
+				continue
+			}
+			recordRowErr(r.id, "Novel", err)
+		}
+	}
+
+	// ③ Chapter.title（转换后卷前缀归一：detectVolume 在转换后标题上进行，volume 为空
+	// 行补卷名——与入库链路 t2s→detectVolume 顺序同口径，Phase 2 续传双侧词面一致）
+	type chapRow struct {
+		id     int64
+		title  string
+		volume string
+	}
+	chaps := []chapRow{}
+	rows, err = db.Query(`SELECT "id","title","volume" FROM "Chapter"`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r chapRow
+		if err := rows.Scan(&r.id, &r.title, &r.volume); err != nil {
+			rows.Close()
+			return err
+		}
+		chaps = append(chaps, r)
+	}
+	rows.Close()
+	for _, r := range chaps {
+		nt := trimSpaceStr(t2sField("auto", r.title))
+		if nt == r.title || nt == "" {
+			continue
+		}
+		vol := r.volume
+		if v, rest := detectVolume(nt); v != "" {
+			if vol == "" {
+				vol = v
+			}
+			nt = rest
+		}
+		if _, err := db.Exec(`UPDATE "Chapter" SET "title" = ?, "volume" = ? WHERE "id" = ?`, nt, vol, r.id); err != nil {
+			recordRowErr(r.id, "Chapter", err)
+		}
+	}
+
+	// ④ PseoKeyword(keyword,seed)——keyword 唯一键冲突跳过；kwNorm 随转换后词面重算
+	// （keyword 亦即聚合页 URL 词面，转换后与书籍页 chips/新采集词面保持一致）
+	type kwRow struct {
+		id      int64
+		keyword string
+		seed    string
+	}
+	kws := []kwRow{}
+	rows, err = db.Query(`SELECT "id","keyword","seed" FROM "PseoKeyword"`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var r kwRow
+		if err := rows.Scan(&r.id, &r.keyword, &r.seed); err != nil {
+			rows.Close()
+			return err
+		}
+		kws = append(kws, r)
+	}
+	rows.Close()
+	for _, r := range kws {
+		nk := t2sField("auto", r.keyword)
+		ns := t2sField("auto", r.seed)
+		if nk == r.keyword && ns == r.seed {
+			continue
+		}
+		if nk == "" {
+			continue
+		}
+		if _, err := db.Exec(`UPDATE "PseoKeyword" SET "keyword" = ?, "seed" = ?, "kwNorm" = ? WHERE "id" = ?`, nk, ns, kwNormalize(nk), r.id); err != nil {
+			if isUniqueConflict(err) {
+				log.Printf("[db] t2s 回填 PseoKeyword#%d 唯一冲突跳过: %q→%q", r.id, truncateRunes(r.keyword, 30), truncateRunes(nk, 30))
+				continue
+			}
+			recordRowErr(r.id, "PseoKeyword", err)
+		}
+	}
+	return rowErr
+}
+
+// backfillT2SContent 存量正文繁转简（ChapterContent 大表，keyset 分批 500 行防长锁；
+// 幂等：转换后行重扫零写入）。由 backfillT2SExisting 后台 goroutine 调用，不阻塞启动。
+func backfillT2SContent(db *sql.DB) error {
+	const batch = 500
+	type cRow struct {
+		id      int64
+		content string
+	}
+	var last int64
+	scanned, changed := 0, 0
+	for i := 0; i < 1_000_000; i++ { // 硬上限防异常死循环（migrateChapterContentSplit 先例）
+		rows := []cRow{}
+		rs, err := db.Query(`SELECT "chapterId","content" FROM "ChapterContent" WHERE "chapterId" > ? ORDER BY "chapterId" LIMIT ?`, last, batch)
+		if err != nil {
+			return err
+		}
+		for rs.Next() {
+			var r cRow
+			if err := rs.Scan(&r.id, &r.content); err != nil {
+				rs.Close()
+				return err
+			}
+			rows = append(rows, r)
+		}
+		rs.Close()
+		if len(rows) == 0 {
+			log.Printf("[db] t2s 正文存量回填扫描完成：共 %d 行，修正 %d 行", scanned, changed)
+			return nil
+		}
+		for _, r := range rows {
+			last = r.id
+			scanned++
+			nc := t2sField("auto", r.content)
+			if nc == r.content || nc == "" {
+				continue
+			}
+			if _, err := db.Exec(`UPDATE "ChapterContent" SET "content" = ? WHERE "chapterId" = ?`, nc, r.id); err != nil {
+				return err
+			}
+			changed++
+		}
+	}
+	return fmt.Errorf("正文 t2s 回填超出硬上限（异常数据形态）")
 }
 
 // backfillChapterVolume 存量章节分卷回填（Task 45-b，幂等）：

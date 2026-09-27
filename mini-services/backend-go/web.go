@@ -401,35 +401,65 @@ func handleCovers(w http.ResponseWriter, r *http.Request) {
 
 // ---------- SEO：robots / sitemap ----------
 
-func handleRobots(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("User-agent: *\nAllow: /\nDisallow: /admin\n\nSitemap: /sitemap.xml\n"))
+// webBaseURL 站点绝对地址（Task 47：sitemap <loc> 与 robots Sitemap: 指令按规范必须是
+// 绝对 URL——Task 36-b 相对形态会被搜索引擎整文件拒收）。scheme 取 X-Forwarded-Proto
+// （Caddy 网关反代场景）→ TLS → http 兜底；host 取请求 Host，站群 Host 匹配下每个站点
+// 自行拿到各自的绝对地址。
+func webBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + strings.TrimSpace(r.Host)
 }
 
-// handleSitemap 首页 + 分类 + 书籍（上限 5000）+ pseo 关键词聚合页
-func handleSitemap(w http.ResponseWriter, _ *http.Request) {
+func handleRobots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// Task 47: Sitemap: 指令按规范必须为绝对 URL（相对路径部分爬虫直接忽略）
+	_, _ = w.Write([]byte("User-agent: *\nAllow: /\nDisallow: /admin\n\nSitemap: " + webBaseURL(r) + "/sitemap.xml\n"))
+}
+
+// handleSitemap 首页 + 分类 + 书籍（上限 5000，含 lastmod）+ pseo 关键词聚合页。
+// Task 47: <loc> 改为绝对 URL（sitemaps.org 规范，相对地址被搜索引擎整文件拒收）。
+func handleSitemap(w http.ResponseWriter, r *http.Request) {
+	// Task 47-a 深审：base 一次性 XML 转义——Host 头来自请求方可含 &/< 等字符，
+	// 首页行此前的点态转义与分类/书籍/pseo 行的裸插值不一致（畸形 Host 可产出非法 XML）。
+	base := xmlEscape(webBaseURL(r))
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n")
-	b.WriteString("  <url><loc>/</loc></url>\n")
+	b.WriteString("  <url><loc>" + base + "/</loc></url>\n")
 	_ = queryList(`SELECT "id" FROM "Category" ORDER BY "sort" ASC LIMIT 200`, func(rows *sql.Rows) error {
 		var id int64
 		if err := rows.Scan(&id); err == nil {
-			fmt.Fprintf(&b, "  <url><loc>/category/%d</loc></url>\n", id)
+			fmt.Fprintf(&b, "  <url><loc>%s/category/%d</loc></url>\n", base, id)
 		}
 		return nil
 	})
-	_ = queryList(`SELECT "id" FROM "Novel" ORDER BY "updatedAt" DESC LIMIT 5000`, func(rows *sql.Rows) error {
+	// Task 47-a 深审：updatedAt 走 any+normalizeMillis 容错扫描——本库实证存在 TEXT 存储
+	// 类时间戳行（Task 33-b），int64 直扫失败会令该行 scan 整体报错 → 书籍 URL 被静默
+	// 整行丢弃出 sitemap（非仅缺 lastmod）
+	_ = queryList(`SELECT "id","updatedAt" FROM "Novel" ORDER BY "updatedAt" DESC LIMIT 5000`, func(rows *sql.Rows) error {
 		var id int64
-		if err := rows.Scan(&id); err == nil {
-			fmt.Fprintf(&b, "  <url><loc>/book/%d</loc></url>\n", id)
+		var updatedRaw any
+		if err := rows.Scan(&id, &updatedRaw); err == nil {
+			updated := int64(0)
+			if ms, ok := normalizeMillis(updatedRaw); ok {
+				updated = ms
+			}
+			if updated > 0 {
+				fmt.Fprintf(&b, "  <url><loc>%s/book/%d</loc><lastmod>%s</lastmod></url>\n",
+					base, id, time.UnixMilli(updated).UTC().Format("2006-01-02"))
+			} else {
+				fmt.Fprintf(&b, "  <url><loc>%s/book/%d</loc></url>\n", base, id)
+			}
 		}
 		return nil
 	})
-	_ = queryList(`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' LIMIT 2000`, func(rows *sql.Rows) error {
+	_ = queryList(`SELECT "keyword" FROM "PseoKeyword" WHERE "status" = 'generated' LIMIT 5000`, func(rows *sql.Rows) error {
 		var kw string
 		if err := rows.Scan(&kw); err == nil {
 			// Task 36-b: PathEscape 不转义 &（path 段合法字符），XML 文本上下文必须再转义
-			fmt.Fprintf(&b, "  <url><loc>/pseo/%s</loc></url>\n", xmlEscape(url.PathEscape(kw)))
+			fmt.Fprintf(&b, "  <url><loc>%s/pseo/%s</loc></url>\n", base, xmlEscape(url.PathEscape(kw)))
 		}
 		return nil
 	})

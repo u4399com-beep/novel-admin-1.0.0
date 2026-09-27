@@ -206,7 +206,7 @@ func TestSkeletonVolumeWiring(t *testing.T) {
 		{Title: "第二卷·风起", URL: "https://t.example/3"},
 		{Title: "第3章 无卷章节", URL: "https://t.example/4"},
 	}
-	sk, err := storeChapterSkeletons(run, int(nid64), refs, 100)
+	sk, err := storeChapterSkeletons(run, int(nid64), refs, 100, "auto")
 	if err != nil {
 		t.Fatalf("storeChapterSkeletons: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestSkeletonVolumeWiring(t *testing.T) {
 	}
 
 	// 续传命中：重发同一批 refs（标题已归一）+ 既有空骨架（wordCount=0）→ 不重复建行
-	sk2, err := storeChapterSkeletons(run, int(nid64), refs, 100)
+	sk2, err := storeChapterSkeletons(run, int(nid64), refs, 100, "auto")
 	if err != nil {
 		t.Fatalf("storeChapterSkeletons resume: %v", err)
 	}

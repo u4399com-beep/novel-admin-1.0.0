@@ -520,7 +520,7 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 			return
 		}
 
-		sk, skerr := storeChapterSkeletons(run, up.NovelID, refs, MAX_CHAPTERS_PER_BOOK)
+		sk, skerr := storeChapterSkeletons(run, up.NovelID, refs, MAX_CHAPTERS_PER_BOOK, t2sMode)
 		if skerr != nil {
 			mu.Lock()
 			setFirstError(skerr.Error())

@@ -182,24 +182,19 @@ func t2sModeFromRule(rule LoadedRule) string {
 	return t2sModeOf(rule.ListRule)
 }
 
-// countTradRunes 统计繁体特征字符数（t2sChars 表内字符；简体常用字不在表内）
-func countTradRunes(s string) int {
-	n := 0
-	for _, r := range s {
-		if isTradRune(r) {
-			n++
-		}
-	}
-	return n
-}
-
-// t2sField 按模式转换单个入库字段（书名/作者/简介/章题/正文统一入口）：
-//   - on ：无条件 t2sForce
+// t2sField 按模式转换单个入库字段（书名/作者/简介/章题/正文/存量回填统一入口）：
+//   - on ：无条件 t2sForce（单遍；显式开关语义自担）
 //   - off：原样透传（简体零开销）
-//   - auto：长文本（CJK≥8）按 needsT2S 占比（≥0.06）判定；短文本（CJK<8，needsT2S 恒
-//     false 的书名/章题/作者场景）含 ≥2 个繁体特征字即判繁——单字阈值防简体文本偶发
-//     两用字误触发全量转换（t2sChars 实证含 乾→干，「乾坤」单字命中即被误转；
-//     ≥2 字阈值同时保住「乾坤」类简体词与「斗破蒼穹」类短繁体书名）
+//   - auto：长文本（CJK≥8）按 needsT2S 占比（≥0.06）判定；短字段/混合文本走特征字
+//     两路计数（Task 47 拆分）：无歧义繁体字（東/學/們 等，简体文本不可能出现）≥1 即
+//     判繁（修复「辰東」类单繁字作者/书名漏转）；歧义两用字（乾/徵/於/「」等——乾坤、
+//     宫商角徵羽、简体标题引号场景）维持 ≥2 阈值防误触发全量转换。
+//
+// Task 47-a 深审：auto 判定+转换迭代至重入稳定（硬上限 4 轮，实测 ≤2）。必要性：t2sPhrases
+// 词条产物可能残留特征字（实证 127 条，如 滿拚自盡→满拚自尽 残留拚、乾儀→乾仪 残留乾），
+// 单遍转换重入会再变（拚→拼），破坏存量回填「重扫零写放大」与重采骨架去重词面一致性。
+// 迭代只收敛「无歧义残留」（拚→拼 为正确简化形），两用字残留（乾仪）由 ≥2 阈值自然保留
+// ——zhconv 词级校订语义（萧乾/乾县 人名地名）不被二次转换破坏。
 func t2sField(mode, s string) string {
 	if s == "" || mode == "off" {
 		return s
@@ -207,8 +202,22 @@ func t2sField(mode, s string) string {
 	if mode == "on" {
 		return t2sForce(s)
 	}
-	if needsT2S(s, 0) || countTradRunes(s) >= 2 {
-		return t2sForce(s)
+	// Task 47-a 深审修复：收敛循环（≤4 次有界）。t2sPhrases 有 127 条词条映射的 VALUE
+	// 本身含繁体特征字（词级校订有意保留——「蕭乾→萧乾」人名不得被字表 乾→干 破坏、
+	// 「拚自盡」词级映射后残留 拚），单遍实现下 f(f(x))≠f(x)：存量回填重扫会有二次写、
+	// 重采标题去重词面漂移。循环内保持两路计数口径（无歧义残留如 拚 迭代转净；两用字
+	// 残留如 萧乾 的 乾 由 ≥2 阈值保护不重扫），正常文本 1-2 轮收敛，幂等断言锁定
+	for i := 0; i < 4; i++ {
+		if needsT2S(s, 0) {
+			s = t2sForce(s)
+			continue
+		}
+		// Task 47: 特征字两路计数（见函数头注）——无歧义单繁字即转，两用字维持 ≥2 阈值
+		if amb, unamb := countTradSplit(s); unamb >= 1 || amb >= 2 {
+			s = t2sForce(s)
+			continue
+		}
+		return s
 	}
 	return s
 }
@@ -540,7 +549,11 @@ func lockNovelSkeleton(novelID int) func() {
 // volume 随行入库（批量多值 INSERT 与逐条退化路径双覆盖）；fillRows 携带归一后标题。
 // 并发同书建骨架撞 (novelId,idx) 唯一约束时退化为逐条顺延重试（复用 storeChapter）；
 // 非唯一冲突错误返回 error（TS 语义为向上抛 → 任务按 failed 收尾）。
-func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) (SkeletonOutcome, error) {
+// Task 47: refs 原始 TOC 标题先经 t2sField(t2sMode) 繁转简再参与卷识别/去重/入库——
+// 繁体源（101kks/ixdzs8 等）已填充章节存的是转换后简体标题，若骨架仍存繁体原词面，
+// 重采去重必然 miss → 重复骨架行（Phase 2 再填充即重复章节）；转换必须先于
+// detectVolume（繁体「第X捲」前缀先归一才能被卷识别命中，与 db.go 存量回填同口径）。
+func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int, t2sMode string) (SkeletonOutcome, error) {
 	// Task 27-c: 同书骨架入库全程持分片锁（见 skeletonLocks 注释）；defer 兑底释放
 	unlock := lockNovelSkeleton(novelID)
 	defer unlock()
@@ -554,7 +567,8 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int) 
 	urlByTitle := map[string]string{}
 	volByTitle := map[string]string{}
 	for _, r := range refs {
-		t := trimSpaceStr(r.Title)
+		// Task 47: 繁转简先于分卷识别（见函数头注）
+		t := trimSpaceStr(t2sField(t2sMode, r.Title))
 		if v, rest := detectVolume(t); v != "" {
 			volByTitle[rest] = v
 			t = rest
