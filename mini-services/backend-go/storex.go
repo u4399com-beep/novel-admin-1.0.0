@@ -111,11 +111,11 @@ func loadRule(ruleID *int) LoadedRule {
 	if ruleID == nil || *ruleID == 0 {
 		return empty
 	}
-	var name, charset, proxy, listRule, bookRule, chapterRule sql.NullString
+	var name, charset, proxy, cookies, listRule, bookRule, chapterRule sql.NullString
 	var insecure bool
 	err := queryOne(
-		"SELECT name, charset, proxy, insecureTLS, listRule, bookRule, chapterRule FROM ScrapeRule WHERE id = ?",
-		[]any{&name, &charset, &proxy, &insecure, &listRule, &bookRule, &chapterRule}, *ruleID)
+		"SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule FROM ScrapeRule WHERE id = ?",
+		[]any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule}, *ruleID)
 	if err != nil {
 		return empty
 	}
@@ -124,6 +124,7 @@ func loadRule(ruleID *int) LoadedRule {
 		Charset:     strings.ToLower(charset.String),
 		Proxy:       strings.TrimSpace(proxy.String),
 		InsecureTLS: insecure,
+		Cookies:     strings.TrimSpace(cookies.String),
 		ListRule:    safeParseRule(listRule.String),
 		BookRule:    safeParseRule(bookRule.String),
 		ChapterRule: safeParseRule(chapterRule.String),

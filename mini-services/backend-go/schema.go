@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS "ScrapeRule" (
         "charset" TEXT NOT NULL DEFAULT 'utf-8',
         "proxy" TEXT NOT NULL DEFAULT '',
         "insecureTLS" BOOLEAN NOT NULL DEFAULT false,
+        -- Task 53: 规则级静态 cookie 底座（用户人工过验后的会话凭证 "k=v; k2=v2"；引擎每次抓取前种入 host 会话桶）
+        "cookies" TEXT NOT NULL DEFAULT '',
         "listRule" TEXT NOT NULL DEFAULT '{}',
         "bookRule" TEXT NOT NULL DEFAULT '{}',
         "chapterRule" TEXT NOT NULL DEFAULT '{}',

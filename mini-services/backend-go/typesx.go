@@ -23,6 +23,7 @@ type LoadedRule struct {
 	Charset     string // 目标站字符集（""=auto）
 	Proxy       string // 站点级出口代理（""=直连）
 	InsecureTLS bool   // 跳过目标站 TLS 证书校验（自签/裸 IP 站点）
+	Cookies     string // Task 53: 规则级静态 cookie 底座（"k=v; k2=v2"，人工过验会话；""=无）
 	ListRule    RuleMap
 	BookRule    RuleMap
 	ChapterRule RuleMap

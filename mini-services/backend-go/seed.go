@@ -34,6 +34,7 @@ type seedRule struct {
 	Charset     string `json:"charset"`
 	Proxy       string `json:"proxy"`
 	InsecureTLS bool   `json:"insecureTLS"`
+	Cookies     string `json:"cookies"` // Task 53: 静态 cookie 底座（人工过验会话；种子均为空占位）
 	ListRule    string `json:"listRule"`
 	BookRule    string `json:"bookRule"`
 	ChapterRule string `json:"chapterRule"`
@@ -207,9 +208,9 @@ func seedIfEmpty() error {
 			// CURRENT_TIMESTAMP」（TEXT > INTEGER 比较错位 + int64 Scan 炸 500，
 			// 本库 ScrapeRule.updatedAt 文本行实证即源于此处）。改为显式毫秒参数。
 			_, err := exec(`INSERT INTO "ScrapeRule"
-                                ("id","name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes","createdAt","updatedAt")
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-				r.ID, r.Name, r.SiteURL, boolInt(r.Enabled), r.Charset, r.Proxy, boolInt(r.InsecureTLS),
+                                ("id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes","createdAt","updatedAt")
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				r.ID, r.Name, r.SiteURL, boolInt(r.Enabled), r.Charset, r.Proxy, boolInt(r.InsecureTLS), r.Cookies,
 				r.ListRule, r.BookRule, r.ChapterRule, r.Notes, nowMillis(), nowMillis())
 			if err != nil {
 				return err

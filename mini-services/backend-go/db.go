@@ -126,6 +126,11 @@ func getDB() (*sql.DB, error) {
 			`ALTER TABLE "Novel" ADD COLUMN "coverSrc" TEXT NOT NULL DEFAULT ''`); err != nil {
 			log.Printf("[db] Novel.coverSrc 加列失败（封面补抓降级为重采驱动）: %v", err)
 		}
+		// Task 53: ScrapeRule.cookies 规则级静态 cookie 底座（人工过验会话；存量库幂等加列）
+		if err := ensureColumn(db, "ScrapeRule", "cookies",
+			`ALTER TABLE "ScrapeRule" ADD COLUMN "cookies" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] ScrapeRule.cookies 加列失败（规则 cookie 底座不可用，采集不受影响）: %v", err)
+		}
 		// Task 45-b: 存量章节「第X卷」前缀回填（幂等：只处理命中行且与入库链路
 		// detectVolume 同口径，回填后存量标题与新采集标题归一一致——Phase 2 续传按
 		// 标题匹配空骨架，双侧口径必须一致）。失败不阻断启动，重启重试

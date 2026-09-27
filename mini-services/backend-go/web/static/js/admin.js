@@ -194,7 +194,7 @@
     if (!tbody) return;
     $('#adm-rule-count').textContent = rows.length;
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="adm-empty">暂无规则，点击「新建规则」创建</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="adm-empty">暂无规则，点击「新建规则」创建</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(function (r) {
@@ -206,6 +206,7 @@
         '<td>' + escapeHtml(r.charset) + '</td>' +
         '<td class="adm-cell-url">' + (r.proxy ? escapeHtml(r.proxy) : '<span class="text-neutral-300">—</span>') + '</td>' +
         '<td>' + (r.insecureTLS ? '<span class="text-amber-600">✓</span>' : '<span class="text-neutral-300">—</span>') + '</td>' +
+        '<td>' + (r.cookies ? '<span class="text-amber-600" title="已配置静态 cookie 底座">✓</span>' : '<span class="text-neutral-300">—</span>') + '</td>' +
         '<td class="adm-cell-note" title="' + escapeHtml(r.notes) + '">' + escapeHtml(r.notes) + '</td>' +
         '<td class="whitespace-nowrap text-right">' +
           '<button type="button" class="adm-btn-xs" data-act="rule-edit" data-id="' + escapeHtml(r.id) + '">编辑</button> ' +
@@ -242,6 +243,7 @@
     $('#adm-rule-url').value = initial ? (initial.siteUrl || '') : '';
     $('#adm-rule-charset').value = initial ? (initial.charset || 'utf-8') : 'utf-8';
     $('#adm-rule-proxy').value = initial ? (initial.proxy || '') : '';
+    $('#adm-rule-cookies').value = initial ? (initial.cookies || '') : '';
     $('#adm-rule-enabled').checked = initial ? initial.enabled !== false : true;
     $('#adm-rule-insecure').checked = initial ? initial.insecureTLS === true : false;
     $('#adm-rule-notes').value = initial ? (initial.notes || '') : '';
@@ -283,6 +285,7 @@
     var body = {
       name: name, siteUrl: siteUrl, enabled: $('#adm-rule-enabled').checked,
       charset: $('#adm-rule-charset').value, proxy: proxy,
+      cookies: $('#adm-rule-cookies').value.trim(),
       insecureTLS: $('#adm-rule-insecure').checked, notes: $('#adm-rule-notes').value,
       listRule: listRule, bookRule: bookRule, chapterRule: chapterRule
     };

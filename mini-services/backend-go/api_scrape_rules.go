@@ -8,9 +8,10 @@
  *   - DELETE → ?id= 删除（规则不存在视为成功，幂等）
  *
  * 契约要点：
- * - 列表行字段：id/name/siteUrl/enabled/charset/proxy/insecureTLS/listRule/bookRule/
- *   chapterRule/notes（三个规则为对象，{} 兜底）
- * - handleSave 校验顺序与文案逐条对齐（name/enabled/insecureTLS/charset/notes/siteUrl/proxy/id）
+ * - 列表行字段：id/name/siteUrl/enabled/charset/proxy/insecureTLS/cookies/listRule/bookRule/
+ *   chapterRule/notes（Task 53 增 cookies；三个规则为对象，{} 兜底）
+ * - handleSave 校验顺序与文案逐条对齐（name/enabled/insecureTLS/charset/notes/cookies/siteUrl/proxy/id；
+ *   cookies 保存端 TrimSpace+4096 rune 钳制，缺失/null → "" 全量保存，与 proxy/insecureTLS 同语义）
  * - 保存失败唯一冲突 → 409 {error:'规则名称已存在'}（无 detail 键，对齐 JSON.stringify 丢弃 undefined）
  * - 更新不存在（P2025 语义）→ 404 {error:'规则不存在'}；其余 500 {error:'保存失败',detail}
  *
@@ -41,12 +42,12 @@ func init() {
 func handleScrapeRulesList(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	rows := make([]map[string]any, 0)
 	err := queryList(
-		`SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes" FROM "ScrapeRule" ORDER BY "id" ASC`,
+		`SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes" FROM "ScrapeRule" ORDER BY "id" ASC`,
 		func(rs *sql.Rows) error {
 			var id int64
-			var name, siteURL, charset, proxy, listRule, bookRule, chapterRule, notes string
+			var name, siteURL, charset, proxy, cookies, listRule, bookRule, chapterRule, notes string
 			var enabled, insecureTLS bool
-			if err := rs.Scan(&id, &name, &siteURL, &enabled, &charset, &proxy, &insecureTLS, &listRule, &bookRule, &chapterRule, &notes); err != nil {
+			if err := rs.Scan(&id, &name, &siteURL, &enabled, &charset, &proxy, &insecureTLS, &cookies, &listRule, &bookRule, &chapterRule, &notes); err != nil {
 				return err
 			}
 			rows = append(rows, map[string]any{
@@ -57,6 +58,7 @@ func handleScrapeRulesList(w http.ResponseWriter, r *http.Request, _ map[string]
 				"charset":     charset,
 				"proxy":       proxy,
 				"insecureTLS": insecureTLS,
+				"cookies":     cookies,
 				"listRule":    safeParseRule(listRule),
 				"bookRule":    safeParseRule(bookRule),
 				"chapterRule": safeParseRule(chapterRule),
@@ -187,6 +189,12 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 			return
 		}
 	}
+	if val, present := body["cookies"]; present && val != nil {
+		if _, isStr := val.(string); !isStr {
+			writeJSON(w, 400, map[string]string{"error": "cookies 必须是字符串（\"k=v; k2=v2\" 形态）"})
+			return
+		}
+	}
 	site := parseHttpURL(body["siteUrl"], "siteUrl", 200)
 	if !site.ok {
 		writeJSON(w, 400, map[string]string{"error": site.message})
@@ -267,13 +275,19 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 	charset = truncateRunes(strings.ToLower(charset), 32)
 	insecureTLS, _ := body["insecureTLS"].(bool)
 	notes, _ := body["notes"].(string)
+	// Task 53: 规则级静态 cookie 底座（用户人工过验后的会话凭证；保存端裁剪与引擎
+	// 解析端 strField 同口径 4096；缺失/null → "" 全量保存语义与 proxy/insecureTLS 一致）
+	cookies := ""
+	if cs, isStr := body["cookies"].(string); isStr {
+		cookies = truncateRunes(trimSpaceStr(cs), 4096)
+	}
 
 	name = truncateRunes(trimSpaceStr(name), 80)
 
 	if id, okID := scrapeRuleIDParam(body["id"]); okID {
 		res, err := exec(
-			`UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
-			name, site.value, enabled, charset, proxy.value, insecureTLS,
+			`UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "cookies"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
+			name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
 			listJSON, bookJSON, chapJSON,
 			truncateRunes(notes, 1000), nowMillis(), id,
 		)
@@ -290,8 +304,8 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 	}
 
 	newID, err := execReturningID(
-		`INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		name, site.value, enabled, charset, proxy.value, insecureTLS,
+		`INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
 		listJSON, bookJSON, chapJSON,
 		truncateRunes(notes, 1000), nowMillis(), nowMillis(),
 	)

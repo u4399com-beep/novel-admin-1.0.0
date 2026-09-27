@@ -42,6 +42,9 @@ func fetchAndPrepare(w http.ResponseWriter, body map[string]any) pageFetchOutcom
 	proxy := parseProxy(body["proxy"])
 	// 自签/裸 IP 站点 TLS 旁路（规则配置，向后兼容：不传时 false）
 	insecureTLS, _ := body["insecureTLS"].(bool)
+	// Task 53: 规则级静态 cookie 底座（用户人工过验后的会话凭证，"k=v; k2=v2" 形态；
+	// 向后兼容：不传/空时无注入）
+	ruleCookies := strField(body["cookies"], 4096)
 	page := fetchPage(t.url.String(), fetchPageOptions{
 		requestedStrategy: strategy,
 		forcedCharset:     charset,
@@ -49,6 +52,7 @@ func fetchAndPrepare(w http.ResponseWriter, body map[string]any) pageFetchOutcom
 		referer:           referer,
 		proxy:             proxy,
 		insecureTLS:       insecureTLS,
+		ruleCookies:       ruleCookies,
 	})
 	return pageFetchOutcome{page: page, target: t.url.String()}
 }

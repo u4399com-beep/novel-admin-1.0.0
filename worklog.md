@@ -2369,3 +2369,64 @@ Stage Summary:
 - 反反爬第 14 轮:E11(chrome 画像硬刷新头族移除,实测驱动)+jsontoc 空体对齐;sec-fetch-storage-access 永久关闭(有据不落地),留档清单收敛
 - backend 定向面(seed/obfuscate/txtdir/api_export/api_settings)零新破口——13 轮全仓+1 轮定向后收敛面继续扩大
 - 提交链:…→c06eab5(50)→91c1598(51)→本提交(52)
+
+---
+Task ID: 53-a
+Agent: scraper-go 深审子代理
+Task: scraper-go 第 15 轮收敛深审——Task 53 变更面（规则级静态 cookie 底座 seedRuleCookies/fetchPage 接线/handlers 解析/GOEDGE_WAF_CAPTCHA 挑战 token/audit53 测试）逐行抓 bug + 全部 8 策略车道 cookie 消费一致性复扫，不重做/不回退历史修复
+
+Work Log:
+- 【基线与既往核验】开工先读 worklog 最后 3 个 Task（52/52-a/51/51-b/51-a/50），历史修复 E1-E11/F1-F4/AIMD CAS/27-c/29-b/33-a/34/38-a/39-a/44-a/46-a/50/51/51-b 在码逐项复核零回退；基线三连全绿（6.9s）后开审
+- 【Task 53 变更面逐行审】①cookies.go seedRuleCookies：解析边界（首 '=' 切分/eq<=0 拒/非法名 reCookieName/128/2048 长度钳/reCtlChars \r\n\0/空值对合法）与 parseSetCookieLine 校验强度同源对齐；锁纪律=jar.mu 单临界区（touchHostLocked 取桶+写桶+capSize 全在锁内，defer unlock，与 recordSetCookieLines/cookieHeaderFor/cookiesForPlaywright/recordBridgeCookies 互斥无嵌套无死锁面）；LRU 交互=touchOrderLocked 刷 host 位+bucket.set 刷名位+capSize 淘汰最旧（种子对后插天然存活）；幂等重种=每次 fetchPage set() 刷新 expiresAt=now+6h（ruleCookieSeedTTLMS=21,600,000 int32 安全）②chain.go 接线位置=SSRF 后（非法目标不种）/熔断前（人工放行语义：配 cookie 即预期可通，历史连败不阻断重试）——论证成立 ③handlers.go strField(body["cookies"],4096)：非 string/缺省/空白→"" 类型安全零 panic、向后兼容零注入 ④challenge.go GOEDGE_WAF_CAPTCHA：强特征层任意体积判定、RE2 单 DFA 编译期一次性能可忽略、(?i) 覆盖大小写形态、误杀面=正常页面不可能含该 token（audit53 已含正常页对照）⑤audit53_test.go 6+1 用例断言全对、隔离性=专用 host 名+jarRemoveHostForTest 清桶、并发用例 -race 真覆盖
+- 【修复① P3·Set-Cookie 属性段误粘贴防御】cookies.go 新增 setCookieAttrNames（RFC 6265 §5.2/§5.3 属性名 max-age/expires/path/domain/secure/httponly/samesite/partitioned/priority，小写比对大小写不敏感）——威胁模型：输入契约是「浏览器复制的 Cookie 头」（纯 k=v），用户误粘贴 Set-Cookie 响应头整行时属性段（Path=/、Max-Age=86400、Domain=…）被逐段当 k=v 种入并回放（Cookie: session=abc; Path=/; Max-Age=86400），请求头垃圾对污染可被 GoEdge 类 WAF 异常检测识别再触发挑战，恰破坏本特性要维系的会话；误跳过面=真实站点以这些词做 cookie 名可忽略（代价=该对不生效，远小于回放垃圾对）；parseSetCookieLine 不需要（属性段结构上已分离）
+- 【修复② P3·n==0 零注入静默黑洞】chain.go fetchPage：ruleCookies 非空但 0 条入库（属性段/非法名/超长/控制字符全被拒）旧实现零警告——运维以为已种底座实为零注入，排障黑洞；补显式 warning「[rule-cookies] 规则 cookie 头未解析出任何合法条目…」（n>0 成功路径告警不变）
+- 【测试资产】+audit53_test.go 2 用例（总 9）：TestSeedRuleCookiesSkipsSetCookieAttributePairs（整行属性段只入库首对+大小写变体 PATH/max-age 同拒+回放头零污染）/TestFetchPageSeedsRuleCookiesBeforeCircuitBreaker（fetchPage 接线序回归锁定：TEST-NET-3 IP 字面量 203.0.113.53 零 DNS+预热 3 连败熔断早退——早退点在 seed 之后/robots 之前，断言 jar 可见性+「已注入 1 条」告警+n==0 显式告警分支；全仓首个 fetchPage 直调用例，零外网依赖）
+- 【第 15 轮收敛复扫·8 车道一致性】规则种入 cookie 经 hostOf（小写含端口）同桶 key 在全部车道一致生效：fetch 系 4 车道（fetchWithRedirectGuard httpguard.go:630/667）、got（strategies.go:242/275/312）、curl-impersonate（curlimp.go:330/374 --cookie/--header 捕获）、curl-plain（fetchcurl.go:173/216）、browser（browserCookieEnv→cookieHeaderFor+cookiesForPlaywright 双路径 browser.go:214-226）、chapterListApi AJAX（jsontoc.go:218/283）；fetchPage 种入 key=strings.ToLower(u.Host) 与 hostOf 恒等——无桶分裂
+- 【只报不改（3 项，均有威胁模型）】①幂等重种把规则值每 fetchPage 重新断言进 jar：站点若对同名 cookie 按响应轮换值（滑动会话），引擎会把值拨回静态种子→可能反复触发挑战；有界性=熔断 3 连败快速失败不烧穿预算；不改理由=改成「仅缺失/过期补种」会废掉主用例（挑战页种的无效同名会话必须被覆盖），文档已锁定「规则值就是刷新源」语义（seedRuleCookies 注释+常量注释）②strField 4096 截断可把尾部 cookie 对截成残段（无 '=' 静默跳过）——4096≥常规 Cookie 头上界触发面极窄，截断语义与其余全部 strField 字段一致 ③全非法 header 仍创建空 host 桶占一个 LRU 槽（上界 128）——与 recordSetCookieLines 既有行为一致，规则配置为低基数管理面输入无可腐蚀路径
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go 6.9s，含既有全部回归+本轮 2 新用例）；gofmt -l 全清（Edit 空格化已 gofmt -w 归一）；生产进程零触碰（backend-go.bin 31363/scraper-go.bin 31374 全程存活）、零 kill、零 git 写操作、backend-go 零改动；scraper-go.bin 未重建（留待主线验证后统一 temp+rename 热替换）
+
+Stage Summary:
+- 第 15 轮收敛定性：Task 53 变更面（规则 cookie 底座全家+GoEdge token+测试）设计正确、锁纪律与校验强度对齐、8 车道消费一致；审出 2 项 P3（Set-Cookie 属性段误粘贴可污染回放头/n==0 静默零注入排障黑洞）全部修复+2 用例锁定
+- API 契约零变更（warnings 为既有数组追加项，向后兼容）；「同名覆盖 vs 二访放行」语义论证闭合：单次抓取内 Set-Cookie 接管已被用例锁定，跨抓取重种为文档化取舍（规则值=刷新源，失效自愈=用户更新规则值）
+- 连续 15 轮深审无新 P1/P2；本轮新增 3 项只报不改留档（均含威胁模型与不动理由）
+
+---
+Task ID: 53-b
+Agent: backend-go 深审子代理
+Task: Task 53「ScrapeRule.cookies 规则级静态 cookie 底座」全链路逐行深审（schema/db 迁移/typesx/storex/engineclient/API CRUD/admin 前端/seed.json 九面），SQL 注入/类型断言 panic/列序三处对齐/存量迁移幂等/NULL/部分更新语义/XSS/PUT-POST 分支/种子合法性/engineclient 下发条件全维度抓 bug，不重做不回退历史修复
+
+Work Log:
+- 【基线】先读 worklog 最后 3 Task（52/52-a/51）+ 50-b/51-b 先例；git diff 全量 10 文件逐一过目（scraper-go 4 文件+audit53_test.go 为 53-a 领地零触碰）；基线三连全绿后开审
+- 【列序三处对齐全 ✅】list SELECT 12 列=Scan 12 目标；UPDATE 12 SET+WHERE=13 占位=13 参数；INSERT 13 列=13 占位符=13 参数；seed INSERT 14=14=14；PUT seed 模板 INSERT 不含 cookies 依赖 DDL DEFAULT ''；loadRule SELECT 8=8（cookies sql.NullString 防御+TrimSpace）；全仓 ScrapeRule 9 条 SQL 全编译期常量+占位符零外插、无 SELECT *（新列零波及面）
+- 【修复① P1】admin.html 规则表单漏配 #adm-rule-cookies 输入框——admin.js showRuleForm/saveRuleForm 对 querySelector(null) 赋值/读取抛 TypeError → 「新建规则/编辑规则」整卡崩溃（24 处表单字段唯一缺失者，103 个 JS 静态 id 引用全量交叉扫描实证）。补全输入框（adm-field sm:col-span-2+语义文案+示例占位；sm:col-span-2/adm-mono 样式类均已在 tw.css/admin.css 在位零 css 重建）；模板磁盘加载+mtime 缓存失效 → 旧进程下即时生效，实测 GET /admin 已含输入框与 <th>Cookie</th>
+- 【修复② P3】web_data.go handleWebAdmin Rules 查询未带 cookies 列——admin.html 服务端首屏 {{if .cookies}} 恒假（已配置 cookie 的规则在 JS 刷新前恒显示「—」）。SELECT/Scan/map 三处补齐
+- 【修复③ P3·防御收敛】engineclient.go engineRuleBody 下发条件 `rule.Cookies != ""` 对纯空白值仍下发 `"cookies":"   "`——改 TrimSpace 后非空才发（与 loadRule 装载端/引擎 strField TrimSpace 同口径，条件自含不依赖调用方预裁剪；生产路径 loadRule 已 Trim 行为零变化，测试锁定）
+- 【测试资产】+audit53b_test.go 5 用例：TestScrapeRulesCookiesSaveListRoundTrip（保存→列表 round trip：TrimSpace 落库/5000→4096 rune 钳制/更新缺失→"" 全量保存语义锁定/null 同缺失/非字符串(map/数/数组/布尔) 400 panic 面收口）/TestEngineRuleBodyCookiesConditional（下发条件表驱动：空规则五可选键全缺席/cookies 与 charset/proxy/referer 共存/纯空白负例/insecureTLS 共存）/TestLoadRuleCookiesTrimmed（8 列序+TrimSpace+charset/proxy 既有语义+不存在/nil 全空）/TestSeedJSONCookiesChainInvariants（嵌入 JSON 语法+三规则组逐条可解析+规则 25 kelexs/26 cunshu 草稿不变式 enabled=false/proxy=''/cookies='' 空占位）/TestAdminRuleFormIdsContract（admin.js 静态 $('#id') 与 admin.html id 全量契约扫描=本缺陷类级回归锁+Cookie 列/表单双侧在位）
+- 【seed.json 深检】语义 diff 仅新增规则 25/26（其余 15 规则+9 分类+site/homeBlocks/seoConfig/footerConfig 逐字段与旧版全等，570 行 diff 纯缩进重排）；JSON 合法；go:embed 编译通过；seedIfEmpty 空表幂等语义不变
+- 【留档不动（只报不改 4 项）】①prod DB 规则 25 kelexs enabled=1 与 seed enabled=false 漂移（主线实测期翻转；cookies len=0、无任务引用=零空烧风险；是否复位主线定夺，本代理零写库）；②引擎侧种子 cookie 无 Secure 标记，http 降级跳可跨明文回放（53-a 领地，siteUrl 均 https 影响面低）；③cookies 明文经 GET /api/scrape-rules 全值返回（与 proxy 凭证既有暴露面同级，受信后台语境不动）；④coversx.go ruleProxiesForHost 无需感知 cookies（封面 CDN host ≠ 书站 host，跨 host 凭证回放本不该发生）+api_scrape?proxy=test body 原样透传（cookies 由调用方自理，契约如此）
+- 【部署】backend-go.bin temp+rename 重建（14:56，含修复②③+api_scrape_rules.go 头注契约同步）；PID 31363 全程存活零触碰；零 git 操作零写库；scraper-go.bin 未动
+- 【验证】三连：go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok backend-go 2.3s，含新增 5 用例+既有全部回归）；gofmt -l 清零（3 文件 Edit 空格化已 -w 归一）；GET /admin 实测 Cookie 列+表单输入框双在位、/api/scrape-rules 17 行均含 cookies 键
+
+Stage Summary:
+- Task 53 cookies 全链路（schema DDL→ensureColumn 迁移→typesx→storex loadRule→engineclient→API CRUD→admin 前端→seed.json）逐行过检：SQL 注入/列序三处对齐/迁移幂等/NULL/PUT-POST 分支差异/种子合法性六面零破口；审出 3 项缺陷全部修复——P1 admin 表单漏配 #adm-rule-cookies 致规则新建/编辑 UI 全死（querySelector null TypeError）+P3 服务端首屏 cookies 列恒「—」+P3 下发条件空白值口径收敛，5 用例锁定（含 id 契约全量扫描防类级复发）
+- 契约面零变更：API 仅增 cookies 字段、保存端 TrimSpace+4096 rune 钳制与引擎 strField 同口径、缺失→"" 与 proxy/insecureTLS 全量保存语义一致；4096 rune 双侧对齐实证
+- backend-go.bin（14:56）待主线统一热替换；admin.html 模板磁盘热载已即时生效（旧进程下实测通过）
+---
+Task ID: 53
+Agent: main (Z.ai Code)
+Task: 用户三点指令——①持续开发审查修复+采集/反反爬增强逐行抓 bug ②清理精简 ③编写 kelexs.com/list-1/ 与 cunshu.la/library.php 采集规则（kelexs 完整采集 3 本）
+
+Work Log:
+- 【目标站实测（穷尽 8 通道）】kelexs/cunshu 同族 GoEdge WAF（VBWI info token）全域强制人机验证：curl 原生 307→/WAF/VERIFY/CAPTCHA 图形验证码页（GOEDGE_WAF_CAPTCHA_ID/CODE 表单+真人图片）、curl-impersonate chrome116 JA3 307、德国代理出口 307、agent-browser 真浏览器 403（Connection: 47.57.242.119 机房 IP 信誉拒绝）、全路径/协议/子域变体（http/https/裸域/m.子域/首页/书页）一致、archive.org 沙箱封锁、web-reader/web-search 平台 429 限流——**自动采集全部通道堵死**；验证码破解违反引擎合规红线（captchaSolving=禁止提供），按 pilishuwu 先例（Task 3）落「未实测草稿」
+- 【引擎增强 E12·规则级静态 cookie 底座（合规解锁路径）】用户人工在浏览器过验后把会话 cookie 配置到规则 → 引擎每次 fetchPage 前幂等种入 host 会话桶（seedRuleCookies：RFC 6265 token 校验/128/2048 钳制/控制字符拒绝/Set-Cookie 属性段误粘贴防御 9 属性名表；同名覆盖=人工会话优先于挑战页无效会话；6h TTL 到期自补；后续站点 Set-Cookie 照常接管=浏览器语义）——全链路接线：scraper(handlers body["cookies"] 4096 钳制→chain fetchPageOptions.ruleCookies→SSRF 后/熔断前 seed) + backend(schema DDL+ensureColumn 存量加列+LoadedRule+loadRule 8 列+engineRuleBody TrimSpace 非空下发+api_scrape_rules 列表/校验/UPDATE/INSERT+seed.go 结构/INSERT+admin 表单 Cookie 列与输入框)；合规边界声明演进：真人过验后的会话延续≠验证码破解
+- 【引擎增强 E13·GoEdge 强特征】challenge.go reChallengePlatform 补 GOEDGE_WAF_CAPTCHA token（任意体积判定，不受极小页守卫限制）+ 真实验证码页 fixture 测试（含超 3KB 膨胀形态+正常页对照不误杀）
+- 【E2E 实证】①cookies API 写读闭环（PUT 带 name/siteUrl 全量语义）②引擎端到端：POST /api/test 带 cookies → warnings「[rule-cookies] 已注入 2 条规则静态 cookie 到 www.kelexs.com 会话桶」✓；假 cookie 被 WAF 识别直接 403（比 307 更强硬）→ 证明 WAF 校验 cookie 真实性，真人过验的真 cookie 正是钥匙 ③admin UI 全流程：编辑规则 26→填 cookies→保存→DB 回读→清空→复位 enabled=false ④8 个 paused 任务 resume 成功 ⑤首页 60 书链零 console 错误
+- 【53-a/53-b 双子代理第 15 轮深审】53-a（scraper）：2 项 P3（Set-Cookie 属性段误粘贴防御 setCookieAttrNames + n==0 静默零注入黑洞显式告警）+9 用例（含全仓首个 fetchPage 直调回归：TEST-NET-3 字面量+熔断预热）+8 车道 cookie 消费一致性复扫（hostOf 同桶 key 恒等）；53-b（backend）：**1 项 P1**（admin.html 漏配 #adm-rule-cookies 输入框——主线 MultiEdit 原子失败致 3 处编辑未落，UI 新建/编辑规则整卡崩溃，103 个 JS id 引用全量交叉扫描实证）+2 项 P3（web_data.go Rules 首屏 cookies 列恒假 + engineRuleBody 空白值下发）+5 用例（admin.js↔admin.html id 全量契约扫描=此类缺陷级回归锁）；列序三处对齐全✅/SQL 全参数化✅/迁移幂等✅
+- 【规则落库】seed.json+DB 双轨：id=25 kelexs（/list-1/，分页形态未知未配 paginationTemplate）、id=26 cunshu（library.php?sort=latest&page={k} 分页语义明确）——均 enabled=false+【未实测草稿·WAF 强制人机验证】notes（实测证据链+启用路径三步：人工过验→复制 Cookie 头→填入静态 cookie 底座字段并启用，失效重刷即可）+选择器依据（og:novel:* meta 兜底+URL 族通用模板+引擎内置启发式候选，放行后先跑三段实测校准）
+- 【验证】双服务三连全绿（scraper 9+1 新用例 6.7s/backend 5 新用例 2.2s 含既有全部回归）+gofmt 零输出；build-go.sh 双 bin 热替换+健康检查双绿
+
+Stage Summary:
+- kelexs/cunshu 结论：GoEdge WAF 强制人机验证使自动采集在合规红线下无解（8 通道穷尽证据链）；「完整采集 3 本书」待用户人工过验一次即可解锁——规则已备好（草稿落库+启用路径三步），引擎已具备会话延续能力（E12/E13），这是不越红线的全部可行路径
+- 引擎新增两能力：规则级静态 cookie 底座（E12，全 8 车道一致生效，6h TTL 自愈）+GoEdge WAF 强特征识别（E13）——未来任何 GoEdge 站（中文小说站高发面板）都可走同一路径启用
+- 第 15 轮深审：P1×1（admin UI 崩溃，原子编辑失败教训）+P3×4 全修复，14 用例锁定；53-b 引入「JS 静态 id ↔ HTML 模板全量契约扫描」测试范式
+- 提交链：…→91c1598(51)→4ebb6a6(52)→本提交(53)

@@ -838,17 +838,19 @@ func handleWebAdmin(w http.ResponseWriter, r *http.Request) {
 
 	rules := []map[string]any{}
 	_ = queryList(
-		`SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","notes","updatedAt" FROM "ScrapeRule" ORDER BY "id" ASC`,
+		// Task 53: cookies 列与 admin.html Cookie 列契约对齐（服务端首屏 {{if .cookies}}
+		// 需要该键，缺失恒渲染「—」；JS 刷新前的降级首屏也如实显示）
+		`SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","notes","updatedAt" FROM "ScrapeRule" ORDER BY "id" ASC`,
 		func(rows *sql.Rows) error {
 			var id int64
-			var name, siteUrl, charset, proxy, notes string
+			var name, siteUrl, charset, proxy, cookies, notes string
 			var enabled, insecure bool
 			var updated any
-			if err := rows.Scan(&id, &name, &siteUrl, &enabled, &charset, &proxy, &insecure, &notes, &updated); err == nil {
+			if err := rows.Scan(&id, &name, &siteUrl, &enabled, &charset, &proxy, &insecure, &cookies, &notes, &updated); err == nil {
 				rules = append(rules, map[string]any{
 					"id": id, "name": name, "siteUrl": siteUrl, "enabled": enabled,
 					"charset": charset, "proxy": proxy, "insecureTLS": insecure,
-					"notes": notes, "updatedAt": updated,
+					"cookies": cookies, "notes": notes, "updatedAt": updated,
 				})
 			}
 			return nil

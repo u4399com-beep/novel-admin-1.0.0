@@ -53,6 +53,7 @@ type fetchPageOptions struct {
 	referer           string
 	proxy             string
 	insecureTLS       bool
+	ruleCookies       string // Task 53: 规则级静态 cookie 底座（"k=v; k2=v2"，用户人工过验后提供；空=无）
 }
 
 // fetchPageResult 对齐 TS FetchPageResult
@@ -164,6 +165,20 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	}
 	if entryCheck.warning != "" {
 		warnings = append(warnings, "[ssrf] "+entryCheck.warning)
+	}
+
+	// Task 53（规则级静态 cookie 底座）：规则配置了人工过验会话 cookie 时，每次抓取前幂等
+	// 重种入 host 桶（同名覆盖/到期自补/后续 Set-Cookie 照常接管，见 seedRuleCookies 注）。
+	// 位置在 SSRF 校验后：非法目标不种；在熔断检查前：用户配置 cookie 即明确预期可通，
+	// 历史连败熔断不应阻断人工放行后的重试。
+	// Task 53-a 审计修复②：头非空但 0 条入库（属性段/非法名/超长/控制字符全被拒）必须
+	// 显式告警——静默无效配置是排障黑洞（运维以为已种底座，实为零注入）。
+	if opts.ruleCookies != "" {
+		if n := seedRuleCookies(host, opts.ruleCookies); n > 0 {
+			warnings = append(warnings, "[rule-cookies] 已注入 "+strconv.Itoa(n)+" 条规则静态 cookie 到 "+host+" 会话桶")
+		} else {
+			warnings = append(warnings, "[rule-cookies] 规则 cookie 头未解析出任何合法条目（期望 \"k=v; k2=v2\" 形态；Set-Cookie 属性段/非法名/超长/控制字符均被拒），本次未注入")
+		}
 	}
 
 	// 主机熔断：连败达阈值的主机快速结构化失败，不空烧 55s 预算；

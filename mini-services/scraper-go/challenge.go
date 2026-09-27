@@ -22,7 +22,10 @@ var (
 	reChallengePlatform = regexp.MustCompile(
 		// Task 38-a: 补 btwaf（宝塔网站防火墙 token：拦截页 class/JS 变量/challenge cookie 名，
 		// 中文小说站最常见面板系 WAF，该 token 不可能出现在正常页面）
-		`(?i)just a moment|cf-browser-verification|cf_chl_|checking your browser|attention required|ddos-guard|_Incapsula_Resource|incap_ses_|sucuri_cloudproxy|awswaf|aws waf|acw_sc__v2|__jsl_clearance|__jsluid|yunsuo_session_verify|wzws_cid|btwaf`)
+		// Task 53: 补 GOEDGE_WAF_CAPTCHA（GoEdge WAF 人机验证表单专属 token：hidden 表单域
+		// name/验证码图 URL 参数名，实测 kelexs/cunshu 全域强制验证——比 verify/captcha 泛词
+		// 更精准，不受极小页+近空正文守卫限制，任意体积判定；正常站点不可能含该 token）
+		`(?i)just a moment|cf-browser-verification|cf_chl_|checking your browser|attention required|ddos-guard|_Incapsula_Resource|incap_ses_|sucuri_cloudproxy|awswaf|aws waf|acw_sc__v2|__jsl_clearance|__jsluid|yunsuo_session_verify|wzws_cid|btwaf|GOEDGE_WAF_CAPTCHA`)
 	// Cloudflare 注入型弱特征：仅近空正文时才判挑战
 	reChallengeEmbed = regexp.MustCompile(`(?i)challenge-platform|cdn-cgi/challenge`)
 	// 极小页启发式关键词（挑战专用词，不含裸词 javascript）

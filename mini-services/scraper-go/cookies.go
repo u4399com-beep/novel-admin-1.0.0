@@ -10,7 +10,11 @@
  * - 并发安全：TS 版依赖单线程事件循环，Go 版以互斥锁保证。
  *
  * 合规边界：只回放目标站自己下发的公开访问 cookie（等价于浏览器正常会话行为），
- * 不注入任何登录态/凭证，不伪造身份。
+ * 不伪造身份、不携带登录态/付费内容凭证。Task 53 演进：支持「规则级静态 cookie 底座」——
+ * 用户人工在浏览器通过目标站强制人机验证（如 GoEdge WAF 图形验证码）后，把会话
+ * cookie 提供给规则配置；引擎在每次抓取前将其种入 host 桶作为底座，后续 Set-Cookie
+ * 照常接管。这是真人已通过站点人机检查后的会话延续（等价于把浏览器会话交给采集器），
+ * 与验证码破解/账号伪装/登录内容采集红线无关；引擎仍不提供任何验证码求解能力。
  */
 package main
 
@@ -29,6 +33,11 @@ const (
 	cookieMaxPerHost   = 50
 	cookieSessionTTLMS = 30 * 60 * 1000
 	cookieMaxTTLMS     = 7 * 24 * 60 * 60 * 1000
+	// ruleCookieSeedTTLMS 规则种子 cookie 默认存活期：浏览器复制的 Cookie 头只有 k=v 对，
+	// 无 Max-Age/Expires 可解析。取 6h（WAF 通关 cookie 常见有效期中位量级）：
+	// 比会话 30min 长（避免人工过验后半小时就整轮失效），比 7 天上界保守（站点侧
+	// 轮换/失效后自愈路径是用户重新过验更新规则值）。到期自动失效，不无限续期。
+	ruleCookieSeedTTLMS = 6 * 60 * 60 * 1000
 )
 
 type storedCookie struct {
@@ -144,6 +153,18 @@ func (b *cookieBucket) capSize() {
 // cookie-name 必须是合法 token（RFC 6265 cookie-name），防解析产物污染回放头
 var reCookieName = regexp.MustCompile(`^[!#$%&'*+\-.^_\x60|~0-9a-zA-Z]+$`)
 var reCtlChars = regexp.MustCompile(`[\r\n\0]`)
+
+// setCookieAttrNames RFC 6265 §5.2/§5.3 cookie-av 属性名（小写）。Task 53-a 审计修复①：
+// seedRuleCookies 的输入契约是「浏览器复制的 Cookie 头」（纯 k=v 对）；用户误粘贴
+// Set-Cookie 响应头整行时（"session=abc; Path=/; Max-Age=86400; Domain=…"），属性段会被
+// 逐段当 k=v 种入并回放（Cookie: session=abc; Path=/; Max-Age=86400）——请求头被垃圾对
+// 污染，GoEdge 类 WAF 异常检测可识别并再次触发挑战，恰好破坏本特性要维系的会话。
+// 已知属性名一律跳过；真实站点以这些词做 cookie 名的先例可忽略（误跳过的代价=该对不生效，
+// 远小于回放垃圾对的代价）。parseSetCookieLine 不需要此防线：其属性段结构上已被分离。
+var setCookieAttrNames = map[string]bool{
+	"max-age": true, "expires": true, "path": true, "domain": true, "secure": true,
+	"httponly": true, "samesite": true, "partitioned": true, "priority": true,
+}
 
 type parsedCookie struct {
 	name       string
@@ -303,6 +324,47 @@ func recordResponseCookies(host string, res *http.Response, https bool) {
 	if len(lines) > 0 {
 		recordSetCookieLines(host, lines, https)
 	}
+}
+
+// seedRuleCookies Task 53：把规则配置的静态 cookie 底座（"k=v; k2=v2" 形态，用户人工过验
+// 后提供）注入 host 桶。语义：
+//   - 同名覆盖 jar 既有值（人工会话优先于引擎自收——jar 里可能是挑战页种的无效会话）；
+//   - 注入后站点下发的 Set-Cookie 照常接管（recordSetCookieLines 同名覆盖），引擎行为与
+//     浏览器一致；
+//   - 每次 fetchPage 幂等重种（种子到期被删后下一轮请求自动补上，规则值就是刷新源）。
+//
+// 安全面：复用 reCookieName 合法 token 校验 + 128/2048 长度钳制 + 控制字符拒绝，
+// 防止解析产物污染回放头（与 parseSetCookieLine 同强度）；另跳过 Set-Cookie 属性段
+// 误粘贴对（setCookieAttrNames，修复①——见其注释）。
+// 返回实际入库条数（调用方可记 warning）。
+func seedRuleCookies(host, header string) int {
+	if host == "" || header == "" {
+		return 0
+	}
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+	bucket := jar.touchHostLocked(host)
+	now := nowMs()
+	stored := 0
+	for _, pair := range strings.Split(header, ";") {
+		pair = strings.TrimSpace(pair)
+		eq := strings.Index(pair, "=")
+		if eq <= 0 {
+			continue // 无 '=' 的片段/空片段忽略
+		}
+		name := strings.TrimSpace(pair[:eq])
+		value := strings.TrimSpace(pair[eq+1:])
+		if setCookieAttrNames[strings.ToLower(name)] {
+			continue // Set-Cookie 属性段误粘贴（Path=/、Max-Age=… 等），非真 cookie
+		}
+		if !reCookieName.MatchString(name) || len(name) > 128 || len(value) > 2048 || reCtlChars.MatchString(value) {
+			continue
+		}
+		bucket.set(name, storedCookie{value: value, expiresAt: now + ruleCookieSeedTTLMS})
+		stored++
+	}
+	bucket.capSize()
+	return stored
 }
 
 // cookieHeaderFor 为某 host 构造回放用的 Cookie 头值（如 "a=1; b=2"）；无可回放 cookie 返回 ""。
