@@ -241,9 +241,11 @@ func TestSharedFooterBlocksRender(t *testing.T) {
 	nav := []map[string]any{{"id": int64(1), "name": "玄幻"}}
 	site := map[string]any{"siteName": "测试站", "notice": "", "activeTheme": "aijjxs", "footerText": "", "footerExtra": "", "footerLinks": []map[string]any{}}
 	base := map[string]any{
-		"Site": site, "Nav": nav, "Path": "/", "Q": "",
+		"Site": site, "Nav": nav, "Path": "/book/1", "Q": "",
 		"pageTitle": "测试页", "pageDescription": "", "pageKeywords": "",
 	}
+	// Task 48: 页脚友链行仅非首页渲染（trxsw 首页合并进主体区块）——有/无数据两案均用
+	// 非首页路径，保证空数据断言检验的是判空守卫而非首页隐藏逻辑
 	withData := map[string]any{}
 	for k, v := range base {
 		withData[k] = v
@@ -299,6 +301,101 @@ func TestSharedFooterBlocksRender(t *testing.T) {
 		if strings.Contains(b.String(), title+"：") || strings.Contains(b.String(), fleetTitle+"：") {
 			t.Fatalf("%s 无数据时不应出现友链/链轮区块", theme)
 		}
+	}
+
+	// ---------- Task 48: trxsw 首页页脚友链合并 + 单一网站地图 ----------
+	sharedTrx := filepath.Join(templatesRoot, "trxsw", "_shared.html")
+	tplTrx, err := template.New("t").Funcs(webFuncMap()).ParseFiles(sharedTrx)
+	if err != nil {
+		t.Fatalf("trxsw _shared.html 解析失败: %v", err)
+	}
+	if _, err := tplTrx.Parse(`{{define "content"}}STUB{{end}}`); err != nil {
+		t.Fatalf("trxsw stub content 解析失败: %v", err)
+	}
+	withCfg := map[string]any{}
+	for k, v := range withData {
+		withCfg[k] = v
+	}
+	withCfg["Site"] = map[string]any{"siteName": "测试站", "notice": "", "activeTheme": "trxsw", "footerText": "", "footerExtra": "", "footerLinks": []map[string]any{{"label": "配置链", "url": "https://cfg.example.com/"}}}
+	// 非首页：友链行渲染（站长友链+链轮+配置链三段同行）且含网站地图单链
+	var bn strings.Builder
+	if err := tplTrx.ExecuteTemplate(&bn, "layout", withCfg); err != nil {
+		t.Fatalf("trxsw 非首页渲染失败: %v", err)
+	}
+	nonHome := bn.String()
+	if !strings.Contains(nonHome, "友情链接：") || !strings.Contains(nonHome, "友链甲") || !strings.Contains(nonHome, "轮书甲") || !strings.Contains(nonHome, "配置链") {
+		t.Fatalf("trxsw 非首页页脚应渲染友链行（友链甲/轮书甲/配置链同段）")
+	}
+	if strings.Contains(nonHome, "[1]玄幻") {
+		t.Fatalf("trxsw 逐分类编号网站地图行应已移除")
+	}
+	if !strings.Contains(nonHome, `href="/sitemap.xml"`) || !strings.Contains(nonHome, ">网站地图</a>") {
+		t.Fatalf("trxsw 页脚应含单一网站地图链接指向 /sitemap.xml")
+	}
+	// 首页：友链行不重复渲染（合并进主体区块），网站地图与站群导航保留
+	homeData := map[string]any{}
+	for k, v := range withCfg {
+		homeData[k] = v
+	}
+	homeData["Path"] = "/"
+	var bh strings.Builder
+	if err := tplTrx.ExecuteTemplate(&bh, "layout", homeData); err != nil {
+		t.Fatalf("trxsw 首页渲染失败: %v", err)
+	}
+	homeOut := bh.String()
+	if strings.Contains(homeOut, "友情链接：") {
+		t.Fatalf("trxsw 首页页脚不应再渲染友情链接行（已合并进主体区块）")
+	}
+	if !strings.Contains(homeOut, `href="/sitemap.xml"`) || !strings.Contains(homeOut, ">网站地图</a>") {
+		t.Fatalf("trxsw 首页页脚应保留单一网站地图链接")
+	}
+	if !strings.Contains(homeOut, "站点B") {
+		t.Fatalf("trxsw 首页站群导航应保留")
+	}
+}
+
+// TestTrxswHomeFriendMergeRender Task 48：trxsw home.html 主体「友情链接」区块合并渲染——
+// 分类入口+全部书库+完本列表+footerLinks+FriendLinks+WheelLinks 同段；首页页脚零友链行。
+func TestTrxswHomeFriendMergeRender(t *testing.T) {
+	shared := filepath.Join(templatesRoot, "trxsw", "_shared.html")
+	home := filepath.Join(templatesRoot, "trxsw", "home.html")
+	tpl, err := template.New("t").Funcs(webFuncMap()).ParseFiles(shared, home)
+	if err != nil {
+		t.Fatalf("trxsw home 布局解析失败: %v", err)
+	}
+	data := map[string]any{
+		"Site": map[string]any{"siteName": "测试站", "notice": "", "activeTheme": "trxsw", "footerText": "", "footerExtra": "", "footerLinks": []map[string]any{{"label": "配置链", "url": "https://cfg.example.com/"}}},
+		"Nav":  []map[string]any{{"id": int64(1), "name": "玄幻", "sort": int64(0), "novelCount": int64(0)}},
+		"Path": "/", "Q": "",
+		"pageTitle": "测试页", "pageDescription": "", "pageKeywords": "",
+		"Stats":        map[string]any{"todayUpdates": int64(0)},
+		"Featured":     []map[string]any{},
+		"Latest":       []map[string]any{},
+		"RankUpdates":  []map[string]any{},
+		"RankClicks":   []map[string]any{},
+		"RankRec":      []map[string]any{},
+		"RankFinished": []map[string]any{},
+		"HomeBlocks":   []map[string]any{},
+		"FriendLinks":  []map[string]string{{"name": "友链甲", "url": "https://f.example.com/"}},
+		"WheelLinks":   []map[string]string{{"name": "轮书甲", "url": "/book/1", "kind": "book"}},
+	}
+	var b strings.Builder
+	if err := tpl.ExecuteTemplate(&b, "layout", data); err != nil {
+		t.Fatalf("trxsw home 渲染失败: %v", err)
+	}
+	out := b.String()
+	// 主体区块：五段同区（分类入口/全部书库/完本列表/配置链/站长友链/链轮）
+	for _, want := range []string{"玄幻小说", "全部书库", "完本列表", "配置链", "友链甲", "轮书甲"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("trxsw home 主体友情链接区块应含 %s", want)
+		}
+	}
+	// 首页页脚：友链行零渲染（合并）+ 网站地图单链在位
+	if strings.Contains(out, "友情链接：") {
+		t.Fatalf("trxsw home 页脚不应重复渲染友链行")
+	}
+	if !strings.Contains(out, `href="/sitemap.xml"`) {
+		t.Fatalf("trxsw home 页脚应含网站地图链接")
 	}
 }
 

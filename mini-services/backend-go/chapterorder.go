@@ -14,8 +14,11 @@
  * - 有重复序号（分卷各自重新编号）：无分卷信息可用，只做保守的「头部倒序块后移」修复；
  * - 编号章节过少（信号不足）或未见乱序 → 原样返回。
  *
- * 消费方：/api/novels/resort-chapters（存量目录重排，api_noveltools.go）；
- * worker 管线的目录乱序处理由 engineclient/worker 内联实现（同源 TS 逻辑），此处不接。
+ * 消费方两处（Task 48 起）：
+ *  - worker 管线 phase1Skeletons（reorderRefPairs 适配器）：新数据入库前重排——
+ *    TS 原版管线行为，Go 移植时曾丢失（入库从未重排 → 书页「最新章节块(新→旧)+
+ *    完整目录(旧→新)」DOM 序直入 idx，目录从最新章开头）。
+ *  - /api/novels/resort-chapters（存量目录重排，api_noveltools.go）。
  */
 package main
 
@@ -280,6 +283,21 @@ func fixLeadingDescendingBlock(refs []ChapterRef, nums []numOpt) reorderRefsResu
 		reordered: true,
 		note:      "头部「最新章节」块（" + itoa(k) + " 章，新→旧）已移至目录尾部并按更新顺序排列",
 	}
+}
+
+// reorderRefPairs refPair 版薄适配（phase1Skeletons 接线点；语义与 reorderChapterRefs
+// 完全一致，note 非空 = 已重排）。ChapterRef/refPair 同构 {Title,URL}，仅在管线侧类型不同。
+func reorderRefPairs(pairs []refPair) ([]refPair, string) {
+	refs := make([]ChapterRef, len(pairs))
+	for i, p := range pairs {
+		refs[i] = ChapterRef{Title: p.Title, URL: p.URL}
+	}
+	rr := reorderChapterRefs(refs)
+	out := make([]refPair, len(rr.refs))
+	for i, r := range rr.refs {
+		out[i] = refPair{Title: r.Title, URL: r.URL}
+	}
+	return out, rr.note
 }
 
 // numOpt 可空序号（JS number | null）

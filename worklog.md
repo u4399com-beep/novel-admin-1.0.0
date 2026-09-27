@@ -2132,3 +2132,25 @@ Stage Summary:
 - sitemap/robots 进入规范合规态（绝对 URL+lastmod），搜索引擎可整文件收录
 - 工程教训：①子代理「超时未返回」≠「无产物/产物错误」——46-a 完整、47-a 部分产物且含关键修复，处置必须以落盘 diff 逐项核验而非盲目重做或盲目 revert ②幂等性断言（f(f(x))==f(x)）应作为转换器标配测试——本轮正是它抓住了词级/字级双映射的非单遍幂等
 - 提交链：…→f170b36(46)→ed1be0c(47)；生产 283+ 书、7 任务 running、console 零错误
+---
+Task ID: 48
+Agent: main (Z.ai Code)
+Task: 用户 2 点指令——①检查章节目录乱序重排功能（多本书目录不从第1章开始）②trxsw 首页页脚友情链接与主体区块合并 + 页脚网站地图改单一 Sitemap 链接底部居中
+
+Work Log:
+- 【①-根因实锤】生产 GET /api/novels/resort-chapters 审计：475 本中 22 本乱序（多本 disorder=1.0）；书 374 目录以「第三千一百四十八章」开头=书页「最新章节块(新→旧)+完整目录(旧→新)」DOM 序直入 idx。全仓 grep：reorderChapterRefs/parseChapterNo 仅被 admin 手动重排端点与测试引用——chapterorder.go 头注「worker 管线由 engineclient/worker 内联实现」系陈旧注释，TS 原版管线接线在 Go 移植时丢失，采集入库从未重排
+- 【①-根修】chapterorder.go 新增 reorderRefPairs 适配器（refPair↔ChapterRef 同构转换，语义与 reorderChapterRefs 完全一致）+ 头注消费方更正；worker.go phase1Skeletons 在 t2s 之后接线（繁体 節/話 先归一才能被 chapterNoRe 命中），重排命中时 run.Log 说明；runSingle 复用同一管线=单/列表双模式全覆盖
+- 【①-测试】chapterorder_test.go +TestReorderRefPairsLatestBlock（生产形态向量：12 最新块+100 目录→全局升序+title/URL 配对不串位+信号不足零改写）；期间抓到测试自身笔误（最新块标题带「暴涨」后缀断言漏写），修正后绿
+- 【①-存量修复】22 本候选经「暂停→POST resort-chapters→验证→恢复」闭环（POST 有全局 409 护栏：pending/running 存在即拒；恰逢 backend 热替换重启任务全 paused 窗口执行）：22/22 reordered（74/374/173/178/195/386/179/378/192/458/459/440/442/181/197/53/457/400/191/448/456/175），resortTxtMoves TXT 分章改名同步；复审 candidates=[]；书 374 以「作品相关等阶设定→第一章」开头、书 74 从第1章开始；7 任务 PATCH resume（6 running；task 2 保持 paused=限流自动恢复车道，冷却后自动重入队，未人工干预）
+- 【①-TOC 模板确认】/book/374/toc 页首「最新章节（最近更新 12 章）」预览段系 toc.html 有意设计（编号 101-112=全书最后 12 章新 idx），主目录 4 列表正序全量从第一章开始——非缺陷
+- 【②-trxsw 页脚重构】_shared.html：逐分类编号「网站地图：[1]玄幻…」行整体移除；友情链接行改 {{if and (ne .Path "/") (or .FriendLinks .WheelLinks .Site.footerLinks)}}——首页隐藏（合并进主体）、其余页面保留，footerLinks（站长配置页脚链）并入该行不再随网站地图输出；页脚最底一行新增单一「网站地图」→ /sitemap.xml（居中，footer 是 text-center 容器）
+- 【②-trxsw 主体合并】home.html 友情链接区块追加 {{range .FriendLinks}} + {{range .WheelLinks}}（渲染样式沿用区块既有类名；链轮内链不加 nofollow/_blank 对齐 Task 46 语义）——首页友链唯一渲染点
+- 【②-测试】web_footer_test.go：TestSharedFooterBlocksRender 有/无数据两案改用非首页路径（保证空数据断言检验判空守卫而非首页隐藏逻辑）+ trxsw 专属三案（非首页友链行三段同行+编号行移除+sitemap 单链；首页友链行零渲染+sitemap/站群导航保留）；+TestTrxswHomeFriendMergeRender（home 布局全量渲染：主体六段同区+页脚零友链行+sitemap 在位）
+- 【勘察伪影教训】sed 管道输出曾把 grid-cols-[minmax 伪影成 grid-cols-inmax（\x1b[m ANSI 剥离类伪影），Grep 工具复核确认模板完好零损坏——多工具交叉验证再定论
+- 【部署+E2E】build-go.sh 双 bin+tw.css；backend 热替换（scraper 零改动 PID 保持）；agent-browser：首页 footerHasFriendRow=false+mapHref OK+numberedCatRow=false+主体 15 链含轮链、网站地图=最底一行且几何居中（|中点差|<8px）、书页页脚友链行/地图双在位、/book/374/toc 主目录从第一章开始、390px 无横向溢出、console/errors 零输出；sitemap.xml 绝对 loc 正常
+- 【验证三连】go build ✅ go vet ✅ go test -race -count=1 ./... ✅（ok backend-go）；gofmt -l 清零（3 文件 Edit 空格化归一）
+
+Stage Summary:
+- 章节目录乱序=采集管线从未接线重排的移植丢失缺陷，根修（新数据入库前重排）+存量（22 本一次性 resort 复审清零）双闭环；TOC「最新章节」预览段确认为模板设计非乱序
+- trxsw 友链「首页唯一渲染点」合并 + 网站地图收敛为底部居中单一 Sitemap 链接，逐分类编号行成历史
+- 任务态恢复等价（6 running+1 限流自动恢复+1 success）；scraper 全程未动

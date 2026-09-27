@@ -171,7 +171,10 @@ Go 契约 .Latest 上限 14（TSX 最新更新表取 30）、.RankClicks 上限 
         {{range $i, $n := .Nav}}{{if lt $i 9}}<a href="{{catURL .id}}" class="cursor-pointer transition-colors hover:text-[#FF6600] hover:underline">{{.name}}小说</a>{{end}}{{end}}
         <a href="/" class="cursor-pointer transition-colors hover:text-[#FF6600] hover:underline">全部书库</a>
         <a href="/" class="cursor-pointer transition-colors hover:text-[#FF6600] hover:underline">完本列表</a>
+        {{/* Task 48: 页脚友情链接合并进本区块（首页唯一渲染点）——站长友链 + 链轮三类型 */}}
         {{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer transition-colors hover:text-[#FF6600] hover:underline">{{.label}}</a>{{end}}
+        {{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer" class="cursor-pointer transition-colors hover:text-[#FF6600] hover:underline">{{.name}}</a>{{end}}
+        {{range .WheelLinks}}<a href="{{.url}}" class="cursor-pointer transition-colors hover:text-[#FF6600] hover:underline">{{.name}}</a>{{end}}
       </p>
     </div>
   </section>

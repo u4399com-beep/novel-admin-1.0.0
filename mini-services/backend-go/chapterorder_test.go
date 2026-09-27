@@ -155,3 +155,36 @@ func TestChapterOrderOverflowBlockNotPartialFix(t *testing.T) {
 		t.Fatalf("超长倒序块（>60）应整体放弃保守修复，不得部分搬移（note=%s）", rr.note)
 	}
 }
+
+// TestReorderRefPairsLatestBlock Task 48：管线接线适配器（refPair 版）——生产实测形态
+// （书 374：书页「最新章节块 12 条(新→旧)」+「完整目录(旧→新)」，序号去重后唯一）→
+// 全局升序重排，且 title/URL 配对逐条不丢不串。
+func TestReorderRefPairsLatestBlock(t *testing.T) {
+	var pairs []refPair
+	for i := 3148; i >= 3137; i-- { // 最新章节块：第3148章..第3137章（新→旧）
+		pairs = append(pairs, refPair{Title: "第" + itoa(i) + "章 暴涨", URL: "http://s.example.com/read/" + itoa(i) + ".html"})
+	}
+	for i := 1; i <= 100; i++ { // 完整目录：第1..100章（旧→新）
+		pairs = append(pairs, refPair{Title: "第" + itoa(i) + "章", URL: "http://s.example.com/read/c" + itoa(i) + ".html"})
+	}
+	out, note := reorderRefPairs(pairs)
+	if note == "" {
+		t.Fatalf("生产形态应触发重排（disorder≈1.0 > 0.2）")
+	}
+	if len(out) != len(pairs) {
+		t.Fatalf("重排不得增删行：got %d, want %d", len(out), len(pairs))
+	}
+	if out[0].Title != "第1章" || out[99].Title != "第100章" || out[100].Title != "第3137章 暴涨" || out[111].Title != "第3148章 暴涨" {
+		t.Fatalf("重排后应以第1章开头、最新章收尾：首=%s 尾=%s", out[0].Title, out[111].Title)
+	}
+	// title/URL 配对完整性：升序位次上 URL 与重排前同标题行一致
+	if out[0].URL != "http://s.example.com/read/c1.html" || out[111].URL != "http://s.example.com/read/3148.html" {
+		t.Fatalf("title/URL 配对串位：out[0].URL=%s out[111].URL=%s", out[0].URL, out[111].URL)
+	}
+	// 无信号（<8 编号）→ 原样返回零改写
+	small := []refPair{{Title: "序章", URL: "u0"}, {Title: "第1章", URL: "u1"}, {Title: "番外", URL: "u2"}}
+	sOut, sNote := reorderRefPairs(small)
+	if sNote != "" || len(sOut) != 3 || sOut[0].Title != "序章" {
+		t.Fatalf("信号不足应原样返回：note=%q out=%v", sNote, sOut)
+	}
+}

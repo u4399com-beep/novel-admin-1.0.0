@@ -493,6 +493,14 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 				refs[i].Title = t2sField(t2sMode, refs[i].Title)
 			}
 		}
+		// Task 48: 目录乱序重排接线（TS 原版管线行为，Go 移植时丢失——此前 reorderChapterRefs
+		// 只被 admin 手动重排端点引用）。书页 DOM 常见「最新章节块(新→旧)+完整目录(旧→新)」，
+		// 原样入库会让目录从最新章开头。必须在 t2s 之后执行：繁体 節/話 先归一才能被
+		// chapterNoRe 命中（重排语义与 /api/novels/resort-chapters 存量重排完全同源）
+		if reordered, note := reorderRefPairs(refs); note != "" {
+			refs = reordered
+			run.Log(fmt.Sprintf("《%s》%s", truncateRunes(book.Title, 24), note))
+		}
 		// refs 为空：仍入库书籍（原语义「书籍已入库（未提取到章节链接）」），不计失败
 
 		// 源站分类名归并失败时用书名+简介 LLM 推断（防「未分类」堆积）
