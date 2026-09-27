@@ -25,6 +25,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -285,6 +286,13 @@ func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL st
 	// 响应体统一经 contentDecodedReader 解包（与 readBodyCapped 同一实现）
 	src, decodeClose, derr := contentDecodedReader(res)
 	if derr != nil {
+		// Task 52-a（P3·分类对齐）：声明压缩但 0 字节体（gzip.NewReader 对空流返回 io.EOF）
+		// 按空体处理，与 readBodyCapped 的 E8 语义同口径——旧实现虚报「解包失败 EOF」，
+		// 排障时把「空响应」误读为「解包器故障」。
+		if derr == io.EOF {
+			*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
+			return []BookChapterRef{}
+		}
 		*warnings = append(*warnings, "chapterListApi：响应体解包失败 "+derr.Error())
 		return []BookChapterRef{}
 	}

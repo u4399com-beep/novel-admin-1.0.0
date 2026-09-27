@@ -92,14 +92,20 @@ func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string
 }
 
 // a) Chrome 桌面：全套 Sec-Fetch-* + 客户端提示
+// Task 52-a（E11·反反爬头族指纹一致性）：移除 cache-control: no-cache + pragma: no-cache。
+// 威胁模型（沙箱内实测 Chromium 143 / Playwright chromium-1200 抓包，MDN HTTP 缓存语义一致）：
+// 真实浏览器「全新导航」（引擎形态：全新会话/无缓存基线的首次 GET）不发送任何请求侧
+// cache-control/pragma；显式 reload（F5）发 cache-control: max-age=0；cache-control: no-cache
+// + pragma: no-cache 是硬刷新/DevTools Disable-cache 专属形态——旧画像对每个 URL 的首次请求
+// 都声称硬刷新，属可稳定识别的脚本客户端自曝指纹（curl/requests 用户的常见追加头）。
+// 移除后请求形态与全新导航全对齐；副作用仅为响应可经 CDN 缓存正常命中（真实首访浏览器
+// 同样如此），对采集语义无影响（章节内容不可变、列表页短时缓存可接受）。
 var chromeDesktopProfile = headerProfile{
 	id:          "chrome-desktop",
 	label:       "Chrome 桌面（完整 Sec-Fetch/客户端提示 + Referer）",
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer, chromeUA, map[string]string{
-			"cache-control":      "no-cache",
-			"pragma":             "no-cache",
 			"sec-ch-ua":          chromeSecCHUA,
 			"sec-ch-ua-mobile":   "?0",
 			"sec-ch-ua-platform": `"Linux"`,

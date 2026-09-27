@@ -2330,3 +2330,42 @@ Stage Summary:
 - 封面缺失第二层根因（图床网络封锁+规则无代理）实锤并以「多出口回退」根治：采集与补抓两通道自动遍历规则代理池（同站优先），网络类失败自愈、确定性失败不浪费重试、预算护栏双检查、并发竞态 O_EXCL 根除——未来任何站点图床被封锁，只要规则池存在可达代理即自动兜底，无需人工干预
 - 反反爬 E10（Safari 头族对齐）落地，第 13 轮收敛扫描双域无新 P1/P2（连续 13 轮）
 - 提交链：…→857de50(49)→c06eab5(50)→本提交(51)
+---
+Task ID: 52-a
+Agent: scraper-go 深审子代理
+Task: scraper-go 逐行深审（第 14 轮收敛扫描）——留档清单复核（sec-fetch-storage-access/chrome cache-control）+ 上轮变更文件及其调用方健壮性抓 bug + render.py 精简复扫，不重做/不回退历史修复
+
+Work Log:
+- 【基线与既往核验】开工先读 worklog 最后 3 个 Task（50/50-a/50-b/51/51-a/51-b）；基线 go build/vet/test -race 全绿（6.9s）后逐行重读 25 个 .go 文件 + scripts/render.py。历史修复逐项在码复核零回退：E8（baseHeaders 声明 accept-encoding: gzip, deflate + contentDecodedReader 三形态解包 + maxBytes 作用解包后字节 + jsontoc 接线）、E9（refineHopHeaders hop>0 删 sec-fetch-user）、E10（safari 双画像零 Sec-Fetch-*/UIR，delete 手法）、E6/E7（只改写已存在键/deriveSecFetchSite 拓扑一致）、F1-F4、AIMD CAS-max（aimdRaiseTo）、acquireDomainSlotBudgeted 零副作用 shed、±300ms 双向抖动、传输池/cookieJar 真 LRU、ssrfDialControl+--resolve 尾点剥净、cookies.go touchHostLocked 51-a 注释修正——全部在位
+- 【留档复核⑤ sec-fetch-storage-access → 有据「不落地」（零代码变更）】三方证据收敛：①MDN BCD（raw.githubusercontent mdn/browser-compat-data http/headers/Sec-Fetch-Storage-Access.json）——Chrome 133+ / Firefox 147+ 才实现、Safari 全系 version_added=false；②Storage Access Headers 规范（privacycg.github.io/storage-access-headers）——「When the request is same-site, the header is omitted」「credentials mode 非 include 直接 abort」；③沙箱内 Chromium 143（Playwright chromium-1200）实测抓包——同站全新导航/同页 XHR 均零该头。结论：引擎全部请求为同站导航，真实浏览器在该拓扑下本就省略此头，任何画像注入 `none` 反而构成伪造头自曝——51-a 留档决策升级为「有据不落地」，E1 保鲜轮无需再跟踪
+- 【E11·反反爬增强（本轮核心，留档⑥落地）】chromeDesktopProfile 移除 cache-control: no-cache + pragma: no-cache。威胁模型（实测证据）：Chromium 143 全新导航（引擎形态=无缓存基线首次 GET）零请求侧 cache-control/pragma，显式 reload（F5）发 max-age=0，no-cache+pragma 是硬刷新/DevTools Disable-cache 专属形态——旧画像对每个 URL 首次请求都声称硬刷新，属可稳定识别的脚本客户端自曝指纹（curl/requests 用户常见追加头，与 E8/E9/E10 头族同向）。移除零误杀（建议性缓存元数据头不改变站点响应决策）；副作用仅响应可经 CDN 缓存正常命中（真实首访浏览器同然，章节不可变/列表短缓存可接受）。波及面：fetch-browser/got 系 chrome 随机画像/curl-impersonate chrome/curl 车道四路 chrome UA 车道同步收口（同一 map 源）
+- 【修复① P3·jsontoc 空压缩体分类对齐】extractJsonToc 对 contentDecodedReader 的 derr==io.EOF（声明 gzip 但 0 字节体）旧实现虚报「解包失败 EOF」——与 readBodyCapped 的 E8 empty-body 语义分裂，排障时把「空响应」误读成「解包器故障」。对齐：EOF→按空体走「响应体为空或超限」（与 audit50 TestReadBodyCappedGzipEmptyBody 同口径）；损坏流仍保留「解包失败」真实证据（对照用例锁定收窄不吞错）
+- 【逐行深审过检面（无新 P1/P2）】profiles/httpguard/cookies 及全部调用方（strategies fetch 系+gotStrategyRun、chain fetchPage 预算恒等式、curlimp/fetchcurl 逐跳校验+promoteRateLimitedStatus、browser 桥接+browserCookieEnv 桶 key、jsontoc 同源/预算取槽/E5 头族）线性重读；readBodyCapped 解包路径资源收尾全路径闭合、cookieHeaderFor 迭代副本+del 不越界、recordBridgeCookies Expires float 溢出方向 fail-safe（负过期即删）、acquireDomainSlotBudgeted shed 零副作用、hosthealth 双 streak 合流/移位钳制、ssrf IPv4 全形态/IPv6 网段/三方尾点口径、challenge 四层守卫、cleanx 分层闸、charset 降级链、extract 去重后位胜出、parseSetCookieLine Max-Age/Expires 双序覆盖——未发现新破口
+- 【留档不动（只报不改，4 项）】①checkRobots `req, _ := http.NewRequest` err 吞——同字符串上轮 url.Parse 已成功，NewRequest 失败不可达，防御面非实破口；②readAllCapped 读错误与超限同返 (nil,true)，jsontoc/robots 侧归并为「为空或超限」——诊断粒度问题非行为缺陷，改签名涉多调用方超本轮范围；③recordBridgeCookies 回存全上下文 cookie（含 CDN 域下发）入目标 host 桶——仅同 host 回放、历史多轮既有语义，浏览器语义偏差微小；④Chromium 现势 grease 形态「Not A(Brand";v=24」vs 画像「Not-A.Brand;v=99」——grease 按设计随机化、固定值仍在真实分布集内，不构成矛盾自曝
+- 【精简复扫（零产出）】render.py 全部 12 个符号（emit/_ip_is_local/_host_is_private/_guarded/_url_blocked/_env_cookies/main/MAX_HTML_BYTES/DEFAULT_UA/_GUARD_CACHE/_GUARD_CACHE_MAX/_ALLOWED_SCHEMES）引用计数 ≥2 全有消费点；Go 侧 E11 仅删 map 字段未删符号，零新增死代码
+- 【测试资产】+audit52a_test.go 6 用例：TestProfileNoCacheControlFreshNavigationAlignment（8 画像零 cache-control/pragma 不变式+chrome 既有头族 E8/E10/Sec-Fetch/客户端提示全在位防误删）/TestFetchLaneWireNoCacheControl（fetch 车道 wire 端到端零 Cache-Control/Pragma+E8 不受影响）/TestGotLaneWireNoCacheControl（got 车道 chrome 随机画像 wire 端到端）/TestExtractJsonTocGzipEmptyBody（0 字节 gzip→「响应体为空或超限」不再虚报解包失败）/TestExtractJsonTocGzipCorruptStillReported（损坏流保留「解包失败」证据对照）
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go 6.5s，含既有全部回归+本轮 6 用例）；gofmt -l 全清（Edit 空格化已 gofmt -w 归一）；生产进程零触碰（backend-go.bin/scraper-go.bin 全程存活）、零 kill、零 git 操作、backend-go 零改动；沙箱探针进程（header_probe_server.py）用毕即清；scraper-go.bin 未重建（留待主线验证后统一 temp+rename）
+
+Stage Summary:
+- 第 14 轮收敛扫描定性：25 文件+render.py 逐行重读无新 P1/P2，价值集中在留档清单两项的证据收敛——⑤sec-fetch-storage-access 经 MDN BCD+规范+Chromium 143 实测三方证据确认「不该加」（真实浏览器同站导航省略，注入即伪造自曝，有据不落地）；⑥chrome cache-control:no-cache+pragma 实测确认全新导航不发（硬刷新专属形态）落地 E11 移除
+- 修复统计：1 项反反爬增强（E11，chrome 画像 2 键移除+4 路 chrome UA 车道同步收口）+1 项 P3 分类对齐（jsontoc 空压缩体）+6 用例；API 契约（ok/error/detail/challengeSuspected/softBlock/attempts）零变更，backend 无需适配
+- 连续 14 轮深审无新 P1/P2；留档清单经本轮证据收敛后缩至「HTTP/2 JA3 车道指纹、Go 头序、robots 无界槽、toc 预算叠边」4 项结构性项+本轮新报 4 项只报不改项，均含威胁模型与不动理由
+- 部署注意：本轮仅改源码+测试，scraper-go.bin 未重建；主线验证后按既有 temp+rename 流程热替换即可，API 契约零变更
+---
+---
+Task ID: 52
+Agent: main (Z.ai Code)
+Task: 用户四点常设指令——①持续开发审查修复 ②采集+反反爬增强逐行深审 ③清理精简 ④推送 git
+
+Work Log:
+- 【现状侦察】远端同步零未推(91c1598);书库 251→347(+96)且封面覆盖率 77.3%→83.9%(Task 51 回退机制后新采封面链路健康实证);任务生态 5 running+限流车道自动轮转正常
+- 【52-a scraper 第 14 轮深审】E11 增强:chrome 画像移除 cache-control: no-cache + pragma: no-cache——沙箱内实测 Chromium 143 全新导航零请求侧 cache-control/pragma,该组合是硬刷新/Disable-cache 专属形态,旧画像对每个首次请求声称硬刷新=脚本客户端自曝(E8/E9/E10 头族同向);fetch-browser/got 系/curl-impersonate/fetch-curl 四路 chrome UA 车道同步收口。修复①:jsontoc 对「声明 gzip 但 0 字节体」由虚报解包失败对齐为空体语义(E8 口径)。留档收敛:sec-fetch-storage-access 经 MDN BCD+Chromium 143 实测**有据不落地**(引擎全为同站导航,注入反而伪造自曝,永久关闭该项);6 用例(audit52a_test.go)锁定,三连全绿
+- 【52-b backend 定向深审(子代理两次超时→主线亲自执行)】6 文件面逐行:seed.go(播种幂等/时间戳归一/损坏自愈在位;seed.json 不含 Novel 表,cover 语义疑虑不成立)、obfuscate.go(转义链顺序正确:obfuscate 在模板转义后出口层,既有实体全 ASCII 经零宽「非 ASCII 边界」与实体化「ASCII 跳过」双向避开,无双重转义/注入面;noiseElement 白名单容器+lastTextRunes 状态机复核)、txtdir.go(原子落盘/两段式 reindex swap 安全/safeTitle 清洗完备)、api_export.go(routePosIntID 钳制/流式构建/参数化)、api_settings.go(白名单体系完整)、seed.json 一致性——**定向面无新破口**
+- 【运维面】partial 任务 6/10 重发等效任务继续消化 101kks 章节;补抓端点实证:scanned=5(coverSrc 留源机制生效)、fixed=3、failed=2 均为确定性失败(空响应体/HTTP 403 防盗链,不回退语义正确)
+- 【部署+E2E】scraper 三连复测→build-go.sh 双 bin→热替换→任务 resume(6 running);agent-browser:首页(trxsw 文字行列表形态,8 区块 57 书链)/分类页 43 本地封面/新采书 314 封面本地化/console+errors 零输出
+- 【④ 提交】worklog 追加 52-a/52 → git commit + push
+
+Stage Summary:
+- 反反爬第 14 轮:E11(chrome 画像硬刷新头族移除,实测驱动)+jsontoc 空体对齐;sec-fetch-storage-access 永久关闭(有据不落地),留档清单收敛
+- backend 定向面(seed/obfuscate/txtdir/api_export/api_settings)零新破口——13 轮全仓+1 轮定向后收敛面继续扩大
+- 提交链:…→c06eab5(50)→91c1598(51)→本提交(52)
