@@ -77,7 +77,9 @@ func (j *cookieJar) touchOrderLocked(host string) {
 // 单临界区完成，彻底消除窗口。
 // Task 29-b：淘汰序由 map 随机迭代改为真实 LRU（见 cookieJar.order 注释）；host 刷新到
 // 尾部后淘汰恒取队首，结构性排除「逐出本次触达 host」。
-// 返回 nil 表示容量淘汰后仍放不下（极端情况）
+// Task 51-a 注释修正：旧注释「返回 nil 表示容量淘汰后仍放不下（极端情况）」与实现不符——
+// 桶取/建先于淘汰、host 刚刷到 LRU 尾部（生产路径 order 无陈旧条目），本函数恒返回非 nil，
+// 调用方（recordSetCookieLines/recordBridgeCookies）按非 nil 消费是正确的。
 func (j *cookieJar) touchHostLocked(host string) *cookieBucket {
 	b, ok := j.hosts[host]
 	if !ok {

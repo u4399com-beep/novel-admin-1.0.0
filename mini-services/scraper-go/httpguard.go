@@ -213,8 +213,8 @@ func hopSameSiteHosts(a, b string) bool {
 //   - 跨站跳 → site=cross-site，Referer=上一跳 origin。
 //
 // 误杀面控制：只改写**已存在**的键，绝不注入缺失键——无 Referer/无 Sec-Fetch 的画像变体
-// （safari 无 Referer、googlebot/baiduspider 无 Sec-Fetch）保持原样（给 spider 画像注入
-// Sec-Fetch 反而是新增自曝点）；仅作用于 hop>0，首跳与显式策略语义不变。
+// （safari 系无 Referer 且无 Sec-Fetch（Task 51-a E10）、googlebot/baiduspider 无 Sec-Fetch）
+// 保持原样（给 spider 画像注入 Sec-Fetch 反而是新增自曝点）；仅作用于 hop>0，首跳与显式策略语义不变。
 func refineHopHeaders(hdrs map[string]string, prevURL, hopURL string) {
 	if hdrs == nil {
 		return
@@ -257,7 +257,7 @@ func refineHopHeaders(hdrs map[string]string, prevURL, hopURL string) {
 // refineHopHeaders（hop>0）同口径：scheme+host 一致 → same-origin；host 后缀同站 →
 // same-site；否则 cross-site。返回 "" 表示入参不可解析（调用方保持原值，绝不注入）。
 // 误杀面控制：仅当画像声明了 sec-fetch-site 且非 none（无 Referer 的直接导航画像语义
-// 保持不变）时改写；spider 画像无该键、safari 系恒 none，均不受影响。
+// 保持不变）时改写；spider/safari 画像无该键（Task 51-a E10 后 safari 整族不携带），均不受影响。
 func deriveSecFetchSite(targetURL, refererURL string) string {
 	t, err := urlParse(targetURL)
 	if err != nil || t.Host == "" {

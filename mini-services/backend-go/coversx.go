@@ -17,6 +17,10 @@
  * 安全与健壮性（与 TS 对齐）：仅 http/https；拒绝内网/环回/链路本机地址（文本层 + DNS
  * 尽力解析，DNS 失败即拒绝）；Content-Type 校验；5MB 上限；12s 超时；幂等（目标文件
  * 已存在直接复用）；tmp+rename 原子落盘；失败一律返回 ""，绝不阻塞采集主流程。
+ *
+ * Task 51：fetchAndStoreCover 之上另有 fetchCoverWithFallback 多出口回退包装（本文件末）；
+ * Task 51-b：tmp 创建改 os.CreateTemp（O_EXCL 绝对唯一，强化 Task 27-c 的纳秒时间戳方案）
+ * + 失败路径遗留 tmp 清理（defer Remove 兜底）。
  */
 package main
 
@@ -24,6 +28,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -345,12 +350,30 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath, failRe
 		return "", "落盘目录创建失败: " + err.Error()
 	}
 	sum := md5.Sum([]byte(itoa(novelID)))
-	// Task 27-c：tmp 名加 novelID+纳秒时间戳去重——并发同书封面下载（同名书多任务
-	// 各自触发）旧版共用同名 .tmp，并发 WriteFile 同路径可交错写坏后 rename 成坏图
-	tmpAbs := filepath.Join(dir, "."+hex.EncodeToString(sum[:])[:8]+"-"+itoa(novelID)+"-"+strconv.FormatInt(time.Now().UnixNano(), 36)+".tmp")
-	if err := os.WriteFile(tmpAbs, ob, 0o644); err != nil {
-		return "", "临时文件写入失败: " + err.Error()
+
+	// Task 27-c：tmp 名含 novelID 去重——并发同书封面下载（同名书多任务各自触发）
+	// 共用同名 .tmp 会交错写坏后 rename 成坏图。Task 51-b 强化：os.CreateTemp 以
+	// O_EXCL 原子创建，唯一性从「novelID+纳秒时间戳大概率唯一」（粗粒度时钟/同 tick
+	// 双 goroutine 仍可撞名）升级为「绝对唯一」；旧版 WriteFile 半途失败/rename 失败
+	// 兜底写失败等错误路径会遗留 .tmp 垃圾文件累积，defer Remove 兜底清理
+	//（rename 成功后目标已不存在，Remove 为无害 ENOENT）。
+	tf, terr := os.CreateTemp(dir, "."+hex.EncodeToString(sum[:])[:8]+"-"+itoa(novelID)+"-*.tmp")
+	if terr != nil {
+		return "", "临时文件创建失败: " + terr.Error()
 	}
+	tmpAbs := tf.Name()
+	_, werr := tf.Write(ob)
+	if werr == nil {
+		werr = tf.Chmod(0o644) // CreateTemp 恒 0600，对齐旧 WriteFile 0o644 语义
+	}
+	if cerr := tf.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = os.Remove(tmpAbs)
+		return "", "临时文件写入失败: " + werr.Error()
+	}
+	defer func() { _ = os.Remove(tmpAbs) }()
 	// rename 覆盖：避免并发采集写一半被读到坏图
 	if err := os.Rename(tmpAbs, localAbs); err != nil {
 		if err2 := os.WriteFile(localAbs, ob, 0o644); err2 != nil {
@@ -438,6 +461,158 @@ func coverReadBody(r io.Reader, maxBytes int) ([]byte, error) {
 		return buf, errors.New("cover too large")
 	}
 	return buf, nil
+}
+
+// ==================== 封面下载多出口回退（Task 51「杜绝后患」） ====================
+//
+// 实证（Task 51）：huangjinwu 图床（156.225.85.90）被沙箱网络封锁、规则 proxy=''（直连）
+// → 该站全部书籍封面下载 dial timeout 静默丢失（ggd66 同为直连但图床可达故无恙）——
+// 「封面出口 = 规则 proxy 单一决策」对图床封锁零容错。修复：网络类失败后自动遍历
+// 回退出口（与封面同站的规则代理优先，其次其余规则代理池），主出口的确定性失败
+// （404/非图像/空体/解码失败——直连观察可信，换出口结果相同）不回退。采集与补抓
+// 两通道共用本机制。Task 51-b 语义修正：候选出口的确定性失败不再放弃整条回退链
+//（见 fetchCoverWithFallback 注释）。
+
+// regDomainApprox 近似注册域：host 的最后两段（img.huangjinwu.org / www.huangjinwu.org /
+// huangjinwu.org → huangjinwu.org）。IP 字面量与单段 host 原样返回。多段公共后缀
+// （com.cn 类）会得到宽松匹配——仅用于回退候选的排序优先级（尽力而为），不用于安全判定。
+func regDomainApprox(host string) string {
+	if ip := net.ParseIP(host); ip != nil {
+		return host
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) >= 2 {
+		return parts[len(parts)-2] + "." + parts[len(parts)-1]
+	}
+	return host
+}
+
+// ruleProxiesForHost 从 ScrapeRule 收集封面回退代理候选：
+//  1. 与 srcURL 同站（近似注册域相等，img.x ↔ www.x ↔ x）规则的 proxy 优先——
+//     站点语义精确匹配；
+//  2. 其余规则的 proxy 兜底——规则池里任何可达代理都是合法回退出口。
+//
+// proxy 字段逗号分隔展开（与 pickCoverProxy 同语义：仅 http(s)，socks 封面通道不支持）、
+// trim、去重保序。库错误/无候选返回 nil（调用方行为退化为单出口，不劣于修复前）。
+func ruleProxiesForHost(srcURL string) []string {
+	u, err := url.Parse(srcURL)
+	if err != nil || u.Hostname() == "" {
+		return nil
+	}
+	srcHost := strings.ToLower(u.Hostname())
+	srcReg := regDomainApprox(srcHost)
+	sameSite := []string{}
+	others := []string{}
+	seen := map[string]bool{}
+	appendPool := func(pool string, same bool) {
+		for _, p := range strings.Split(pool, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" || seen[p] ||
+				(!strings.HasPrefix(p, "http://") && !strings.HasPrefix(p, "https://")) {
+				continue
+			}
+			seen[p] = true
+			if same {
+				sameSite = append(sameSite, p)
+			} else {
+				others = append(others, p)
+			}
+		}
+	}
+	err = queryList(
+		`SELECT "siteUrl","proxy" FROM "ScrapeRule" WHERE "proxy" != '' ORDER BY "id" ASC`,
+		func(rows *sql.Rows) error {
+			var siteURL, proxy string
+			if err := rows.Scan(&siteURL, &proxy); err != nil {
+				return err
+			}
+			su, err := url.Parse(siteURL)
+			if err != nil || su.Hostname() == "" {
+				return nil
+			}
+			same := regDomainApprox(strings.ToLower(su.Hostname())) == srcReg
+			appendPool(proxy, same)
+			return nil
+		})
+	if err != nil {
+		return nil
+	}
+	return append(sameSite, others...)
+}
+
+// coverFallbackProxies 回退候选来源（var：测试注入用，audit51_test.go；生产路径恒
+// ruleProxiesForHost）。nil 返回=无回退出口。
+var coverFallbackProxies = ruleProxiesForHost
+
+// isNetworkLikeCoverReason 判定封面下载失败是否网络类（换出口可能改善）：
+// ① 「请求失败」（dial/connect/timeout/TLS 等传输层，client.Do 返回 err）与
+// 「响应体读取失败」（传输中断）两类前缀；② 网关类瞬态 5xx（500-599，Go Transport
+// 对 http 目标的代理非 2xx 是响应透传而非 err，实测 503 落在此形态）——出口侧瞬时
+// 故障，换出口可能改善。4xx（403 防盗链/404 不存在）与 2xx 消费类失败（非图像/空体/
+// 解码）是确定性失败，换出口结果相同，不回退。
+func isNetworkLikeCoverReason(reason string) bool {
+	if strings.HasPrefix(reason, "请求失败") || strings.HasPrefix(reason, "响应体读取失败") {
+		return true
+	}
+	return strings.HasPrefix(reason, "HTTP 5")
+}
+
+// maxCoverFallbackCandidates 单本书回退候选的防御性上限：候选来自运营配置的规则代理池
+// （病态超长池可让采集车道单件阻塞数十分钟——每候选最坏 ≈17s DNS+HTTP）。截断保序取
+// 前 N——同站优先序在前，截断只丢最末优先级候选，正常配置（规则数 ≤15）永不受影响。
+const maxCoverFallbackCandidates = 12
+
+// fetchCoverWithFallback 带出口回退的封面下载（fetchAndStoreCover 的多出口包装）：
+// 先用 primaryProxy（规则 proxy 或空=直连）尝试；网络类失败时遍历 coverFallbackProxies
+// 候选（跳过与 primary 相同者）逐个重试。hardDeadline 非零时每次候选尝试前检查剩余
+// 预算，耗尽即停止回退、以首次失败原因返回（backfill 通道传 start.Add(coverBackfillBudget)
+// 保证响应必在 WriteTimeout=65s 窗口内写回：单次尝试最坏 ≈17s（DNS 5s + 下载 12s，
+// 解码/编码 CPU 再计 ~2s）×至多 1 次在途、检查点在每次发起前——预算内最后一次发起
+// 最坏把总时长推到 budget+19s = 59s < 65s；候选耗尽语义=「这本书已按既定预算处理完」，
+// attempted 计数不失真）。采集通道传零值=不限额（候选数受 maxCoverFallbackCandidates 封顶）。
+//
+// 回退语义（Task 51-b 修正）：主出口的确定性失败零回退——直连是对目标的真实观察，
+// 404/非图像即目标真态；但候选出口的确定性失败不可信——被封锁/劫持的出口对任何请求
+// 都可能回 200 text/html 拦截页（→「非图像响应」）或伪造 4xx，与目标真态无法区分，
+// 旧版拿到首个候选确定性失败即放弃整条链，「坏出口排在好出口前面」时回退机制被单点
+// 瓦解（与修复目标相反）。现记录首个候选确定性原因后继续尝试其余候选，全部失败时
+// 优先透出该原因（比传输层错误更能定位真因）。
+func fetchCoverWithFallback(novelID int, remoteURL, primaryProxy string, hardDeadline time.Time) (localPath, failReason string) {
+	localPath, failReason = fetchAndStoreCover(novelID, remoteURL, primaryProxy)
+	if localPath != "" || !isNetworkLikeCoverReason(failReason) {
+		return localPath, failReason
+	}
+	firstReason := failReason
+	firstDeterministic := ""
+	tried := 0
+	for i, p := range coverFallbackProxies(remoteURL) {
+		if i >= maxCoverFallbackCandidates {
+			break // 病态超长代理池防御性截断（保序，只丢最末优先级）
+		}
+		if p == pickCoverProxy(primaryProxy) {
+			continue // primary 本身是代理时跳过同值重复尝试
+		}
+		if !hardDeadline.IsZero() && !time.Now().Before(hardDeadline) {
+			break // 回退预算耗尽：停止候选，保留首因
+		}
+		tried++
+		stored, r := fetchAndStoreCover(novelID, remoteURL, p)
+		if stored != "" {
+			return stored, ""
+		}
+		if !isNetworkLikeCoverReason(r) && firstDeterministic == "" {
+			// 候选出口的确定性失败：可能是出口伪造（拦截页/防盗链页/假 404），
+			// 记录后继续尝试其余候选（语义修正见函数头注释）
+			firstDeterministic = r
+		}
+	}
+	if tried > 0 {
+		if firstDeterministic != "" {
+			return "", firstDeterministic
+		}
+		return "", firstReason + "（代理回退×" + itoa(tried) + " 亦失败）"
+	}
+	return "", firstReason
 }
 
 // gradientTokenFor 派生渐变 token（无封面时的确定性回退）：以书名+作者 hash 均匀分布到 g1-g12。

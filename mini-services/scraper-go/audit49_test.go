@@ -323,10 +323,11 @@ func TestProfileSecFetchSiteMatchesExplicitReferer(t *testing.T) {
 	if h["sec-fetch-site"] != "same-origin" {
 		t.Fatalf("缺省 Referer 应保持 same-origin，got %q", h["sec-fetch-site"])
 	}
-	// 误杀面：safari（site=none，无 Referer 直接导航语义）与 spider（无该键）不受影响
+	// 误杀面：safari 与 spider（均无该键；Task 51-a E10 起 safari 整族不携带 Sec-Fetch-*）
+	// 不受影响——E7 只改写已存在键，绝不得向无键画像注入 sec-fetch-site
 	h = safariDesktopProfile.headers("http://a.com/c/1.html", false, "http://other.example/b/9")
-	if h["sec-fetch-site"] != "none" {
-		t.Fatalf("safari 画像 site=none 语义不得被改写，got %q", h["sec-fetch-site"])
+	if _, ok := h["sec-fetch-site"]; ok {
+		t.Fatalf("safari 画像不得携带/被注入 sec-fetch-site（E10：真实 WebKit 不发 Fetch Metadata），got %q", h["sec-fetch-site"])
 	}
 	h = googlebotProfile.headers("http://a.com/c/1.html", false, "http://other.example/b/9")
 	if _, ok := h["sec-fetch-site"]; ok {

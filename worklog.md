@@ -2266,3 +2266,67 @@ Stage Summary:
 - 目录序号↔章节号不一致=TS 原版无序号前缀而 Go 移植自加所致，7 主题回位+全角/装饰编号解析覆盖，三层闭环
 - pseo 聚合页升级为「关键词 TDK+主打书前两区块+相关小说表」完整落地页
 - 提交链：…→1d6d14f(48)→857de50(49)→本提交(50)
+---
+Task ID: 51-a
+Agent: scraper-go 深审子代理
+Task: scraper-go 逐行深审（第 13 轮收敛扫描）——反反爬指纹面收尾增强 + 死代码/破口复扫，不重做/不回退历史修复
+
+Work Log:
+- 【基线与既往核验】开工先读 worklog 最后 3 个 Task（49/49-a/49-b/50/50-a/50-b）；基线 go build/vet/test -race 全绿（6.9s）后逐行重读 25 个 .go 文件 + scripts/render.py。历史修复逐项在码复核零回退：E1-E9（指纹保鲜/UA 画像池/refineHopHeaders/deriveSecFetchSite/E8 accept-encoding+contentDecodedReader/E9 跳间 sec-fetch-user 删除）、F1-F4（got 断流证据/robots origin key/runeLen UTF-16/jsonStr 32 位）、AIMD CAS-max（aimdRaiseTo，符号 12 refs）/acquireDomainSlotBudgeted（15 refs）/±300ms 双向抖动/challenge-loop 终止/传输池 LRU/cookieJar 真实 LRU/ssrfDialControl+--resolve 尾点剥净/isSafe 死函数已删——全部在位
+- 【E10·反反爬增强（本轮核心）】Safari 系画像头族与真实 WebKit 对齐——移除 Sec-Fetch-*（dest/mode/site/user）与 Upgrade-Insecure-Requests。威胁模型：真实 Safari/WebKit 从未实现 Fetch Metadata 请求头（WebKit 多年未落地，现势全系不发）、同样不发 UIR（caniuse unsupported）——旧画像的 sec-fetch-site:none「无来路导航」是 Chrome 语义，WAF 按 UA 分族比对头族时「Safari UA + Chrome 导航头族」即跨家族矛盾自曝（与 44-a FIX-1「Firefox JA3 配 Chrome 客户端提示」同族、与 E8 头族版同向）。修法：safariDesktopProfile/iphoneSafariProfile 整族移除（googlebot/baiduspider 同款 delete 手法剥 UIR），E6/E7 的「只改写已存在键、绝不注入」语义天然兼容（safari 跳间头集零可注入键），E8 压缩协商声明保留。误杀面：移除建议性元数据头不改变任何站点响应决策，真实 Safari 流量本就如此。E1 保鲜轮挂复核点：WebKit 未来落地 Fetch Metadata 再补回
+- 【测试资产】+audit51a_test.go 3 用例：TestProfileSecFetchFamilyRealBrowserAlignment（发 Fetch Metadata 族 chrome/firefox/edge/android 四键必在 + Safari/spider 族零 Sec-Fetch + Safari 零 UIR/sec-ch-ua + E8 accept-encoding 不受影响）；TestFetchLaneSafariWireNoSecFetchHeaders（fetch 守卫车道 wire 端到端：safari 上线请求零 Sec-Fetch-*/UIR，chrome 对照组五键全在防误删族）；TestRefineHopHeadersNoInjectionForSafari（E10×E6/E7/E9 交互：safari/iphone 跳间精化零注入，chrome 对照组 E6 改写+E9 删除照常）
+- 【注释契约同步】audit49_test.go E7 误杀面断言随 E10 更新（safari 由「site=none 不得改写」改为「不得携带/被注入」——E7 derive 逻辑本身零改动）；profiles.go baseHeaders E7 注释、httpguard.go refineHopHeaders/deriveSecFetchSite 注释中 safari 表述同步为「无该键」；cookies.go touchHostLocked 陈旧「返回 nil（极端情况）」注释修正（实现恒非 nil——桶取/建先于淘汰、host 刚刷 LRU 尾部结构性不被自逐，调用方按非 nil 消费正确）
+- 【逐行深审过检面（无新 P1/P2）】chain 预算恒等式（fetchWithRedirectGuard 跳间 deadline+=waited 后 remaining 恒等、makeFetchStrategy/got/curlimp/fetchcurl 四车道 waited 补偿一致）、runWithHardGate 超时路径 goroutine 有界收尾（Go 车道 hcancel 毫秒中止/curl 系进程 ctx remaining+3s/browser 桥 timeout+4s）、runWithHardGate 闭包 ctx 每迭代新建无跨迭代竞态、got 系 lastHTTPStatus/promoteRateLimitedStatus 限流提升、hosthealth 双 streak 合流与冷却移位溢出钳制（shift≥64 得 0 → maxCooldown 兜底）、acquireDomainSlotBudgeted shed 零副作用（consec 回退/nextAt 不动）与时间倒流方向安全（墙钟回跳只多给预算/nextAt 用 monotonic Sub）、cookies RFC 6265 Max-Age>Expires 优先序与 ParseFloat ErrRange/Inf/NaN 拒绝、ssrf IPv4 全文本形态/IPv6 网段/尾点剥净/DNS 缓存三方同口径、robots 逐跳校验+Allow 等长优先、extract 去重后位胜出下标重排、cleanx 行长分层闸、charset 降级链与替换符守卫、render.py 看门狗 alarm 向下取整——未发现新破口
+- 【死代码复扫（零产出）】198 个包级函数逐一符号计数复核：零「仅定义无调用」死函数；`_ =` 丢弃面全为 Close/Remove/recover/证书化等待路径，零错误吞没新增；audit50-a 删除的 isSafe/finalURL 等确认无残留引用
+- 【留档不动（6 项，全部有据）】①Go 原生车道 HTTP/2 SETTINGS/TLS JA3 指纹（需 uTLS/h2 framer 级伪装，改地面>3 文件，curl-impersonate 车道已覆盖 JA3 敏感站）；②Go net/http 头序字典序（types.go 文件头既有已知差异，需自定义传输写入器）；③checkRobots 无界取槽（限速排队饱和时 robots 槽等待最深，但为 robots warn-only 合规面有意设计，预算化=跳过 robots 校验，弱化合规红线不动）；④chapterListApi toc 拉取（5s 槽+15s HTTP）可叠在 55s 链预算上最坏突破主站 60s 消费超时（F9 已修槽等待半边，HTTP 半边需经 extractBook 透传链耗时，失败形态良性=backend 侧超时重试降档）；⑤sec-fetch-storage-access（现代 Chrome/Firefox 已发，但其导航/子资源覆盖面与 Firefox 版本依据未达「确凿」门槛，随 E1 保鲜轮复核）；⑥chrome 画像 cache-control:no-cache+pragma（强刷形态非纯导航，移除方向收益不明且可能改 CDN 缓存行为，TS 移植既有语义）
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go 6.9s，含既有全部回归+本轮 3 新用例）；gofmt -l 全清（Edit 空格化已 gofmt -w 归一）；生产进程零触碰、零 kill、零 git 操作、backend-go 零改动、/home/z/my-project/db 零触碰；scraper-go.bin 未重建（留待主线验证后统一 temp+rename）
+
+Stage Summary:
+- 第 13 轮收敛扫描定性：25 文件+render.py 逐行重读无新 P1/P2、零新死代码——12 轮收敛效应持续深挖价值递减，本轮价值集中在「Safari UA↔Chrome 导航头族」最后一个成建制的跨家族矛盾（E10，Safari 系画像摘除 Sec-Fetch-*+UIR，与真实 WebKit 行为全对齐）
+- 增强统计：1 项反反爬增强（E10，2 画像文件+3 用例+4 处注释契约同步）+1 处陈旧注释修正；无新 P 级修复；API 契约（ok/error/detail/challengeSuspected/softBlock/attempts）零变更，backend 无需适配
+- 留档不动 6 项（HTTP/2/JA3 车道指纹、Go 头序、robots 无界槽、toc 预算叠边、sec-fetch-storage-access、chrome cache-control）均有威胁模型与不动理由，供后续轮次按证据成熟度逐项解锁
+- 部署注意：本轮仅改源码+测试，scraper-go.bin 未重建；主线验证后按既有 temp+rename 流程热替换即可，API 契约零变更
+---
+---
+Task ID: 51-b
+Agent: backend-go 深审子代理
+Task: Task 51 封面多出口回退链路对抗复审+精简
+
+Work Log:
+- 【开工核验=发现上轮 51-b 在盘产物完整】worklog 无 51-b 条目但磁盘已有前次中断产物（coversx.go 带「Task 51-b」标识的 2 处修复 + audit51b_test.go 5 用例，时间戳 10:54-10:55）：修复①候选出口确定性失败不再放弃整条回退链（拦截页 200 text/html/伪造 4xx 与目标真态不可区分，「坏出口排前」单点瓦解回退机制→记录首个确定性原因后继续，全败时优先透出）+修复②os.CreateTemp（O_EXCL 绝对唯一，强化 Task 27-c 纳秒时间戳）+失败路径 defer Remove 兜底+③maxCoverFallbackCandidates=12 病态超长池截断。基线三连先跑全绿→按 49-a/49-b 先例逐项在码核验属实后接续而非重做
+- 【a 终止性】候选列表有限（一次查询物化）+cap 12+每次 fetchAndStoreCover 自带 12s/5s 上限→必终止；重复候选=有界重复尝试无害；primary 同值去重 p==pickCoverProxy(primaryProxy) 正确（primary 多代理池只去首个 http 代理，同池第二代理照常回退）；空串候选生产不可达（SQL WHERE proxy != '' + appendPool p=="" continue 双层过滤；注入空串=无害直连重试）
+- 【b 预算时序闭合】hardDeadline 检查在每次候选发起前；primary 由 backfill 外层 time.Since(start)>budget 把门（仅在 now≤hardDeadline 时进入）。单次在途最坏 17s（DNS 5s+client 12s+解码 CPU~2s）；病态拉长（重定向跳内 CheckRedirect 的 5s DNS 不受 client.Timeout 钳制）≈24s→外层末次放行 40s+24s=64s 仍 <WriteTimeout 65s（注释口径 budget+19=59s 为现实形态，边界闭合）。外层时长式/内层绝对 deadline 同源同向（仅 ≥/> 一个时钟 tick 之差，无害）
+- 【c ruleProxiesForHost】SQL 恒编译期常量零外插（无注入面）；queryList 回调 scan 失败中止→返回 nil 候选=退化单出口（不劣于修复前，fail-safe 方向；且 ScrapeRule.siteUrl/proxy 均 TEXT NOT NULL——schema.go:109-120，scan 失败实际不可达）；并发安全：仅局部切片+只读查询，coverFallbackProxies var 仅测试改写（顺序执行+t.Cleanup 还原，无 t.Parallel）
+- 【d 并发面】同 novelID 多 lane 并发回退双下载：CreateTemp O_EXCL 绝对唯一不交错（51-b 修复②在位）、rename 原子+双写均为校验过的合法 JPEG（幂等 Stat 竞态良性=last rename wins）、TestFetchAndStoreCoverConcurrentSameNovelTmpSafety 8 lane 端到端锁定（终态可解码+零遗留 .tmp）
+- 【e reason 形态全清单对照】consumeCoverResponse 9 形态（HTTP %d/非图像响应/响应体读取失败/响应体为空/图像头校验未过/图像解码失败/图像尺寸异常/JPEG 编码失败/编码输出过小）+fetchAndStoreCover 8 形态（panic/SSRF/请求构造失败/请求失败/落盘目录创建失败/临时文件创建失败/临时文件写入失败/落盘失败）逐一对照 isNetworkLikeCoverReason：仅「请求失败」「响应体读取失败」「HTTP 5」三前缀命中=传输层 err+代理非 2xx 透传两真形态，无误伤（「请求构造失败」第三字即分叉；「HTTP 5」仅可能来自 itoa(500-599)）；200 拦截页按确定性处理为主线锁定语义（与目标真态不可区分，留档不动）
+- 【f regDomainApprox】IP/单段/空串/多段后缀/尾点 FQDN 全边界锁于 TestRegDomainApproxEdges；宽松匹配（com.cn→"com.cn"、尾点→"com."）仅排序优先级非安全判定（注释锁定）；生产两调用点均先 ToLower+Hostname() 剥端口/括号，口径一致
+- 【g 精简扫描】coversx/storex/api_noveltools 三文件 Task 50/51 新增符号 22 个逐一 rg 引用计数：全部 ≥3（定义+调用点+测试/注释），零死函数；按指令不做跨文件大精简
+- 【修复④ P3·测试密闭性】audit51_test.go 4 个回退用例 remoteURL 用 http://example.com/cover.jpg——assertPublicHttpURL 每次尝试触真实 DNS，与本仓 11+ 次沙箱回收史冲突（无网恢复后必假失败），且与同轮 audit51b_test.go 头注「零外网依赖」口径矛盾；统一改 203.0.113.99（TEST-NET-3：isPrivateIPv4Text 判公网过 SSRF 文本层、LookupHost 对 IP 字面量短路不触 DNS——断言零变更，纯依赖面收敛）
+- 【验证三连】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok backend-go ≈2.2s，含 audit51 7+audit51b 5 用例+既有全部回归）；gofmt -l 清零（Edit 空格化已 gofmt -w 归一）
+- 【生产零触碰】backend-go.bin/scraper-go.bin 全程未启停；零写库/零迁移/零 git 操作/scraper-go 零改动
+
+Stage Summary:
+- 接续定性：上轮 51-b 在盘产物（2 修复+1 上限+5 用例）核验完整，本轮接续对抗复审而非重做；主出口确定性失败零回退、候选出口确定性失败续链的分工语义经论证成立并已在码锁定
+- 复审结论：Task 51 多出口回退链路（candidates/终止性/预算/SQL/并发/reason 对照/域名边界/死代码八面）无新 P1/P2 破口；本轮唯一新增=修复④测试密闭性 P3（example.com→203.0.113.99，4 处+头注）
+- 预算论证补强：WriteTimeout 65s 防线在病态重定向-DNS 拉长模型（单次≈24s）下仍闭合（64s<65s），注释 59s 口径为现实形态；采集通道零 deadline 的最坏单书阻塞已被 cap 12 钳到 ≈3-5min（留档设计取舍）
+- 验证三连全绿+gofmt 清零；backend-go.bin 含 Task 51+51-b 全部变更待主线统一热替换
+---
+---
+Task ID: 51
+Agent: main (Z.ai Code)
+Task: 用户指令接续轮（Task 50 六点常设重申）——③封面缺失持续根治+杜绝后患 ④采集+反反爬深审第 13 轮 ⑤清理精简 ⑥推送 git
+
+Work Log:
+- 【③ 封面实证复查→真根因】全库统计翻页校准（pageSize 钳制 60 导致首轮样本偏斜）：251 本中 194 本地封面（77.3%）/57 本 g-token。57 本中仅 6 本有 coverSrc 可补抓；直连补抓 5 本全败（4 本 huangjinwu dial tcp 156.225.85.90:443 timeout + 1 本空响应体）。带代理（规则 103.237.102.191:11111）补抓 fixed=5——真根因实锤：huangjinwu 图床被沙箱网络封锁、规则 proxy=''（直连）→ 采集与补抓两通道封面必丢（ggd66 同为直连但图床可达故无恙；task4 日志逐条 dial timeout 与 task5 全保存对照完美吻合）
+- 【③ 多出口回退根修（杜绝后患）】coversx.go 新增封面下载多出口回退：ruleProxiesForHost（ScrapeRule 代理池收集，近似注册域同站优先/其余兜底/socks 过滤/去重保序）+ isNetworkLikeCoverReason（「请求失败」「响应体读取失败」传输层前缀 + 网关类瞬态 HTTP 5xx——实测发现 Go Transport 对 http 目标的代理非 2xx 是响应透传而非 err，503 落「HTTP 503」形态）+ fetchCoverWithFallback（primary 网络类失败→候选代理逐个重试；hardDeadline 每次候选发起前检查，backfill 通道 start.Add(coverBackfillBudget) 保证最坏 59s<WriteTimeout 65s；采集通道零值不限额）；接线 storex.go 采集路径 + api_noveltools.go backfill handler，两通道共用
+- 【51-b 对抗复审修复（子代理）】①候选出口的确定性失败不再放弃整条回退链（被封锁出口对任何请求可回 200 拦截页/伪造 4xx 与目标真态不可区分，记录首个确定性原因继续遍历，全败时优先透出——「坏出口排前」不再单点瓦解回退）；②tmp 创建改 os.CreateTemp（O_EXCL 绝对唯一）+ 失败路径 defer Remove 兜底（强化 Task 27-c）；③maxCoverFallbackCandidates=12 防御性截断（病态超长代理池防单件阻塞数十分钟）；④测试 remoteURL 统一 203.0.113.99（TEST-NET-3，零外网依赖）。51-a 主线自测期修正表驱动口径两次（「HTTP 5」回退面、候选查询 vs 候选尝试断言）
+- 【测试资产】audit51_test.go 7 用例（候选序/回退触发面表驱动/伪代理全链端到端/primary 同值去重/确定性零回退/预算截断/空候选退化）+ audit51b_test.go 5 用例（regDomainApprox 边界/8-lane 并发端到端零遗留 tmp 等）
+- 【④ 51-a scraper 第 13 轮深审】收敛无新 P1/P2/P3；E10 增强：Safari 系画像（safari-desktop/iphone-safari）移除 Sec-Fetch-Dest/Mode/Site/User + Upgrade-Insecure-Requests——真实 Safari/WebKit 未实现 Fetch Metadata 也不发 UIR，旧画像「Safari UA+Chrome 导航头族」跨家族矛盾自曝（与 44-a FIX-1/E8 同族）；E6/E7「只改写已存在键」天然兼容；198 包级函数符号计数复扫零死函数；6 项留档不动（HTTP/2 JA3 需 uTLS 级>3 文件/头序字典序/checkRobots 预算化=弱化红线等，均有威胁模型）
+- 【⑤ 精简】51-a/51-b 双域精简扫描零新增死代码（E 系列历史已删符号无残留；Task 50/51 新增符号 22 个全部 ≥3 引用）
+- 【部署+E2E】build-go.sh 双 bin → 双服务热替换 → 任务恢复（7 running+task6 partial 终态语义正确=10 书全采/42 章限流失败，重发等效任务 10 消化）→ agent-browser：首页/书籍页 193（封面 /covers/193.jpg 实证本地化=补抓+回退成果）/目录页（章题无序号前缀+125 章）/pseo（主打书封面+简介+相关小说区块）/搜索页（q 参数语义核实，kw 用错为 E2E 操作失误非缺陷）/390px 零横向溢出/空结果 sticky footer footerBottom=vh=844/console+errors 零输出；ggd66 采集封面实时全保存（314/315/319/322）
+- 【⑥ 提交】worklog 追加 51-a/51-b/51 → git commit + push
+
+Stage Summary:
+- 封面缺失第二层根因（图床网络封锁+规则无代理）实锤并以「多出口回退」根治：采集与补抓两通道自动遍历规则代理池（同站优先），网络类失败自愈、确定性失败不浪费重试、预算护栏双检查、并发竞态 O_EXCL 根除——未来任何站点图床被封锁，只要规则池存在可达代理即自动兜底，无需人工干预
+- 反反爬 E10（Safari 头族对齐）落地，第 13 轮收敛扫描双域无新 P1/P2（连续 13 轮）
+- 提交链：…→857de50(49)→c06eab5(50)→本提交(51)

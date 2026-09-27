@@ -656,17 +656,19 @@ func handleNovelsBackfillCovers(w http.ResponseWriter, r *http.Request, _ map[st
 		batch = batch[:limit]
 	}
 	start := time.Now()
+	hardDeadline := start.Add(coverBackfillBudget)
 	fixed := 0
 	attempted := 0
 	failures := []coverBackfillItem{}
 	for _, c := range batch {
 		// Task 50-b: 总时长预算——超预算即停止发起新下载（未尝试部分计入 remaining，
-		// 循环调用方下次请求自然续上；契约字段零变更）
+		// 循环调用方下次请求自然续上；契约字段零变更）。Task 51：deadline 同传
+		// fetchCoverWithFallback，代理回退的候选尝试同样受预算约束（65s 写窗口内必回）
 		if time.Since(start) > coverBackfillBudget {
 			break
 		}
 		attempted++
-		stored, reason := fetchAndStoreCover(int(c.id), c.coverSrc, proxy)
+		stored, reason := fetchCoverWithFallback(int(c.id), c.coverSrc, proxy, hardDeadline)
 		if stored == "" {
 			failures = append(failures, coverBackfillItem{ID: c.id, Title: c.title, Reason: reason})
 			continue

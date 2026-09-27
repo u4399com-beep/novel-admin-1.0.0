@@ -379,8 +379,10 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 		_, _ = execRetry("UPDATE Novel SET coverSrc = ? WHERE id = ? AND (coverSrc IS NULL OR coverSrc = '')", remoteCover, novelID)
 	}
 	if remoteCover != "" && (createdNew || (hasExisting && !isLocalCoverPath(existingCover))) {
-		// 封面与目标站常同域同封锁策略：经规则代理出口下载（图床直连不可达时必须走代理）
-		stored, failReason := fetchAndStoreCover(int(novelID), remoteCover, proxy)
+		// 封面与目标站常同域同封锁策略：经规则代理出口下载（图床直连不可达时必须走代理）；
+		// Task 51：网络类失败自动回退规则代理池（图床被网络封锁而规则未配代理时兜底，
+		// 详见 coversx.go fetchCoverWithFallback；零值 deadline=采集通道不限额）
+		stored, failReason := fetchCoverWithFallback(int(novelID), remoteCover, proxy, time.Time{})
 		if stored != "" {
 			_, _ = execRetry("UPDATE Novel SET cover = ?, updatedAt = ? WHERE id = ?", stored, nowMillis(), novelID)
 			run.Log("封面已保存 " + truncateRunes(stored, 40) + "（jpg）")

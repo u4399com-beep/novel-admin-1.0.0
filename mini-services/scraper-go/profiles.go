@@ -77,8 +77,9 @@ func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string
 			// Task 49-a（E7·反反爬指纹一致性）：sec-fetch-site 声明必须与实际 Referer
 			// 拓扑一致。旧实现恒 same-origin——显式 Referer 与目标非同源时（子域/镜像
 			// 域变体），WAF 比对「site 陈述 vs Referer origin」即得稳定矛盾自曝。仅在
-			// 画像已声明该键且非 none 时改写（spider 无键、safari 系 none 的「无来路
-			// 直接导航」语义保持原样）；缺省 Referer（=目标站自身 origin）派生结果恒
+			// 画像已声明该键且非 none 时改写（spider/safari 无键的「无来路
+			// 直接导航」语义保持原样，Task 51-a E10 后 safari 整族不再声明 Sec-Fetch）；
+			// 缺省 Referer（=目标站自身 origin）派生结果恒
 			// same-origin，行为不变。hop>0 由 refineHopHeaders 逐跳接管，本处只覆盖首跳。
 			if cur, ok := h["sec-fetch-site"]; ok && cur != "none" {
 				if site := deriveSecFetchSite(targetURL, ref); site != "" {
@@ -129,18 +130,25 @@ var firefoxDesktopProfile = headerProfile{
 }
 
 // b) Safari 桌面（无 Referer 变体）
+// Task 51-a（E10·反反爬头族指纹一致性）：Safari 系画像不携带 Sec-Fetch-* 与
+// Upgrade-Insecure-Requests。威胁模型：真实 Safari/WebKit 从未实现 Fetch Metadata 请求头
+// （Sec-Fetch-Dest/Mode/Site/User，WebKit 多年未落地，现势 Safari 全系不发）、同样不发
+// UIR（caniuse unsupported）——旧画像的 sec-fetch-site:none「无来路导航」是 Chrome 语义，
+// WAF 按 UA 分族比对头族时「Safari UA + Chrome 导航头族」即跨家族矛盾自曝（与 44-a FIX-1
+// 「Firefox JA3 配 Chrome 客户端提示」同族、与 E8 头族版同向）。修复=整族移除（移除建议性
+// 元数据头不改变站点响应决策，误杀面为零；真实 Safari 流量本就如此）。E6/E7 的「只改写
+// 已存在键、绝不注入」语义不受影响（跳间头集零 Sec-Fetch 可注入/改写的键）。E1 指纹保鲜
+// 刷新版本常量时需复核：若 WebKit 未来落地 Fetch Metadata 再随保鲜轮补回。
 var safariDesktopProfile = headerProfile{
 	id:          "safari-desktop",
-	label:       "Safari 桌面（无客户端提示、无 Referer）",
+	label:       "Safari 桌面（无客户端提示、无 Referer、无 Sec-Fetch-*/UIR：真实 WebKit 不发送）",
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
-		return baseHeaders(u, withReferer,
+		h := baseHeaders(u, withReferer,
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15",
-			map[string]string{
-				"sec-fetch-dest": "document",
-				"sec-fetch-mode": "navigate",
-				"sec-fetch-site": "none",
-			}, explicitReferer)
+			map[string]string{}, explicitReferer)
+		delete(h, "upgrade-insecure-requests") // E10：真实 Safari 不发送（与 googlebot 剥离同款手法）
+		return h
 	},
 }
 
@@ -183,19 +191,17 @@ var androidChromeProfile = headerProfile{
 	},
 }
 
-// d) iPhone Safari 移动端（无客户端提示、无 Referer）
+// d) iPhone Safari 移动端（无客户端提示、无 Referer；E10 同桌面 Safari：无 Sec-Fetch-*/UIR）
 var iphoneSafariProfile = headerProfile{
 	id:          "iphone-safari",
-	label:       "iPhone Safari 移动端（无 Referer）",
+	label:       "iPhone Safari 移动端（无 Referer、无 Sec-Fetch-*/UIR：真实 WebKit 不发送）",
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
-		return baseHeaders(u, withReferer,
+		h := baseHeaders(u, withReferer,
 			"Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1",
-			map[string]string{
-				"sec-fetch-dest": "document",
-				"sec-fetch-mode": "navigate",
-				"sec-fetch-site": "none",
-			}, explicitReferer)
+			map[string]string{}, explicitReferer)
+		delete(h, "upgrade-insecure-requests") // E10：真实 Safari 不发送
+		return h
 	},
 }
 
