@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -327,7 +328,7 @@ type dnsEntry struct {
 }
 
 var (
-	dnsCacheMu syncMutex
+	dnsCacheMu sync.Mutex // Task 49-a 精简：旧 syncMutex(RWMutex 包装) 从未用到读锁，收敛为 sync.Mutex
 	dnsCache   = map[string]dnsEntry{}
 )
 

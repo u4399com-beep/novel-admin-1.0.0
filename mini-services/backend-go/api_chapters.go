@@ -484,14 +484,20 @@ func parseChapterNumber(raw string) (int64, bool) {
 
 var allDigitsRe = regexp.MustCompile(`^\d+$`)
 
-// parseDigitsASCII 纯数字串转 int64（标题编号场景，不适用 strconv 以外的错误分支）
+// parseDigitsASCII 纯数字串转 int64（标题编号场景，不适用 strconv 以外的错误分支）。
+// Task 49-b: 溢出守卫——旧版 n = n*10+d 先累积后判 >1<<53，超长数字串（20+ 位）在
+// 判定生效前已回绕为负（int64 溢出），负值穿透 extractNum 的编号比较使乱序检测误报。
+// 改为累积前防溢出：超安全整数即截断在 1<<53（与 JS Number 精度丢失语义同向，
+// 章节编号不可能达到该量级）
 func parseDigitsASCII(s string) int64 {
+	const maxSafe = int64(1) << 53
 	var n int64
 	for _, c := range s {
-		n = n*10 + int64(c-'0')
-		if n > 1<<53 {
-			break // JS Number 超出安全整数后精度丢失，截断即可（章节编号不会这么大）
+		d := int64(c - '0')
+		if n > (maxSafe-d)/10 {
+			return maxSafe
 		}
+		n = n*10 + d
 	}
 	return n
 }

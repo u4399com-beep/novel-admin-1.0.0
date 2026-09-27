@@ -172,7 +172,13 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 	if err := json.Unmarshal(env.Data, &data); err != nil {
 		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应 data 解析失败(HTTP %d)", res.StatusCode), Warnings: warnings}
 	}
-	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: len(env.SoftBlock) > 0}
+	// Task 49-b: softBlock 显式 null 防御——RawMessage 对 `"softBlock": null` 也有 4 字节，
+	// 旧版 len>0 判定会把 null 误当档案命中（空提取被归入软拦截 → paused 自动恢复空转
+	// 烧预算，真实规则失效被掩盖）。引擎现行实现只在命中时附对象（非 null），此处为契约
+	// 纵深防御
+	softBlockPresent := len(env.SoftBlock) > 0 &&
+		!bytes.Equal(bytes.TrimSpace(env.SoftBlock), []byte("null"))
+	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: softBlockPresent}
 	if env.Attempts != nil {
 		n := len(env.Attempts)
 		out.Attempts = &n

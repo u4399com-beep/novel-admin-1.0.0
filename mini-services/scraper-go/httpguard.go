@@ -174,6 +174,98 @@ func splitTopLevelPlus(expr string) []string {
 	return out
 }
 
+// ==================== 重定向跳头族保真（Task 49-a·E6·反反爬指纹一致性） ====================
+
+// hopHostWithoutPort 剥端口（IPv6 字面量须带 [] 才能被 SplitHostPort 正确拆分）
+func hopHostWithoutPort(hostport string) string {
+	if h, _, err := net.SplitHostPort(hostport); err == nil && h != "" {
+		return h
+	}
+	return hostport
+}
+
+// hopSameSiteHosts same-site 近似判定：去端口后互相为后缀（含相等）即视为同站。
+// 无 PSL 依赖：子域关系（www.a.com ↔ a.com）用后缀近似；跨 eTLD+1 例外域
+// （x.co.uk ↔ y.co.uk 会被判 cross-site）与旧行为（恒 same-origin）同向收敛——
+// 只会「把同站跳标成更大跨度」而绝不反向放宽，误报方向安全。
+func hopSameSiteHosts(a, b string) bool {
+	a = strings.ToLower(hopHostWithoutPort(a))
+	b = strings.ToLower(hopHostWithoutPort(b))
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	return strings.HasSuffix(a, "."+b) || strings.HasSuffix(b, "."+a)
+}
+
+// refineHopHeaders 重定向跳（hop>0）头族按浏览器真实导航语义改写。威胁模型：WAF 画像
+// 关联检测比对「重定向跳拓扑」与头族陈述——旧实现整链恒回放首跳画像（跨站跳仍声称
+// sec-fetch-site: same-origin、Referer 恒为首跳来路），与真实浏览器行为直接矛盾，属可
+// 稳定识别的自曝指纹。改写语义（Chromium 默认 referrer-policy strict-origin-when-cross-origin）：
+//   - 同源跳（scheme+host 逐项一致）→ site=same-origin，Referer=上一跳完整 URL；
+//   - 同站跳（host 后缀近似同站，含跨 scheme/跨端口）→ site=same-site，Referer=上一跳 origin；
+//   - 跨站跳 → site=cross-site，Referer=上一跳 origin。
+//
+// 误杀面控制：只改写**已存在**的键，绝不注入缺失键——无 Referer/无 Sec-Fetch 的画像变体
+// （safari 无 Referer、googlebot/baiduspider 无 Sec-Fetch）保持原样（给 spider 画像注入
+// Sec-Fetch 反而是新增自曝点）；仅作用于 hop>0，首跳与显式策略语义不变。
+func refineHopHeaders(hdrs map[string]string, prevURL, hopURL string) {
+	if hdrs == nil {
+		return
+	}
+	prev, err := url.Parse(prevURL)
+	if err != nil || prev.Host == "" {
+		return
+	}
+	u, err := url.Parse(hopURL)
+	if err != nil || u.Host == "" {
+		return
+	}
+	site := "cross-site"
+	referer := prev.Scheme + "://" + prev.Host // 跨源：默认策略只发 origin
+	if strings.EqualFold(u.Host, prev.Host) && u.Scheme == prev.Scheme {
+		site = "same-origin"
+		referer = prevURL // 同源：完整 URL
+	} else if hopSameSiteHosts(prev.Host, u.Host) {
+		site = "same-site"
+	}
+	if _, ok := hdrs["sec-fetch-site"]; ok {
+		hdrs["sec-fetch-site"] = site
+	}
+	if _, ok := hdrs["referer"]; ok {
+		hdrs["referer"] = referer
+	}
+}
+
+// deriveSecFetchSite 首跳 sec-fetch-site 派生（Task 49-a·E7·反反爬指纹一致性）：
+// 按目标 URL 与显式 Referer 的拓扑关系推导浏览器真实导航语义的取值。
+// 威胁模型：backend 对章节抓取显式传入 Referer（书页 URL）时，旧实现恒声称
+// sec-fetch-site: same-origin——当 Referer 主机与目标主机非同源（子域/镜像域变体），
+// WAF 只需比对「site 陈述 vs Referer origin」即得稳定矛盾自曝。派生语义与
+// refineHopHeaders（hop>0）同口径：scheme+host 一致 → same-origin；host 后缀同站 →
+// same-site；否则 cross-site。返回 "" 表示入参不可解析（调用方保持原值，绝不注入）。
+// 误杀面控制：仅当画像声明了 sec-fetch-site 且非 none（无 Referer 的直接导航画像语义
+// 保持不变）时改写；spider 画像无该键、safari 系恒 none，均不受影响。
+func deriveSecFetchSite(targetURL, refererURL string) string {
+	t, err := urlParse(targetURL)
+	if err != nil || t.Host == "" {
+		return ""
+	}
+	r, err := urlParse(refererURL)
+	if err != nil || r.Host == "" {
+		return ""
+	}
+	if strings.EqualFold(t.Host, r.Host) && t.Scheme == r.Scheme {
+		return "same-origin"
+	}
+	if hopSameSiteHosts(t.Host, r.Host) {
+		return "same-site"
+	}
+	return "cross-site"
+}
+
 // ==================== 统一响应评估 ====================
 
 type assessResult struct {
@@ -403,10 +495,11 @@ type rawResponse struct {
 	status      int
 	bytes       []byte
 	contentType string
-	finalURL    string
-	note        string
-	warning     string
-	retryAfter  *int64
+	// finalURL 字段已删除（Task 49-a 精简：全仓零读取点——链层消费的 ok/status/note 均
+	// 经各策略层 assess 二次派生，终态 URL 从未被消费）
+	note       string
+	warning    string
+	retryAfter *int64
 }
 
 // fetchWithRedirectGuard 带逐跳 SSRF 校验的 fetch：手动跟随重定向，每一跳都做
@@ -421,6 +514,8 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 	deadline := nowMs() + timeoutMs
 	current := target
 	hops := 0
+	// prevURL 上一跳 URL（E6：hop>0 时按重定向拓扑精化 sec-fetch-site/referer 头族）
+	prevURL := ""
 	// Task 32-d: JS token 跳转循环检测状态（followedJS=已跟随过 JS 跳；jsVisited=跳转目标集合）
 	followedJS := false
 	jsVisited := map[string]bool{}
@@ -469,15 +564,24 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 
 		// Cookie 会话回放：合并该 host 的 cookie（覆盖式设置，调用方不自带 cookie 头）
 		https := target2.Scheme == "https"
-		hopHeaders := headers
+		hopCookie := cookieHeaderFor(hostOf(current), https)
 		// Task 38-a: 桶 key 统一 hostOf（小写）——与 got 系（hostOf）对齐，否则同站点
 		// URL 大小写差异会把 fetch 系种的会话与 got 系读的会话分裂成两个桶（反复过挑战）
-		if hopCookie := cookieHeaderFor(hostOf(current), https); hopCookie != "" {
-			hopHeaders = map[string]string{}
+		// Task 49-a（E6）: hop>0 且存在上一跳时按重定向拓扑精化头族（需要写 cookie 或
+		// 精化头族任一成立即拷贝，调用方 headers 共享底 map 不可原地改）
+		hopHeaders := headers
+		refineNeeded := hops > 0 && prevURL != ""
+		if hopCookie != "" || refineNeeded {
+			hopHeaders = make(map[string]string, len(headers)+1)
 			for k, v := range headers {
 				hopHeaders[k] = v
 			}
-			hopHeaders["cookie"] = hopCookie
+			if hopCookie != "" {
+				hopHeaders["cookie"] = hopCookie
+			}
+			if refineNeeded {
+				refineHopHeaders(hopHeaders, prevURL, current)
+			}
 		}
 
 		tr, trWarn := transportFor(proxy, insecureTLS, false)
@@ -515,6 +619,7 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 				return rawResponse{ok: false, status: res.StatusCode, note: "too-many-redirects",
 					warning: "重定向超过 " + strconv.Itoa(maxRedirectHops) + " 跳，已停止"}
 			}
+			prevURL = current // E6: 本跳 URL 即下一跳的「上一跳」
 			current = next.String()
 			continue
 		}
@@ -565,6 +670,7 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 				*warnings = append(*warnings, "JS token 重定向挑战页：已解析 location 拼接目标并跟随（会话 cookie 持续回放）")
 				jsVisited[jsNext] = true
 				followedJS = true
+				prevURL = current // E6: JS 跳源页即下一跳的「上一跳」
 				current = next.String()
 				continue
 			}
@@ -572,7 +678,7 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 
 		// Task 32-d: 跟随 JS token 跳转后的落地页仍命中挑战特征 → challenge-loop（避免烧穿）
 		return rawResponse{ok: res.StatusCode >= 200 && res.StatusCode < 300, status: res.StatusCode,
-			bytes: body.bytes, contentType: body.contentType, finalURL: current, note: body.note, warning: body.warning, retryAfter: retryAfter}
+			bytes: body.bytes, contentType: body.contentType, note: body.note, warning: body.warning, retryAfter: retryAfter}
 	}
 }
 

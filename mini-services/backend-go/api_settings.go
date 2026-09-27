@@ -118,12 +118,14 @@ func sanitizeSeoConfig(raw any) map[string]any {
 	if b, ok := r["autoFromContent"].(bool); ok {
 		out["autoFromContent"] = b
 	}
-	// 对抗模式键清洗（类型守卫 + 比例钳制 0-100；bool 键非 bool 丢弃回落默认）
+	// 对抗模式键清洗（类型守卫 + 比例钳制 0-100；bool 键非 bool 丢弃回落默认）。
+	// Task 49-b: 比例钳制改 float 域——旧 clampInt(int(f),0,100) 对 1e300 是实现定义
+	// 溢出（amd64 得 MinInt64 → 被钳到 0，与「越界=上限」的直觉相反）
 	if b, ok := r["obfuscateEnable"].(bool); ok {
 		out["obfuscateEnable"] = b
 	}
 	if f, ok := r["obfuscateEncodeRatio"].(float64); ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
-		out["obfuscateEncodeRatio"] = clampInt(int(f), 0, 100)
+		out["obfuscateEncodeRatio"] = clampRatioFloat(f)
 	}
 	if b, ok := r["obfuscateZeroWidth"].(bool); ok {
 		out["obfuscateZeroWidth"] = b
@@ -135,6 +137,19 @@ func sanitizeSeoConfig(raw any) map[string]any {
 		out["pseo"] = p
 	}
 	return out
+}
+
+// clampRatioFloat 比例值 float 域钳制 0-100（int 转换前完成，杜绝 1e300 类溢出翻转；
+// Task 49-b。obfConfigFromSeo 读取侧共用同一实现）
+func clampRatioFloat(f float64) int {
+	switch {
+	case f <= 0:
+		return 0
+	case f >= 100:
+		return 100
+	default:
+		return int(f)
+	}
 }
 
 // ==================== 页脚配置（移植 src/lib/footer.ts） ====================

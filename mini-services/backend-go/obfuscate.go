@@ -75,7 +75,9 @@ func obfConfigFromSeo(m map[string]any) obfConfig {
 	}
 	switch v := m["obfuscateEncodeRatio"].(type) {
 	case float64:
-		cfg.EncodeRatio = clampInt(int(v), 0, 100)
+		// Task 49-b: float 域钳制（clampRatioFloat，api_settings.go 共用）——旧
+		// clampInt(int(v),0,100) 对 1e300 是实现定义溢出（amd64 得 MinInt64 → 钳到 0）
+		cfg.EncodeRatio = clampRatioFloat(v)
 	case int:
 		cfg.EncodeRatio = clampInt(v, 0, 100)
 	case int64:

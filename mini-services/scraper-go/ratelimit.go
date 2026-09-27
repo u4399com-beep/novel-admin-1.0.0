@@ -596,6 +596,15 @@ func robotsTransport() *http.Transport {
 	}
 }
 
+// robotsOriginKey robots 缓存/robots.txt 请求的 origin key（Task 49-a·F2·P3 归一）：
+// scheme://小写 Host。旧实现 origin 直接拼 u.Host 原样大小写——同一站点的 URL 大写变体
+// （http://Example.COM/）会分裂出第二个缓存桶：TTL 内各自重新抓取 robots.txt（多耗源站
+// 请求配额），且 disallowed/crawlDelayMs 记忆互不可见（fetchPage 的 host 键已归一，
+// 只有本缓存 key 漏网）。纯函数（表驱动测试见 audit49_test.go）。
+func robotsOriginKey(u *url.URL) string {
+	return u.Scheme + "://" + strings.ToLower(u.Host)
+}
+
 // checkRobots 检查目标 URL 是否被 robots.txt 限制。永不失败、永不阻断 —— 失败时降级为 warning。
 func checkRobots(targetURL string) robotsResult {
 	agents := []string{"novel-admin-scraper", "*"}
@@ -603,7 +612,7 @@ func checkRobots(targetURL string) robotsResult {
 	if err != nil || u.Host == "" {
 		return robotsResult{warnings: []string{"robots 检查：URL 无法解析，跳过"}}
 	}
-	origin := u.Scheme + "://" + u.Host
+	origin := robotsOriginKey(u)
 	pathname := u.Path
 	if pathname == "" {
 		pathname = "/"

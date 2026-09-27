@@ -1,5 +1,5 @@
 /**
- * 全局小工具：环境变量读取 / 睡眠 / 同步类型别名。
+ * 全局小工具：环境变量读取 / 睡眠 / 上下文包装。
  */
 package main
 
@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"sync"
 	"time"
 )
 
@@ -21,14 +20,8 @@ func execCommandContext(ctx context.Context, name string, args ...string) *exec.
 
 func getenv(name string) string { return os.Getenv(name) }
 
-type syncMutex struct {
-	sync.RWMutex
-}
-
-func (m *syncMutex) Lock()    { m.RWMutex.Lock() }
-func (m *syncMutex) Unlock()  { m.RWMutex.Unlock() }
-func (m *syncMutex) RLock()   { m.RWMutex.RLock() }
-func (m *syncMutex) RUnlock() { m.RWMutex.RUnlock() }
+// syncMutex 已删除（Task 49-a 精简：RWMutex 包装从未用到读锁，唯一使用点 ssrf.go dnsCacheMu
+// 收敛为 sync.Mutex）
 
 func sleepMs(ms int64) { time.Sleep(time.Duration(ms) * time.Millisecond) }
 

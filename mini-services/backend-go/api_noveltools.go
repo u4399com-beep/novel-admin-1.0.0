@@ -327,10 +327,12 @@ func handleNovelsResortChaptersPost(w http.ResponseWriter, r *http.Request, _ ma
 		writeJSON(w, 409, map[string]string{"error": "存在进行中的采集任务，请先取消或等待其完成后再重排目录"})
 		return
 	}
-	// body 解析：空 body/非法 JSON = 全站（对齐 TS try/catch）；novelId 需为正整数
+	// body 解析：空 body/非法 JSON = 全站（对齐 TS try/catch）；novelId 需为正整数。
+	// Task 49-b: 补 2^53 上界（taskRuleIDParam 同族）——旧版 f=1e300 时 int64(f) 为
+	// 实现定义溢出（amd64 得 MinInt64 负值），负值使 novelID>0 判定失效、退化为全站重排
 	var novelID int64
 	if v, ok := readBodyValue(r); ok {
-		if f, isNum := bodyMap(v)["novelId"].(float64); isNum && f == math.Trunc(f) && f > 0 {
+		if f, isNum := bodyMap(v)["novelId"].(float64); isNum && f == math.Trunc(f) && f > 0 && f <= 9_007_199_254_740_992 {
 			novelID = int64(f)
 		}
 	}
@@ -423,18 +425,30 @@ func handleNovelsSmartFillGet(w http.ResponseWriter, r *http.Request, _ map[stri
 //
 // 返回 { scanned, descFilled, authorFilled, categoryMoved, statusFixed }。
 // 幂等可重复调用：每轮只处理仍不完整的书；LLM 失败静默跳过（下轮再试）。
-func handleNovelsSmartFillPost(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+
+// smartFillLimitParam 提取校验 body.limit（缺省 30、上限 50）。
+// Task 49-b: float 域完成 2^53 上界判定后再转 int（taskRuleIDParam 同族）——旧版
+// int(f) 对 1e300 是实现定义溢出（amd64 得 MinInt64 负值），负 limit 传入 SQLite
+// `LIMIT ?` 语义=无上限（候选全表展开，逐书 LLM 调用），越界值与缺省同口径回落 30
+func smartFillLimitParam(m map[string]any) int {
 	limit := 30
-	if v, ok := readBodyValue(r); ok {
-		if m := bodyMap(v); m != nil {
-			if f, isNum := m["limit"].(float64); isNum && numIsInt(f) && f > 0 {
-				limit = int(f)
-			}
+	if m != nil {
+		if f, isNum := m["limit"].(float64); isNum && numIsInt(f) && f > 0 && f <= 9_007_199_254_740_992 {
+			limit = int(f)
 		}
 	}
 	if limit > 50 {
 		limit = 50
 	}
+	return limit
+}
+
+func handleNovelsSmartFillPost(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+	var body map[string]any
+	if v, ok := readBodyValue(r); ok {
+		body = bodyMap(v)
+	}
+	limit := smartFillLimitParam(body)
 	type candRow struct {
 		id      int
 		title   string

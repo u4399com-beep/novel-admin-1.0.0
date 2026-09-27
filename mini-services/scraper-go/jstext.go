@@ -32,8 +32,20 @@ func collapse(s string) string {
 	return trimJSSpace(reJSWhitespace.ReplaceAllString(s, " "))
 }
 
-// runeLen UTF-16 code unit 数（JS String.length 语义）；BMP 内等于字符数
-func runeLen(s string) int { return len([]rune(s)) }
+// runeLen JS String.length 语义（UTF-16 code unit 数）：BMP 内等于字符数，
+// 星面字符（emoji/古汉字等 U+10000+）按代理对计 2。TS 原版全部阈值基于 .length，
+// 旧实现按 code point 计——含星面字符的文本被少计，近空判定/行长闸/标题长度闸在
+// 该形态页面上与 TS 口径漂移。纯函数（表驱动测试见 audit49_test.go）。
+func runeLen(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		if r > 0xFFFF {
+			n++ // 代理对低半区
+		}
+	}
+	return n
+}
 
 // splitJSSpace 等价 JS s.split(/\s+/)（先 trim 语义由调用方保证：空 token 由调用方过滤）
 func splitJSSpace(s string) []string {

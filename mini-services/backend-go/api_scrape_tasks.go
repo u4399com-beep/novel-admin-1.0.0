@@ -337,7 +337,10 @@ func handleScrapeTasksCreate(w http.ResponseWriter, r *http.Request, _ map[strin
 		ridArg = ruleID
 	}
 	now := nowMillis()
-	newID, err := execReturningID(
+	// Task 49-b: execRetryReturningID（busy 退避重试一次）——建任务是采集链路入口，
+	// 8 任务并发 flush 的写高峰下裸 execReturningID 无 busy 重试（其余写路径统一
+	// execRetry 家族），偶发 SQLITE_BUSY 直接 500
+	newID, err := execRetryReturningID(
 		`INSERT INTO "ScrapeTask" ("mode","targetUrl","ruleId","pages","storageMode","status","total","done","chaptersDone","chaptersTotal","created","updated","chapters","message","log","createdAt","updatedAt")
                  VALUES (?,?,?,?,?, 'pending',0,0,0,0,0,0,0,'','',?,?)`,
 		mode, target.value, ridArg, pages, storageMode, now, now,
@@ -548,10 +551,12 @@ func handleScrapeTaskUpdate(w http.ResponseWriter, r *http.Request, ps map[strin
 	// ⚠ 条件更新（AND status != 'running'）：预检与 UPDATE 之间存在窗口，runner 可能
 	// 恰在此间隔把任务置为 running（runTask 的 pending→running 条件更新）；无条件 UPDATE 会
 	// 改写执行中任务的配置（执行读的是启动时快照，DB 展示与实际执行不一致）。count=0 回读如实反馈。
+	// Task 49-b: 写路径统一 execRetry 家族（与 POST 创建同口径）——8 任务并发 flush 的
+	// 写高峰下裸 exec 无 busy 重试，偶发 SQLITE_BUSY 直接 500；单条件语句幂等可安全重试
 	sets = append(sets, `"updatedAt" = ?`)
 	args = append(args, nowMillis())
 
-	res, err := exec(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" != 'running'`, append(args, id)...)
+	res, err := execRetry(`UPDATE "ScrapeTask" SET `+strings.Join(sets, ", ")+` WHERE "id" = ? AND "status" != 'running'`, append(args, id)...)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -632,8 +637,9 @@ func scrapeTaskCancel(w http.ResponseWriter, id int64) {
 		return
 	}
 
-	// 条件更新防与 worker 终态写入竞态：count=0 时回读如实反馈（Prisma updateMany 触碰 @updatedAt）
-	res, err := exec(
+	// 条件更新防与 worker 终态写入竞态：count=0 时回读如实反馈（Prisma updateMany 触碰 @updatedAt）。
+	// Task 49-b: execRetry（busy 退避重试一次，写路径统一口径，单条件语句幂等可安全重试）
+	res, err := execRetry(
 		`UPDATE "ScrapeTask" SET "status" = 'canceled', "message" = '已手动取消', "updatedAt" = ? WHERE "id" = ? AND "status" IN ('pending','running','paused')`,
 		nowMillis(), id,
 	)
@@ -666,7 +672,7 @@ func scrapeTaskPause(w http.ResponseWriter, id int64) {
 		writeJSON(w, 400, map[string]string{"error": "当前状态 " + status + " 不可暂停（仅待执行/执行中可暂停）"})
 		return
 	}
-	res, err := exec(
+	res, err := execRetry(
 		`UPDATE "ScrapeTask" SET "status" = 'paused', "message" = '已手动暂停（进度保留，可恢复继续采集）', "updatedAt" = ? WHERE "id" = ? AND "status" IN ('pending','running')`,
 		nowMillis(), id,
 	)
@@ -703,7 +709,7 @@ func scrapeTaskResume(w http.ResponseWriter, id int64) {
 		logv += "\n"
 	}
 	logv = lastLines(logv+line, MAX_LOG_LINES)
-	res, err := exec(
+	res, err := execRetry(
 		`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '手动恢复，等待 runner 领取继续采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
 		logv, nowMillis(), id,
 	)
@@ -745,8 +751,9 @@ func scrapeTaskRestart(w http.ResponseWriter, id int64) {
 		logv += "\n"
 	}
 	logv = lastLines(logv+line, MAX_LOG_LINES)
-	// 条件更新：仅终态可重启；count=0 时回读如实反馈（防与 worker 终态写入竞态）
-	res, err := exec(
+	// 条件更新：仅终态可重启；count=0 时回读如实反馈（防与 worker 终态写入竞态）。
+	// Task 49-b: execRetry（busy 退避重试一次，写路径统一口径）
+	res, err := execRetry(
 		`UPDATE "ScrapeTask" SET "status" = 'pending', "total" = 0, "done" = 0, "chaptersDone" = 0, "chaptersTotal" = 0, "chapters" = 0, "message" = '手动重启，等待 runner 领取重新采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" IN ('failed','partial','canceled','success')`,
 		logv, nowMillis(), id,
 	)
@@ -787,7 +794,8 @@ func handleScrapeTaskDelete(w http.ResponseWriter, r *http.Request, ps map[strin
 	// 预检 pending 后、DELETE 前 runner 可能把任务置 running（pending→running 条件更新），
 	// 旧版无条件 DELETE 会删掉执行中任务的记录（worker 靠 stopState 的「记录删除=canceled」
 	// 兜底停手，但 API 层 409 守卫被击穿）。count=0 时回读如实区分 running/已删。
-	res, err := exec(`DELETE FROM "ScrapeTask" WHERE "id" = ? AND "status" != 'running'`, id)
+	// Task 49-b: execRetry（busy 退避重试一次，写路径统一口径；DELETE 幂等可安全重试）
+	res, err := execRetry(`DELETE FROM "ScrapeTask" WHERE "id" = ? AND "status" != 'running'`, id)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return

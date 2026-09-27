@@ -243,6 +243,8 @@ var curlImpersonateStrategy = strategyDef{
 		for _, variant := range variants {
 			current := targetURL
 			hops := 0
+			// prevURL 上一跳 URL（Task 49-a E6：hop>0 头族拓扑精化）
+			prevURL := ""
 			stopVariants := false
 			for {
 				tu, err := urlParse(current)
@@ -313,7 +315,14 @@ var curlImpersonateStrategy = strategyDef{
 					args = append(args, "--insecure")
 				}
 				imp := curlHeaderProfileFor(filepath.Base(bin))
-				for k, v := range imp.headers(targetURL, imp.withReferer, explicitReferer) {
+				hopHdrs := imp.headers(targetURL, imp.withReferer, explicitReferer)
+				// Task 49-a（E6）: hop>0 按重定向拓扑精化 sec-fetch-site/referer（curl 车道
+				// 每跳重建画像头，但 Referer 恒首跳派生、site 恒 same-origin——与 fetch/got
+				// 系同源自曝面，同口径修复）
+				if hops > 0 && prevURL != "" {
+					refineHopHeaders(hopHdrs, prevURL, current)
+				}
+				for k, v := range hopHdrs {
 					args = append(args, "--header", k+": "+v)
 				}
 				https := tu.Scheme == "https"
@@ -392,6 +401,7 @@ var curlImpersonateStrategy = strategyDef{
 						stopVariants = true
 						break
 					}
+					prevURL = current // E6: 本跳 URL 即下一跳的「上一跳」
 					current = next.String()
 					continue
 				}

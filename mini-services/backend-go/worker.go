@@ -548,9 +548,32 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 		failStreak = 0
 		totalRefs += sk.Total
 		skippedFilled += sk.SkippedFilled
-		fillTotal += len(sk.FillRows)
 		if len(sk.FillRows) > 0 {
-			fillMap[up.NovelID] = fillPlan{Referer: bookURL, Rows: sk.FillRows}
+			// Task 49-b: 同书多列表条目（同书在列表页重复出现/不同入口 URL）时
+			// upsertBook 收敛到同一 novelID——旧版直接覆盖 fillMap[id]，先处理条目
+			// 的待填充行被挤出本轮计划（其 wordCount=0 骨架只能等下次重发自愈）。
+			// 改为按标题去重合并（同题章首胜保留先到条目 URL）；chaptersTotal 分母
+			// 只累加「新增唯一章」，多入口同书不再虚增进度分母；Referer 保留首个
+			//（同站同源，语义等价）
+			if plan, exists := fillMap[up.NovelID]; exists {
+				seen := make(map[string]bool, len(plan.Rows)+len(sk.FillRows))
+				for _, r := range plan.Rows {
+					seen[r.Title] = true
+				}
+				added := 0
+				for _, r := range sk.FillRows {
+					if !seen[r.Title] {
+						seen[r.Title] = true
+						plan.Rows = append(plan.Rows, r)
+						added++
+					}
+				}
+				fillMap[up.NovelID] = plan
+				fillTotal += added
+			} else {
+				fillMap[up.NovelID] = fillPlan{Referer: bookURL, Rows: sk.FillRows}
+				fillTotal += len(sk.FillRows)
+			}
 		}
 		mu.Unlock()
 		run.Log(fmt.Sprintf("《%s》骨架入库 %d 章（已有正文跳过 %d，待填充 %d）",

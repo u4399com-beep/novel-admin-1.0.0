@@ -68,6 +68,17 @@ func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string
 		}
 		if ref != "" {
 			h["referer"] = ref
+			// Task 49-a（E7·反反爬指纹一致性）：sec-fetch-site 声明必须与实际 Referer
+			// 拓扑一致。旧实现恒 same-origin——显式 Referer 与目标非同源时（子域/镜像
+			// 域变体），WAF 比对「site 陈述 vs Referer origin」即得稳定矛盾自曝。仅在
+			// 画像已声明该键且非 none 时改写（spider 无键、safari 系 none 的「无来路
+			// 直接导航」语义保持原样）；缺省 Referer（=目标站自身 origin）派生结果恒
+			// same-origin，行为不变。hop>0 由 refineHopHeaders 逐跳接管，本处只覆盖首跳。
+			if cur, ok := h["sec-fetch-site"]; ok && cur != "none" {
+				if site := deriveSecFetchSite(targetURL, ref); site != "" {
+					h["sec-fetch-site"] = site
+				}
+			}
 		}
 	}
 	return h

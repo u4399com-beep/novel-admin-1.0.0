@@ -344,7 +344,10 @@ func jsonStr(v any) string {
 		// 悬在未定义边缘；显式按 2^53（整数精度边界）内才走整数路径，NaN/±Inf
 		// 拒绝输出（占位符 {order} 收到空串时 urlJoin 后由 http/https 校验兜底）
 		if t == math.Trunc(t) && math.Abs(t) < 9007199254740992 {
-			return itoa(int(t))
+			// Task 49-a（F4·P3 跨平台截断）：旧实现 itoa(int(t))——32 位平台 int 为
+			// 32 位，2^53 内大整数（order 字段常见雪花 ID 量级）静默截断回绕，
+			// {order} 占位符拼出错误章节 URL。改按 int64 格式化，64 位语义不变。
+			return strconv.FormatInt(int64(t), 10)
 		}
 		if math.IsInf(t, 0) || math.IsNaN(t) {
 			return ""

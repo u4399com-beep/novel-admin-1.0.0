@@ -197,6 +197,8 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 	for _, variant := range variants {
 		current := targetURL
 		hops := 0
+		// prevURL 上一跳 URL（Task 49-a E6：hop>0 头族拓扑精化）
+		prevURL := ""
 		stopVariants := false
 		for {
 			// Task 35-b: 预算感知取槽 + 排队时间补偿（与 fetch 系同口径，见 makeFetchStrategy）
@@ -218,8 +220,23 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 			}
 			if explicitReferer != "" {
 				hopHeaders["referer"] = explicitReferer
+				// Task 49-a（E7）: 首跳 sec-fetch-site 与显式 Referer 拓扑一致（got 不经
+				// baseHeaders 的 explicitReferer 通道，需在此接线；hop>0 由下方
+				// refineHopHeaders 按跳拓扑接管）。误杀面：仅改写已存在且非 none 的键。
+				if hops == 0 {
+					if cur, ok := hopHeaders["sec-fetch-site"]; ok && cur != "none" {
+						if site := deriveSecFetchSite(current, explicitReferer); site != "" {
+							hopHeaders["sec-fetch-site"] = site
+						}
+					}
+				}
 			} else {
 				hopHeaders["referer"] = urlParseHost(targetURL)
+			}
+			// Task 49-a（E6）: hop>0 按重定向拓扑精化 sec-fetch-site/referer（got 恒发
+			// Referer，跨站跳旧实现仍携带首跳来路并声称 same-origin，同 fetch 系自曝面）
+			if hops > 0 && prevURL != "" {
+				refineHopHeaders(hopHeaders, prevURL, current)
 			}
 			hopHost := hostOf(current)
 			if hopCookie := cookieHeaderFor(hopHost, strings.HasPrefix(current, "https:")); hopCookie != "" {
@@ -287,6 +304,7 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 					warnings = append(warnings, "got-scraping 重定向超过 "+itoa(maxRedirectHops)+" 跳，已停止")
 					break
 				}
+				prevURL = current // E6: 本跳 URL 即下一跳的「上一跳」
 				current = next.String()
 				continue
 			}
@@ -302,7 +320,19 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 				break
 			}
 			a := assess(status, body.bytes, contentType)
-			subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: a.ok, Status: status, Ms: nowMs() - s0, Blocked: a.blocked, Bytes: a.size, Note: a.note})
+			// Task 49-a（F1·P3 错误吞没）：与 fetch 系口径对齐——body.note（响应体读取
+			// 中断等传输层证据）非空时优先于 assess 派生 note，warning 同步透传。
+			// 旧实现只特判 too-large：响应头 200 但中途断流时 body.bytes=nil，被记成
+			// "empty-body"（空壳语义），「源站连接中断」证据（body.warning 携带底层
+			// 错误）整条丢弃——排障与 backend 分类双失真；fetch 系同形态透传 r.note/r.warning。
+			note := a.note
+			if body.note != "" {
+				note = body.note
+			}
+			if body.warning != "" && body.note != "too-large" {
+				warnings = append(warnings, "["+variant.profile+"] "+body.warning)
+			}
+			subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: a.ok, Status: status, Ms: nowMs() - s0, Blocked: a.blocked, Bytes: a.size, Note: note})
 			if a.warning != "" {
 				warnings = append(warnings, "["+variant.profile+"] "+a.warning)
 			}

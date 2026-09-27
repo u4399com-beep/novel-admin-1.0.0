@@ -354,8 +354,9 @@ func TestSharedFooterBlocksRender(t *testing.T) {
 	}
 }
 
-// TestTrxswHomeFriendMergeRender Task 48：trxsw home.html 主体「友情链接」区块合并渲染——
-// 分类入口+全部书库+完本列表+footerLinks+FriendLinks+WheelLinks 同段；首页页脚零友链行。
+// TestTrxswHomeFriendMergeRender Task 48/49：trxsw home.html 主体「友情链接」区块渲染——
+// Task 49 起仅站长友链+链轮随机书链（分类入口/全部书库/完本列表/footerLinks 移除，
+// 空态零 DOM 痕迹）；首页页脚零友链行。
 func TestTrxswHomeFriendMergeRender(t *testing.T) {
 	shared := filepath.Join(templatesRoot, "trxsw", "_shared.html")
 	home := filepath.Join(templatesRoot, "trxsw", "home.html")
@@ -384,10 +385,15 @@ func TestTrxswHomeFriendMergeRender(t *testing.T) {
 		t.Fatalf("trxsw home 渲染失败: %v", err)
 	}
 	out := b.String()
-	// 主体区块：五段同区（分类入口/全部书库/完本列表/配置链/站长友链/链轮）
-	for _, want := range []string{"玄幻小说", "全部书库", "完本列表", "配置链", "友链甲", "轮书甲"} {
+	// 主体区块：仅站长友链+链轮（Task 49——分类入口/全部书库/完本列表/配置链四类移除）
+	for _, want := range []string{"友链甲", "轮书甲"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("trxsw home 主体友情链接区块应含 %s", want)
+		}
+	}
+	for _, gone := range []string{"玄幻小说", "全部书库", "完本列表", "配置链"} {
+		if strings.Contains(out, gone) {
+			t.Fatalf("trxsw home 主体友情链接区块不应再含 %s（Task 49 移除）", gone)
 		}
 	}
 	// 首页页脚：友链行零渲染（合并）+ 网站地图单链在位
@@ -396,6 +402,21 @@ func TestTrxswHomeFriendMergeRender(t *testing.T) {
 	}
 	if !strings.Contains(out, `href="/sitemap.xml"`) {
 		t.Fatalf("trxsw home 页脚应含网站地图链接")
+	}
+
+	// Task 49: 站长友链+链轮全空 → 区块零 DOM 痕迹（{{if or}} 门控，不留空壳标题）
+	emptyData := map[string]any{}
+	for k, v := range data {
+		emptyData[k] = v
+	}
+	emptyData["FriendLinks"] = []map[string]string{}
+	emptyData["WheelLinks"] = []map[string]string{}
+	var b2 strings.Builder
+	if err := tpl.ExecuteTemplate(&b2, "layout", emptyData); err != nil {
+		t.Fatalf("trxsw home 空态渲染失败: %v", err)
+	}
+	if strings.Contains(b2.String(), "友情链接") {
+		t.Fatalf("trxsw home 空态不应出现友情链接区块（含空壳标题）")
 	}
 }
 

@@ -57,6 +57,17 @@ func jsRound(f float64) float64 {
 	return math.Floor(f + 0.5)
 }
 
+// clampFloatRange float 域范围钳制（int 转换前完成，杜绝 1e300 类溢出翻转；Task 49-b）
+func clampFloatRange(f float64, lo, hi float64) float64 {
+	if f < lo {
+		return lo
+	}
+	if f > hi {
+		return hi
+	}
+	return f
+}
+
 // dedupTrim 去空 + 去重保序
 func dedupTrim(words []string) []string {
 	seen := map[string]bool{}
@@ -117,12 +128,14 @@ func sanitizePseoConfig(raw any) pseoRunnerConfig {
 	num := jsNumber(r["perSeedLimit"])
 	perSeedLimit := def.PerSeedLimit
 	if !math.IsNaN(num) && num != 0 {
-		perSeedLimit = clampInt(int(jsRound(num)), 3, 20)
+		// Task 49-b: float 域先钳制再转 int（clampInt(int(jsRound(1e300))) 是实现定义
+		// 溢出，amd64 得 MinInt64 被钳到 3，与「越界=上界」语义相反）
+		perSeedLimit = clampInt(int(jsRound(clampFloatRange(num, 3, 20))), 3, 20)
 	}
 	num = jsNumber(r["maxKeywords"])
 	maxKeywords := def.MaxKeywords
 	if !math.IsNaN(num) && num != 0 {
-		maxKeywords = clampInt(int(jsRound(num)), 10, 500)
+		maxKeywords = clampInt(int(jsRound(clampFloatRange(num, 10, 500))), 10, 500)
 	}
 
 	expand := false

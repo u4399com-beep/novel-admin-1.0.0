@@ -2154,3 +2154,59 @@ Stage Summary:
 - 章节目录乱序=采集管线从未接线重排的移植丢失缺陷，根修（新数据入库前重排）+存量（22 本一次性 resort 复审清零）双闭环；TOC「最新章节」预览段确认为模板设计非乱序
 - trxsw 友链「首页唯一渲染点」合并 + 网站地图收敛为底部居中单一 Sitemap 链接，逐分类编号行成历史
 - 任务态恢复等价（6 running+1 限流自动恢复+1 success）；scraper 全程未动
+
+---
+Task ID: 49-a
+Agent: scraper-go 深审子代理
+Task: scraper-go 逐行深审抓 bug + 反反爬增强 + 精简（第 10 次沙箱回收后的重试轮：上轮 49-a 产物在盘复核接续，不重做）
+
+Work Log:
+- 【上轮产物核验=完整】发现辖区磁盘上已有前次 49-a 中断产物（7 文件修改 + audit49_test.go，注释均带 Task 49-a 标识，worklog 无条目=报告未返回的超时形态）：F1（got 车道 body 中途断流 network-error 证据透出）/F2（robots origin 缓存 key 大小写归一 robotsOriginKey）/E6（重定向跳头族保真 refineHopHeaders：hop>0 按 prev→hop 拓扑改写 sec-fetch-site 与 Referer，fetch/got/curlimp/fetchcurl 四车道接线 + JS token 跳也更新 prevURL）/精简（helpers.syncMutex 死包装删除，ssrf dnsCacheMu 收敛 sync.Mutex）——基线 build/vet/test -race 全绿后逐项在码复核属实，接续不重做
+- 【逐行深审面】chain/strategies/httpguard/ratelimit/hosthealth/cookies/challenge/profiles/curlimp/fetchcurl/browser/charsetx/ssrf/affinity/jsontoc/jstext/extract/selectors/content/cleanx/handlers/main/types/util/helpers 全部 25 文件 + scripts/render.py 逐行重读；历史修复（44-a/46-a/E2-E5/aimdRaiseTo/acquireDomainSlotBudgeted/jsonTocSameOrigin/hostOf 归一/±300ms 抖动/binScore/headerLines 提级等）全部验证在位零回退；并发面（runWithHardGate 缓冲通道+timer.Stop+hcancel、cookieJar/hostSlots/healthMap/transportPool LRU 全单锁、AIMD CAS-max、strategy warnings 策略自持切片）复核无新竞态
+- 【F3·P3 移植契约（jstext.go runeLen）】旧实现 len([]rune(s)) 按 code point 计，注释却宣称 JS String.length（UTF-16 code unit）语义——星面字符（emoji/古汉字 U+10000+）被少计一半，近空判定（<80）、挑战关键词守卫（<200）、行长闸（≤100/120）、标题闸（>60/80）、wordCount 全部在含星面字符页面上与 TS 口径漂移。修法：逐 rune 计数 >0xFFFF 加 1（代理对计 2）。测试 TestRuneLenJSSemantics（含 😀/𝄞/混合向量）
+- 【F4·P3 跨平台截断（jsontoc.go jsonStr）】整数路径 itoa(int(t))——32 位平台 int 32 位，2^53 内雪花 ID 量级 order 值静默回绕，{order} 占位符拼出错误章节 URL（Task 33-a 已确立 32 位平台为真实关注面）。修法：strconv.FormatInt(int64(t), 10)，64 位语义不变。测试 TestJsonStrIntegerNoPlatformTruncation（2^52 向量）
+- 【E7·反反爬增强（profiles.go baseHeaders 单点 + strategies.go got 首跳接线 + httpguard.go deriveSecFetchSite）】威胁模型：backend 章节抓取显式传 Referer（书页 URL）时首跳恒声称 sec-fetch-site: same-origin——Referer 与目标非同源（子域/镜像域变体）时 WAF 比对「site 陈述 vs Referer origin」即得稳定矛盾自曝（与 E6 修复的跳间自曝同族，本增强补首跳）。修法：deriveSecFetchSite(target, ref) 按拓扑派生 same-origin/same-site/cross-site（与 refineHopHeaders 同口径），baseHeaders 内仅当画像已声明该键且非 none 时改写（spider 无键、safari 系 none 的「无来路直接导航」语义不动），Referer 值本身不改（避免破坏需精确来路的站点）；缺省 Referer（=目标站 origin）派生恒 same-origin 行为不变；got 车道不经 baseHeaders 的 explicitReferer 通道故在 hop0 显式接线。误杀面：fetch-ua-rotate/mobile/spider 三策略的 Referer 均为目标站自身（同源）零变化；跨站 Referer 为 backend 显式提供的合法形态，仅 site 陈述更真实。测试 TestDeriveSecFetchSiteTopology（7 向量）+TestProfileSecFetchSiteMatchesExplicitReferer（8 断言面含误杀面）+TestGotRunFirstHopSiteMatchesReferer（httptest 端到端）
+- 【精简】httpguard.go rawResponse.finalURL 死字段删除（grep 全仓零读取点，终态 URL 从未被链层消费）；helpers.syncMutex 死包装（上轮已删，复核在位）；其余全量符号 grep 复核（corsHeader/privateHostAllowed/affinityStats/cookieStats/hostSlotStatsFor/readAllCapped 等）均有消费点，零新增死代码
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok scraper-go，含上轮 F1/F2/E6 六用例+本轮 F3/F4/E7 五用例+既有全部回归）；gofmt -l 全清（Edit 空格化已 gofmt -w 归一）；生产进程零触碰、零 kill、零 git 操作、backend-go 零改动；scraper-go.bin 最后一步重建（temp+rename，待主线热替换）
+
+Stage Summary:
+- 重试轮定性：上轮 49-a 实为「代码+测试已落盘但报告未返回」，本轮在盘产物复核完整后接续而非重做；辖区基线三连全绿
+- 修复统计：本轮新增 2 修复（F3 runeLen UTF-16 语义 P3、F4 jsonStr 32 位截断 P3）+1 增强（E7 首跳 sec-fetch-site↔显式 Referer 拓扑一致性）+1 精简（finalURL 死字段）；累计（上轮+本轮）4 修复（F1/F2/F3/F4）+2 增强（E6/E7）+2 精简
+- 逐行深审结论：25 文件并发/超时链/SSRF/资源闭环面未发现新 P1/P2 破口——历史 10 轮深审收敛效应显著，本轮价值集中在移植契约细部（UTF-16 计数）与跨平台防线（32 位 int）
+- 部署注意：scraper-go.bin 已含全部变更待主线统一热替换；API 契约（ok/error/detail/challengeSuspected/softBlock/attempts 字段）零变更，backend 无需适配
+
+---
+Task ID: 49-b
+Agent: backend-go 深审子代理
+Task: backend-go 逐行深审抓 bug + 采集/反反爬链路复核 + 收敛轮修复与回归锁定（接续上轮 49-b 在盘产物，不重做）
+
+Work Log:
+- 【上轮产物核验=完整】发现辖区磁盘已有前次 49-b 中断产物（10 文件修改 + audit49b_test.go 5 用例，注释均带 Task 49-b 标识，worklog 无条目=报告未返回的超时形态）：softBlock 显式 null 防御（engineclient.go，`"softBlock":null` 4 字节 RawMessage 被旧 len>0 判定误当档案命中→空提取误入自动恢复空转烧预算）/ smart-fill limit 与 categoryId/resort novelId 的 2^53 float 域上界族（api_noveltools.go/api_novels.go）/ clampRatioFloat+clampFloatRange 溢出钳制（api_settings.go+obfuscate.go+pseo_gen.go）/ backfillT2SMeta+backfillT2SContent 迭代错误上返防守卫误落（db.go 5 处 rows.Err()）/ phase1Skeletons 同书多列表条目 fillPlan 按标题去重合并+分母只累新增唯一章（worker.go）/ 建任务 execRetryReturningID（api_scrape_tasks.go）——基线三连全绿后逐项在码复核属实，接续不重做
+- 【逐行深审面】worker.go（两阶段管线/stopState/finalize 六分支/gLaneFloor CAS/orphan sweep/recoverStaleTasks）、storex.go（upsertBook 并发冲突回读/骨架分片锁/批量 INSERT 退化路径）、runner.go（autoResume 有界恢复/recategorizeOne OFFSET 轮转/ensureEngine）、pool.go（laneLimiter/watchdog kick/锁序 pool.mu→tc.mu→phase1.mu 无环实证）、engineclient.go（callEngine 契约/softBlock 接线/isSameChapterPagination）、api_scrape_tasks.go（状态机条件更新全量）、api_scrape_rules.go、api_chapters.go（audit 事务/去重/两段式重排）、api_noveltools.go（resort 事务）、api_novels.go、api_pseo.go、pseo_gen/suggest/book、api_sites/settings/categories*/home/health/export/scrape、web.go/web_data.go/web_footer.go/db.go/schema.go/router.go/obfuscate.go/t2s.go/introx.go/titlex.go/chapterorder.go/txtdir.go/coversx.go/categoryx.go/httpx.go/limits.go/llm.go/pagination.go/runlog.go/cleanx.go/util.go/typesx.go/seed.go/main.go——历史修复（46-b softBlock/46-a/47 收敛循环/48 reorderRefPairs）全部验证在位零回退
+- 【修复⑥ P3·api_novels.go intFieldStrict 2^53 上界】旧 int(f) 对 1e300 实现定义溢出（amd64 得 MinInt64 负值），唯一实际腐蚀路径=handleCategoryUpdate 把溢出负值直写 Category.sort（novels categoryId/chapters novelId 两调用方虽负值后查询失败属 fail-safe，口径仍统一收紧）；越界值对齐 taskRuleIDParam 同族语义拒绝。测试 TestIntFieldStrictOverflowGuard（10 向量，==2^53 接受/>2^53 拒绝同族口径）+TestCategorySortOverflowGuard（httptest 端到端：越界 sort 不写库+合法 sort=42 照常生效）
+- 【修复⑦ P3·api_pseo.go handlePseoDelete id 上界】DELETE /api/pseo?id=1e300 旧版 int64 溢出为负 id 空转 DELETE 后仍 200（无害但破全包 id 口径）→ 2^53 上界拒绝。测试 TestPseoDeleteIDBound（5 向量：1e300/abc/-1/2^53+2 → 400；1 → 200 不误伤）
+- 【修复⑧ P3·api_chapters.go parseDigitsASCII int64 防溢出】旧版 n=n*10+d 先累积后判 >1<<53，超长数字串（20+ 位章节编号）在判定生效前已回绕为负，负值穿透 extractNum 编号比较→目录体检乱序检测误报；改为累积前防溢出（超安全整数截断在 1<<53，与 JS Number 精度语义同向）。测试 TestParseDigitsASCIIOverflowGuard（6 向量含 26 位串断言非负）
+- 【修复⑨ P3·api_scrape_tasks.go 任务生命周期写路径统一 execRetry】PUT 编辑/cancel/pause/resume/restart/DELETE 六处裸 exec 无 busy 重试——8 任务并发 flush 写高峰下偶发 SQLITE_BUSY 直接 500（前任只接了 POST 创建，其注释宣称的「其余写路径统一 execRetry 家族」未兑现，本轮补齐；六处均为单条件语句幂等可安全重试）
+- 【深审过检无新增破口】引擎 502 错误文案与 challengeSuspected 布尔交叉核对（scraper-go chain.go）：整链失败恒「全部可用策略均抓取失败」（isRateLimitErrText 命中）、挑战循环终止带「挑战循环」（isSoftBlockErrText 命中）、200 挑战页走 softBlock 档案（46-b 已接线）——backend 词表启发式对引擎现行错误形态三路全覆盖，challengeSuspected 冗余无需接线；finalize 六分支与 API 状态机竞态矩阵（pending 领取/paused 确认/running 条件更新）逐环复核在位；goroutine 生命周期（runPoolDynamic watchdog 收链/llm buffered chan/pseoBatch lanes/runSeedBatch 索引分片写）全在位；SQL 注入面（动态 SQL 仅编译期常量拼接+占位符，sort 白名单 switch，LIKE 反斜杠转义）复核零破口；deadcode 复扫仅剩 limitVal/renderFriendLinksBlock 两测试引用函数（46-b 有意保留，注释在位）
+- 【生产零触碰】backend-go.bin(PID 2807)/scraper-go.bin(PID 2739) 全程存活未启停；零写库/零迁移/零 git 操作；仅改代码+测试，backend-go.bin 最后一步 temp+rename 重建待主线热替换
+
+Stage Summary:
+- 接续定性：上轮 49-b 实为「代码+测试已落盘但报告未返回」，本轮在盘产物核验完整后接续——5 项修复（softBlock null 纵深防御/2^53 float 域族×4/backfill rows.Err 上返/fillPlan 合并/建任务 execRetry）+5 用例全部在码实证并全绿
+- 本轮新增 4 项修复（⑥⑦⑧⑨，全部 P3 收敛面：intFieldStrict sort 腐蚀根修/pseoDelete 口径/目录体检编号防溢出/生命周期写路径 busy 韧性补齐）+4 新回归用例（audit49b_test.go 累计 9 用例）
+- 逐行深审结论：25+ 文件的采集生命周期/Phase1-2 管道/引擎响应消费/并发锁序/SQL 面未发现新 P1/P2 破口——10 轮深审+上轮在盘修复后收敛显著，本轮价值集中在溢出转换族扫尾与写路径韧性收口
+- 验证三连：go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok backend-go ≈2.1s，含新增 4 用例）；gofmt -l 清零；部署注意：backend-go.bin 已含上轮+本轮全部变更待主线统一热替换（temp+rename，生产进程未触碰）
+---
+Task ID: 49
+Agent: main (Z.ai Code)
+Task: 用户 4 点指令——①首页主体友情链接区块仅留站长友链+链轮随机书链 ②持续深审抓bug全修复（采集+反反爬）③清理精简 ④推送git
+
+Work Log:
+- 【0-第 10 次沙箱回收恢复（先于一切）】本会话开工即发现：进程全灭+db/ 全灭+Go 工具链全灭+本地 git 回退 Task 41（顶部 UUID 自动提交），Task 48 提交 1d6d14f 本地不存在。恢复链：git fetch 证实 origin/main 完整保留至 1d6d14f → reset --hard origin/main 全量恢复（worklog Task 48 条目+全部代码回位）→ go1.22.12 从 golang.google.cn 镜像重装 → build-go.sh 双 bin → mkdir db（SQLite CANTOPEN 真因=父目录缺失，报错文案误导为 out of memory）→ ensure-services 拉起双服务 → schema 自引导+15 规则种子（ids 10-24 与生产一致）→ 8 任务按 worklog 映射重建（trxsw18/pilishuwu19/ddyueshu11/23qb12/huangjinwu13/ggd6614/101kks16/ixdzs824，全 list+both pages1）→ 书库重采重建（收尾时 128 本↑）
+- 【① 首页友链区块收敛】home.html 友情链接区块移除分类入口(Nav×9)/全部书库/完本列表/footerLinks 四类，仅保留 FriendLinks+WheelLinks；{{if or}} 门控空态零 DOM 痕迹（不留空壳标题）；分类入口由次级分类条承担、页脚非首页路径保留友链行；TestTrxswHomeFriendMergeRender 断言反转+空态用例
+- 【②③ 双子代理深审（49-a/49-b 已各自记录）】Task 工具首轮并行双双基础设施超时，但**落盘产物已在**（7+10 文件+两个测试文件）——重试拉起按 46-a/47-a 先例「以落盘 diff 逐项核验接续而非重做」：49-a 接续（runeLen JS 语义 P3/jsonStr 平台截断 P3/finalURL 死字段+E7 首跳 sec-fetch-site↔Referer 拓扑一致性+syncMutex 精简，25 源文件重读无新 P1/P2）；49-b 接续（softBlock 显式 null 纵深/2^53 上界族×4 处/backfill rows.Err() 上返/fillPlan 去重合并+进度分母/execRetryReturningID+本轮 intFieldStrict 溢出/pseo delete id 上界/parseDigitsASCII 防回绕/六处 execRetry busy 重试，引擎响应消费交叉核对三路全覆盖无新 P1/P2）
+- 【部署+E2E】主线验证三连双服务全绿（backend 2.1s/scraper 4.4s 含 audit49 新用例）→ build-go.sh → 双服务热替换（scraper 17220/backend 17241）→ 8 任务恢复（7 running+task7 partial 终态+task2 限流自动恢复车道）→ agent-browser：首页友链区块仅 4 条随机书链（hasCatEntry/hasAllLib/hasFinished 全 false）、页脚零友链行+单一网站地图最底行、书页页脚友链行+地图在位、console/errors 零输出、390px 无横向溢出；/tmp 双服务日志零 panic
+
+Stage Summary:
+- 沙箱回收恢复零数据损失（远端基线完整），恢复剧本再验证：fetch 确认远端→reset→工具链→mkdir db→ensure→种子→任务重建
+- 首页友链区块收敛至「站长友链+链轮」纯粹 SEO 用途；双子代理 10+6 修复/增强/精简接续落盘，采集域连续第 11 轮深审无新 P1/P2（收敛效应显著）
+- 提交链：…→f35647b→1d6d14f(48)→本提交(49)

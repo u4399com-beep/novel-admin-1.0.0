@@ -95,10 +95,13 @@ func numIsInt(f float64) bool {
 	return f == math.Trunc(f)
 }
 
-// intFieldStrict 严格类型整数字段（JS Number.isInteger(v)：v 必须本身是 number）
+// intFieldStrict 严格类型整数字段（JS Number.isInteger(v)：v 必须本身是 number）。
+// Task 49-b: 补 2^53 上界（taskRuleIDParam/scrapeRuleIDParam 同族）——旧版 int(f) 对
+// 1e300 是实现定义溢出（amd64 得 MinInt64 负值穿透后续判定），唯一实际腐蚀路径是
+// handleCategoryUpdate 把溢出负值直写 Category.sort；越界值对齐 TS Number 语义拒绝
 func intFieldStrict(v any) (int, bool) {
 	f, ok := v.(float64)
-	if !ok || !numIsInt(f) {
+	if !ok || !numIsInt(f) || f > 9_007_199_254_740_992 {
 		return 0, false
 	}
 	return int(f), true
@@ -407,11 +410,13 @@ func handleNovelsList(w http.ResponseWriter, r *http.Request, _ map[string]strin
 	page := pageParamList(sp.Get("page"))
 	pageSize := clampInt(pageParamFloor(sp.Get("pageSize"), 20), 4, 60)
 
-	// 非法 categoryId（abc/1.5/-3）→ 400（对齐 TS 明确报错而非静默全库查询）
+	// 非法 categoryId（abc/1.5/-3/越界浮点）→ 400（对齐 TS 明确报错而非静默全库查询）。
+	// Task 49-b: 补 2^53 上界（taskRuleIDParam 同族）——旧版 int(f) 对 1e300 是实现
+	// 定义溢出（amd64 得 MinInt64 负值），负值使 categoryId>0 判定失效、静默丢过滤条件
 	categoryId := 0
 	if raw := sp.Get("categoryId"); raw != "" {
 		f, ok := jsParseFloat(raw)
-		if !ok || !numIsInt(f) || f < 0 {
+		if !ok || !numIsInt(f) || f < 0 || f > 9_007_199_254_740_992 {
 			writeJSON(w, 400, map[string]string{"error": "无效 categoryId"})
 			return
 		}

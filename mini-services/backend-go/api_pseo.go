@@ -135,13 +135,16 @@ func handlePseoAdd(w http.ResponseWriter, r *http.Request, _ map[string]string) 
 // ==================== DELETE /api/pseo?id= ====================
 
 func handlePseoDelete(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	// TS Number(searchParams.get('id'))：缺失(null)/非数字 → 0/NaN → 校验拒绝
+	// TS Number(searchParams.get('id'))：缺失(null)/非数字 → 0/NaN → 校验拒绝。
+	// Task 49-b: 补 2^53 上界（taskRuleIDParam 同族）——1e300 类越界值 int64 转换为
+	// 实现定义溢出（amd64 得 MinInt64），虽然 DELETE 负 id 无匹配行属无害空转，
+	// 仍对齐全包 id 参数口径拒绝
 	f, okF := jsParseFloat(parseQueryStr(r, "id"))
 	id := 0.0
 	if okF {
 		id = f
 	}
-	if !numIsInt(id) || id <= 0 {
+	if !numIsInt(id) || id <= 0 || id > 9_007_199_254_740_992 {
 		writeJSON(w, 400, map[string]string{"error": "无效 id"})
 		return
 	}

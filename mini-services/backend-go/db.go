@@ -297,6 +297,13 @@ func backfillT2SMeta(db *sql.DB) error {
 		}
 		cats = append(cats, r)
 	}
+	// Task 49-b: 迭代错误必须向上返回——旧行静默吞掉 rows.Err()，扫描截断后守卫标记
+	// 照常落位，漏扫行永久滞留繁体（守卫短路后无重试路径，与 backfillT2SMeta 头注
+	// 「行级失败不落标记」同一契约）
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
 	rows.Close()
 	for _, r := range cats {
 		if s := t2sField("auto", r.name); s != r.name && s != "" {
@@ -325,6 +332,10 @@ func backfillT2SMeta(db *sql.DB) error {
 			return err
 		}
 		books = append(books, r)
+	}
+	if err := rows.Err(); err != nil { // Task 49-b: 迭代错误上返（防扫描截断后守卫误落）
+		rows.Close()
+		return err
 	}
 	rows.Close()
 	for _, r := range books {
@@ -366,6 +377,10 @@ func backfillT2SMeta(db *sql.DB) error {
 		}
 		chaps = append(chaps, r)
 	}
+	if err := rows.Err(); err != nil { // Task 49-b: 迭代错误上返（防扫描截断后守卫误落）
+		rows.Close()
+		return err
+	}
 	rows.Close()
 	for _, r := range chaps {
 		nt := trimSpaceStr(t2sField("auto", r.title))
@@ -403,6 +418,10 @@ func backfillT2SMeta(db *sql.DB) error {
 			return err
 		}
 		kws = append(kws, r)
+	}
+	if err := rows.Err(); err != nil { // Task 49-b: 迭代错误上返（防扫描截断后守卫误落）
+		rows.Close()
+		return err
 	}
 	rows.Close()
 	for _, r := range kws {
@@ -448,6 +467,12 @@ func backfillT2SContent(db *sql.DB) error {
 				return err
 			}
 			rows = append(rows, r)
+		}
+		// Task 49-b: 迭代错误必须上返——旧行静默吞掉 rs.Err()，扫描截断后
+		// markT2SBackfillDone 照常落位，漏扫行永久滞留繁体
+		if err := rs.Err(); err != nil {
+			rs.Close()
+			return err
 		}
 		rs.Close()
 		if len(rows) == 0 {
