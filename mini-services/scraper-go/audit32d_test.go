@@ -20,7 +20,7 @@ import (
 // TestHostRateLimitMemo 限流记忆注入（Task 32-d：fetch 失败 Error 携带 hosthealth 上下文）
 func TestHostRateLimitMemo(t *testing.T) {
 	host := "memo32d.test"
-	noteChainSuccess(host) // 清零起点
+	noteChainSuccess(host, "") // 清零起点（E17：第二参=出口，""=直连）
 	if got := hostRateLimitMemo(host); got != "" {
 		t.Fatalf("无记忆时应返回空串，got %q", got)
 	}
@@ -40,7 +40,7 @@ func TestHostRateLimitMemo(t *testing.T) {
 	}
 	// 成功一次整体复位（记忆随健康度条目删除）
 	noteRateLimited(host, 429, nil)
-	noteChainSuccess(host)
+	noteChainSuccess(host, "")
 	if got := hostRateLimitMemo(host); got != "" {
 		t.Fatalf("成功复位后不应再有记忆，got %q", got)
 	}

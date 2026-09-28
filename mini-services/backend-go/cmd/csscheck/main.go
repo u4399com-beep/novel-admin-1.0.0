@@ -3,7 +3,8 @@
  *
  * 背景：tw.css 已固化为仓库内 vendored 资产（build-go.sh 不再生成）。模板新增工具类时
  * tw.css 不会自动更新——本工具核对「模板用到但 tw.css 缺失」的类名，作为再生的前置审计
- * （warning-only，退出码恒 0，供人审阅；构建链路不依赖）。
+ * （warning-only：有/无漂移均退出码 0，供人审阅；构建链路不依赖。唯一例外：扫描面为空
+ * ——在错误目录运行/glob 模式失配——退出码 1，属环境错误哨兵而非漂移告警）。
  *
  * 用法：
  *   cd mini-services/backend-go && go run ./cmd/csscheck [-v]
@@ -136,6 +137,11 @@ func main() {
 // 宁可漏报不可误报——漏报面由人工 review 模板兜底）。
 func plausible(tok string) bool {
 	if tok == "" || len(tok) < 2 || len(tok) > 120 {
+		return false
+	}
+	// URL 形态（含 scheme 分隔符）直接拒绝：工具类不可能含 "://"（Task 58-b 补——
+	// 函数头注宣称防 URL 混入，旧版只靠首字符判定拦不住 "https://…" 形态）
+	if strings.Contains(tok, "://") {
 		return false
 	}
 	root := tok

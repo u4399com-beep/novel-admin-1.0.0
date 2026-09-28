@@ -252,7 +252,7 @@ func TestFetchPageSeedsRuleCookiesBeforeCircuitBreaker(t *testing.T) {
 	defer jarRemoveHostForTest(host)
 
 	for i := 0; i < 3; i++ {
-		noteChainFailure(host, false) // 3 次混合连败 → 熔断（普通阈值）
+		noteChainFailure(host, false, nil) // 3 次混合连败 → 熔断（普通阈值；nil=直连出口）
 	}
 	if hostCircuitOpenMs(host) <= 0 {
 		t.Fatal("预热熔断失败（3 次连败应触发）")

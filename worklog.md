@@ -2622,3 +2622,62 @@ Stage Summary:
 - 生产状态：书库 253 本重建中（7 任务 running+1 pending）、封面补抓全修复、双服务三连全绿、console 零错误
 - kelexs(25)/cunshu(26) 草稿规则完好（enabled=false+未实测草稿标注），启用三步路径不变（人工过验→复制 Cookie→填入静态 cookie 底座）
 - 提交链：…→4ebb6a6(52)→c91b8fe(53)→本提交(54)
+---
+Task ID: 58-b
+Agent: backend-go 深审子代理
+Task: backend-go 业务后端逐行深审（任务生命周期状态机×规则装载时序/partial 终态语义/coversx 代理变更感知/cmd/csscheck 收编）+ 死代码精简 + 测试资产补齐，不重做不回退历史修复
+
+Work Log:
+- 【基线与历史核验】读 worklog 末 4 Task（57-a/57-b/54/56-b）；基线三连全绿（build/vet/test -race 2.6s）后开审；2^53 上界族/softBlock null/execRetry 家族/fillPlan 合并/logCap Add-first/paused 文案常量化/6 端点×4 消费方契约矩阵逐项在码复核零回退（本轮修复纯增量不触碰既有语义）
+- 【复核① 任务生命周期×规则装载时序（主线线索 a，结论=无缺陷+测试固化）】worker.go runTask「pending→running 条件更新后」一次性读任务行→loadRule（storex.go:109 直接 queryOne ScrapeRule，无任何进程内缓存/快照路径）；resume(paused→pending)/restart(终态→pending) 均经 runner 2s 轮询重入 runTask→必然重读规则现值——「resume/restart 必然读到最新规则值」成立。coversx.go ruleProxiesForHost 每次调用现查 ScrapeRule（无缓存），封面回退对规则代理变更即时感知。runTask 参数读取后的 storageMode 归一/终态编辑语义（PUT 条件更新 WHERE status!='running'）复核无陈旧执行面
+- 【复核② partial 终态语义（主线线索 b，结论=语义正确+零测试缺口补齐）】api_scrape_tasks.go scrapeTaskRestart 条件更新 WHERE status IN ('failed','partial','canceled','success') 含 partial、进度五字段（total/done/chaptersDone/chaptersTotal/chapters）清零、message/log 表达「进度已清零+骨架续传」——101kks 类 partial 任务的「等效重发」即 PATCH restart，语义在代码/文档/日志三层表达清晰无缺陷；cancel/pause/resume 对 partial 全部 400 拒绝（终态闭合）。缺口=PATCH action=restart 全路径此前零测试覆盖（rg 全库无 restart 测试）→ 本轮补矩阵锁定
+- 【修复① P4·cmd/csscheck plausible 与自身头注契约不符】plausible 函数头注宣称「防十六进制色值/URL/文案混入」但裸 URL 形态（https://x.com——root 取 ':' 前段=https 小写开头、:// 均不在括号外拒绝集）实测直通（探针实证）；补 "://" 守卫两行对齐自身契约（工具类不可能含 scheme 分隔符，零误伤面；vendored tw.css 重跑 0 缺失不变）
+- 【修复② P4·cmd/csscheck 头注退出码契约失真】头注「warning-only 退出码恒 0」与扫描面为空时 os.Exit(1)（环境错误哨兵）矛盾——修正头注为「有/无漂移均 0；唯一例外扫描面为空=1 属环境错误哨兵」，行为零变更
+- 【精简① 同值常量合并】runner.go runnerHeartbeatFile 与 api_scrape_tasks.go runnerHeartbeatPath 同为 "/tmp/scrape-runner-heartbeat" 两处独立定义（写入侧/读取侧漂移风险面）——合并为 runnerHeartbeatFile 单一定义+双侧注释（R12 同体函数合并同款精简思路）
+- 【测试资产①】audit58b_test.go 3 用例：TestRunTaskReloadsRuleFreshPerRun（真实 runTask 全链+stub 引擎捕获 /api/test 请求体，两次执行间 UPDATE 规则 proxy/charset→断言第二次携带新值——loadRule 未来任何缓存/快照路径必红；书名含「都市」关键词走本地分类路径零 LLM 依赖）；TestScrapeTaskLifecycleActionsMatrix（经 dispatch 真路由的 PATCH action 全矩阵：四终态 restart→pending+进度五字段清零+日志留痕+二次 restart 400、partial 上 cancel/pause/resume 400、paused resume 进度保留、paused cancel 可停、pending pause、坏 body 400）；TestRuleProxiesForHostFreshReadsDB（规则代理 UPDATE 后回退候选立即感知+逗号池展开保序）
+- 【测试资产②】cmd/csscheck/main_test.go 2 用例（该工具此前零测试）：plausible 表驱动 22 案（Tailwind 变体/任意值/负 margin/嵌套括号正例+色值/URL/大写根/括号不平衡/逗号组/CSS 变量/超长负例）+dropInterpolation 5 案（动作替换单空格/未闭合截断/动作间字面文本保守保留语义锁定）
+- 【深审其余辖区逐行】engineclient/pool（锁序 limiter.mu→tc.mu、pool.mu→tc.mu→phase1.mu 无环）/runlog/storex/db/schema/seed（id25/26 kelexs/cunshu enabled=false 草稿不变式由 audit53b 锁定保持）/api_scrape_rules/api_scrape/api_chapters/api_novels/api_noveltools/api_pseo/pseo_gen/pseo_book/pseo_suggest/api_settings/api_sites/api_categories(+merge)/api_home/api_health/api_export/web/web_data/web_footer/router/obfuscate/t2s/introx/titlex/chapterorder/txtdir/categoryx/httpx/limits/llm/pagination/cleanx/util/typesx/main——rows.Err() 上返、SQL 全参数化、2^53 判定族、goroutine 生命周期（watchdog kickWG 收口/runBashSync 超时收尾）、2^53 边界族均过检无新 P1/P2/P3
+- 【精简扫描（零产出）】自研符号引用图扫描（顶层 func/var/const/type 全量引用计数）：零引用声明=0；1 引用项逐一核为 init() 注册 handler/单调用点 helper（诚实不算死代码）；limitVal/renderFriendLinksBlock 等历史留档按指令保留
+- 【验证】go build ./... ✅ go vet ./... ✅ go test -race -count=1 ./... ✅（ok backend-go 2.4s + ok cmd/csscheck 1.0s，含本轮 5 新用例+既有全部回归）；gofmt -l 零输出；go run ./cmd/csscheck 复扫 tw.css 缺失 0；生产进程零触碰（backend-go.bin/scraper-go.bin 未重建未启动，变更随下次统一热替换生效）、零 kill、零 git 操作、零写生产库（TestMain DB_PATH 临时库）
+- 【留档不动·1 项】csscheck 行级扫描不覆盖跨行 class 属性（warning-only 工具「宁可漏报」既定口径，多行 class 模板现库 0 例，收益不抵改动）
+
+Stage Summary:
+- 第 20 轮 backend-go 深审：辖区 40 文件逐行 + 主线 3 条实测线索（规则装载时序/partial 重发/coversx 代理感知）全部复核闭合——三项结论均为「设计正确、无陈旧缓存路径」，其中规则装载时序与 PATCH restart 全路径此前零测试覆盖，本轮以 5 用例固化为可执行契约
+- 修复 2 项 P4（均在 cmd/csscheck：plausible URL 守卫对齐自身契约/头注退出码契约修正）+ 精简 1 项（心跳常量二合一）；连续 20 轮无新 P1/P2/P3
+- 测试 +5（backend-go 3 + csscheck 2），全包三连 -race 全绿，gofmt 清零；生产库/进程/二进制全程零触碰
+---
+Task ID: 58-a
+Agent: scraper-go 深审子代理（产物在盘核验接续：报告未返回的超时形态，主线逐项复核 diff 后接续收尾）
+Task: scraper-go 逐行深审抓 bug + 反反爬增强 E17（熔断按出口记账）+ ruletest 工具审计 + 精简
+
+Work Log:
+- 【E17·主线实测驱动的核心增强（hosthealth.go+chain.go+handlers.go）】熔断记账粒度从裸 host 拆到 (主机×出口代理) 独立记账（egressBreaker：strikes/netStreak/openUntil 语义与拆分前一致，egressKey=host+\x1f+egress 不可碰撞分隔符；LRU 256 上界淘汰=fail-open；hostCircuitOpenMs 观测面取全部出口最大剩余冷却）；fetchPage 入口把代理池解析提前到熔断检查前——仅当本次全部候选出口均熔断才结构化快速失败（egressCircuitsAllOpen），任一出口可用即放行；链内 pickProxy 优先跳过熔断出口（临时降权不删除，全熔断时兜底全池轮转）；noteChainFailure 增 egresses 归因参数（纯引擎自状态尝试不入归因集合——引擎自拥堵不惩罚站点/出口，Task 35-b 语义在出口维度延续）；主机级 penalty 网络级指数取归因集合 max(netStreak) 保守重建；混合失败链各出口 netStreak 归零（网络级支路口径与拆分前单出口一致）。威胁模型实证：aijjxs/huangjinwu/xinjianpan 站点 IP 被沙箱直连出口 SYN 黑洞，旧裸 host 键把直连连败熔断合流到全部出口，规则改配代理后被 ~370s 逐次延长的旧熔断持续拦截——E17 后新出口零历史包袱立即重试。错误 detail 文案保留 backend 词表锚语（「熔断阈值，剩余冷却」前缀不变+出口维度后缀），/api/strategies 增 breakerKeying 观测字段
+- 【P2 修复（cmd/ruletest/main.go，主线新建工具的审计）】testResp.SoftBlock 由 bool 改 json.RawMessage——引擎 /api/test 在「200 空壳/挑战竞态页」场景以对象形态透出 softBlock（Task 32-d 档案 title/htmlLength/challengeFeatures），bool 恰在最需诊断的挑战场景整包 Unmarshal 失败误报「响应解析失败」；三形态（对象/缺席/null）均可解析
+- 【P4 修复（cmd/ruletest/main.go）】工具 HTTP 客户端显式超时（旧 http.Get 默认客户端零超时，backend 挂起时工具永久阻塞）：规则 30s/引擎 5min
+- 【profiles.go/audit 测试适配】noteChainFailure 签名接线与既有测试更新（audit32d/35b/53/57a/concurrency）
+- 【主线复核修正 2 处（接续时）】58-a 超时遗留测试缺陷修正：①main_test.go 失败信封用例 wantOK 表值写反（ok:false 应期望 false——测试作者把「解析成功」与 ok 字段混淆）②audit58a_test.go E17 归因测试尾段对「混合失败后不再熔断」的期望与通用连败熔断（strikes≥3，by-design 与 E17 前口径一致）冲突——修正断言序列为「链 3 后（strikes=2/netStreak=0）不熔断→链 4 strikes=3 通用熔断」，netStreak 归零语义经中间步验证；goform 三文件归一
+- 【验证】go build ✅ go vet ✅ go test -race -count=1 ./... ✅（ok scraper-go 41.8s + ok cmd/ruletest 1.0s，含 audit58a 新用例）；gofmt -l 清零；scraper-go.bin 待主线热替换；生产进程零触碰零 git 操作
+
+Stage Summary:
+- E17 落地：熔断 (主机×出口) 记账+全部候选出口均熔断才快速失败+链内熔断出口临时降权——「换代理即逃生」能力使代理配置变更成为直连封锁站点的即时自愈路径（主线 3 站实证）
+- 修复统计：P2×1（ruletest softBlock 对象形态）+P4×1（工具超时）+主线复核修正测试×2；精简：profiles/handlers 出口归因接线零新增死代码
+- 测试资产：audit58a_test.go 多用例（归因计数/LRU 上界/伪代理 fixture 端到端）+ruletest 信封解析 4 形态；连续 21 轮深审 scraper 域无新 P1
+---
+Task ID: 58
+Agent: main (Z.ai Code)
+Task: 用户四点指令——①彻底放弃 Next.js/TS 全面转移到 Go + 检查所有在库采集规则全部突破稳定长期获取 ②持续开发/审查/修复（采集+反反爬增强，逐行深抓 bug）③清理整合优化精简 ④推送 git
+
+Work Log:
+- 【R0 第 12 次沙箱回收恢复（先于一切）】本地回退 Task 49（900a1c9）、远端完整保留至 382a280(54) → reset --hard origin/main；go1.22.12 重装；mkdir db + build-go.sh 双 bin + ensure-services 拉起；seed 自动播种 17 规则（含 25/26 GoEdge 草稿）；9 生产任务按 ruleId+siteUrl 重建（全 list+both pages1）；书库 0→重建
+- 【R1a 零 Node/TS 收官（点 1 前半）】根 package.json 收缩为零依赖纯命令 shim（scripts 全指 Go/bash，保住沙箱 bun run dev 契约）；git rm bun.lock/build-web-css.mjs/engine-rule-test.mjs + rm -rf node_modules；tw.css 固化为 vendored 资产（Task 54 构建产物与模板同步，csscheck 复核缺失 0）；新建两个 Go 运维工具替代 mjs：backend-go/cmd/csscheck（Tailwind 类名漂移检测：模板 class 属性+渐变 token 扫描面、手写 css+模板内联 style 全覆盖面、工具类合法性过滤压误报——v1 3584 误报收敛到 0 缺失）+ scraper-go/cmd/ruletest（规则三段试测 Go 移植，规则 API 对象形态适配）；.zscripts/dev.sh 死 db:push 步骤移除（Prisma 时代残留，set -e 下中断整条 dev 链）+bun install 容错化；.zscripts/database-runtime-build.sh 去 bun 化重写（纯 Go schema 自引导语义）；.zscripts/build.sh 直接调用 build-go.sh；docs/deployment.md 全面重写（零 Node 叙事/§2.4 免安装声明/csscheck 自检/§4 .env 段拆除/§5 纯 Go 构建/§6.1 启动自引导/§12 工具表+FAQ），种子计数 15→17 修正
+- 【R1b 规则全量实测突破（点 1 后半）】17 条规则逐条引擎试测（探针脚本走 backend /api/scrape 代理）：11 条连通+5 条全策略失败+2 条 GoEdge 维持拦截。失败根因定性=沙箱直连出口对三站 IP 段 SYN 黑洞（裸 TCP 443/80 全超时 vs 工作站 0.15s；DNS 正常）——共享代理出口实测可达（aijjxs 直 200；huangjinwu/xinjianpan 裸 curl 403 但引擎 fetch-browser 经代理 24/30 条提取成功）→ PUT 规则配置代理 + 引擎单次成功复位熔断 + 任务 resume，三站全部恢复采集；101kks partial 终态重发等效任务（task10 已 success）；kelexs/cunshu（25/26）复测维持 GoEdge 403+challenge-page（E13 特征识别正常），人工过验+E12 cookie 路径不变（合规红线内全部可行路径已具备）
+- 【R2 双子代理深审（58-a/58-b）】58-a（scraper，超时后产物在盘核验接续）：E17 出口维度熔断（(主机×出口) 独立记账 egressBreaker/egressKey \x1f 复合键/LRU 256 fail-open/全部候选出口均熔断才快速失败/链内熔断出口临时降权不删除/noteChainFailure 出口归因集合/主机级 penalty 取 max(netStreak) 保守重建/错误词表锚语保留+/api/strategies 增 breakerKeying 观测字段）——「换代理即逃生」使代理配置变更成为直连封锁站点的即时自愈路径；P2 ruletest softBlock 对象形态 bool→json.RawMessage（挑战档案场景整包解析失败）+P4 工具超时；主线接续修正 2 处测试缺陷（wantOK 表值写反/E17 通用熔断 strikes≥3 语义断言序列）；58-b（backend）：cmd/csscheck URL 守卫 P4+头注口径修正+心跳路径常量合并；三线索复核全过检——任务领取必重读规则现值（无缓存路径，真实 runTask 全链测试锁定）/partial restart 语义正确（条件更新含 partial+进度清零，补全 PATCH restart 全路径测试缺口）/coversx 代理变更即时感知（ruleProxiesForHost 现查无缓存）
+- 【R3 清理整合优化精简】docs/anti-anti-crawl.md §6.2 补 E17 行；双模块 gofmt/vet/死代码终扫零产出；.zscripts 三脚本 Node 触点清零
+- 【R4 部署+E2E】验证三连双模块全绿（backend 2.4s 含 audit58b 3 用例/csscheck 2 用例；scraper 41.8s 含 audit58a 多用例+ruletest 4 形态信封）→ build-go.sh 双 bin 热替换 → 断点任务全部 resume → agent-browser：首页（编辑推荐 8 本带本地化封面渲染/今日更新 18.4 万章）、书页（1502 章完整信息）、章节页（正文+三向导航）、admin（158KB 完整后台；?theme=x 劫持修复回归实证 162KB）、移动端 390px 零横向溢出、页脚粘底；console+errors 零输出；isFeatured=1 空态修复（DB 重建后无人打标，字数前 8 本补标）
+
+Stage Summary:
+- 零 Node/TS 收官：应用栈/构建链/运维工具三面全 Go 化（唯一保留的 package.json 为零依赖命令 shim——沙箱启动契约，非技术栈成分）；CSS 供给转 vendored 资产+Go 漂移检测，未来模板改动有 csscheck 前置审计兜底
+- 规则突破：14 条启用规则 11 条直连工作+3 条代理出口自愈（E17 落地后配置代理=即时逃生）；2 条 GoEdge 草稿维持人工过验路径（8 通道穷尽证据链在档，合规红线内无更多动作空间）；101kks 限流 partial 语义经 58-b 测试补全后 restart 即可续采
+- 深审：连续 21 轮无新 P1（58-a P2×1 为主线新建工具的回归而非引擎域）；任务生命周期/规则装载/封面回退三条主线线索全部实证闭合
+- 生产状态：书库 276 本重建中（9 任务 running）、封面本地化 93%、双服务三连全绿、E2E 桌面+移动全过
+- 提交链：…→382a280(54)→6faf682(58 前段)→本提交(58)

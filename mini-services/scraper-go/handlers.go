@@ -158,13 +158,14 @@ func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 		"hostHealth": func() map[string]any {
 			s := getHostHealthStats()
 			return map[string]any{
-				"description":    "按主机健康度记忆：429/503 后下一次抓取先主动退避（Retry-After 优先，指数增长上界 15s，成功即清零）；整链失败后温和退避（网络级连败 1.5s 起指数增长上界 8s）+ 连续整链失败达阈值的主机熔断快速失败（普通连败 3 次、连续纯网络级错误 2 次即熔断——连接层被拒说明源站已拒绝本机；冷却 60s 起指数增长上界 10min，半开自动恢复；显式指定 strategy 时跳过熔断）",
+				"description":    "按主机健康度记忆：429/503 后下一次抓取先主动退避（Retry-After 优先，指数增长上界 15s，成功即清零）；整链失败后温和退避（网络级连败 1.5s 起指数增长上界 8s）+ 连续整链失败达阈值的主机熔断快速失败（普通连败 3 次、连续纯网络级错误 2 次即熔断——连接层被拒说明源站已拒绝本机；冷却 60s 起指数增长上界 10min，半开自动恢复；显式指定 strategy 时跳过熔断）。Task 58-a（E17）：熔断按 (主机×出口代理) 独立记账，全部候选出口均熔断才快速失败，链内取槽优先跳过熔断出口（临时降权不删除）——更换规则代理出口后新出口不受历史熔断影响；circuitOpenMs 为该主机全部出口中的最大剩余冷却",
 				"trackedHosts":   s.TrackedHosts,
 				"maxEntries":     s.MaxEntries,
 				"breakerStrikes": s.BreakerStrikes,
 				"baseCooldownMs": s.BaseCooldownMs,
 				"maxCooldownMs":  s.MaxCooldownMs,
 				"maxPenaltyMs":   s.MaxPenaltyMs,
+				"breakerKeying":  "host+egress（E17）",
 			}
 		}(),
 		// browser 策略说明（Go 版：Python Playwright 桥接，独立子进程渲染）

@@ -17,8 +17,8 @@ import (
 
 // headerProfile 单个请求头画像：id 用于 attempts 明细展示，withReferer 决定是否覆盖 Referer 变体
 type headerProfile struct {
-	id          string
-	label       string
+	id string // Task 58-a 精简：label 死字段删除（全仓零读取点——attempts 明细展示走 id，策略描述走 strategyDef.description）
+	// withReferer 决定是否覆盖 Referer 变体
 	withReferer bool
 	headers     func(targetURL string, withReferer bool, explicitReferer string) map[string]string
 }
@@ -102,7 +102,6 @@ func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string
 // 同样如此），对采集语义无影响（章节内容不可变、列表页短时缓存可接受）。
 var chromeDesktopProfile = headerProfile{
 	id:          "chrome-desktop",
-	label:       "Chrome 桌面（完整 Sec-Fetch/客户端提示 + Referer）",
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer, chromeUA, map[string]string{
@@ -120,7 +119,6 @@ var chromeDesktopProfile = headerProfile{
 // b) Firefox 桌面：不发客户端提示，保留 Sec-Fetch
 var firefoxDesktopProfile = headerProfile{
 	id:          "firefox-desktop",
-	label:       "Firefox 桌面（无客户端提示 + Referer）",
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer,
@@ -147,7 +145,6 @@ var firefoxDesktopProfile = headerProfile{
 // 刷新版本常量时需复核：若 WebKit 未来落地 Fetch Metadata 再随保鲜轮补回。
 var safariDesktopProfile = headerProfile{
 	id:          "safari-desktop",
-	label:       "Safari 桌面（无客户端提示、无 Referer、无 Sec-Fetch-*/UIR：真实 WebKit 不发送）",
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		h := baseHeaders(u, withReferer,
@@ -161,7 +158,6 @@ var safariDesktopProfile = headerProfile{
 // b) Edge 桌面
 var edgeDesktopProfile = headerProfile{
 	id:          "edge-desktop",
-	label:       "Edge 桌面（Chromium 内核 + Edge 品牌 + Referer）",
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer, edgeUA, map[string]string{
@@ -179,7 +175,6 @@ var edgeDesktopProfile = headerProfile{
 // d) Android Chrome 移动端
 var androidChromeProfile = headerProfile{
 	id:          "android-chrome",
-	label:       "Android Chrome 移动端（sec-ch-ua-mobile=?1 + Referer）",
 	withReferer: true,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		return baseHeaders(u, withReferer,
@@ -200,7 +195,6 @@ var androidChromeProfile = headerProfile{
 // d) iPhone Safari 移动端（无客户端提示、无 Referer；E10 同桌面 Safari：无 Sec-Fetch-*/UIR）
 var iphoneSafariProfile = headerProfile{
 	id:          "iphone-safari",
-	label:       "iPhone Safari 移动端（无 Referer、无 Sec-Fetch-*/UIR：真实 WebKit 不发送）",
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		h := baseHeaders(u, withReferer,
@@ -215,7 +209,6 @@ var iphoneSafariProfile = headerProfile{
 // 但会发送标识身份的 From 头（蜘蛛 UA + 浏览器专属头是可检测矛盾）
 var googlebotProfile = headerProfile{
 	id:          "googlebot",
-	label:       "Googlebot 桌面降级（无 Referer）",
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		h := baseHeaders(u, withReferer,
@@ -233,7 +226,6 @@ var googlebotProfile = headerProfile{
 // c) Baiduspider 降级：真实 Baiduspider 仅发送极简头（UA/Accept/Accept-Encoding）
 var baiduspiderProfile = headerProfile{
 	id:          "baiduspider",
-	label:       "Baiduspider 降级（无 Referer）",
 	withReferer: false,
 	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
 		h := baseHeaders(u, withReferer,

@@ -23,6 +23,9 @@ import (
 )
 
 const (
+	// runnerHeartbeatFile runner 心跳文件（startRunner 每轮刷新 mtime，runnerAliveRecent
+	// 判断存活；Task 58-b 合并 api_scrape_tasks.go 曾有的同值常量 runnerHeartbeatPath，
+	// 写入侧与读取侧共用单一定义防漂移）
 	runnerHeartbeatFile = "/tmp/scrape-runner-heartbeat"
 	runnerPollInterval  = 2 * time.Second
 	runnerEngineEvery   = 15

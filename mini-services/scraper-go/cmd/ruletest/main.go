@@ -26,6 +26,12 @@ import (
 	"time"
 )
 
+// toolHTTPClient 规则/引擎请求共用客户端：显式超时（旧版 http.Get 用默认客户端
+// 零超时，backend 挂起时本工具永久阻塞）。引擎单链预算 55s+余量，5min 足够宽容；
+// 规则列表是本机管理面读，30s 上限纯兜底。
+var toolHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var engineHTTPClient = &http.Client{Timeout: 5 * time.Minute}
+
 type rule struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
@@ -57,15 +63,18 @@ type attempt struct {
 }
 
 type testResp struct {
-	OK        bool              `json:"ok"`
-	Error     string            `json:"error"`
-	Detail    string            `json:"detail"`
-	Strategy  string            `json:"strategy"`
-	Warnings  []string          `json:"warnings"`
-	Attempts  []attempt         `json:"attempts"`
-	Data      map[string]any    `json:"data"`
-	FinalURL  string            `json:"finalURL"`
-	Challenge bool              `json:"softBlock"`
+	OK       bool           `json:"ok"`
+	Error    string         `json:"error"`
+	Detail   string         `json:"detail"`
+	Strategy string         `json:"strategy"`
+	Warnings []string       `json:"warnings"`
+	Attempts []attempt      `json:"attempts"`
+	Data     map[string]any `json:"data"`
+	// softBlock 引擎在「200 空壳/挑战竞态页」场景以对象形态透出（Task 32-d 档案：
+	// title/htmlLength/challengeFeatures…），其余场景字段缺席。旧版声明为 bool：
+	// 恰恰是本工具最需要诊断的挑战场景（对象）整包 JSON 解析失败，丢失全部
+	// attempts/warnings/data——RawMessage 接收后按非空判定（P2 修复）。
+	SoftBlock json.RawMessage   `json:"softBlock"`
 	Raw       map[string]string `json:"-"`
 }
 
@@ -129,13 +138,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "引擎请求失败: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("耗时 %s ok=%v strategy=%s", time.Since(start).Round(time.Millisecond), resp.OK, resp.Strategy)
-	if resp.FinalURL != "" && resp.FinalURL != u {
-		fmt.Printf(" finalURL=%s", resp.FinalURL)
-	}
-	fmt.Println()
-	if resp.Challenge {
-		fmt.Println("⚠ softBlock=true（挑战页特征命中）")
+	fmt.Printf("耗时 %s ok=%v strategy=%s\n", time.Since(start).Round(time.Millisecond), resp.OK, resp.Strategy)
+	if len(resp.SoftBlock) > 0 && string(resp.SoftBlock) != "null" && string(resp.SoftBlock) != "false" {
+		fmt.Println("⚠ softBlock 命中（挑战/空壳特征档案）: " + truncate(string(resp.SoftBlock), 400))
 	}
 	if !resp.OK {
 		fmt.Printf("失败: %s（%s）\n", resp.Error, resp.Detail)
@@ -159,7 +164,7 @@ func main() {
 }
 
 func fetchRules(backend string) ([]rule, error) {
-	res, err := http.Get(backend + "/api/scrape-rules")
+	res, err := toolHTTPClient.Get(backend + "/api/scrape-rules")
 	if err != nil {
 		return nil, err
 	}
@@ -256,8 +261,7 @@ func postJSON(u string, body any) (*testResp, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 5 * time.Minute}
-	res, err := client.Do(req)
+	res, err := engineHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

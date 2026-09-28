@@ -36,8 +36,6 @@ import (
 	"strings"
 )
 
-const runnerHeartbeatPath = "/tmp/scrape-runner-heartbeat"
-
 var (
 	scrapeTaskModes    = map[string]bool{"single": true, "list": true}
 	scrapeTaskStatuses = map[string]bool{"pending": true, "running": true, "paused": true, "success": true, "partial": true, "failed": true, "canceled": true}
@@ -94,9 +92,11 @@ func parseHttpURL(raw any, field string, maxLen int) parsedURLResult {
 	return parsedURLResult{ok: true, value: truncateRunes(u.String(), maxLen)}
 }
 
-// runnerAliveRecent runner 心跳文件 10s 内视为存活（TS statSync mtimeMs 语义）
+// runnerAliveRecent runner 心跳文件 10s 内视为存活（TS statSync mtimeMs 语义）。
+// 心跳路径常量 runnerHeartbeatFile 与 runner.go 写入侧共用（Task 58-b 合并曾有的
+// 两个同值常量 runnerHeartbeatPath/runnerHeartbeatFile，防单方面漂移）。
 func runnerAliveRecent() bool {
-	fi, err := os.Stat(runnerHeartbeatPath)
+	fi, err := os.Stat(runnerHeartbeatFile)
 	if err != nil {
 		return false
 	}

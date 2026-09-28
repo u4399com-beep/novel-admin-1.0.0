@@ -181,17 +181,47 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		}
 	}
 
+	// 站点级代理池（规则可配多个逗号分隔）：每次 fetchPage 调用轮换一个出口，
+	// 失效代理由后续请求自然绕过（免费公共代理单点易失效的多出口容错）。
+	// Task 58-a（E17）：池在熔断检查前解析——熔断按 (主机×出口) 记账，入口需知道本次
+	// 候选出口集合（无池=仅直连 [""]；有池=仅池内代理，直连不参与）。
+	proxyPool := []string{}
+	if opts.proxy != "" {
+		for _, p := range strings.Split(opts.proxy, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				proxyPool = append(proxyPool, p)
+			}
+		}
+	}
+	egresses := proxyPool
+	if len(egresses) == 0 {
+		egresses = []string{""}
+	}
+
 	// 主机熔断：连败达阈值的主机快速结构化失败，不空烧 55s 预算；
 	// 冷却结束自动半开恢复，成功一次即复位。显式指定策略时视为人工调试，跳过熔断。
+	// Task 58-a（E17）：熔断按 (主机×出口) 独立记账，仅当本次抓取的全部候选出口均处于
+	// 熔断态才快速失败——直连被封锁时改配代理后新出口立即重试（旧实现裸 host 键会把
+	// 直连连败的熔断持续拦截新出口 ~370s+，主线实测痛点）；部分出口熔断时链内
+	// pickProxy 优先跳过熔断出口（临时降权不删除）。
 	if opts.requestedStrategy == "" {
-		if circuitMs := hostCircuitOpenMs(host); circuitMs > 0 {
+		if circuitMs, allOpen := egressCircuitsAllOpen(host, egresses); allOpen {
+			detail := "主机 " + host + " 连续整链失败已达熔断阈值，剩余冷却 " +
+				strconv.Itoa(int((circuitMs+999)/1000)) + "s 后自动恢复尝试（一次成功即复位）"
+			if len(egresses) > 1 {
+				detail += "；当前规则 " + itoa(len(egresses)) + " 个出口全部熔断（熔断按出口独立记账，更换/新增代理出口后立即重试）"
+			} else if egresses[0] != "" {
+				detail += "；当前出口 " + reProxyCred.ReplaceAllString(egresses[0], "//***@") + " 熔断（熔断按出口独立记账，更换代理出口后立即重试）"
+			} else {
+				detail += "；直连出口熔断（熔断按出口独立记账）"
+			}
 			return fetchPageResult{
 				ok: false, html: "", encoding: "", strategy: opts.requestedStrategy, status: 0, warnings: warnings,
 				attempts: attempts, robots: RobotsSummary{CrawlDelayMs: nil},
 				elapsedMs: nowMs() - t0,
 				err:       "目标主机熔断中（近期连续整链失败，暂停请求以防刺激反爬/空耗预算）",
-				detail: "主机 " + host + " 连续整链失败已达熔断阈值，剩余冷却 " +
-					strconv.Itoa(int((circuitMs+999)/1000)) + "s 后自动恢复尝试（一次成功即复位）",
+				detail:    detail,
 			}
 		}
 	}
@@ -255,30 +285,37 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	// Task 32-d: 失败尝试响应体快照（debugHTML 注入用，见 fetchPageResult.debugHTML 注释）
 	var lastFailBytes []byte
 	lastFailCT := ""
+	// Task 58-a（E17）：本次链上真实网络尝试的出口归因集合（首次使用序），供整链失败
+	// 时按出口记账熔断。纯引擎自状态尝试（排队饱和/预算耗尽/硬闸）不入集合——
+	// 引擎自拥堵不惩罚站点/出口（Task 35-b 语义在出口维度延续）。
+	egressUsed := map[string]bool{}
+	egressList := []string{}
 
-	// 站点级代理池（规则可配多个逗号分隔）：每次 fetchPage 调用轮换一个出口，
-	// 失效代理由后续请求自然绕过（免费公共代理单点易失效的多出口容错）
-	proxyPool := []string{}
-	if opts.proxy != "" {
-		for _, p := range strings.Split(opts.proxy, ",") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				proxyPool = append(proxyPool, p)
-			}
-		}
-	}
+	// 站点级代理池轮换出口。Task 58-a（E17）：熔断中的出口临时降权（不删除）——优先在
+	// 未熔断出口间轮换；全部熔断时照旧全池轮转（冷却到期自然半开恢复；入口已在
+	// 全部熔断时快速失败，此处仅并发窗口兜底）。无池时恒直连（""）。
 	pickProxy := func() string {
 		if len(proxyPool) == 0 {
 			return ""
 		}
+		pool := proxyPool
+		healthy := make([]string, 0, len(proxyPool))
+		for _, p := range proxyPool {
+			if egressCircuitOpenMs(host, p) <= 0 {
+				healthy = append(healthy, p)
+			}
+		}
+		if len(healthy) > 0 {
+			pool = healthy
+		}
 		// Task 33-a: int() 转换在 32 位平台字长下会回绕为负，负数取模得负下标 → 切片越界
 		// panic。先取模再补正，使游标轮换与平台字长解耦（64 位下语义不变）。
 		idx := int(proxyCursor.Add(1))
-		m := idx % len(proxyPool)
+		m := idx % len(pool)
 		if m < 0 {
-			m += len(proxyPool)
+			m += len(pool)
 		}
-		return proxyPool[m]
+		return pool[m]
 	}
 
 	for si := 0; si < len(order); si++ {
@@ -342,6 +379,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 			ms := nowMs() - s0
 
 			// 子尝试摊平进 attempts（每次真实网络请求一条记录），无子尝试时记录策略级条目
+			attemptsBefore := len(attempts) // E17: 本次尝试的 attempts 起点（出口归因真实网络判定用）
 			if len(res.subAttempts) > 0 {
 				for _, sub := range res.subAttempts {
 					attempts = append(attempts, AttemptSummary{
@@ -354,6 +392,11 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 				}
 			} else {
 				attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: res.ok, Status: res.status, Ms: ms, Note: res.note})
+			}
+			// E17: 本尝试含真实网络请求时，把其出口纳入整链失败的归因集合
+			if hasRealNetworkAttempt(attempts[attemptsBefore:]) && !egressUsed[ctx.proxy] {
+				egressUsed[ctx.proxy] = true
+				egressList = append(egressList, ctx.proxy)
 			}
 			for _, w := range res.warnings {
 				if !containsStr(warnings, w) {
@@ -385,7 +428,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 
 			if res.ok {
 				recordStrategySuccess(host, strat.name)
-				noteChainSuccess(host)
+				noteChainSuccess(host, ctx.proxy) // E17: 仅复位本次成功出口的熔断（其余出口记忆保留）
 				// Task 31-b: AIMD 自适应限速「加性回落」——连续成功后该主机请求间隔
 				// 每次成功 -50ms 缓慢降至基础间隔（1.2s），恢复后缓慢提速不突进
 				noteAdaptiveSuccess(host)
@@ -492,8 +535,15 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	// 时不再计连败——hosthealth 度量的是站点健康度；ixdzs8 task7 实证：12 车道排队饱和的
 	// 零网络链失败把 strikes 推到 6，熔断冷却指数涨到 600s，半开重试又一次排队超时 →
 	// 10min 锁死。引擎自拥堵不应惩罚站点。
+	// Task 58-a（E17）：熔断按出口记账——归因集合=真实网络尝试实际使用的出口（首次使用序）；
+	// 理论上 hasRealNetworkAttempt=true 时 egressList 非空（每条真实尝试均有出口归属），
+	// 空列表兜底为直连出口保持可归因。
 	if hasRealNetworkAttempt(attempts) {
-		noteChainFailure(host, allAttemptsNetErr(attempts))
+		list := egressList
+		if len(list) == 0 {
+			list = []string{""}
+		}
+		noteChainFailure(host, allAttemptsNetErr(attempts), list)
 	}
 
 	detailParts := make([]string, 0, len(attempts))

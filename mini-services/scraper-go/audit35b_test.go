@@ -82,10 +82,10 @@ func TestIsEngineStateNoteQueueSaturated(t *testing.T) {
 // TestNoteChainFailureStreakEscalation 非网络级连败指数退避 + 成功复位（Task 35-b，方向 B-1）
 func TestNoteChainFailureStreakEscalation(t *testing.T) {
 	host := "streak35b.test"
-	defer noteChainSuccess(host)
+	defer noteChainSuccess(host, "")
 	wantPenalty := []int64{1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000} // 1s→2s→4s→8s→15s 封顶
 	for i, want := range wantPenalty {
-		noteChainFailure(host, false)
+		noteChainFailure(host, false, nil)
 		healthMu.Lock()
 		h := healthMap[host]
 		gotPenalty, gotStreak := int64(0), 0
@@ -101,7 +101,7 @@ func TestNoteChainFailureStreakEscalation(t *testing.T) {
 		}
 	}
 	// 成功即整体复位（含 failStreak）
-	noteChainSuccess(host)
+	noteChainSuccess(host, "")
 	if got := hostFailStreak(host); got != 0 {
 		t.Fatalf("成功后 failStreak = %d, want 0（健康度应整体清零）", got)
 	}
@@ -113,15 +113,15 @@ func TestNoteChainFailureStreakEscalation(t *testing.T) {
 // TestNoteChainFailureNetStreakPathUnchanged 网络级路径维持既有口径（Task 35-b 不回归）
 func TestNoteChainFailureNetStreakPathUnchanged(t *testing.T) {
 	host := "netstreak35b.test"
-	defer noteChainSuccess(host)
-	noteChainFailure(host, true)
+	defer noteChainSuccess(host, "")
+	noteChainFailure(host, true, nil)
 	healthMu.Lock()
 	p1 := healthMap[host].penaltyMs
 	healthMu.Unlock()
 	if p1 != netFailPenaltyBaseMS { // 1.5s
 		t.Fatalf("首次网络级连败 penalty = %d, want %d（既有口径）", p1, netFailPenaltyBaseMS)
 	}
-	noteChainFailure(host, true) // netStreak=2 → 3s；同时 netBreakerStrikes=2 熔断
+	noteChainFailure(host, true, nil) // netStreak=2 → 3s；同时 netBreakerStrikes=2 熔断
 	healthMu.Lock()
 	p2 := healthMap[host].penaltyMs
 	healthMu.Unlock()
@@ -140,7 +140,7 @@ func TestAcquireSlotBudgetedShedZeroSideEffect(t *testing.T) {
 		hostSlotsMu.Lock()
 		delete(hostSlots, host)
 		hostSlotsMu.Unlock()
-		noteChainSuccess(host)
+		noteChainSuccess(host, "")
 	}()
 	// ①新主机首取：等待≈0，granted=true（deadline 余量 5s 足够）
 	waited, granted := acquireDomainSlotBudgeted(host, nowMs()+5000, 1500)

@@ -102,6 +102,7 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | 会话级画像粘性（E14） | got 车道画像/Accept-Language 按 host+45min 时间窗哈希粘性——同站会话内 UA 恒定（真实浏览器语义），窗到自然轮换 |
 | cf-mitigated 响应头探测（E15） | Cloudflare 自报挑战头（challenge/block）全车道短路判挑战——零体解析零误杀，挑战壳伪装正常页的收口 |
 | GB18030 特征视图（E16） | softBlock 档案标注层补 GBK 解码视图，GBK 站中文挑战词不再漏标注 |
+| 出口维度熔断（E17） | 熔断按 (主机×出口代理) 独立记账——直连出口被封锁（SYN 黑洞/IP 信誉拒）时改配规则代理后新出口零历史包袱立即重试；全部候选出口均熔断才快速失败，链内优先跳过熔断出口（临时降权不删除），LRU 256 上界淘汰=fail-open |
 | 预算感知限速 | acquireDomainSlotBudgeted：预计排队超预算时 shed 快速失败（不睡眠占槽），域限速与策略预算联动 |
 | 目录序号三层根修 | 目录采集管线 reorderRefPairs 重排（最新块+目录混合 DOM 序 → 全局升序），繁体「節/話」先归一 |
 
