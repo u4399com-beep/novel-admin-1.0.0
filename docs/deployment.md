@@ -1,9 +1,11 @@
 # novel-admin 安装部署图文教程（全 Go 架构 · 从零开始）
 
-> 适用架构：**Task 27 之后的终态** —— 全 Go 双进程：
+> 适用架构：**Task 58 之后的终态** —— 全 Go 双进程，**零 Node/TS**：
 > **backend-go**（:3000，页面 SSR + 业务 API + 采集 runner + 空库自动播种，四合一单进程）
 > ＋ **scraper-go**（:3030，反反爬采集引擎）。
-> **Next.js 已彻底拆除**（无 `src/`、无 `next` 依赖、无 Node 运行时参与线上服务）。
+> **Next.js 已彻底拆除**（Task 27 拆代理层、Task 38 拆 Prisma/TS 工具链、Task 58 拆最后一环
+> bun/Tailwind 构建期管线——无 `src/`、无 `prisma/`、无 `node_modules`、无任何依赖项；
+> 根 `package.json` 仅是沙箱启动契约的命令 shim，内容全部指向 Go/bash 脚本）。
 >
 > 本教程面向**零基础读者**：假设你刚拿到一台全新 Ubuntu 22.04 服务器，从装系统工具开始，每一步都给出
 > **目的说明 → 完整命令（含预期输出）→ 常见报错与解决 → 验证方法**。照着从上往下抄即可完成部署。
@@ -21,9 +23,9 @@
 2. [环境准备：系统要求与依赖安装](#2-环境准备系统要求与依赖安装)
 3. [获取代码：git clone](#3-获取代码git-clone)
 4. [项目配置：环境变量](#4-项目配置环境变量)
-5. [构建项目：bun install + build-go.sh](#5-构建项目bun-install--build-gosh)
+5. [构建项目：build-go.sh（纯 Go）](#5-构建项目build-gosh纯-go)
 6. [数据库初始化：自动建表 + 种子自动播种](#6-数据库初始化自动建表--种子自动播种)
-7. [启动服务：bun run dev / 手动 / systemd](#7-启动服务bun-run-dev--手动--systemd)
+7. [启动服务：沙箱 dev / 手动 / systemd](#7-启动服务沙箱-dev--手动--systemd)
 8. [反向代理与 HTTPS（Nginx / Caddy）](#8-反向代理与-httpsnginx--caddy)
 9. [部署验证清单 + 采集冒烟测试](#9-部署验证清单--采集冒烟测试)
 10. [日常运维：日志 / 重启 / 备份 / 升级](#10-日常运维日志--重启--备份--升级)
@@ -59,9 +61,10 @@ backend-go ──HTTP──► scraper-go :3030（采集引擎，8 策略链 / G
 - **3000 端口是唯一对外入口**，由 backend-go 直接承载（页面 + API + runner 同进程）；
   scraper-go :3030 只服务内部采集调用，**不需要**对公网开放。
 - **SQLite 单库单写者**：`db/custom.db` 是唯一存储，backend-go 是唯一业务写入方
-  （Go 侧用 `modernc.org/sqlite` 纯 Go 驱动直连，免 CGo；表结构权威参考 `prisma/schema.prisma`）。
+  （Go 侧用 `modernc.org/sqlite` 纯 Go 驱动直连，免 CGo；表结构权威在 `mini-services/backend-go/schema.go`，
+  启动时 `CREATE TABLE IF NOT EXISTS` 自引导，无需外部 CLI 建表）。
 - **空库自动播种**：全新部署**不需要任何预置数据文件**——首次启动检测到规则/分类空表，
-  自动从内嵌种子恢复 15 条采集规则、9 个分类与首页三区块配置（详见 §6.2）。
+  自动从内嵌种子恢复 17 条采集规则（15 生产 + 2 GoEdge 人工过验草稿）、9 个分类与首页三区块配置（详见 §6.2）。
 - **历史残响**：Next.js 代理层、3007 双保险、`GO_WEB_ORIGIN` / `BACKEND_WATCH_DEV` 等
   旧配置均已退役，**设置了也不会生效**；`BACKEND_PORT=3005` 仅作迁移期兼容值，新部署一律 3000。
 
@@ -72,14 +75,13 @@ backend-go ──HTTP──► scraper-go :3030（采集引擎，8 策略链 / G
 | backend-go | **3000**（`BACKEND_PORT` 可覆盖） | Go ≥1.22 | 页面 SSR + 业务 API + 采集 runner + 空库播种（`BACKEND_MODE=all`） | `mini-services/backend-go/` |
 | scraper-go | 3030（`SCRAPER_PORT` 可覆盖） | Go ≥1.22 | 反反爬引擎：8 策略链、GBK/GB18030 解码、域名限速、SSRF 防护 | `mini-services/scraper-go/` |
 | SQLite | — | — | 唯一存储 `db/custom.db`（WAL + busy_timeout 5s） | `db/` |
-| Prisma CLI | — | Bun | 仅**建表/同步表结构**（`bun run db:push`）与生成工具用客户端；不参与线上服务 | `prisma/` |
 | scraper-service | — | TS（**已删除**） | 旧 TS 引擎，已被 scraper-go 逐行移植取代；目录已于 Task 33-c rg 全仓验证零活引用后删除（历史见 git/worklog） | — |
 
 ### 1.3 看护关系（谁拉起谁）
 
 ```
  开发/沙箱形态：
-   bun run dev ─► scripts/dev-go.sh（自愈循环：backend-go 退出 2s 后重拉 + 防双实例预检）
+   沙箱 dev 链（bun run dev，命令 shim）─► scripts/dev-go.sh（自愈循环：backend-go 退出 2s 后重拉 + 防双实例预检）
         │
         ▼
    backend-go :3000 ──每 ≈30s 探测 :3030（互监护）──► scraper-go :3030
@@ -191,40 +193,28 @@ go version go1.22.10 linux/amd64
 > 说明：仓库内两个 `run.sh`（`mini-services/*/run.sh`）会自动把 `/home/z/go-sdk/go/bin`
 > 追加进 PATH（沙箱环境的 Go 安装位置），你的机器装在 `/usr/local/go` 时二者并存、互不影响。
 
-### 2.4 安装 Bun（依赖安装 / CSS 构建 / 运维脚本运行器）
+### 2.4 关于 Node/Bun：**不需要安装**（Task 58 起零 Node/TS）
 
-**目的**：项目虽已是全 Go，但仍需要 Bun 完成 3 件事（为什么详见 §5.1）：
-① `bun install` 装 Prisma CLI + Tailwind 依赖；② `bun run build:css` 构建 Tailwind CSS；③ 充当 `bun run dev/build` 命令入口。
+**目的说明**：Task 27 拆除 Next.js、Task 38 拆除 Prisma/TS 工具链后，全仓曾仅剩「构建期 CSS
+管线」一处 Bun 依赖（Tailwind v4 扫描 Go 模板生成 tw.css）。Task 58 已把这最后一环也拆除：
+**tw.css 固化为仓库内 vendored 资产**（`web/static/css/tw.css`，与当前模板类名同步），
+`build-go.sh` 不再调用任何 Node 工具。
 
-```bash
-curl -fsSL https://bun.sh/install | bash
-# 预期输出（节选）：
-# bun was installed successfully!
-#   ~version: v1.3.x
-echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-国内服务器若 `bun.sh` 不可达，可用 npm 镜像安装（需先有 Node/npm，任选其一）：
+- **`bun run dev` / `bun run build` 仍可用**：根 `package.json` 保留为沙箱启动契约的命令
+  shim（scripts 全部指向 Go/bash 脚本），但装不装 Bun 都无所谓——直接跑
+  `bash scripts/dev-go.sh` / `bash scripts/build-go.sh` 完全等价。
+- **CSS 漂移自检**（模板改版后建议跑一次）：
 
 ```bash
-sudo npm i -g bun --registry=https://registry.npmmirror.com
-```
-
-**验证**：
-
-```bash
-bun --version
+cd mini-services/backend-go && go run ./cmd/csscheck
 # 预期输出：
-1.3.14
+# [csscheck] 扫描面 95 文件 / 候选类 23141（唯一 1519）/ tw.css 缺失 0
+# [csscheck] OK：模板类名全部被 vendored tw.css 覆盖
 ```
 
-常见报错：
-
-| 报错 | 解决 |
-|------|------|
-| `curl: (7) Failed to connect` | 换上方 npm 镜像方式，或配置代理后重试 |
-| `bun: command not found` | `~/.bun/bin` 未进 PATH，重看第 ② 步 echo 是否执行 |
+若报告缺失项 >0：说明模板新增了工具类而 vendored tw.css 未覆盖。处置：在任意有 Node
+的环境临时跑一次 Tailwind 生成（`web-src/tw-input.css` 的 @source 口径即扫描面），把产物
+覆盖回 `web/static/css/tw.css` 提交；或按缺失类名手写等价 CSS 追加到主题 css。日常零影响。
 
 ### 2.5 安装 curl-impersonate（可选，硬反爬站必备）
 
@@ -313,7 +303,7 @@ git clone git@github.com:<YOUR_ACCOUNT>/novel-admin.git novel-admin
 ```bash
 cd /opt/novel-admin && ls
 # 预期输出（应看到以下关键项，说明拉取完整）：
-# mini-services  prisma  db  docs  scripts  package.json  go 两模块...
+# mini-services  db  docs  scripts  package.json（命令 shim）  Caddyfile  go 两模块...
 ```
 
 常见报错：
@@ -332,8 +322,7 @@ cd /opt/novel-admin && ls
 
 | 变量 | 谁在读 | 怎么配置才生效 |
 |------|--------|----------------|
-| `DATABASE_URL` | **Prisma CLI**（`bun run db:push` 建表用） | `.env` 文件（Prisma CLI 自动读取项目根 `.env`） |
-| `DB_PATH` | **backend-go**（运行时读库路径） | 进程环境变量（shell export / systemd `Environment=`）；**注意 backend-go 不读 .env** |
+| `DB_PATH` | **backend-go**（运行时读库路径） | 进程环境变量（shell export / systemd `Environment=`）；backend-go 不读 .env |
 | `BACKEND_PORT` | backend-go | 同上，缺省 3000 |
 | `BACKEND_MODE` | backend-go | 同上，缺省 `all`（api\|runner\|all 三选一） |
 | `SCRAPER_PORT` | scraper-go | 同上，缺省 3030 |
@@ -343,17 +332,7 @@ cd /opt/novel-admin && ls
 | `SCRAPER_MIN_INTERVAL_MS` | scraper-go 域名限速 | 同上，缺省 1200，**不允许低于 1000** |
 | `GOPROXY` | go 工具链 | shell / `go env -w`，国内必配 `https://goproxy.cn,direct` |
 
-### 4.2 创建 .env（给 Prisma CLI 建表用）
-
-```bash
-cd /opt/novel-admin
-mkdir -p db
-cat > .env <<'EOF'
-DATABASE_URL=file:/opt/novel-admin/db/custom.db
-EOF
-```
-
-### 4.3 给运行进程准备环境变量（shell 部署形态）
+### 4.2 给运行进程准备环境变量（shell 部署形态）
 
 如果用 §7.1/§7.2 的 shell 方式启动，把运行变量写进 profile：
 
@@ -369,65 +348,34 @@ source ~/.bashrc
 
 如果用 §7.3 的 systemd 生产部署，这些变量写进 unit 文件（见 §7.3，**不需要**写 ~/.bashrc）。
 
-### 4.4 两条铁律
+### 4.3 两条铁律
 
-1. **两处路径必须指向同一个文件**：`DATABASE_URL`（建表）= `DB_PATH`（运行时）。
-   建表建到 A 文件、运行读 B 文件，就会出现「表都建了启动却报 no such table」。
-2. **backend-go 与 systemd 不读 .env**：`.env` 只服务 Prisma CLI；Go 进程的一切变量走
-   shell export 或 systemd `Environment=`。
+1. **建库零步骤**：backend-go 启动时自动 `CREATE TABLE IF NOT EXISTS` 建表（含缺列自迁移），
+   空表再自动播种（§6）。没有任何「先建表后启动」的前置命令。
+2. **Go 进程不读 .env**：一切配置走 shell export 或 systemd `Environment=`。
 
 ---
 
-## 5. 构建项目：bun install + build-go.sh
+## 5. 构建项目：build-go.sh（纯 Go）
 
-### 5.1 为什么全 Go 项目还需要 `bun install`？
+### 5.1 为什么现在**完全没有** Node/Bun 了？
 
-这是新同学最常问的问题，三个原因：
+Task 58 之前曾有 3 个残留理由（CSS 构建链 / Prisma CLI 建表 / 命令入口），现在全部消失：
 
-1. **CSS 构建链**：前台页面样式来自 Tailwind v4 扫描 **Go 模板**（`web/templates/**`）、
-   静态 JS（`web/static/**`）与渐变 token 表（`web-src/gradient-tokens.txt`）生成的单个
-   `web/static/css/tw.css`（约 170KB）。扫描/编译由 `scripts/build-web-css.mjs`（Bun 脚本）+
-   `@tailwindcss/postcss` 完成。
-2. **Prisma CLI 建表**：表结构权威在 `prisma/schema.prisma`，建库走 `bun run db:push`
-   （prisma 命令行）；另有一个运维小工具 `scripts/engine-rule-test.mjs`（规则三段试测）
-   依赖 Prisma Client 读库。
-3. **命令入口**：`package.json` 的 `bun run dev / build / build:css` 是约定入口
-   （分别映射到 `scripts/dev-go.sh` / `scripts/build-go.sh` / `scripts/build-web-css.mjs`）。
+1. **CSS 构建链**：`web/static/css/tw.css` 已固化为仓库内 vendored 资产（与当前模板类名同步）。
+   漂移自检：`cd mini-services/backend-go && go run ./cmd/csscheck`（§2.4）。
+2. **建表**：表结构权威在 `mini-services/backend-go/schema.go`，backend-go 启动时纯 Go
+   自引导（`CREATE TABLE IF NOT EXISTS` + 缺列自迁移），空表再自动播种——无需任何 CLI。
+3. **命令入口**：根 `package.json` 保留为沙箱启动契约的命令 shim（scripts 全部指向
+   Go/bash 脚本，零依赖项）；不用 Bun 时直接跑对应脚本完全等价。
 
-除此之外，**线上运行不依赖 Node/Bun**——两个 Go 二进制自包含。
+**线上运行与构建均不依赖 Node/Bun**——两个 Go 二进制自包含。
 
-### 5.2 安装依赖
+### 5.2 一键构建：`bash scripts/build-go.sh`
 
 ```bash
 cd /opt/novel-admin
-bun install
-```
-
-预期输出（依赖极简：运行依赖 2 包 + 开发依赖 5 包）：
-
-```
-bun install v1.3.14
-2 packages installed [1.2s]
-```
-
-`@prisma/client` 的 postinstall 会自动执行 `prisma generate`（生成 Prisma Client 供运维工具用）。
-若日志提示未生成，手动补一刀：
-
-```bash
-bun run db:generate
-```
-
-常见报错：
-
-| 报错 | 解决 |
-|------|------|
-| Prisma 引擎下载慢/超时 | 设镜像：`export PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma` 后重跑 |
-| `EACCES` 权限错误 | 不要用 sudo 跑 bun install；确认目录属主是当前用户（`sudo chown -R $USER /opt/novel-admin`） |
-
-### 5.3 一键构建：`bun run build`
-
-```bash
-bun run build   # = bash scripts/build-go.sh
+bash scripts/build-go.sh    # 或 bun run build（shim 等价）
 ```
 
 预期输出：
@@ -435,27 +383,24 @@ bun run build   # = bash scripts/build-go.sh
 ```
 [build-go] backend-go ...
 [build-go] scraper-go ...
-[build-go] tailwind css ...
-[build-css] mini-services/backend-go/web-src/tw-input.css → mini-services/backend-go/web/static/css/tw.css (170.x KB)
 [build-go] done
 ```
 
-**build-go.sh 逐步解析**（对应脚本三段）：
+**build-go.sh 逐步解析**（对应脚本两段）：
 
 | 步骤 | 命令 | 产物 | 说明 |
 |------|------|------|------|
 | ① 编译 backend-go | `cd mini-services/backend-go && go build -o backend-go.bin .` | `backend-go.bin`（≈19MB） | 页面 SSR+API+runner+seed 四合一；首次编译拉取 `modernc.org/sqlite`、`golang.org/x/image` 等模块（goproxy.cn 下约 1~2 分钟，之后有缓存秒级） |
 | ② 编译 scraper-go | `cd mini-services/scraper-go && go build -o scraper-go.bin .` | `scraper-go.bin`（≈11MB） | 采集引擎；依赖 `goquery`/`golang.org/x/net` 等 |
-| ③ 构建 Tailwind CSS | `bun run build:css` | `web/static/css/tw.css` | 扫描模板/静态 JS/gradient-tokens 中的类名 |
 
 **验证**：
 
 ```bash
 ls -lh mini-services/backend-go/backend-go.bin mini-services/scraper-go/scraper-go.bin mini-services/backend-go/web/static/css/tw.css
-# 三个文件都应存在且 >1MB（tw.css 约 170KB）
+# 两个二进制 >1MB；tw.css 约 134KB（vendored，构建不重生成）
 ```
 
-### 5.4 手动等价命令（想脱离脚本逐步理解时）
+### 5.3 手动等价命令（想脱离脚本逐步理解时）
 
 ```bash
 export PATH=$PATH:/usr/local/go/bin
@@ -468,39 +413,28 @@ go build -o backend-go.bin .
 # ② scraper-go
 cd ../scraper-go
 go build -o scraper-go.bin .
-
-# ③ Tailwind CSS
-cd /opt/novel-admin
-bun scripts/build-web-css.mjs
 ```
 
-> 改了 Go 模板（`web/templates/**`）或静态 JS 后必须重跑第 ③ 步，否则新类名没有样式（§11.6）。
 > `go build` 可加 `-trimpath -ldflags "-s -w"` 缩小二进制；`go vet ./...` / `go test ./...`
-> 是提交前的标准自检。
-
+> 是提交前的标准自检。模板类名大改后记得跑 csscheck（§2.4）。
 ---
 
 ## 6. 数据库初始化：自动建表 + 种子自动播种
 
-### 6.1 建表：`bun run db:push`
+### 6.1 建表：启动自引导（零命令）
 
-**目的**：按 `prisma/schema.prisma` 在 SQLite 文件里创建全部 7 张表
-（Novel / Chapter / Category / SiteSetting / ScrapeRule / ScrapeTask / PseoKeyword）。
+**目的**：backend-go 首次启动时按 `mini-services/backend-go/schema.go` 在 SQLite 文件里
+创建全部 7 张表（Novel / Chapter / Category / SiteSetting / ScrapeRule / ScrapeTask / PseoKeyword），
+并对已存在的旧库做**缺列自迁移**（`ensureColumn` 家族，幂等）。
 
 ```bash
 cd /opt/novel-admin
-bun run db:push    # = prisma db push --accept-data-loss
+mkdir -p db      # 父目录必须存在（历史教训：目录缺失报 CANTOPEN，文案误导为 out of memory）
+bash scripts/build-go.sh && ./mini-services/backend-go/backend-go.bin   # 启动即建表
 ```
 
-预期输出：
-
-```
-🚀  Your database is now in sync with your schema. Done in 1.2s
-```
-
-- ⚠️ `db:push` 对**已有库**有 schema 同步语义（可能删改列），生产库不要随手执行；
-  全新空库首建无副作用。
-- 空库场景（`db/custom.db` 不存在）会自动创建文件。
+- 空库场景（`db/custom.db` 不存在）会自动创建文件并建表；
+- ⚠️ 自迁移只增列不删列，生产库升级新版本二进制即完成 schema 同步。
 
 **验证**：
 
@@ -522,8 +456,8 @@ backend-go 启动
    ├─ 打开 db/custom.db（WAL，DB_PATH 可覆盖）
    │
    ├─ startSeedIfEmpty()（seed.go）
-   │     ├─ ScrapeRule 表 COUNT==0 ？──是──► 导入 15 条校准规则
-   │     │                                    （11 老站多轮实测定稿 + 4 新站，
+   │     ├─ ScrapeRule 表 COUNT==0 ？──是──► 导入 17 条校准规则
+   │     │                                    （11 老站多轮实测定稿 + 4 新站 + 2 GoEdge 人工过验草稿，
    │     │                                     含 fetch-curl/chapterListApi 增强标注）
    │     ├─ Category  表 COUNT==0 ？──是──► 导入 9 个分类
    │     │                                    （8 核心类 + 「其他」id=9999 sort=9999 恒末位）
@@ -538,7 +472,7 @@ backend-go 启动
 **永远不会被重启覆盖**；播种失败仅告警不阻断启动。
  SiteSetting 行本身由 API 层兜底 `INSERT OR IGNORE`，此处只补 homeConfig。
 
-种子数据源：`mini-services/backend-go/seed/seed.json`（15 规则 + 9 分类 + site 三项 + homeBlocks）。
+种子数据源：`mini-services/backend-go/seed/seed.json`（17 规则 + 9 分类 + site 三项 + homeBlocks）。
 后台改完规则想「随仓库分发」，把新值同步回这份 JSON 即可（下次空库播种即为新版）。
 
 ### 6.3 验证播种结果
@@ -554,7 +488,7 @@ backend-go 启动
 或直接查库：
 
 ```bash
-sqlite3 db/custom.db "SELECT COUNT(*) FROM ScrapeRule;"   # → 15
+sqlite3 db/custom.db "SELECT COUNT(*) FROM ScrapeRule;"   # → 17
 sqlite3 db/custom.db "SELECT COUNT(*) FROM Category;"     # → 9
 sqlite3 db/custom.db "SELECT id,name FROM Category ORDER BY sort LIMIT 9;"
 # → 1 玄幻奇幻 / 2 武侠仙侠 / 3 都市言情 / 4 历史军事 / 5 科幻未来 / 6 游戏竞技 / 7 悬疑灵异 / 8 轻小说 / 9999 其他
@@ -564,21 +498,21 @@ sqlite3 db/custom.db "SELECT id,name FROM Category ORDER BY sort LIMIT 9;"
 
 ---
 
-## 7. 启动服务：bun run dev / 手动 / systemd
+## 7. 启动服务：沙箱 dev / 手动 / systemd
 
 三选一按场景：**开发/验证 → §7.1；临时后台 → §7.2；生产 → §7.3**。
 
-### 7.1 推荐路径：一条 `bun run dev`（自带自愈）
+### 7.1 推荐路径：一条 dev-go.sh（自带自愈）
 
 ```bash
 cd /opt/novel-admin
-bun run dev   # = bash scripts/dev-go.sh
+bash scripts/dev-go.sh   # 沙箱形态可用 bun run dev（命令 shim 等价）
 ```
 
 **dev-go.sh 自愈机制图解**：
 
 ```
-bun run dev（dev-go.sh，前台驻留）
+dev-go.sh（前台驻留）
    │
    ├─ ① 健康预检：GET :3000/api/health
    │      已有 backend-go 实例 → 打印「已有实例，退出防双实例」并 exit 0
@@ -602,7 +536,7 @@ bun run dev（dev-go.sh，前台驻留）
   `scraper-go.bin`（日志 `/tmp/engine.log`）；
 - 更省事的第二条路：另开终端跑 `bash scripts/ensure-services.sh`（幂等兜底，可挂 cron 每分钟）。
 
-> **为什么必须经 `bun run dev` 链路**：沙箱环境实测会周期回收交互 shell 直接派生的后台进程
+> **为什么沙箱里必须经 dev 链路**：沙箱环境实测会周期回收交互 shell 直接派生的后台进程
 > （setsid/nohup 均不保险），经沙箱 dev 链路（基础设施进程）孵化的进程才长寿稳定。
 > 普通 VPS 无此限制，生产直接用 systemd（§7.3）。
 
@@ -894,7 +828,7 @@ curl -s -X PATCH http://127.0.0.1:3000/api/scrape-tasks/28 \
 ### 10.2 重启方法（按启动形态对号入座）
 
 ```bash
-# A. dev 循环形态（bun run dev 在跑）：只杀进程即可，2s 后自动重拉
+# A. dev 循环形态（dev-go.sh 在跑）：只杀进程即可，2s 后自动重拉
 pkill -f 'backend-go[.]bin'
 
 # B. 手动 nohup 形态：杀掉后按 §7.2 重拉
@@ -915,8 +849,8 @@ sudo systemctl restart novel-backend.service novel-scraper.service
 - 改完想「随仓库分发」：把新值同步回 `mini-services/backend-go/seed/seed.json`（空库播种源）。
 - ⚠️ 后台规则表单是**全字段覆盖**式 PUT：传部分 JSON 会把未传的 bookRule/chapterRule 清空——
   改单字段也要带全量对象。
-- 三段试测工具（直连 3030 引擎，不入库）：
-  `bun scripts/engine-rule-test.mjs <规则名> <URL> [list|book|chapter]`（前置：`bun run db:generate`）。
+- 三段试测工具（读 backend 规则 → 直连 3030 引擎，不入库；Go 版，Task 58 起）：
+  `cd mini-services/scraper-go && go run ./cmd/ruletest <规则名或ID> <URL> [list|book|chapter]`。
 
 ### 10.4 数据备份与恢复
 
@@ -957,8 +891,7 @@ sudo systemctl start novel-backend.service novel-scraper.service
 ```bash
 cd /opt/novel-admin
 git pull                          # 私有仓库确保 credential helper 可用（§3.2）
-bun install                       # package.json 有变更时同步依赖
-bun run build                     # 双二进制 + tw.css 重建（增量，通常 <1 分钟）
+bash scripts/build-go.sh          # 双二进制重建（增量，通常 <1 分钟；零依赖无需 install）
 sudo systemctl restart novel-backend.service novel-scraper.service
 # dev 形态则：pkill -f 'backend-go[.]bin' 后由自愈循环重拉（run.sh 内置增量编译）
 curl -s http://127.0.0.1:3000/api/health | grep -o '"ok":true'   # 收尾验证
@@ -1017,7 +950,7 @@ pkill -f 'backend-go[.]bin'; pkill -f 'scraper-[g]o.bin'
 
 1. 该站是否 GBK 编码？引擎自带 GBK/GB18030 自动探测解码，正常无需干预；
 2. 规则里 `charset` 字段被误填：清空让它自动探测，或显式 `"charset":"gbk"`；
-3. 少数站响应头与真实编码不符 → 以三段试测工具实测：`bun scripts/engine-rule-test.mjs <规则名> <URL> chapter`
+3. 少数站响应头与真实编码不符 → 以三段试测工具实测：`cd mini-services/scraper-go && go run ./cmd/ruletest <规则名或ID> <URL> chapter`
    看 attempts 里引擎识别出的编码，按实测值回填规则。
 
 ### 11.5 采集失败分类排查表
@@ -1026,7 +959,7 @@ pkill -f 'backend-go[.]bin'; pkill -f 'scraper-[g]o.bin'
 |------|------|------|
 | 任务长期 `pending` 不动 | runner 不在线 | 心跳文件 `/tmp/scrape-runner-heartbeat` 是否 10s 内刷新；backend-go 日志有无 runner 启动记录；规则 `enabled=false` 也会被跳过 |
 | 日志全量 `challenge page` / blocked | 指纹被识别 | 先 `bash scripts/install-curl-impersonate.sh`（~/.local/bin 可能被清）；仍拦截 → 该站引擎指纹被针对，结论记规则 notes |
-| list 提取 0 本 | 站点改版选择器失效 | 系统 curl 直接抓目标页对照真实 HTML，校准 listRule；改完用 engine-rule-test.mjs 三段试测 |
+| list 提取 0 本 | 站点改版选择器失效 | 系统 curl 直接抓目标页对照真实 HTML，校准 listRule；改完用 ruletest 三段试测（§10.3） |
 | 章节正文大面积失败后自动放缓 | 限速/熔断（正常自愈） | 引擎对 429/503/连败有指数冷却（60s 起步）；等冷却或错峰重启/恢复任务，骨架自动续传 |
 | `partial` 结局 | 部分成功 | 属预期终态：看任务日志失败明细，必要时 restart 重跑（进度清零）或按日志补采 |
 | 恢复（resume）后重复采集？ | 不会 | Phase 1 骨架已入库，resume 按 DB 骨架续传：已有正文跳过、缺失补抓 |
@@ -1034,10 +967,11 @@ pkill -f 'backend-go[.]bin'; pkill -f 'scraper-[g]o.bin'
 
 ### 11.6 CSS 类名不生效（改了模板页面没样式）
 
-Tailwind 只认**构建时**扫描到的类名。改 Go 模板 / 静态 JS 后必须：
+tw.css 已是 vendored 资产，改模板不会自动重生成。改 Go 模板 / 静态 JS 后必须自检：
 
 ```bash
-bun run build:css    # 重新生成 web/static/css/tw.css；bun run build 已内置该步
+cd mini-services/backend-go && go run ./cmd/csscheck
+# 缺失 0 → 无需处理；缺失 >0 → 按 §2.4 的再生流程补齐（或在有 Node 的环境一次性重建 tw.css 后提交）
 ```
 
 ### 11.7 内存与性能
@@ -1081,12 +1015,12 @@ novel-admin/
 │  │  ├─ curlimp.go / fetchcurl.go#  TLS 指纹伪装策略（依赖 ~/.local/bin/curl_*）
 │  │  ├─ extract.go / selectors.go#  规则提取器
 │  │  ├─ run.sh / scraper-go.bin
-├─ prisma/schema.prisma          # 表结构权威参考（7 模型；db:push 建表/同步用）
+├─ mini-services/backend-go/schema.go  # 表结构权威（启动自引导建表 + 缺列自迁移）
 ├─ db/custom.db(-shm/-wal)       # 唯一存储（SQLite WAL）
 ├─ public/covers/                # 采集封面落盘（/covers/ 路由对外）
 ├─ docs/                         # 本文档 + scrape-rules.md + anti-anti-crawl.md + images/
 ├─ scripts/                      # 活跃 6 脚本（见 12.4；archive/ 44 项历史存档已于 Task 33-c 删除）
-├─ package.json                  # bun run 入口映射（dev/build/build:css/db:push…）
+├─ package.json                  # 沙箱启动契约命令 shim（dev/build → Go 脚本；零依赖项）
 └─ .zscripts/                    # 沙箱部署产物脚本（build.sh/start.sh：Go 产物模型）
 ```
 
@@ -1112,38 +1046,39 @@ novel-admin/
 | `COVERS_DIR` | 向上查找 `public/covers` | 封面落盘目录 |
 | `SCRAPER_PYTHON` | PATH 中的 python | browser 策略渲染桥接 |
 | `SCRAPER_MIN_INTERVAL_MS` | `1200`（下限 1000） | 每域名限速 |
-| `DATABASE_URL` | — | 仅 Prisma CLI（.env） |
 | `GOPROXY` | 官方代理 | 国内设 `https://goproxy.cn,direct` |
 
 ### 12.4 scripts/ 活跃脚本（6 项）
 
 | 脚本 | 用途 | 运行 |
 |------|------|------|
-| `dev-go.sh` | dev 入口自愈循环：健康预检防双实例 + 崩溃 2s 重拉 | `bun run dev` |
-| `build-go.sh` | 双二进制 + Tailwind CSS 一键构建 | `bun run build` |
+| `dev-go.sh` | dev 入口自愈循环：健康预检防双实例 + 崩溃 2s 重拉 | `bash scripts/dev-go.sh` |
+| `build-go.sh` | 双二进制一键构建（零 Node） | `bash scripts/build-go.sh` |
 | `ensure-services.sh` | 二级兜底：3000/3030 不通才拉起（幂等，可挂 cron） | `bash scripts/ensure-services.sh` |
-| `build-web-css.mjs` | Tailwind v4 构建（扫 Go 模板/静态资源/gradient-tokens → tw.css） | `bun run build:css` |
-| `engine-rule-test.mjs` | 规则三段试测（读 DB 规则 → 直连 3030，不入库） | `bun scripts/engine-rule-test.mjs <规则名> <URL> [list\|book\|chapter]` |
 | `install-curl-impersonate.sh` | 重装 curl-impersonate 21 个二进制到 ~/.local/bin | `bash scripts/install-curl-impersonate.sh` |
+
+Go 运维工具（`go run` 直跑，替代已拆除的 .mjs 脚本）：
+
+| 工具 | 用途 | 运行 |
+|------|------|------|
+| `backend-go/cmd/csscheck` | Tailwind 类名漂移检测（模板 → vendored tw.css） | `cd mini-services/backend-go && go run ./cmd/csscheck` |
+| `scraper-go/cmd/ruletest` | 规则三段试测（读 DB 规则 → 直连 3030，不入库） | `cd mini-services/scraper-go && go run ./cmd/ruletest <规则名或ID> <URL> [list\|book\|chapter]` |
 
 > 历史脚本 44 项曾归档于 `scripts/archive/`，已于 Task 33-c 确认零活引用后整体删除（需要时从 git 历史回溯）。
 
-### 12.5 package.json 命令速查
+### 12.5 package.json 命令速查（命令 shim，零依赖项）
 
 | 命令 | 实际执行 | 说明 |
 |------|----------|------|
 | `bun run dev` | `bash scripts/dev-go.sh` | backend-go :3000 自愈循环 |
 | `bun run start` | `bash scripts/dev-go.sh` | 同 dev |
-| `bun run build` | `bash scripts/build-go.sh` | 双 Go 二进制 + tw.css |
-| `bun run build:css` | `bun scripts/build-web-css.mjs` | 模板类名变更后必跑 |
-| `bun run db:push` | `prisma db push --accept-data-loss` | 建库/同步 schema |
-| `bun run db:generate` | `prisma generate` | 生成 Prisma Client（engine-rule-test 用） |
+| `bun run build` | `bash scripts/build-go.sh` | 双 Go 二进制（tw.css vendored，不再生成） |
 
 ### 12.6 沙箱部署产物模型（.zscripts，可选阅读）
 
 沙箱/容器化发布走 `.zscripts/build.sh` → `.zscripts/start.sh`：
 
-- **build.sh**：`bun install` → `bun run build`（双二进制 + CSS）→ 校验产物完整性
+- **build.sh**：`bash scripts/build-go.sh`（双二进制；零 Node）→ 校验产物完整性
   （`backend-go.bin` / `scraper-go.bin` / `web/templates` 缺失即 fail）→ 收集
   `backend-go/`（二进制 + web/ + run.sh）、`scraper-go/`（二进制 + run.sh）、`db/`（目录占位，
   种子已内嵌无需数据文件）到构建目录；
@@ -1152,13 +1087,13 @@ novel-admin/
 
 ### 12.7 FAQ
 
-**Q1：全 Go 了为什么还要装 Bun？**
-CSS 构建链（Tailwind 扫 Go 模板）、Prisma CLI 建表、以及 `bun run dev/build` 命令入口。
-线上运行不需要 Node/Bun（§5.1）。
+**Q1：还需要装 Bun/Node 吗？**
+不需要（Task 58 起零 Node/TS）。根 `package.json` 仅是沙箱启动契约的命令 shim（scripts 全部
+指向 Go/bash 脚本，零依赖项）；`bun run dev/build` 与直接跑对应脚本完全等价（§5.1）。
 
-**Q2：必须先 `db:push` 吗？直接启动 backend-go 行不行？**
-不行——backend-go 不建表（表结构归 Prisma schema 权威），空文件启动会报 no such table。
-流程：`bun run db:push` 建表 → 启动 → 种子自动灌数据。
+**Q2：必须先建表吗？直接启动 backend-go 行不行？**
+行——backend-go 启动时自引导建表 + 缺列自迁移，空表自动播种。唯一前置是 `mkdir -p db`
+（父目录缺失会报 CANTOPEN，文案误导为 out of memory）。
 
 **Q3：种子会覆盖我改过的规则吗？**
 不会。播种只在 `COUNT==0` 时触发，幂等不覆盖（§6.2）。

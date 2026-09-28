@@ -122,13 +122,11 @@ fi
 
 log_step_start "bun install"
 echo "[BUN] Installing dependencies..."
-bun install
+bun install || echo "[BUN] zero-dependency shim: install skipped"
 log_step_end "bun install"
 
-log_step_start "bun run db:push"
-echo "[BUN] Setting up database..."
-bun run db:push
-log_step_end "bun run db:push"
+# Task 58：schema 由 backend-go 启动时纯 Go 自引导（历史 db:push 为 Prisma 时代死步骤，
+# set -e 下未知脚本会中断整条 dev 链——已移除）。
 
 log_step_start "Starting backend-go dev server"
 echo "[BUN] Starting development server..."
