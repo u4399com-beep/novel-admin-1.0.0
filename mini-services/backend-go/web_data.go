@@ -729,9 +729,9 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 		return
 	}
 	data := webCommon(r)
-	var status string
+	var status, srcCol, seedCol string
 	var pageData sql.NullString
-	err := queryOne(`SELECT "status","pageData" FROM "PseoKeyword" WHERE "keyword" = ?`, []any{&status, &pageData}, kw)
+	err := queryOne(`SELECT "status","pageData","source","seed" FROM "PseoKeyword" WHERE "keyword" = ?`, []any{&status, &pageData, &srcCol, &seedCol}, kw)
 	generated := err == nil && status == "generated" && pageData.Valid && pageData.String != ""
 	var saved struct {
 		Description string    `json:"generatedDescription"`
@@ -766,6 +766,12 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 		}
 		novels = rt
 	}
+	// Task 59 v4-③: 种子书置顶主打——pSEO 页书籍信息+简介应为种子书（血缘 seed/source
+	// 解析）的信息，而非匹配列表里点击最高的另一本；种子书不可考时维持 novels[0] 语义。
+	// 存量已生成页 novelIds 非种子书置顶的，也在此处重排（渲染时根治，不依赖重新生成）
+	if sn, sid := pseoSeedBookNovel(pseoSeedBookTitle(kw, srcCol, seedCol), novels); sn != nil {
+		novels = pseoPromoteSeedNovel(novels, sn, sid)
+	}
 	if desc == "" {
 		s := data["Site"].(map[string]any)
 		siteName, _ := s["siteName"].(string)
@@ -779,7 +785,7 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	data["siteName"] = siteName
 
 	// Task 50-①: 主打书区块（书籍页前两区块语义复刻：封面属性盒 + 简介/标签）——
-	// novels[0] 即绑定书置顶的最佳匹配（generated 按 novelIds 原序；实时兜底按 matchNovels 序）。
+	// Task 59 起 novels[0] 已由种子书置顶保证（有血缘时=种子书；无血缘时=最佳匹配）。
 	// 章节元数据借 chapterMetaBlock（与书籍页同口径），键名加 Featured 前缀避免与顶层契约撞车。
 	if len(novels) > 0 {
 		fn := novels[0]

@@ -2681,3 +2681,21 @@ Stage Summary:
 - 深审：连续 21 轮无新 P1（58-a P2×1 为主线新建工具的回归而非引擎域）；任务生命周期/规则装载/封面回退三条主线线索全部实证闭合
 - 生产状态：书库 276 本重建中（9 任务 running）、封面本地化 93%、双服务三连全绿、E2E 桌面+移动全过
 - 提交链：…→382a280(54)→6faf682(58 前段)→本提交(58)
+---
+Task ID: 59-R1
+Agent: main (Z.ai Code)
+Task: v4 指令六项——①Next.js/TS 清退+规则全突破稳定长期获取 ②采集+反反爬增强逐行深抓bug ③pseo页书籍信息+简介应为种子书信息 ④清理精简 ⑤push git ⑥恢复→深审→增强→精简→集成→验证 循环25轮次
+
+Work Log:
+- 【R0 第13次沙箱回收恢复】Go 工具链重装（go1.22.10 → /home/z/go-sdk）；curl-impersonate 21 二进制重装（scripts/install-curl-impersonate.sh）；db/covers/download 目录树重建；build-go.sh 双 bin + ensure-services 双服务拉起；seed 自动播种 17 规则
+- 【v4-③ pseo 种子书主打根修】handleWebPseo/api_pseo 主打书原取 novels[0]（clicks 最高匹配）非种子书：新增 pseoSeedBookTitle（血缘三态：seed 非空/source=book 取 keyword 自身/无血缘空）+ pseoSeedBookNovel（title 精确 SQL 命中→kwNormalize 归一形兜底→未中回退）+ pseoPromoteSeedNovel（种子书置顶、截断头插）；generatePendingPages 同步种子书取 title/author 进 TDK 并置顶 novelIds；web 侧存量页渲染时重排根治不依赖重新生成
+- 【同族病灶 2 处根修】matchNovels 命中<3 本时原实现整表替换为热门榜（真实匹配丢弃+低频词页同质化）→ 改保真补位（真实匹配置顶+热门书补位）；api novelsByIDs 原 ORDER BY clicks 破坏 novelIds 绑定序（与 web 侧契约不一致）→ 改按 ids 原序输出
+- 【测试】audit59_test.go 五用例锁定（血缘三态/置顶重排/定位四路径/保真补位/绑定序）；双模块 go build+vet+test -race 全绿
+- 【R1 规则全突破扫描】17 规则逐条 ruletest list 实测：11 条直连通（aijjxs 55+/ddyueshu/23qb/ggd66/x2552 30+/trxsw 45+/77shuku/5165 257+/23uswx 25+/夜伴书屋/ixdzs8）+101kks 通；huangjinwu/xinjianpan 沙箱直连 SYN 黑洞复发（Task 58 代理配置随 DB 清空丢失）→ 120 免费代理候选并发探测得 35 可达出口 → PUT 规则 13/15 代理池（E17 换代理即逃生实证）→ 双站恢复 19+/25+ 条
+- 【kelexs/cunshu 终态】12 个新出口（含住宅型 ISP IP）复测仍 307/403——GoEdge IP 信誉全域封锁维持，人工过验+E12 cookie 路径为唯一合规通道（Task 58 证据链延伸）；pilishuwu CF cf-mitigated 挑战维持
+- 【书库重建】DB 回收清空后 14 条可用规则全量下发 list 任务（#1-14，pages 1-2 按站分类），采集 runner 消化中
+
+Stage Summary:
+- pseo 种子书主打根修落地（web+api+生成链路三层一致），matchNovels/novelsByIDs 同族病灶清除，5 测试锁定
+- 规则面 14/17 自动采集稳定（3 条 WAF 人机验证为合规红线内终态）；共享代理出口池重建方法论验证（探测→PUT→即时逃生）
+- 双模块全绿验证三连；14 任务采集中，书库回填进行时

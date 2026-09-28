@@ -377,14 +377,101 @@ func matchNovels(keyword string) ([]map[string]any, error) {
 			return nil, err
 		}
 	}
+	// Task 59: 命中不足时保真补位——原实现整体丢弃真实匹配、用全站热门 12 本替换，
+	// 词面有 1-2 本真实命中也会被无关热门书淹没（语义错误 + 任意低频词页面同质化为
+	// 同一张热门榜，软 404/重复内容信号）。改为保留真实匹配置顶、热门书仅作补位。
 	if len(novels) < 3 {
-		fallback, ferr := queryNovelList("", ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 12, 0)
+		need := 3 - len(novels)
+		fallback, ferr := queryNovelList("", ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, need, 0)
 		if ferr != nil {
+			// 补位查询失败：已有真实匹配则继续用（保真优先），零匹配才上抛
+			if len(novels) > 0 {
+				return novels, nil
+			}
 			return nil, ferr
 		}
-		novels = fallback
+		seen := make(map[int64]bool, len(novels)+len(fallback))
+		for _, n := range novels {
+			if id, ok := n["id"].(int64); ok {
+				seen[id] = true
+			}
+		}
+		for _, n := range fallback {
+			if id, ok := n["id"].(int64); ok && seen[id] {
+				continue
+			}
+			novels = append(novels, n)
+		}
 	}
 	return novels, nil
+}
+
+// pseoSeedBookTitle 关键词的种子书名（血缘解析，Task 59 v4-③ 主打书根修）：
+//   - seed 列非空 → seed 即书名（下拉词/简介词入库时 seed=书名，Task 40 血缘）
+//   - seed 空 && source='book' → keyword 本身即书名（enqueuePseoBookSeed 登记 source=book
+//     时未写 seed，书名种子行血缘在自身）
+//   - 其余（manual/引擎直添词）→ 无种子书，返回空串
+func pseoSeedBookTitle(keyword, source, seed string) string {
+	if seed != "" {
+		return seed
+	}
+	if source == "book" {
+		return keyword
+	}
+	return ""
+}
+
+// pseoSeedBookNovel 由种子书名定位书目：先按 title 精确命中（同库取点击最高），
+// 未中再在已加载书目内按 kwNormalize 归一形比对（覆盖全半角/空白形态漂移）。
+// 找不到返回 (nil, 0)——调用方回退 novels[0] 现行语义。
+func pseoSeedBookNovel(seedTitle string, novels []map[string]any) (map[string]any, int64) {
+	seedTitle = strings.TrimSpace(seedTitle)
+	if seedTitle == "" {
+		return nil, 0
+	}
+	var id int64
+	if err := queryOne(`SELECT "id" FROM "Novel" WHERE "title" = ? ORDER BY "clicks" DESC, "id" DESC LIMIT 1`, []any{&id}, seedTitle); err == nil && id > 0 {
+		for _, n := range novels {
+			if nid, ok := n["id"].(int64); ok && nid == id {
+				return n, id
+			}
+		}
+		// 精确命中但不在已加载列表（被 12 本截断/生成窗口新增）→ 按幂等字段直取
+		if full, ferr := webNovelFull(id); ferr == nil {
+			return full, id
+		}
+		return nil, id
+	}
+	norm := kwNormalize(seedTitle)
+	if norm == "" {
+		return nil, 0
+	}
+	for _, n := range novels {
+		t, _ := n["title"].(string)
+		if t != "" && kwNormalize(t) == norm {
+			if nid, ok := n["id"].(int64); ok {
+				return n, nid
+			}
+		}
+	}
+	return nil, 0
+}
+
+// pseoPromoteSeedNovel 种子书置顶（绑定书语义）：种子书已在列表内则移到首位，
+// 不在（如被 12 本截断）且有 id 则查全后插到首位；返回新列表。seedNovel 为 nil 时原样返回。
+func pseoPromoteSeedNovel(novels []map[string]any, seedNovel map[string]any, seedID int64) []map[string]any {
+	if seedNovel == nil || seedID <= 0 {
+		return novels
+	}
+	out := make([]map[string]any, 0, len(novels)+1)
+	out = append(out, seedNovel)
+	for _, n := range novels {
+		if id, ok := n["id"].(int64); ok && id == seedID {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 // ==================== pSEO 文本句式变体（Task 45-a 伪原创） ====================
@@ -504,12 +591,14 @@ func generatePendingPages(limit int) (int, error) {
 	type pendingRow struct {
 		id      int64
 		keyword string
+		source  string
+		seed    string
 	}
 	pending := make([]pendingRow, 0)
-	if err := queryList(`SELECT "id","keyword" FROM "PseoKeyword" WHERE "status" = 'pending' ORDER BY "id" ASC LIMIT ?`,
+	if err := queryList(`SELECT "id","keyword","source","seed" FROM "PseoKeyword" WHERE "status" = 'pending' ORDER BY "id" ASC LIMIT ?`,
 		func(rows *sql.Rows) error {
 			var p pendingRow
-			if err := rows.Scan(&p.id, &p.keyword); err != nil {
+			if err := rows.Scan(&p.id, &p.keyword, &p.source, &p.seed); err != nil {
 				return err
 			}
 			pending = append(pending, p)
@@ -539,8 +628,16 @@ func generatePendingPages(limit int) (int, error) {
 			_, _ = exec(`UPDATE "PseoKeyword" SET "status" = 'failed', "updatedAt" = ? WHERE "id" = ?`, nowMillis(), row.id)
 			continue
 		}
+		// Task 59 v4-③: 书名/作者取种子书（血缘 seed/source 解析）而非 novels[0]，
+		// TDK《{novelTitle}》与聚合页主打书一致指向种子书；种子书置顶绑定列表；
+		// 无种子书回退 novels[0] 现行语义
 		novelTitle, author := "", ""
-		if len(novels) > 0 {
+		seedNovel, seedID := pseoSeedBookNovel(pseoSeedBookTitle(row.keyword, row.source, row.seed), novels)
+		if seedNovel != nil {
+			novelTitle, _ = seedNovel["title"].(string)
+			author, _ = seedNovel["author"].(string)
+			novels = pseoPromoteSeedNovel(novels, seedNovel, seedID)
+		} else if len(novels) > 0 {
 			novelTitle, _ = novels[0]["title"].(string)
 			author, _ = novels[0]["author"].(string)
 		}

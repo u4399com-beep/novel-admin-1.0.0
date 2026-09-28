@@ -545,9 +545,9 @@ func handlePseoKeywordPage(w http.ResponseWriter, r *http.Request, ps map[string
 		return
 	}
 
-	var status string
+	var status, srcCol, seedCol string
 	var pageData sql.NullString
-	err := queryOne(`SELECT "status","pageData" FROM "PseoKeyword" WHERE "keyword" = ?`, []any{&status, &pageData}, keyword)
+	err := queryOne(`SELECT "status","pageData","source","seed" FROM "PseoKeyword" WHERE "keyword" = ?`, []any{&status, &pageData, &srcCol, &seedCol}, keyword)
 	if err != nil && !isNoRows(err) {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -583,6 +583,11 @@ func handlePseoKeywordPage(w http.ResponseWriter, r *http.Request, ps map[string
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
 	}
+	// Task 59 v4-③: 种子书置顶（与 web 聚合页同语义）：书籍信息/简介主打种子书而非
+	// 匹配列表点击最高者；种子书不可考时维持 matchNovels 序
+	if sn, sid := pseoSeedBookNovel(pseoSeedBookTitle(keyword, srcCol, seedCol), novels); sn != nil {
+		novels = pseoPromoteSeedNovel(novels, sn, sid)
+	}
 	siteName := "青阅文学" // TS setting?.siteName ?? '青阅文学'：无行时回退默认，行存在时空串原样保留
 	_ = queryOne(`SELECT "siteName" FROM "SiteSetting" WHERE "id" = 1`, []any{&siteName})
 	writeJSON(w, 200, map[string]any{
@@ -604,7 +609,7 @@ func novelsByIDs(ids []float64) ([]map[string]any, error) {
 		args = append(args, int64(idv))
 	}
 	out := make([]map[string]any, 0)
-	err := queryList("SELECT "+novelListCols+novelListFrom+` WHERE n."id" IN (`+ph+`) ORDER BY n."clicks" DESC, n."id" DESC`,
+	err := queryList("SELECT "+novelListCols+novelListFrom+` WHERE n."id" IN (`+ph+`)`,
 		func(rows *sql.Rows) error {
 			item, err := scanNovelListItem(rows)
 			if err != nil {
@@ -616,5 +621,19 @@ func novelsByIDs(ids []float64) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	// Task 59: 按 novelIds 原序输出（绑定书置顶=最佳匹配语义）——原实现 ORDER BY clicks
+	// 重排破坏绑定序，与 web 聚合页（按 novelIds 原序取书）契约不一致，且把种子书挤出首位
+	byID := make(map[int64]map[string]any, len(out))
+	for _, item := range out {
+		if id, ok := item["id"].(int64); ok {
+			byID[id] = item
+		}
+	}
+	ordered := make([]map[string]any, 0, len(ids))
+	for _, idv := range ids {
+		if item, ok := byID[int64(idv)]; ok {
+			ordered = append(ordered, item)
+		}
+	}
+	return ordered, nil
 }
