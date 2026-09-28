@@ -9,7 +9,8 @@ package main
 
 import (
 	"context"
-	"math/rand"
+	"encoding/binary"
+	"hash/fnv"
 	"net/http"
 	"strings"
 	"time"
@@ -90,7 +91,7 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 				// 显式 Referer 只覆盖「带 Referer」画像的来路；无 Referer 变体保持无 Referer（链内多样性保留）
 				hdrs := profile.headers(targetURL, profile.withReferer, ctx.referer)
 				r := fetchWithRedirectGuard(targetURL, hdrs, remaining, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
-				a := assess(r.status, r.bytes, r.contentType)
+				a := assess(r.status, r.bytes, r.contentType, r.serverChallenge)
 				ms := nowMs() - s0
 				note := r.note
 				if note == "" {
@@ -147,14 +148,47 @@ var fetchSpiderStrategy = makeFetchStrategy("fetch-spider",
 
 // ==================== got-scraping 的 Go 等价实现 ====================
 
-// headerGeneratorHeaders 随机真实桌面头（等价 header-generator 桌面 zh-CN）：
-// 从 Chrome/Edge/Firefox 桌面画像随机选一，并随机化 Accept-Language 权重形态。
+// Task 54（E14·反反爬会话级指纹粘性）：got 车道画像/Accept-Language 按主机粘性。
+// 威胁模型：旧实现每次 fetchPage 独立随机选画像——同一站点的连续请求（cookie 会话桶是
+// 持久的，Task 34 P3-11 只保证单次抓取的跳间一致性）在服务端视角呈现「同一 cookie
+// 会话内 UA/Accept-Language 每请求跳变」，真实浏览器一个用户会话内 UA 恒定，属可被
+// WAF 会话级一致性检测识别的脚本自曝指纹（与 E8/E10/E11 头族一致性同向）。
+// 修法：host+时间窗哈希确定性选画像——同站同窗恒同画像（窗口 45 分钟到期自然轮换，
+// 兼顾长期分布多样性），零状态无锁（哈希即选），多实例/重启行为一致。Accept-Language
+// 用独立盐位哈希去相关（同画像不同站语言形态可异）。fetch 系画像梯子不在此列——那是
+// 失败重试语义（每次尝试本来就是换画像的降级重试），非会话内轮换。
+// 已知轻微残留：jsontoc 的 chapterListApi AJAX 恒用 chromeUA（进程级稳定）——got 车道
+// 粘到 Firefox 画像的书站，其后紧随的同会话 AJAX 声称 Chrome UA 仍跨家族（1/3 概率）；
+// AJAX 每书仅一请求且仅 json-TOC 站触发，改 AJAX UA 跟随粘性画像的收益不抵复杂度，留档。
+const gotProfileStickinessWindowMs int64 = 45 * 60 * 1000
+
+// stickyHashIndex 对 (salt, host, window) 做 FNV-1a 哈希取模，返回 [0,n) 的确定性下标。
+// Task 55-a（G1）修复：host 按完整字节流参与哈希——旧实现用 [9]byte 定长槽（盐位 1B +
+// host 截断到 8B）只把 host 前 8 字节混入哈希，共享 8 字节前缀的站点群（如
+// www.dingdian1.com / www.dingdian2.com 同前缀 "www.ding"）在同一时间窗恒选同一画像与
+// 同一 Accept-Language，E14 声明的「同画像不同站语言形态可异」跨站去相关被截断破坏；
+// 盐位+完整 host+定长 8B 窗口的拼接序保持 (salt, host, window) 语义不变。
+func stickyHashIndex(salt byte, host string, window int64, n int) int {
+	h := fnv.New64a()
+	h.Write([]byte{salt})
+	h.Write([]byte(host))
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(window))
+	h.Write(buf[:])
+	return int(h.Sum64() % uint64(n))
+}
+
+// headerGeneratorHeaders 主机粘性真实桌面头（等价 header-generator 桌面 zh-CN）：
+// 从 Chrome/Edge/Firefox 桌面画像按 host+时间窗确定性选一，Accept-Language 同窗独立盐位
+// 确定性选一（E14 见上）。
 // Task 39-a（E2 反反爬）：got 系随机头池 Chrome/Edge 双画像 → +Firefox 三画像——
 // 固定双画像在站点侧的 UA 统计里呈可聚类的窄分布（同一 IP 段反复出现同两组 UA+头组合），
 // 补 Firefox（无客户端提示、头集差异大）拉开熵距，与 fetch-ua-rotate 的画像覆盖对齐。
 func headerGeneratorHeaders(firstURL string) map[string]string {
+	host := hostOf(firstURL)
+	window := nowMs() / gotProfileStickinessWindowMs
 	var base map[string]string
-	switch rand.Intn(3) {
+	switch stickyHashIndex('p', host, window, 3) {
 	case 0:
 		base = chromeDesktopProfile.headers(firstURL, true, "")
 	case 1:
@@ -167,7 +201,7 @@ func headerGeneratorHeaders(firstURL string) map[string]string {
 		"zh-CN,zh;q=0.9",
 		"zh-CN,zh;q=0.9,en;q=0.8",
 	}
-	base["accept-language"] = langs[rand.Intn(len(langs))]
+	base["accept-language"] = langs[stickyHashIndex('l', host, window, len(langs))]
 	return base
 }
 
@@ -312,6 +346,8 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 			recordResponseCookies(hopHost, res, hopHTTPS)
 			body := readBodyCapped(res)
 			contentType := body.contentType
+			// Task 54（E15）：末跳响应头自报挑战（cf-mitigated）→ assess 短路判挑战页
+			serverChallenge := headerSaysChallenge(res.Header.Values("Cf-Mitigated"))
 			if body.note == "too-large" {
 				lastHTTPStatus = status
 				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: body.size, Note: "too-large"})
@@ -319,7 +355,7 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 				stopVariants = true
 				break
 			}
-			a := assess(status, body.bytes, contentType)
+			a := assess(status, body.bytes, contentType, serverChallenge)
 			// Task 49-a（F1·P3 错误吞没）：与 fetch 系口径对齐——body.note（响应体读取
 			// 中断等传输层证据）非空时优先于 assess 派生 note，warning 同步透传。
 			// 旧实现只特判 too-large：响应头 200 但中途断流时 body.bytes=nil，被记成

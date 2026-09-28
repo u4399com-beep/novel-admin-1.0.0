@@ -343,11 +343,8 @@ var curlImpersonateStrategy = strategyDef{
 						note = "too-large" // curl --max-filesize 超限：单独标记
 					}
 					subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: note})
-					msg := ""
-					if execErr != nil {
-						msg = execErr.Error()
-					}
-					warnings = append(warnings, "curl-impersonate 执行失败: "+msg)
+					// Task 56-a: 透出 curl stderr 细节（exit status N 之外的人读错误）
+					warnings = append(warnings, "curl-impersonate 执行失败: "+execErrDetail(execErr))
 					_ = os.Remove(tmpOut)
 					_ = os.Remove(tmpHdr)
 					stopVariants = true // 二进制级失败，HTTP/1.1 降级无意义
@@ -419,7 +416,7 @@ var curlImpersonateStrategy = strategyDef{
 					stopVariants = true
 					break
 				}
-				a := assess(status, raw, ctype)
+				a := assess(status, raw, ctype, headerSaysChallenge(headerLines(hdrText, "Cf-Mitigated"))) // Task 54（E15）: WAF 自报挑战头
 				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: a.ok, Status: status, Ms: nowMs() - s0, Blocked: a.blocked, Bytes: a.size, Note: a.note})
 
 				if a.warning != "" {

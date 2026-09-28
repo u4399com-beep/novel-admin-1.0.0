@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"golang.org/x/net/html/charset"
 	"regexp"
+	"strings"
 )
 
 var (
@@ -51,6 +52,22 @@ var (
 )
 
 var gb18030Encoding, _ = charset.Lookup("gb18030")
+
+// headerSaysChallenge Task 54（E15·反反爬）：cf-mitigated 响应头探测。
+// Cloudflare 对托管挑战/受拦响应自报 `cf-mitigated: challenge`（block 形态亦有）——这是
+// WAF 自己承认「本响应是挑战/拦截页」的最精准信号：零体解析、零误杀面（正常内容页绝不
+// 携带该头），且不受挑战页体积/形态伪装影响（正文做得再像正常页，头仍自报）。
+// 仅接受白名单值（challenge/block）；其他值（未来未知形态）忽略，不影响既有四层体判定。
+// 浏览器桥接车道（browser.go）的 payload 不含响应头，传 false 由体判定兜底。
+func headerSaysChallenge(vals []string) bool {
+	for _, v := range vals {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "challenge", "block":
+			return true
+		}
+	}
+	return false
+}
 
 // visibleBodyText 剥 script/style 与全部标签/实体后的可见正文（近空判定用）
 func visibleBodyText(scan string) string {
@@ -208,14 +225,39 @@ func challengeFeatureSummary(b []byte) []string {
 	if reChallengeKeyword.MatchString(text) {
 		hits = append(hits, "challenge-keyword")
 	}
-	// Task 46-a（E3·软拦截识别增强）：验证码/滑块/频控词特征——①<title> 命中（如
-	// 「安全验证」「请完成验证后继续访问」，标题层是 WAF 拦截页最强证据）②近空正文命中
-	//（频控提示页正文常仅一句话）。仅追加 softBlock 档案特征项，不改 ok/blocked 判定。
-	if m := reTitleTag.FindStringSubmatch(text); m != nil && reCaptchaShell.MatchString(m[1]) {
-		hits = append(hits, "captcha-title")
+	// Task 54（E16·54-a 留档③落地）：GB18030 解码视图——GBK 编码页的中文挑战词
+	//（安全验证/滑块/验证码等）在字节视图上是 GBK 字节序列，UTF-8 词面正则漏匹配，
+	// softBlock 档案据此少标注特征（54-a 留档：代价=档案少一项非误杀）。补第三视图：
+	// 解码成功且与字节视图不同才追加；仅影响档案标注层，ok/blocked 判定零参与。
+	views := []string{text}
+	if gb18030Encoding != nil {
+		if decoded, err := gb18030Encoding.NewDecoder().Bytes(head); err == nil && !bytes.Equal(decoded, head) {
+			views = append(views, string(decoded))
+		}
 	}
-	if runeLen(visibleBodyText(text)) < 200 && reCaptchaShell.MatchString(text) {
-		hits = append(hits, "captcha-shell")
+	seen := map[string]bool{}
+	for _, view := range views {
+		if reChallengeKeyword.MatchString(view) {
+			if !seen["challenge-keyword"] {
+				seen["challenge-keyword"] = true
+				hits = append(hits, "challenge-keyword")
+			}
+		}
+		// Task 46-a（E3·软拦截识别增强）：验证码/滑块/频控词特征——①<title> 命中（如
+		// 「安全验证」「请完成验证后继续访问」，标题层是 WAF 拦截页最强证据）②近空正文命中
+		//（频控提示页正文常仅一句话）。仅追加 softBlock 档案特征项，不改 ok/blocked 判定。
+		if m := reTitleTag.FindStringSubmatch(view); m != nil && reCaptchaShell.MatchString(m[1]) {
+			if !seen["captcha-title"] {
+				seen["captcha-title"] = true
+				hits = append(hits, "captcha-title")
+			}
+		}
+		if runeLen(visibleBodyText(view)) < 200 && reCaptchaShell.MatchString(view) {
+			if !seen["captcha-shell"] {
+				seen["captcha-shell"] = true
+				hits = append(hits, "captcha-shell")
+			}
+		}
 	}
 	if metaRefreshJumpHit(scan) {
 		hits = append(hits, "meta-refresh-0s")

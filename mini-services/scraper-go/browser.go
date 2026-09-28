@@ -139,12 +139,11 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
 	cmd.Env = env
 	stdout, err := cmd.Output()
 	if err != nil {
-		msg := "unknown"
-		if err != nil {
-			msg = err.Error()
-		}
-		if strings.Contains(msg, "\n") {
-			msg = strings.Split(msg, "\n")[0]
+		// Task 56-a: execErrDetail 透出 python stderr 细节（旧行为仅 "exit status N"，
+		// traceback 全丢）；保留既有首行语义
+		msg := execErrDetail(err)
+		if i := strings.IndexByte(msg, '\n'); i >= 0 {
+			msg = msg[:i]
 		}
 		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
 			warnings: append(*warnings, "Python Playwright 桥接失败: "+msg), note: "render-error"}
@@ -166,7 +165,8 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
 		}
 	}
 	bytes := []byte(payload.HTML)
-	a := assess(payload.Status, bytes, "text/html; charset=utf-8")
+	// Task 54（E15）: 桥接 payload 不含响应头，serverChallenge=false 由体判定兜底
+	a := assess(payload.Status, bytes, "text/html; charset=utf-8", false)
 	if a.warning != "" {
 		*warnings = append(*warnings, a.warning)
 	}

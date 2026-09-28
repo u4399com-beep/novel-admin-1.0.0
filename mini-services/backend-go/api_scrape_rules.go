@@ -127,32 +127,12 @@ func parseProxyField(raw any) proxyFieldResult {
 
 // ==================== 保存（POST/PUT 共用） ====================
 
-// scrapeRuleIDParam 提取校验 body.id（Task 33-b: 2^53 上界判定后再转 int64，与
-// taskRuleIDParam/taskPagesParam 同口径 —— 旧版 int(f) 对 1e20 是实现定义溢出，
-// amd64 得 MinInt64 负值穿透后续判定）。
-func scrapeRuleIDParam(v any) (int64, bool) {
-	f, isNum := v.(float64)
-	if !isNum || !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
-		return 0, false
-	}
-	return int64(f), true
-}
-
-// scrapeRulesBodyOK TS `if (!body) return 400`：null/原始类型失败，数组通过（后续 name 校验兜住）
-func scrapeRulesBodyOK(v any, ok bool) bool {
-	if !ok || v == nil {
-		return false
-	}
-	switch v.(type) {
-	case map[string]any, []any:
-		return true
-	}
-	return false
-}
-
+// handleScrapeRulesSave 保存入口。body 判定复用 bodyObjectOK（TS `if (!body) return 400`
+// 语义：null/原始类型失败，数组通过后续 name 校验兜住）；id 字段校验复用
+// positiveIntIDField（原 scrapeRuleIDParam 已并入，Task 54 精简：两函数逐字节同体）。
 func handleScrapeRulesSave(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	v, ok := readBodyValue(r)
-	if !scrapeRulesBodyOK(v, ok) {
+	if !bodyObjectOK(v, ok) {
 		writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
 		return
 	}
@@ -206,7 +186,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 		return
 	}
 	if val, present := body["id"]; present {
-		if _, okID := scrapeRuleIDParam(val); !okID {
+		if _, okID := positiveIntIDField(val); !okID {
 			writeJSON(w, 400, map[string]string{"error": "无效 id"})
 			return
 		}
@@ -218,7 +198,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 	// 绝不静默置 {}（Task 24-d 实证：PUT 只传 name+notes 会把三条规则连清）。
 	// 新建路径语义不变：缺失 → {}（对齐 TS Prisma 写入）。
 	isUpdate := false
-	if _, okID := scrapeRuleIDParam(body["id"]); okID {
+	if _, okID := positiveIntIDField(body["id"]); okID {
 		isUpdate = true
 	}
 	listObj, listProvided, listErr := ruleFieldObj(body["listRule"], "listRule")
@@ -284,7 +264,7 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
 
 	name = truncateRunes(trimSpaceStr(name), 80)
 
-	if id, okID := scrapeRuleIDParam(body["id"]); okID {
+	if id, okID := positiveIntIDField(body["id"]); okID {
 		res, err := exec(
 			`UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "cookies"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
 			name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
@@ -343,7 +323,7 @@ func handleScrapeRulesDelete(w http.ResponseWriter, r *http.Request, _ map[strin
 
 func handleScrapeRulesPut(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	v, ok := readBodyValue(r)
-	if !scrapeRulesBodyOK(v, ok) {
+	if !bodyObjectOK(v, ok) {
 		// TS PUT 非 seed 分支与 POST 同一保存函数，body 缺失时 POST 返回
 		// 400「请求体必须是 JSON 对象」→ PUT 保持同文案（修复旧版落到「name 必填」的文案漂移）
 		writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})

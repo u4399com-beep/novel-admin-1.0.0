@@ -646,6 +646,25 @@ func isTransientScrapeErr(err string) bool {
 		strings.Contains(err, "引擎不可达") || strings.Contains(err, "引擎请求超时")
 }
 
+// Task 57-b: 限流类 paused 终态文案提为包级常量——这些文案与 runner.go
+// autoResumePausedTasks 的 SQL LIKE '%限流%软拦截%' 词表构成隐式契约（文案措辞
+// 单方面漂移会让「自动恢复重新入队」静默失效），worker_autorecovery_test 的契约
+// 锁必须引用生产常量而非手抄副本（手抄副本在文案漂移后依旧绿——假阴性锁）。
+// 契约红线（改文案前先读 worker_autorecovery_test.go）：限流类文案必须含
+// 「限流…软拦截」依序字样；封禁类文案不得含该字样。
+const (
+	// pausedTransientListMsg runList Phase 0 列表页全败（瞬态）终态文案
+	pausedTransientListMsg = "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
+	// pausedTransientBooksMsg runList Phase 1 书目全败（瞬态）终态文案
+	pausedTransientBooksMsg = "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
+	// pausedTransientSingleMsg runSingle Phase 1 书页失败（瞬态）终态文案
+	pausedTransientSingleMsg = "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
+	// pausedPhase2RateLimitFmt Phase 2 连败熔断·限流形态终态文案模板（ConsecFails, Filled）
+	pausedPhase2RateLimitFmt = "正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 %d 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）"
+	// pausedPhase2BlockedFmt Phase 2 连败熔断·封禁/不可达形态终态文案模板（ConsecFails, Filled）
+	pausedPhase2BlockedFmt = "正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）"
+)
+
 // isSoftBlockErrText 软拦截判定（Task 31 引入，Task 33 提取为包级函数供单测）：
 // 限流窗口的主要形态是 200 空壳/挑战循环失败，Error 文案不含限流字样。口径：挑战/空壳/正文空。
 func isSoftBlockErrText(err string) bool {
@@ -657,6 +676,14 @@ func isSoftBlockErrText(err string) bool {
 		strings.Contains(low, "空壳") || strings.Contains(low, "正文为空") ||
 		strings.Contains(low, "正文提取为空") || strings.Contains(low, "软拦截")
 }
+
+// logCap 并发安全日志条数闸（Task 55-b 自 phase2Fill warnLogged 抽出）：
+// Add-first 语义——每次申请拿唯一递增序号，序号 ≤ cap 恰好放行 cap 次（无 check-then-act
+// 竞态窗口）；用途是「至多 N 条进任务日志」的软预算，多算不放行无副作用
+// （与 failSampleLogged 的 Add(1)<=6 同范式，抽型便于确定性单测）
+type logCap struct{ n atomic.Int64 }
+
+func (c *logCap) allow(cap int64) bool { return c.n.Add(1) <= cap }
 
 // gLaneFloor 任务级车道下限记忆（Task 33：跨 resume 持久化）。
 // 根因：laneLimiter 每次 runChapterFillPhase 重建都从 CHAPTER_CONCURRENCY(12) 起步，
@@ -732,7 +759,10 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 	// Task 32-b: convertT2S 规则开关（正文/章题入库前繁转简）
 	t2sMode := t2sModeFromRule(rule)
 	var filledCtr, failedCtr atomic.Int64
-	var warnLogged atomic.Int64
+	// Task 55-b: 引擎提示日志闸（原 warnLogged atomic.Int64 的 Load-then-Add 是
+	// check-then-act：多车道并发窗口内可同时过闸，实际落盘次数可超预算 10 达 10+lanes）——
+	// 改 Add-first 原子闸（allow 返回唯一序号 ≤10），并发下恰好放行 10 次
+	var warnGate logCap
 	// Task 26-d 连败熔断：连续失败计数（成功归零），达阈值置位；书间/批间检查后停手。
 	// 注意熔断打开后引擎对封禁主机快速结构化失败（毫秒级），不加熔断时 12 车道每秒
 	// 可烧数千章（任务 41：46836 章全部 failed）
@@ -954,8 +984,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 					noteChapterFail()
 					return
 				}
-				if len(res.Warnings) > 0 && warnLogged.Load() < 10 {
-					warnLogged.Add(1)
+				if len(res.Warnings) > 0 && warnGate.allow(10) {
 					run.LogWarnings(res.Warnings)
 				}
 				// Task 32-b: 正文/章题繁转简（convertT2S 规则开关；off 零开销透传）
@@ -1152,6 +1181,10 @@ func backfillDescriptions(novelIDs []int) {
 // novelStatusFinishedRE 同口径），且简介无「连载中/未完」等负向词 → 升级 finished。
 // 单向升级（serial→finished，绝不降级）：源站状态「连载中」但末章已是「大结局」的
 // 站点状态滞后场景，升级即纠偏。每任务限 20 本防 LLM 外的 DB 写放大。
+// Task 55-b（P3 修复）：lastTitle 是标量子查询——serial 且零章节的书（Phase 1 合法形态：
+// refs 为空照入库）子查询返回 NULL，string 直扫报错 → queryList 整批中止且错误被 `_ =`
+// 吞掉（实证：同任务任一零章书会把其余全部书籍的智能完结静默清零）。改 NullString 扫描，
+// NULL/空标题按「无末章可判」跳过，仅该书包本身不升级，批内其余书照常判定。
 func smartCompleteStatus(novelIDs []int) {
 	if len(novelIDs) == 0 {
 		return
@@ -1162,7 +1195,7 @@ func smartCompleteStatus(novelIDs []int) {
 	}
 	var rows []struct {
 		id    int
-		title string
+		title sql.NullString // Task 55-b: 标量子查询无行时为 NULL（零章节 serial 书）
 		desc  string
 	}
 	q := `SELECT n."id",
@@ -1173,7 +1206,7 @@ func smartCompleteStatus(novelIDs []int) {
 	_ = queryList(q, func(rs *sql.Rows) error {
 		var r struct {
 			id    int
-			title string
+			title sql.NullString
 			desc  string
 		}
 		if err := rs.Scan(&r.id, &r.title, &r.desc); err != nil {
@@ -1187,7 +1220,7 @@ func smartCompleteStatus(novelIDs []int) {
 		if fixed >= 20 {
 			break
 		}
-		lastTitle := trimSpaceStr(r.title)
+		lastTitle := trimSpaceStr(r.title.String) // NULL→""：无末章可判，跳过
 		if lastTitle == "" || !novelStatusFinishedRE.MatchString(lastTitle) {
 			continue
 		}
@@ -1325,7 +1358,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// paused 而非 failed——resume/自动恢复冷却后重新入队即可续传；旧逻辑把带 2.5 万章
 		// 进度的任务打成 failed 终态（列表重入撞 60s 熔断窗口），恢复成本全由人工承担
 		if isTransientScrapeErr(firstListErr) {
-			finalize(run, "paused", "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）")
+			finalize(run, "paused", pausedTransientListMsg)
 			return
 		}
 		finalize(run, "failed", "列表页未提取到书籍条目")
@@ -1365,7 +1398,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 35-b: 书目全败若是瞬态（引擎熔断冷却/不可达/限流软拦截），转 paused
 		// 而非 failed（同 Phase 0 口径；列表成功但 Phase 1 撞熔断窗口同样可自动恢复）
 		if isTransientScrapeErr(msg) {
-			finalize(run, "paused", "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）")
+			finalize(run, "paused", pausedTransientBooksMsg)
 			return
 		}
 		finalize(run, "failed", msg)
@@ -1408,9 +1441,9 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 29: 限流形态区分处置建议
 		if p2.BreakerRateLimit {
 			// Task 31-b: 分类覆盖面扩到 200 空壳（限流窗口的主要表现形态之一）
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 %d 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
+			finalize(run, "paused", fmt.Sprintf(pausedPhase2RateLimitFmt, p2.ConsecFails, p2.Filled))
 		} else {
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+			finalize(run, "paused", fmt.Sprintf(pausedPhase2BlockedFmt, p2.ConsecFails, p2.Filled))
 		}
 		return
 	}
@@ -1463,7 +1496,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 35-b: 同 runList——单书重入撞引擎熔断冷却/不可达/限流软拦截（瞬态）转
 		// paused 而非 failed；旧逻辑把带数千章进度的单书任务打成 failed 终态
 		if isTransientScrapeErr(msg) {
-			finalize(run, "paused", "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）")
+			finalize(run, "paused", pausedTransientSingleMsg)
 			return
 		}
 		finalize(run, "failed", msg)
@@ -1509,9 +1542,9 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
 		// Task 29: 限流形态区分处置建议
 		if p2.BreakerRateLimit {
 			// Task 31-b: 分类覆盖面扩到 200 空壳（同 runList）
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 %d 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）", p2.ConsecFails, p2.Filled))
+			finalize(run, "paused", fmt.Sprintf(pausedPhase2RateLimitFmt, p2.ConsecFails, p2.Filled))
 		} else {
-			finalize(run, "paused", fmt.Sprintf("正文连续失败 %d 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 %d 章，进度保留，可恢复继续采集）", p2.ConsecFails, p2.Filled))
+			finalize(run, "paused", fmt.Sprintf(pausedPhase2BlockedFmt, p2.ConsecFails, p2.Filled))
 		}
 		return
 	}

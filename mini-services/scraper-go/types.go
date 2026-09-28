@@ -42,41 +42,9 @@
 package main
 
 // ==================== DTO（字段名与主站/TS 版完全一致） ====================
-
-// ListRule 列表页规则
-type ListRule struct {
-	ItemSelector     string `json:"itemSelector,omitempty"`
-	TitleSelector    string `json:"titleSelector,omitempty"`
-	LinkSelector     string `json:"linkSelector,omitempty"`
-	AuthorSelector   string `json:"authorSelector,omitempty"`
-	CategorySelector string `json:"categorySelector,omitempty"`
-}
-
-// BookRule 书页规则
-type BookRule struct {
-	TitleSelector        string `json:"titleSelector,omitempty"`
-	AuthorSelector       string `json:"authorSelector,omitempty"`
-	DescriptionSelector  string `json:"descriptionSelector,omitempty"`
-	CoverSelector        string `json:"coverSelector,omitempty"`
-	StatusSelector       string `json:"statusSelector,omitempty"`
-	CategorySelector     string `json:"categorySelector,omitempty"`
-	ChapterLinkSelector  string `json:"chapterLinkSelector,omitempty"`
-	ChapterTitleSelector string `json:"chapterTitleSelector,omitempty"`
-	// CatalogLinkSelector 目录页链接选择器：书页仅含最新几章时指向完整目录页
-	CatalogLinkSelector string `json:"catalogLinkSelector,omitempty"`
-	// ExcludeSelector 排除选择器：提取前先从 DOM 移除命中节点，多备用逗号分隔
-	ExcludeSelector string `json:"excludeSelector,omitempty"`
-	// ChapterListApi JSON 目录接口配置（JSON 字符串）
-	ChapterListApi string `json:"chapterListApi,omitempty"`
-}
-
-// ChapterRule 章节页规则
-type ChapterRule struct {
-	TitleSelector   string `json:"titleSelector,omitempty"`
-	ContentSelector string `json:"contentSelector,omitempty"`
-	NextSelector    string `json:"nextSelector,omitempty"`
-	ExcludeSelector string `json:"excludeSelector,omitempty"`
-}
+// Task 54 精简：ListRule/BookRule/ChapterRule 三个 TS 移植遗留类型已删——提取层实际
+// 以 map[string]string 消费规则（extractList/extractBook/extractChapter），具名结构体
+// 全仓零引用（类型化清洗在 storex/LoadedRule 侧）。DTO 注释保留作字段名对齐参考。
 
 // AttemptSummary 一次网络尝试明细
 type AttemptSummary struct {

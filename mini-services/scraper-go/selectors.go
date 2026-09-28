@@ -19,9 +19,6 @@ import (
 	"github.com/andybalholm/cascadia"
 )
 
-// scope 类型别名
-type scope = goquery.Selection
-
 // compileSel 校验并编译选择器；非法返回 nil（调用方跳过，对齐 TS catch 语义）。
 // goquery.Matcher 是接口，cascadia.Selector 实现之。
 func compileSel(raw string) goquery.Matcher {

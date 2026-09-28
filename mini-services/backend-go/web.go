@@ -313,9 +313,16 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 			theme = s.ActiveTheme
 		}
 	}
-	// ?theme= 主题预览（仅白名单内主题生效；后台切换/逐主题核查用）
-	if q := r.URL.Query().Get("theme"); q != "" && isKnownTheme(q) {
-		theme = q
+	// ?theme= 主题预览（仅白名单内主题生效；后台切换/逐主题核查用）。
+	// Task 54-b: admin 页跳过预览覆盖——handleWebAdmin 固定 data["theme"]="admin"
+	//（模板仅 templates/admin/admin.html 一份），旧逻辑任意 /admin?theme=<白名单主题>
+	// 会把主题改写为前台主题 → admin 模板与 _fallback 均无 admin.html → 双 nil →
+	// 极简错误页（后台整页 200 丢失；探针实证 175 字节错误页）。与 obfMaybe 的
+	// admin 跳过同口径。
+	if page != "admin" {
+		if q := r.URL.Query().Get("theme"); q != "" && isKnownTheme(q) {
+			theme = q
+		}
 	}
 	data["theme"] = theme
 

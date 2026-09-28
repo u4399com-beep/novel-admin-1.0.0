@@ -642,7 +642,9 @@ func handleChapterAuditGet(w http.ResponseWriter, r *http.Request, _ map[string]
 	novelIdParam := r.URL.Query().Get("novelId")
 	if novelIdParam != "" {
 		f, ok := jsParseFloat(novelIdParam)
-		if !ok || !numIsInt(f) || f <= 0 {
+		// Task 56-b: 补 2^53 上界（taskRuleIDParam 同族）——旧版 1e300 时 int64(f)
+		// 实现定义溢出为 MinInt64，仅致空查询 404（无害但越界形态漏 400）
+		if !ok || !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
 			writeJSON(w, 400, map[string]string{"error": "novelId 非法"})
 			return
 		}
@@ -728,7 +730,7 @@ func handleChapterAuditPost(w http.ResponseWriter, r *http.Request, _ map[string
 		writeJSON(w, 400, map[string]string{"error": "action 仅支持 dedupe / reindex"})
 		return
 	}
-	if !numIsInt(novelIdF) || novelIdF <= 0 {
+	if !numIsInt(novelIdF) || novelIdF <= 0 || novelIdF > 9_007_199_254_740_992 {
 		writeJSON(w, 400, map[string]string{"error": "novelId 必填（正整数）"})
 		return
 	}
@@ -968,7 +970,8 @@ func handleChapterAuditPost(w http.ResponseWriter, r *http.Request, _ map[string
 func handleChapterVolumesGet(w http.ResponseWriter, r *http.Request, _ map[string]string) {
 	novelIdParam := r.URL.Query().Get("novelId")
 	f, ok := jsParseFloat(novelIdParam)
-	if !ok || !numIsInt(f) || f <= 0 {
+	// Task 56-b: 补 2^53 上界（taskRuleIDParam 同族，同 handleChapterAuditGet）
+	if !ok || !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
 		writeJSON(w, 400, map[string]string{"error": "novelId 非法"})
 		return
 	}

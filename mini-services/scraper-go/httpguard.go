@@ -286,9 +286,17 @@ type assessResult struct {
 	warning string
 }
 
-// assess 统一的响应评估：ok 判定 + 挑战页标记 + 结构化 note，各执行器共用保证一致
-func assess(status int, b []byte, contentType string) assessResult {
+// assess 统一的响应评估：ok 判定 + 挑战页标记 + 结构化 note，各执行器共用保证一致。
+// Task 54（E15）：serverChallenge = 响应头自报挑战（cf-mitigated: challenge/block）——
+// WAF 自报是最精准信号，优先于体判定短路（正常体但被 WAF 自报挑战=挑战壳伪装正常页）。
+func assess(status int, b []byte, contentType string, serverChallenge bool) assessResult {
 	size := len(b)
+	if serverChallenge {
+		return assessResult{
+			ok: false, blocked: true, size: size, note: "challenge-page",
+			warning: "响应头 cf-mitigated 自报挑战/拦截页，已按失败处理（响应 " + strconv.Itoa(size) + "B）",
+		}
+	}
 	if looksLikeChallenge(b) {
 		return assessResult{
 			ok: false, blocked: true, size: size, note: "challenge-page",
@@ -345,6 +353,15 @@ func contentDecodedReader(res *http.Response) (io.Reader, func(), error) {
 		if perr != nil && perr != io.EOF {
 			_ = body.Close()
 			return nil, nil, perr
+		}
+		if len(head) == 0 && perr == io.EOF {
+			// Task 55-a（G2）：声明 deflate 但响应体 0 字节——按空体透传
+			//（readBodyCapped 读到 EOF → note 空 → assess empty-body），与 gzip
+			// 路径的 io.EOF 语义对齐。旧实现包 flate 流后首个 Read 得
+			// ErrUnexpectedEOF → 误记 network-error（attempts 明细/排障失真；
+			// gzip 分支已修过同族语义，deflate 分支漏改）。1 字节截断流仍走
+			// flate → ErrUnexpectedEOF → network-error（损坏流不放过）。
+			return br, func() { _ = body.Close() }, nil
 		}
 		if len(head) == 2 && head[0] == 0x78 { // zlib 流头（CM=8/CINFO≤7，常见 78 01/9c/da）
 			zr, zerr := zlib.NewReader(br)
@@ -563,6 +580,9 @@ type rawResponse struct {
 	note       string
 	warning    string
 	retryAfter *int64
+	// Task 54（E15）：末跳响应头自报挑战（cf-mitigated: challenge/block）——仅末跳计数，
+	// 中间跳的挑战重定向后落地正常页属挑战流程已过（不粘性，避免误杀已放行链路）
+	serverChallenge bool
 }
 
 // fetchWithRedirectGuard 带逐跳 SSRF 校验的 fetch：手动跟随重定向，每一跳都做
@@ -741,7 +761,9 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
 
 		// Task 32-d: 跟随 JS token 跳转后的落地页仍命中挑战特征 → challenge-loop（避免烧穿）
 		return rawResponse{ok: res.StatusCode >= 200 && res.StatusCode < 300, status: res.StatusCode,
-			bytes: body.bytes, contentType: body.contentType, note: body.note, warning: body.warning, retryAfter: retryAfter}
+			bytes: body.bytes, contentType: body.contentType, note: body.note, warning: body.warning, retryAfter: retryAfter,
+			// Task 54（E15）：末跳响应头自报挑战（cf-mitigated）——assess 短路判挑战页
+			serverChallenge: headerSaysChallenge(res.Header.Values("Cf-Mitigated"))}
 	}
 }
 

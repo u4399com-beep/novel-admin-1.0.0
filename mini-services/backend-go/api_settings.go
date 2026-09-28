@@ -396,6 +396,10 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 	}
 
 	var siteName, activeTheme string
+	// Task 56-b: UPDATE 失败不再静默吞掉——旧版 _, _ = exec(...) 在写失败（如并发
+	// 写高峰 SQLITE_BUSY 超 5s busy_timeout）时仍返回 200 ok:true，TDK/主题/页脚
+	// 保存丢失而后台无任何提示（TS 版 prisma.update 抛错 → 500）。错误上返对齐契约。
+	var updateErr error
 	withSettingsLock(func() {
 		if err := ensureSettingRow(); err != nil {
 			return
@@ -417,11 +421,19 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 			}
 		}
 		if len(sets) > 0 {
-			_, _ = exec(`UPDATE "SiteSetting" SET `+strings.Join(sets, ", ")+` WHERE "id" = 1`, args...)
+			if _, err := exec(`UPDATE "SiteSetting" SET `+strings.Join(sets, ", ")+` WHERE "id" = 1`, args...); err != nil {
+				updateErr = err
+			}
 		}
-		_ = queryOne(`SELECT "siteName","activeTheme" FROM "SiteSetting" WHERE "id" = 1`, []any{&siteName, &activeTheme})
+		if updateErr == nil {
+			_ = queryOne(`SELECT "siteName","activeTheme" FROM "SiteSetting" WHERE "id" = 1`, []any{&siteName, &activeTheme})
+		}
 	})
 
+	if updateErr != nil {
+		failJSON(w, "服务器错误", firstLineErr(updateErr), 500)
+		return
+	}
 	if siteName == "" && activeTheme == "" {
 		failJSON(w, "服务器错误", "设置行不可用", 500)
 		return

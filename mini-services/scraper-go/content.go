@@ -46,7 +46,10 @@ var reHasLorN = regexp.MustCompile(`[\p{L}\p{N}]`)
 // 只解码白名单命名实体 + 数字/十六进制字符实体，最多 3 轮（覆盖三重转义），无实体即停。
 // 位置必须在 Text() 之后、reWatermarkLine 行级闸之前——实体串会虚增行长（如 &amp;quot;
 // 8 字符）使超 100 字闸漏判水印行，先解码再判闸。
-var reResidualEntity = regexp.MustCompile(`&(?:amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-fA-F]+);`)
+// Task 54-a: 数字实体十六进制形态补大写 X 前缀（HTML5 与 x/net/html 首层解码均接受
+// &#X41;，白名单漏收则双重转义站点的大写形态原样残留入库；decodeEntityOne 的
+// "&#X" HasPrefix 分支此前因本正则只认小写 x 而不可达）。
+var reResidualEntity = regexp.MustCompile(`&(?:amp|lt|gt|quot|apos|nbsp|#\d+|#[xX][0-9a-fA-F]+);`)
 
 // decodeEntityOne 解码单个实体；&nbsp; 归一为半角空格（与 reJSWhitespace 折叠口径一致）
 func decodeEntityOne(raw string) string {
@@ -65,6 +68,13 @@ func decodeEntityOne(raw string) string {
 		return " "
 	}
 	decodeNumEntity := func(n int64) string {
+		// Task 54-a: 超出 Unicode 码位的数字实体按 HTML5 语义出 U+FFFD——旧版直接
+		// rune(n)（int64→int32 截断），&#4294967361;（2^32+65）会截成 'A'，恶意/损坏页
+		// 可借任意十进制实体向正文注入任意码位；0x110000..0x7FFFFFFF 区间旧版本就
+		// 因非法码位落 U+FFFD，本守卫把 ≥2^31 的未定义截断行为并轨到同一语义。
+		if n < 0 || n > unicode.MaxRune {
+			return "\uFFFD"
+		}
 		r := rune(n)
 		if r == 0 || unicode.IsControl(r) { // Task 34 (P3-23): NUL/控制字符不进正文（旧版 string(rune(0)) 直落存储）
 			return raw
@@ -162,7 +172,9 @@ func cleanContainer(el *goquery.Selection) cleanedContent {
 
 	paragraphs := []string{}
 	for _, line0 := range splitLines(raw) {
-		line := trimJSSpace(reJSWhitespace.ReplaceAllString(strings.ReplaceAll(line0, "\u3000", " "), " "))
+		// Task 54-a 精简：旧版在 reJSWhitespace 折叠前先 strings.ReplaceAll(line0, "\u3000", " ")——
+		// reJSWhitespace 字符类已含 \x{3000}（Task 46-a 移除 NBSP no-op 的同族先例），实测输出逐字节全等，no-op 移除
+		line := trimJSSpace(reJSWhitespace.ReplaceAllString(line0, " "))
 		if line == "" {
 			continue
 		}

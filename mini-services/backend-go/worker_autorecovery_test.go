@@ -1,10 +1,11 @@
 /**
  * worker_autorecovery_test.go —— Task 46-b 自动恢复链路专项审计的回归锁定：
  *
- * 1) TestAutoResumeMatcherCoversFinalizeMessages：五处限流类 paused 终态文案必须被
+ * 1) TestAutoResumeMatcherCoversFinalizeMessages：限流类 paused 终态文案必须被
  *    runner.go autoResumePausedTasks 的词表匹配（SQL LIKE '%限流%软拦截%'）命中——
- *    文案与词表是隐式契约，任一方单方面改动都会让「自动恢复重新入队」静默失效
- *    （Task 46-b 文案校准后的防回归锁）。同时校验非限流类 paused 文案不入表（纯手动）。
+ *    文案与词表是隐式契约，任一方单方面改动都会让「自动恢复重新入队」静默失效。
+ *    Task 57-b：正向文案改引 worker.go 生产常量（旧版手抄副本在文案漂移后依旧绿——
+ *    假阴性锁）；封禁类模板同样引用常量锁定「不入自动恢复词表」的负向契约。
  *
  * 2) TestSoftBlockEmptyErrTextHitsTransientClassifier：softBlockEmptyErrText（引擎
  *    200 空壳档案的统一失败文案）必须命中 isTransientScrapeErr——这是「空壳不再被
@@ -16,6 +17,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,26 +35,25 @@ func likeAutoResume(msg string) bool {
 }
 
 func TestAutoResumeMatcherCoversFinalizeMessages(t *testing.T) {
-	listMsg := "列表页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
-	bookMsg := "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
-	singleMsg := "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
-	phase2Msg := "正文连续失败 60 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 3 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）"
-
+	// Task 57-b: 正向文案直接引用 worker.go 生产常量与模板（原文案内联字面量在
+	// worker.go:1342/1382/1425/1427/1480/1526/1528——手抄副本会随文案漂移失效）
 	for _, c := range []struct {
 		name string
 		msg  string
 	}{
-		{"runList Phase0", listMsg},
-		{"runList Phase1", bookMsg},
-		{"runSingle Phase1", singleMsg},
-		{"runList/runSingle Phase2", phase2Msg},
+		{"runList Phase0", pausedTransientListMsg},
+		{"runList Phase1", pausedTransientBooksMsg},
+		{"runSingle Phase1", pausedTransientSingleMsg},
+		{"runList/runSingle Phase2 限流形态", fmt.Sprintf(pausedPhase2RateLimitFmt, 60, 3)},
 	} {
 		if !likeAutoResume(c.msg) {
 			t.Errorf("%s: 终态文案未被 autoResumePausedTasks 词表命中（'%%限流%%软拦截%%'），自动恢复链路断裂：%q", c.name, c.msg)
 		}
 	}
 
-	// 非限流类 paused 文案必须不入表（维持「纯手动恢复」口径）
+	// 非限流类 paused 文案必须不入表（维持「纯手动恢复」口径）。
+	// 封禁类熔断模板同样引生产常量：若有人往模板里加「限流/软拦截」字样，这里会红——
+	// 封禁类任务不该进自动恢复（4 次重试对确认封禁纯烧预算）
 	for _, c := range []struct {
 		name string
 		msg  string
@@ -61,7 +62,7 @@ func TestAutoResumeMatcherCoversFinalizeMessages(t *testing.T) {
 		{"服务重启", "服务重启，任务自动暂停（可恢复继续采集）"},
 		{"孤儿回收", "孤儿运行态自动回收（已无执行中 worker），可恢复继续采集"},
 		{"参数读取失败", "任务参数读取失败（存储瞬时异常或损坏行），任务已自动暂停，排查任务配置后可恢复继续采集"},
-		{"疑似封禁熔断", "正文连续失败 60 章（疑似源站封禁或站点不可达），已自动暂停防烧穿（成功 3 章，进度保留，可恢复继续采集）"},
+		{"疑似封禁熔断", fmt.Sprintf(pausedPhase2BlockedFmt, 60, 3)},
 	} {
 		if likeAutoResume(c.msg) {
 			t.Errorf("%s: 非限流类文案不应进自动恢复词表：%q", c.name, c.msg)

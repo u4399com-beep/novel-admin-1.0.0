@@ -96,6 +96,14 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | 挑战页误报修复 | `challenge-platform`/`cdn-cgi/challenge` 从强特征降级为「近空正文才判定」弱特征——CF Bot Fight Mode 会在正常页面注入前置脚本（101kks 实测复现） |
 | 互监护 | backend-go runner 每 ≈30s 探活 :3030，不可达杀残留托孤拉起（见 deployment.md §7.1 与 §1.3 看护关系图） |
 | JSON 目录接口 | `bookRule.chapterListApi`：书页不内嵌全目录时走 POST 接口拉目录（ixdzs8 实战） |
+| 指纹一致性家族（E3/E5-E11） | 软拦截三层识别；AJAX XHR 头族对齐；跳间头族保真（sec-fetch-site/Referer 拓扑改写+sec-fetch-user 删除）；首跳 site↔Referer 拓扑一致；声明 `accept-encoding: gzip, deflate` 并透明解包（单 gzip=Go 客户端指纹）；Safari 族移除 Sec-Fetch-*/UIR（真实 WebKit 不发）；chrome 画像移除硬刷新头族 cache-control/pragma（实测 Chromium 全新导航不发） |
+| 规则级静态 cookie 底座（E12） | 人工过验后的会话 cookie 配置到规则 → 引擎每次抓取幂等种入会话桶（6h TTL/Set-Cookie 接管/8 车道一致），GoEdge 类「强制人机验证」站的合规解锁路径 |
+| WAF 强特征家族（E13） | challenge 检测补 btwaf（宝塔）/GOEDGE_WAF_CAPTCHA（GoEdge）等国产面板 token，任意体积判定 |
+| 会话级画像粘性（E14） | got 车道画像/Accept-Language 按 host+45min 时间窗哈希粘性——同站会话内 UA 恒定（真实浏览器语义），窗到自然轮换 |
+| cf-mitigated 响应头探测（E15） | Cloudflare 自报挑战头（challenge/block）全车道短路判挑战——零体解析零误杀，挑战壳伪装正常页的收口 |
+| GB18030 特征视图（E16） | softBlock 档案标注层补 GBK 解码视图，GBK 站中文挑战词不再漏标注 |
+| 预算感知限速 | acquireDomainSlotBudgeted：预计排队超预算时 shed 快速失败（不睡眠占槽），域限速与策略预算联动 |
+| 目录序号三层根修 | 目录采集管线 reorderRefPairs 重排（最新块+目录混合 DOM 序 → 全局升序），繁体「節/話」先归一 |
 
 ### 6.3 实测遗留问题（截至 24-d 审计）
 

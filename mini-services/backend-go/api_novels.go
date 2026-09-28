@@ -98,10 +98,13 @@ func numIsInt(f float64) bool {
 // intFieldStrict 严格类型整数字段（JS Number.isInteger(v)：v 必须本身是 number）。
 // Task 49-b: 补 2^53 上界（taskRuleIDParam/scrapeRuleIDParam 同族）——旧版 int(f) 对
 // 1e300 是实现定义溢出（amd64 得 MinInt64 负值穿透后续判定），唯一实际腐蚀路径是
-// handleCategoryUpdate 把溢出负值直写 Category.sort；越界值对齐 TS Number 语义拒绝
+// handleCategoryUpdate 把溢出负值直写 Category.sort；越界值对齐 TS Number 语义拒绝。
+// Task 56-b: 补对称负向 -2^53 下界——旧版 sort=-1e300 时 int(f) 同为实现定义溢出
+// （amd64 得 MinInt64），负向溢出直写 Category.sort 数据腐蚀（上界修复只封了正向；
+// 负值本身对 sort 是合法域，仅封「天文级负数」不影响任何真实输入）
 func intFieldStrict(v any) (int, bool) {
 	f, ok := v.(float64)
-	if !ok || !numIsInt(f) || f > 9_007_199_254_740_992 {
+	if !ok || !numIsInt(f) || f > 9_007_199_254_740_992 || f < -9_007_199_254_740_992 {
 		return 0, false
 	}
 	return int(f), true
@@ -136,10 +139,14 @@ func jsNumber(v any) float64 {
 }
 
 // parsePositiveInt 移植 src/lib/scrape/api-utils.ts parsePositiveInt：
-// Number(raw) 后必须为正整数，否则失败
+// Number(raw) 后必须为正整数，否则失败。
+// Task 56-b: 补 2^53 上界（taskRuleIDParam 同族）——旧版 1e300 类越界值 int64(f) 转换
+// 为实现定义溢出（amd64 得 MinInt64 负值）；消费点为 scrape-tasks 路由 id 与 scrape-rules
+// ?id=，负值仅致空查询 404/200 空转，不腐蚀数据，但与全包 id 参数 float 域判定口径
+// 不一致——越界值统一 400（合法 id 远小于该界，零误伤）
 func parsePositiveInt(v any) (int64, bool) {
 	f := jsNumber(v)
-	if !numIsInt(f) || f <= 0 {
+	if !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
 		return 0, false
 	}
 	return int64(f), true

@@ -11,6 +11,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -162,8 +163,11 @@ func TestProfilesFingerprintFreshness(t *testing.T) {
 	}
 }
 
-// TestHeaderGeneratorHeadersDesktopPool E2: got 系随机头池三画像（Chrome/Edge/Firefox）
+// TestHeaderGeneratorHeadersDesktopPool E2: got 系头池三画像（Chrome/Edge/Firefox）
 // 均可达（熵距拉开），且每个画像的 accept-language 恒在白名单内、UA 恒非空。
+// Task 54（E14·会话级指纹粘性）：同 host 同窗恒同画像（会话一致性），池覆盖语义改为
+// 跨 host 断言（主机群分布多样性）——旧「同 host 240 轮随机轮三画像」恰是 E14 移除的
+// 会话内跳变行为。
 func TestHeaderGeneratorHeadersDesktopPool(t *testing.T) {
 	langs := map[string]bool{
 		"zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7": true,
@@ -172,7 +176,7 @@ func TestHeaderGeneratorHeadersDesktopPool(t *testing.T) {
 	}
 	saw := map[string]bool{}
 	for i := 0; i < 240; i++ {
-		h := headerGeneratorHeaders("https://pool39.example.com/book/1")
+		h := headerGeneratorHeaders(fmt.Sprintf("https://pool39-%d.example.com/book/1", i))
 		ua := h["user-agent"]
 		if ua == "" {
 			t.Fatalf("第 %d 轮: user-agent 缺失", i)

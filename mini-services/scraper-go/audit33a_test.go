@@ -35,7 +35,7 @@ func TestAssessStrict2xx(t *testing.T) {
 		{"304 空体 → 状态门优先于 empty-body", 304, nil, false, "http-304"},
 	}
 	for _, c := range cases {
-		a := assess(c.status, c.body, "text/html; charset=utf-8")
+		a := assess(c.status, c.body, "text/html; charset=utf-8", false)
 		if a.ok != c.wantOK {
 			t.Fatalf("%s: assess(%d).ok = %v, want %v（note=%q）", c.name, c.status, a.ok, c.wantOK, a.note)
 		}
@@ -45,7 +45,7 @@ func TestAssessStrict2xx(t *testing.T) {
 	}
 	// 挑战检测门优先于状态码门（挑战页无论状态码都 blocked）
 	chal := []byte("<html><head><title>Just a moment...</title></head><body>x</body></html>")
-	a := assess(200, chal, "text/html")
+	a := assess(200, chal, "text/html", false)
 	if a.ok || !a.blocked || a.note != "challenge-page" {
 		t.Fatalf("挑战页应 blocked/challenge-page，got %+v", a)
 	}

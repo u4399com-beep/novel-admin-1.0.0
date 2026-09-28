@@ -411,7 +411,8 @@ func parseRetryAfterMs(raw string) *int64 {
 	if !reHasLetter.MatchString(v) {
 		return nil
 	}
-	for _, layout := range []string{http.TimeFormat, "Mon, 02 Jan 2006 15:04:05 GMT", time.RFC850, time.ANSIC} {
+	// Task 54 精简：移除与 http.TimeFormat 逐字节恒等的重复字面量（55-a 留档②）
+	for _, layout := range []string{http.TimeFormat, time.RFC850, time.ANSIC} {
 		if t, err := time.Parse(layout, v); err == nil {
 			ms := time.Until(t).Milliseconds()
 			if ms < 0 {
