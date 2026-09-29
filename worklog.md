@@ -2756,3 +2756,15 @@ Work Log:
 Stage Summary:
 - v3-1「彻底放弃 Next.js/TS 全面转移到 Go」终验收官（零残留断言成立）
 - 黑洞站代理池基建知识随二进制分发，稳定长期获取目标再下一城
+---
+Task ID: 59-R6
+Agent: main (Z.ai Code)
+Task: R6 精简轮——双模块函数体克隆检测与收敛 + 文档同步
+
+Work Log:
+- 【克隆检测】自研哈希归一化克隆扫描（backend 512 函数/scraper 130 大函数体）：真克隆 1 组=applyWebTDK/applyWebKeywords（nil 守卫+站群档案+sanitize+siteName 注入+渲染回退同构 ~15 行）；第 2 组为解析伪影；txtNovelsRoot/dbPath 为 4 行语义锚定函数不收敛（收益不抵间接层）
+- 【收敛落地】抽出 seoTplCore（站点档案 seoConfig+siteName 变量注入）+ renderSeoKey（单键渲染+空回退），applyWebTDK/applyWebKeywords 收敛为两行组合；签名零变更调用方零改动；全量回归绿
+- 【文档同步】docs/anti-anti-crawl.md §6.2 增「黑洞站代理池种子固化（Task 59）」行——出口池腐化后探测→PUT→E17 逃生流程可复用语义成文
+
+Stage Summary:
+- 真克隆清零（收敛后复扫无新克隆）；反反爬文档与 seed 基建现状同步

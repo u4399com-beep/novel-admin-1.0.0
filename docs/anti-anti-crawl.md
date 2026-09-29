@@ -103,6 +103,7 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | cf-mitigated 响应头探测（E15） | Cloudflare 自报挑战头（challenge/block）全车道短路判挑战——零体解析零误杀，挑战壳伪装正常页的收口 |
 | GB18030 特征视图（E16） | softBlock 档案标注层补 GBK 解码视图，GBK 站中文挑战词不再漏标注 |
 | 出口维度熔断（E17） | 熔断按 (主机×出口代理) 独立记账——直连出口被封锁（SYN 黑洞/IP 信誉拒）时改配规则代理后新出口零历史包袱立即重试；全部候选出口均熔断才快速失败，链内优先跳过熔断出口（临时降权不删除），LRU 256 上界淘汰=fail-open |
+| 黑洞站代理池种子固化（Task 59） | 直连 SYN 黑洞站（huangjinwu/xinjianpan）的共享代理出口池写入 seed.json 随二进制分发——DB 重建/沙箱回收后重播种即恢复采集能力（此前出口池只存 DB，重建即断链需人工重建）；免费公共代理会自然腐化，腐化后按 §6.2 探测→PUT→E17 逃生流程重建（audit59d 契约锁定 seed 非空） |
 | 预算感知限速 | acquireDomainSlotBudgeted：预计排队超预算时 shed 快速失败（不睡眠占槽），域限速与策略预算联动 |
 | 目录序号三层根修 | 目录采集管线 reorderRefPairs 重排（最新块+目录混合 DOM 序 → 全局升序），繁体「節/話」先归一 |
 

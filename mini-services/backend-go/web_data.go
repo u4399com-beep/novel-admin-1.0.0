@@ -258,29 +258,37 @@ func gatherHomeStats() map[string]any {
 //     绝不产出空 <title>；
 //   - 变量命名与 TS renderTpl 语义一致：{siteName} 自动注入，其余由调用方按页传入；
 //     未命中的 {xxx} 占位替换为空串（与 TS renderTpl 一致）。
-func applyWebTDK(data map[string]any, titleKey, descKey string, vars map[string]string, fbTitle, fbDesc string) {
+//
+// seoTplCore 取请求站点档案的 seoConfig 并注入 siteName 变量（Task 59-R6：applyWebTDK/
+// applyWebKeywords 同构核心收敛；Task 30-a 站群语义不变）
+func seoTplCore(data map[string]any, vars map[string]string) map[string]any {
 	if vars == nil {
 		vars = map[string]string{}
 	}
-	s := settingsFromData(data)   // Task 30-a: 站群——TDK 模板按请求站点档案（默认站点行为不变）
+	s := settingsFromData(data)   // 站群——模板按请求站点档案（默认站点行为不变）
 	seo := sanitizeSeoConfig(nil) // 无设置行 → 全默认模板
 	if s != nil {
 		seo = sanitizeSeoConfig(s.SeoConfig)
 	}
 	siteName, _ := data["Site"].(map[string]any)["siteName"].(string)
 	vars["siteName"] = siteName
-	tplTitle, _ := seo[titleKey].(string)
-	tplDesc, _ := seo[descKey].(string)
-	title := renderTpl(tplTitle, vars)
-	if trimSpaceStr(title) == "" {
-		title = fbTitle
+	return seo
+}
+
+// renderSeoKey 单键模板渲染 + 空模板回退默认句
+func renderSeoKey(seo map[string]any, key string, vars map[string]string, fb string) string {
+	tpl, _ := seo[key].(string)
+	out := renderTpl(tpl, vars)
+	if trimSpaceStr(out) == "" {
+		out = fb
 	}
-	desc := renderTpl(tplDesc, vars)
-	if trimSpaceStr(desc) == "" {
-		desc = fbDesc
-	}
-	data["pageTitle"] = title
-	data["pageDescription"] = desc
+	return out
+}
+
+func applyWebTDK(data map[string]any, titleKey, descKey string, vars map[string]string, fbTitle, fbDesc string) {
+	seo := seoTplCore(data, vars)
+	data["pageTitle"] = renderSeoKey(seo, titleKey, vars, fbTitle)
+	data["pageDescription"] = renderSeoKey(seo, descKey, vars, fbDesc)
 }
 
 // applyWebKeywords 渲染后台 seoConfig 关键词模板 → data["pageKeywords"]（Task 28-c）。
@@ -289,22 +297,8 @@ func applyWebTDK(data map[string]any, titleKey, descKey string, vars map[string]
 // 本函数与 applyWebTDK 同构（sanitizeSeoConfig 白名单 + renderTpl 变量注入 + 空回落），
 // 仅服务带 keywords 键的四个页面；category/toc/search 源契约无关键词键，不产出（模板侧 {{if}} 兜底）。
 func applyWebKeywords(data map[string]any, key string, vars map[string]string, fb string) {
-	if vars == nil {
-		vars = map[string]string{}
-	}
-	s := settingsFromData(data) // Task 30-a: 站群——keywords 模板按请求站点档案（默认站点行为不变）
-	seo := sanitizeSeoConfig(nil)
-	if s != nil {
-		seo = sanitizeSeoConfig(s.SeoConfig)
-	}
-	siteName, _ := data["Site"].(map[string]any)["siteName"].(string)
-	vars["siteName"] = siteName
-	tpl, _ := seo[key].(string)
-	kw := renderTpl(tpl, vars)
-	if trimSpaceStr(kw) == "" {
-		kw = fb
-	}
-	data["pageKeywords"] = kw
+	seo := seoTplCore(data, vars)
+	data["pageKeywords"] = renderSeoKey(seo, key, vars, fb)
 }
 
 // ---------- 首页 ----------
