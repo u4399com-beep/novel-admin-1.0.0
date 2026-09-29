@@ -34,7 +34,8 @@ import (
 const (
 	llmTimeoutMs   = 3_000                    // 单次调用超时（与 LLM_TIMEOUT_MS 一致）
 	llmGenTimeout  = 5_000 * time.Millisecond // Task 32-b: 智能填充（author/简介生成）超时（用户指令「5s 超时+静默降级」）
-	llmCooldownMs  = 30_000                   // 失败冷却窗（与 LLM_COOLDOWN_MS 一致）
+	llmCooldownMs  = 30_000                   // 失败冷却基础窗（与 LLM_COOLDOWN_MS 一致）
+	llmCooldownMax = 10 * 60 * 1000           // Task 59-R3: 连败退避上限 10min
 	zaiConfigLimit = 2 << 20
 )
 
@@ -108,10 +109,28 @@ func llmInCooldown() bool {
 	return time.Now().UnixMilli() < cooldownAt
 }
 
-// llmMarkCooldown 进入冷却窗
+// Task 59-R3: 429 重试风暴根修——原固定 30s 冷却无退避升级，上游限流未恢复时
+// 每到冷却期即重试再 429，生产实证 30s 周期无限循环（日志时间戳精确 30s 间隔）。
+// 改指数退避 30s→60s→120s→240s→480s→600s 封顶，成功一次归零；对上游限流友好的
+// 同时保留快速故障隔离。
+var llmFailStreak int
+
+// llmMarkCooldown 进入冷却窗（连败指数退避）
 func llmMarkCooldown() {
 	coolMu.Lock()
-	cooldownAt = time.Now().UnixMilli() + llmCooldownMs
+	defer coolMu.Unlock()
+	llmFailStreak++
+	backoff := int64(llmCooldownMs) << uint(llmFailStreak-1)
+	if backoff <= 0 || backoff > llmCooldownMax {
+		backoff = llmCooldownMax
+	}
+	cooldownAt = time.Now().UnixMilli() + backoff
+}
+
+// llmMarkSuccess 调用成功归零连败（恢复基础冷却窗）
+func llmMarkSuccess() {
+	coolMu.Lock()
+	llmFailStreak = 0
 	coolMu.Unlock()
 }
 
@@ -206,13 +225,14 @@ func llmChatWithTimeout(messages []llmChatMessage, timeout time.Duration) string
 	select {
 	case res := <-ch:
 		if res.err != nil {
-			log.Printf("[llm] 调用失败（进入 %ds 冷却）: %v", llmCooldownMs/1000, res.err)
+			log.Printf("[llm] 调用失败（指数退避冷却中）: %v", res.err)
 			llmMarkCooldown()
 			return ""
 		}
+		llmMarkSuccess()
 		return trimSpaceStr(res.content)
 	case <-time.After(timeout):
-		log.Printf("[llm] 超时 %s（进入 %ds 冷却）", timeout, llmCooldownMs/1000)
+		log.Printf("[llm] 超时 %s（指数退避冷却中）", timeout)
 		llmMarkCooldown()
 		return ""
 	}
