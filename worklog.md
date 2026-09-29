@@ -2958,3 +2958,16 @@ Work Log:
 
 Stage Summary:
 - 「恢复→深审→增强→精简→集成→验证」R20 完成：站点级 286 裂图 boot 自愈根修（含契约测试）+ 106 本真实封面重下闭环；封面资产从「全裂/全占位」修复为「185 本地真实封面+确定性渐变兜底」双层形态
+---
+Task ID: 60-R21
+Agent: main (Z.ai Code)
+Task: R21 增强/集成轮——E12 人工 cookie 管道审计 + 持续采集舰队重建（填充管线断流根修）
+
+Work Log:
+- 【E12 管道审计】kelexs/cunshu/pilishuwu 三站合规解锁路径端到端核查：backend engineRuleBody（Trim 后非空才下发）→ 引擎 handlers 接收 → cookies.go 规则种子（6h TTL/Set-Cookie 接管/128 host LRU/Secure 语义/并发锁）→ audit53_test 契约在档；anti-anti-crawl.md E12 行在档——管道完备，唯一待办=人工过验 cookie 注入（合规红线内不可自动化，非缺陷）
+- 【填充管线断流根修】任务表全景盘点：20 任务全 list 模式、零填充排队——35.4 万骨架章消化管线断流（旧舰队随 DB 回退湮灭）；重建 10 任务舰队（R19 验证通过规则：5165/23uswx/x2552/101kks/77shuku/23qb/ddyueshu/ixdzs8/夜伴/ggd66，pages=1 礼貌起量）→ 201×10
+- 【舰队实证】45s 后 12 任务 running：#21 17/262 书、#33 x2552 8/30 书（38188 章队列）、#38 ixdzs8 8/15（16297）——章节队列 +9.2 万；#13/#10 旧任务填充推进（ch 113/2446、89/28400）
+- 【暂停清尾】剩余 5 条 paused 任务（旧舰队残余）全部 PATCH resume → 队列全活跃
+
+Stage Summary:
+- 「稳定长期获取」基建再闭环：E12 cookie 合规管道确认完备（待人工步骤已文档化）；填充管线从断流修复为 12 任务持续流动，章节总队列 35.4 万→44.6 万+且持续增长
