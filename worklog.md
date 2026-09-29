@@ -2808,3 +2808,17 @@ Work Log:
 
 Stage Summary:
 - 大阶段进度冻结病灶根修（Phase 1 全程可观测）；排障方法论（栈转储聚类）沉淀 worklog
+---
+Task ID: 59-R10
+Agent: main (Z.ai Code)
+Task: R10 资源核查 + E2E 补面抓出 R6 回归（nil vars 站名丢失）→ 根修 + 测试锁定
+
+Work Log:
+- 【资源面】DB 92MB/820 本/freelist 0/WAL 已 checkpoint；磁盘 23%（7.3G 余）——28 万章队列体量无风险
+- 【深审】obfuscate.go 渲染对抗层 579 行（六条安全边界+实体/零宽锚点规避+admin 跳过）契约完整零扰动
+- 【抓出回归】?theme 冒烟发现全站 home <title> 前缀空（「 - 免费小说…」）——根因 R6 seoTplCore 收敛时 vars=nil 局部重赋值后 siteName 注入不回传（书页传非 nil map 引用语义幸存，home 传 nil 路径全灭）；applyWebTDK 旧实现同函数内注入故无此问题
+- 【根修】seoTplCore 返回 (seo, vars) 双值，调用方解构续传；audit59e 四用例锁定（nil vars 注入/keywords 注入/非 nil 引用语义/SSR home title 站名前缀）；热替换后 / 与 /book/69 title 实证恢复
+- 【运维】任务批量 resume（SIGQUIT+热替换的 paused 恢复第 3 轮）
+
+Stage Summary:
+- R6 收敛回归当天抓当天修（0 陈化成本），「收敛必须配同值 E2E」教训固化为 audit59e 契约锁
