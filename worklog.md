@@ -2780,3 +2780,17 @@ Work Log:
 
 Stage Summary:
 - Task 45 挂账清零；AIMD/车道/熔断三层自适应全链复审通过；采集面进入稳定长跑态
+---
+Task ID: 59-R8
+Agent: main (Z.ai Code)
+Task: R8 E2E 补面——分类页/搜索流/TXT 导出语义/admin 后台
+
+Work Log:
+- 【分类页】/category/1 SSR+TDK 正常渲染
+- 【搜索流】首页搜索框填"盗梦"→搜书名→/search?q= 盗梦 命中《盗梦千年》
+- 【TXT 下载 disabled 语义核验】book.html 明示「演示站点不提供下载」为源站 trxsw 语义保真（非缺陷）；导出能力经 /api/export/txt（api_export 三级回退测试在档）供集成面使用
+- 【admin 后台】198KB 响应/163KB DOM：总览健康面板（backend ok/dbOk/db 路径）+书籍 697/章节 538115/任务 14/规则 17/PSEO 关键词 1724+最近任务 10s 自动刷新；规则/任务等在标签页内按需渲染
+- 【console+errors】零输出
+
+Stage Summary:
+- 全部用户可见页面（首页/分类/书/章/pseo/搜索/admin）E2E 黄金路径全绿；TXT 禁用确认为语义保真
