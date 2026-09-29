@@ -144,8 +144,33 @@ func cleanNovelIntro(desc string) (string, []string) {
 		}
 		kept = append(kept, ln)
 	}
-	return strings.Join(kept, "\n"), words
+	out := strings.Join(kept, "\n")
+	// Task 59-R14: 尾部推广/样板残臂剥离（语料实形三族，锚定收尾防误伤叙事）
+	out = introTailSitePromoRE.ReplaceAllString(out, "")
+	out = introTailCraftRE.ReplaceAllString(out, "")
+	out = strings.TrimSpace(out)
+	// 整段壳简介拒收（首尾锚定全串模板，introMetaTplRE 同哲学；语料实形 #71/#240）
+	if introShellMetaRE.MatchString(out) {
+		return "", words
+	}
+	return out, words
 }
+
+// Task 59-R14 语料实形（900 本抽检）：
+//   - #71/#240「{书名}最新章节及全本内容，{书名}无弹窗广告阅读。」= 整段壳 → 全清空
+//   - #139/#237「……叙事……+笔趣阁+m.biqugua.com」= 叙事+尾部站链推广 → 剥尾保叙事
+//   - #199「……叙事……武道大帝是原作者忘情至尊精心创作」= 叙事+尾部创作声明 → 剥尾
+//     （与 scraper reDescBoilerplate 同族，此处无书名号形态，锚点放宽为「是+名号+精心创作」收尾）
+
+// introShellMetaRE 整段壳简介（首尾全串锚定）
+var introShellMetaRE = regexp.MustCompile(`(?s)^.{1,60}最新章节及全本内容[，,].{1,60}无弹窗广告阅读。?$`)
+
+// introTailSitePromoRE 尾部「+笔趣阁+m.biqugua.com」式站链推广（锚定串尾；站名段兼容
+// CJK「笔趣阁」与 ASCII 域名，允许多段 + 连缀）
+var introTailSitePromoRE = regexp.MustCompile(`(?i)(?:\s*[+＋][\p{Han}A-Za-z0-9.]{1,20}){1,4}\s*$`)
+
+// introTailCraftRE 尾部「X是原作者Y精心创作」创作声明（锚定串尾；有书名号形态由引擎侧 reDescBoilerplate 先清）
+var introTailCraftRE = regexp.MustCompile(`[^\s，。！？]{1,50}是(?:原作者|作者|网文作者)?[\p{Han}A-Za-z0-9]{1,25}精心创作[之作]?[。！]?$`)
 
 // extractIntroWords 从「相关小说：」清单尾块提取长尾词条目（顿号/逗号/分号/换行分隔）。
 // 质量闸门：2..30 rune、含文字、非 URL/纯数字/推广形态、kwNormalize 归一去重、上限
