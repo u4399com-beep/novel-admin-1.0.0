@@ -22,12 +22,58 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
+	"strconv"
 	"time"
 )
 
 // pseoEnrichInterval 书名种子富集循环周期（每周期处理 1 个种子词）
 const pseoEnrichInterval = 12 * time.Second
+
+// Task 59-R2: 种子富集「引擎全败」有界重试。原实现 fetchSuggestionsMulti 失败隔离后
+// 静默照常置 generated——引擎瞬时故障窗口内处理的种子，该书下拉词长尾**永久丢失**
+// （书本不再更新则种子不再登记）。重试记账存 AppMeta KV（"n|at" 文本形态，无新表）；
+// 连续 enrichRetryMax 次全败后放弃（保底书名词页面照常生成），冷却期不空烧引擎。
+const (
+	enrichRetryMax      = 3             // 连续引擎全败上限
+	enrichRetryCooldown = 5 * 60 * 1000 // 重试冷却 5min（毫秒）
+)
+
+// enrichRetryKey AppMeta 记账键（kwNorm 归一形，同词跨形态同一记账）
+func enrichRetryKey(kw string) string { return "pseoEnrichRetry:" + kwNormalize(kw) }
+
+func getEnrichRetry(kw string) (n int, at int64) {
+	var v string
+	if err := queryOne(`SELECT "value" FROM "AppMeta" WHERE "key" = ?`, []any{&v}, enrichRetryKey(kw)); err != nil {
+		return 0, 0
+	}
+	_, _ = fmt.Sscanf(v, "%d|%d", &n, &at)
+	return
+}
+
+func setEnrichRetry(kw string, n int, at int64) {
+	_, _ = exec(`INSERT OR REPLACE INTO "AppMeta" ("key","value") VALUES (?, ?)`, enrichRetryKey(kw), itoa(n)+"|"+strconv.FormatInt(at, 10))
+}
+
+func clearEnrichRetry(kw string) {
+	_, _ = exec(`DELETE FROM "AppMeta" WHERE "key" = ?`, enrichRetryKey(kw))
+}
+
+// suggestEnginesAllFailed 引擎侧全败判定：非零结果且每个引擎都带错误（Error != ""）。
+// 注意不能以 OK/词数判定——OK=false 且 Error=="" 是「引擎健康但该词无下拉建议」，
+// 重试无意义必须区分。零结果（无有效引擎配置/全部未返回）视同全败。
+func suggestEnginesAllFailed(agg suggestionsAggregate) bool {
+	if len(agg.Results) == 0 {
+		return true
+	}
+	for _, r := range agg.Results {
+		if r.Error == "" {
+			return false
+		}
+	}
+	return true
+}
 
 // enqueuePseoBookSeed 书名种子登记（best-effort：失败仅记日志，不影响采集主流程；
 // Task 44-b 起非唯一冲突错误落日志可观测）。source=book 标记来源；status=pending 由
@@ -82,12 +128,40 @@ func enrichOneBookSeed() {
 	if cerr != nil {
 		return
 	}
+	// Task 59-R2: 冷却中的重试种子本轮跳过（引擎全败后有界重试），照常消化其他 pending 词
+	if rn, rat := getEnrichRetry(keyword); rn > 0 && rn <= enrichRetryMax && nowMillis()-rat < enrichRetryCooldown {
+		if g, gerr := generatePendingPages(20, keyword); gerr == nil && g > 0 {
+			log.Printf("[backend-go-pseo] 种子《%s》引擎全败冷却中（第%d/%d次），消化 pending 词池 +%d 页",
+				truncateRunes(keyword, 30), rn, enrichRetryMax, g)
+		}
+		return
+	}
 	started := nowMillis()
 	// 下拉词扩展（失败隔离：引擎全挂时 agg.Words 为空，书名词本身仍会生成聚合页）
 	agg := fetchSuggestionsMulti(keyword, cfg.Sources, 8000)
 	words := agg.Words
 	if len(words) > cfg.PerSeedLimit {
 		words = words[:cfg.PerSeedLimit]
+	}
+	// Task 59-R2: 引擎全败 → 有界重试（保留 pending + 排除本词生成，冷却后自动再富集）；
+	// 连续失败达上限或引擎健康应答（含零建议）→ 清记账照常收敛
+	if suggestEnginesAllFailed(agg) && len(words) == 0 {
+		rn, _ := getEnrichRetry(keyword)
+		rn++
+		if rn <= enrichRetryMax {
+			setEnrichRetry(keyword, rn, nowMillis())
+			log.Printf("[backend-go-pseo] 种子《%s》引擎全败（第%d/%d次），保留 pending 冷却重试",
+				truncateRunes(keyword, 30), rn, enrichRetryMax)
+			if g, gerr := generatePendingPages(20, keyword); gerr == nil && g > 0 {
+				log.Printf("[backend-go-pseo] 引擎全败期间消化其他 pending 词池 +%d 页", g)
+			}
+			return
+		}
+		clearEnrichRetry(keyword)
+		log.Printf("[backend-go-pseo] 种子《%s》连续%d次引擎全败，放弃长尾重试（书名词页面照常生成）",
+			truncateRunes(keyword, 30), enrichRetryMax)
+	} else {
+		clearEnrichRetry(keyword)
 	}
 	entries := []kwEntry{{Word: keyword, Engine: "book"}}
 	entries = append(entries, words...)

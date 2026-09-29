@@ -2699,3 +2699,18 @@ Stage Summary:
 - pseo 种子书主打根修落地（web+api+生成链路三层一致），matchNovels/novelsByIDs 同族病灶清除，5 测试锁定
 - 规则面 14/17 自动采集稳定（3 条 WAF 人机验证为合规红线内终态）；共享代理出口池重建方法论验证（探测→PUT→即时逃生）
 - 双模块全绿验证三连；14 任务采集中，书库回填进行时
+---
+Task ID: 59-R2
+Agent: main (Z.ai Code)
+Task: R2 深审（pseo 富集链路逐行）→ 增强（引擎全败有界重试）→ 精简（双模块死代码扫描）→ 集成/验证（测试+热替换+任务恢复）
+
+Work Log:
+- 【深审病灶实锤】enrichOneBookSeed 静默置 generated——fetchSuggestionsMulti 引擎瞬时故障窗口内处理的种子，该书下拉词长尾永久丢失（书本不再更新则种子不再登记，无自愈路径）；suggestionsAggregate 无总失败信号，且 OK=false 语义二义（引擎失败 vs 健康零建议）
+- 【增强落地】suggestEnginesAllFailed（Error 非空=失败；零结果视同全败；健康零建议不误判）+ AppMeta KV 记账（"n|at" 文本，kwNorm 键，无新表）+ 有界重试（max 3 次/5min 冷却；冷却期跳过富集但照常消化其他 pending 词）+ generatePendingPages variadic exclude 参数（3 既有调用方零改动）——种子保留 pending 冷却后自动再富集，达上限放弃（保底书名词页面照常生成）
+- 【测试】audit59b_test.go 三用例（全败判定四态/KV 往返+覆盖+清除/exclude 排除保留+伴生消化+二次兜底）锁定；双模块 go build+vet+test -race 全绿
+- 【精简】双模块包级函数引用计数扫描（backend 702→687 名/scraper 371 名）——零死代码（唯一 SUSPECT 为 Test 函数框架隐式引用，预期）；csscheck 扫描面 95 文件 1519 唯一类零漂移
+- 【运维】14 任务因热替换 paused → 全量 PATCH resume 恢复 running；书库 553→596 持续增长；pseo 富集实证运行（种子 +10~12 词/轮、20 聚合页/轮）
+
+Stage Summary:
+- 种子富集引擎全败有界重试闭环（观测记账+冷却+排除式生成+保底收敛），下拉词永久丢失病灶根治
+- 双模块零死代码、CSS 零漂移；采集面 14 任务运行中、书库回填过半

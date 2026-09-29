@@ -580,7 +580,7 @@ func pickPseoTpl(configured string, pool []string, alts []string, keyword string
 }
 
 // generatePendingPages 为 pending 关键词生成 PSEO 聚合页数据（自动 TDK 模板），返回生成数
-func generatePendingPages(limit int) (int, error) {
+func generatePendingPages(limit int, exclude ...string) (int, error) {
 	take := limit
 	if take > 50 {
 		take = 50
@@ -595,7 +595,20 @@ func generatePendingPages(limit int) (int, error) {
 		seed    string
 	}
 	pending := make([]pendingRow, 0)
-	if err := queryList(`SELECT "id","keyword","source","seed" FROM "PseoKeyword" WHERE "status" = 'pending' ORDER BY "id" ASC LIMIT ?`,
+	// Task 59-R2: exclude 支持种子富集引擎全败重试路径——保留种子 pending 供冷却后再富集，
+	// 其余 pending 词照常消化（variadic 保持既有调用方零改动）
+	pendingSQL := `SELECT "id","keyword","source","seed" FROM "PseoKeyword" WHERE "status" = 'pending'`
+	pendingArgs := make([]any, 0, len(exclude)+1)
+	if len(exclude) > 0 {
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(exclude)), ",")
+		pendingSQL += ` AND "keyword" NOT IN (` + ph + `)`
+		for _, k := range exclude {
+			pendingArgs = append(pendingArgs, k)
+		}
+	}
+	pendingSQL += ` ORDER BY "id" ASC LIMIT ?`
+	pendingArgs = append(pendingArgs, take)
+	if err := queryList(pendingSQL,
 		func(rows *sql.Rows) error {
 			var p pendingRow
 			if err := rows.Scan(&p.id, &p.keyword, &p.source, &p.seed); err != nil {
@@ -603,7 +616,7 @@ func generatePendingPages(limit int) (int, error) {
 			}
 			pending = append(pending, p)
 			return nil
-		}, take); err != nil {
+		}, pendingArgs...); err != nil {
 		return 0, err
 	}
 
