@@ -2794,3 +2794,17 @@ Work Log:
 
 Stage Summary:
 - 全部用户可见页面（首页/分类/书/章/pseo/搜索/admin）E2E 黄金路径全绿；TXT 禁用确认为语义保真
+---
+Task ID: 59-R9
+Agent: main (Z.ai Code)
+Task: R9 深审调度/清洗层 → SIGQUIT 栈转储排障（task#11 进度冻结之谜）→ 增强（Phase 1 中间节流 Flush）
+
+Work Log:
+- 【深审】cleanx.go 正文噪声清洗链（容器级+行级+尾部 JS 残迹剥除+标签残行，Task 28-a/31-c 实战加固在档）与 ratelimit.go AIMD（CAS-max/纯函数步进/Retry-After 采纳）零新缺陷
+- 【排障实证】task#11（5165，262 本）进度冻结 17min（done 恒 0/262、日志停于 Phase 0）→ kill -QUIT 转储 643 goroutine 聚类分析：13 任务主 goroutine 均 phase2Fill/runPoolDynamic Wait、96 个 Cond 等待、lane 在 callEngine——形态正常非死锁
+- 【根因】Run.Log 纯内存 + Flush 仅阶段边界落库：Phase 1 大列表（262 本×~4s/本≈17min）期间进度/日志滞留内存，DB 恒为 Phase 0 末次值；重启后 #11 现值 done=262/262、chTotal=22469 实锤 Phase 1 早已完成——「冻结」是可观测性缺陷非执行故障
+- 【增强落地】phase1Skeletons 阶段内 5s 节流后台 Flush（mu 快照 okBooks/fillTotal，任务删除即停，收尾 close+Wait 无泄漏）；热替换后 #11 done=13/262 实时推进实证生效
+- 【运维】SIGQUIT 转储存档 /tmp/backend-stack-dump-0033.log；双进程嫌疑排查（watchdog 日志单次拉起+pgrep 单进程+dump 单 goroutine runTask(0xb)）排除双写
+
+Stage Summary:
+- 大阶段进度冻结病灶根修（Phase 1 全程可观测）；排障方法论（栈转储聚类）沉淀 worklog

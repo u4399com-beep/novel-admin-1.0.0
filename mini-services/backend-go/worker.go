@@ -453,6 +453,32 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 		return failStreak >= MAX_CONSECUTIVE_BOOK_FAILS && okBooks == 0
 	})
 
+	// Task 59-R9: Phase 1 中间节流 Flush——原实现仅在阶段结束时落库进度/日志，大列表
+	//（实证 262 本×~4s/本 ≈ 17min）期间任务面板进度/日志完全冻结（「去重后共 N 本」与
+	// 阶段标题滞留内存，DB 恒为 Phase 0 末次 Flush 值，排障误判为卡死）。5s 节流后台
+	// Flush 与 Phase 2 的 800ms onProgress 同哲学，长阶段全程可观测。
+	stopFlush := make(chan struct{})
+	var flushWG sync.WaitGroup
+	flushWG.Add(1)
+	go func() {
+		defer flushWG.Done()
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-stopFlush:
+				return
+			case <-t.C:
+				mu.Lock()
+				okN, ftN := okBooks, fillTotal
+				mu.Unlock()
+				if !run.Flush(&TaskFlushFields{Done: &okN, ChaptersTotal: &ftN}) {
+					return // 任务已被删除：停止无谓落库
+				}
+			}
+		}
+	}()
+
 	runPool(items, BOOK_CONCURRENCY, func(item ListItem, _ int) {
 		bookURL := item.URL
 		page := fetchBookPage(run, bookURL, rule, listURL, false)
@@ -579,6 +605,11 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
 		run.Log(fmt.Sprintf("《%s》骨架入库 %d 章（已有正文跳过 %d，待填充 %d）",
 			truncateRunes(up.Title, 24), sk.Stored, sk.SkippedFilled, len(sk.FillRows)))
 	}, shouldStop)
+
+	// Task 59-R9: 收停阶段内 flusher（主 goroutine 接管收尾 Flush；此处不持 mu，
+	// flusher 尾帧可能仍在落库，Wait 至多一个 Flush 时长）
+	close(stopFlush)
+	flushWG.Wait()
 
 	if sawCatalog > 0 {
 		run.Log(fmt.Sprintf("目录页二次提取生效 %d 本", sawCatalog))
