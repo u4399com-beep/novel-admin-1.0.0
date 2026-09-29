@@ -3000,3 +3000,16 @@ Work Log:
 
 Stage Summary:
 - 填充链逐行深审零新缺陷（历轮加固清点齐全）；章节页与 pseo 种子书两大用户可见面 E2E 全绿；任务队列 17 路活跃
+---
+Task ID: 60-R24
+Agent: main (Z.ai Code)
+Task: R24 增强轮——E18 接管实证 + coverSrc 有机自愈链确认 + 沙箱重置恢复手册落档
+
+Work Log:
+- 【E18 实证】proxy-watch 日志：规则 #10《aijjxs》出口池 1/1 死口→自动拉候选补位换血、#20《77shuku》1/3 死口→换血——R19 手工回填的代理规则已被 E18 无人值守接管，「活池→换血→重建不丢」三层闭环在恢复库上复验
+- 【coverSrc 有机自愈链】storex.go saveNovel 路径逐行确认：Phase 1 书页命中存量书（title+author 匹配）→ coverSrc='' 即回写（Task 50 行为）→ token 形态封面自动升级下载 → 失败仅落 coverSrc 留给补抓通道——106 本无源 token 书随舰队重访各自源站自然愈合，无需专项任务
+- 【恢复手册】docs/recovery-playbook.md 落档：工具链重装/DB 恢复决策树/进程收割规避（失败码收尾）/任务复活/schema 自愈清单/DQS 陷阱备忘/外部依赖状态表——三次整机回收实战的全流程沉淀，deployment.md 交叉引用
+- 【enrich 面】pseo 词池 pending=0（消化齐平）；AppMeta t2s 守卫在途（24 万章正文扫描长任务，非阻塞）
+
+Stage Summary:
+- 「稳定长期获取」三链复验：出口池自愈（E18）+ 封面自愈（自愈回填+补抓+有机回写）+ 简介清洗（幂等回填）全部在恢复库上自动运转；恢复知识从会话记忆固化为仓库文档
