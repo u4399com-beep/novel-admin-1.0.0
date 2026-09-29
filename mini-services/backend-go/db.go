@@ -143,6 +143,12 @@ func getDB() (*sql.DB, error) {
 		if err := backfillNovelIntroClean(db); err != nil {
 			log.Printf("[db] 简介噪声清洗回填失败（存量简介噪声暂存，重启重试）: %v", err)
 		}
+		// Task 60-R20: 本地封面文件缺失自愈（运行时产物 public/covers/ 被环境重置清空
+		// 的实证场景）——本地形态 cover 指向的文件不存在时重置渐变 token，渲染层即刻
+		// 恢复；重置行自动落入补抓候选面（token+coverSrc≠''），与补抓通道双层闭环
+		if err := backfillBrokenCoverLocal(db); err != nil {
+			log.Printf("[db] 本地封面缺失自愈失败（裂图暂存，重启重试）: %v", err)
+		}
 		// Task 45-b: 存量章节「第X卷」前缀回填（幂等：只处理命中行且与入库链路
 		// detectVolume 同口径，回填后存量标题与新采集标题归一一致——Phase 2 续传按
 		// 标题匹配空骨架，双侧口径必须一致）。失败不阻断启动，重启重试

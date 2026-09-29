@@ -37,6 +37,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -621,4 +622,58 @@ func fetchCoverWithFallback(novelID int, remoteURL, primaryProxy string, hardDea
 func gradientTokenFor(title, author string) string {
 	h := md5.Sum([]byte(title + "\x00" + author))
 	return "g" + itoa(int(h[0])%12+1)
+}
+
+// backfillBrokenCoverLocal 存量本地封面文件缺失自愈（Task 60-R20）。
+//
+// 背景：沙箱整机回收清空 public/covers/ 运行时产物（不入 git/repo.tar），DB 中 286 本
+// cover 仍指向 /covers/{id}.jpg → 站点大面积裂图。本回填在 boot 扫描 cover 为本地
+// 形态的书，逐本 stat 文件；缺失 → 重置为 gradientTokenFor(title,author) 渐变 token
+// （渲染层立即恢复确定性占位封面，视觉零裂图）。
+//
+// 衔接：重置后的书若 coverSrc ≠ ”，自动落入 coverBackfillCandidates 的既有候选面
+// （token 形态 + 源 URL 非空）→ 补抓通道按预算重下真实封面，双层闭环。
+//
+// 幂等：文件存在的行零写放大（boot 重复执行无副作用）；token 重置以 title+author
+// 确定性派生，同书同 token 与 TS 侧历史数据一致。
+func backfillBrokenCoverLocal(db *sql.DB) error {
+	type brokenRow struct {
+		id     int64
+		title  string
+		author string
+		cover  string
+	}
+	rows, err := db.Query(`SELECT "id","title","author","cover" FROM "Novel" WHERE "cover" LIKE '/covers/%'`)
+	if err != nil {
+		return err
+	}
+	broken := []brokenRow{}
+	for rows.Next() {
+		var r brokenRow
+		if err := rows.Scan(&r.id, &r.title, &r.author, &r.cover); err != nil {
+			rows.Close()
+			return err
+		}
+		// 文件路径按 cover 值本身推导（handleCovers 同契约：Base 单段防路径穿越）
+		base := filepath.Base(r.cover)
+		if _, statErr := os.Stat(filepath.Join(coversDir(), base)); statErr != nil {
+			broken = append(broken, r)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(broken) == 0 {
+		return nil
+	}
+	for _, r := range broken {
+		token := gradientTokenFor(r.title, r.author)
+		if _, err := db.Exec(`UPDATE "Novel" SET "cover" = ?, "updatedAt" = ? WHERE "id" = ?`,
+			token, nowMillis(), r.id); err != nil {
+			return err
+		}
+	}
+	log.Printf("[db] 本地封面文件缺失自愈：%d 本已重置渐变 token（补抓通道将按 coverSrc 重下）", len(broken))
+	return nil
 }

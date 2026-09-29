@@ -2943,3 +2943,18 @@ Work Log:
 
 Stage Summary:
 - 「在库规则全突破」R19 战果：15/17 实测稳定取数，2 条+1 条为合规边界待人工 cookie（非技术缺陷）；三死站代理逃生复活、一条结构漂移重校准、一条入口勘误、指纹栈恢复——采集面长期稳定性再上一层
+---
+Task ID: 60-R20
+Agent: main (Z.ai Code)
+Task: R20 深审/增强轮——站点级裂图病灶根修（本地封面文件缺失自愈）+ 封面存量补抓闭环 + LLM 429 面核查
+
+Work Log:
+- 【深审数据面】库内交叉统计（dbcheck sql 模式）：394 本中 286 本 cover=/covers/N.jpg 本地形态而 public/covers/ 文件全灭（运行时产物不入 repo.tar，沙箱重置清空）→ 站点 286 张封面全裂；token 形态 108 本仅 2 本有 coverSrc
+- 【根修】coversx.go 增 backfillBrokenCoverLocal：boot 扫描本地形态 cover 逐本 stat 文件，缺失 → 重置 gradientTokenFor(title,author) 确定性 token（渲染即刻恢复、与 TS 同算法、同书同 token）；重置行自动落入 coverBackfillCandidates 既有候选面（token+coverSrc≠''）→ 与补抓通道双层闭环；幂等（文件在即零写放大）；文件路径按 cover 值 Base 推导与 handleCovers 同契约；db.go once 回调接入（回填链内）
+- 【契约锁】audit60_test.go：文件存在零写放大/缺失重置确定性 token/重置后进补抓候选/幂等重跑稳定 四断言（953xx 段隔离+Cleanup）
+- 【补抓实跑】backfill-covers 循环 8 轮（limit=20+proxy=池出口 103.237.102.191:11111）:attempted 106 → fixed 106（185 张封面文件落盘）；终态 remaining=0；仅 #92/#383 源图 404（确定性失败不回退代理=正确行为）+ #392 超时（下轮可重试）
+- 【LLM 429 核查】llm.go 智能填充兜底链（llmGuessAuthor/llmGenerateDescription）429 → llmMarkCooldown 指数退避 → 返回空调用方回落占位——优雅降级设计在档非缺陷；pseo 词池消化不依赖 LLM
+- 【任务面】5 任务 running 推进中（#24 限流熔断第 4 次自动恢复=礼貌速率设计生效）；书库 337→394（恢复后净增 57 本）、章节 24.3 万→35.4 万、填充 15582 章节正文
+
+Stage Summary:
+- 「恢复→深审→增强→精简→集成→验证」R20 完成：站点级 286 裂图 boot 自愈根修（含契约测试）+ 106 本真实封面重下闭环；封面资产从「全裂/全占位」修复为「185 本地真实封面+确定性渐变兜底」双层形态
