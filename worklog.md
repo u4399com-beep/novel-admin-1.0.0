@@ -2971,3 +2971,17 @@ Work Log:
 
 Stage Summary:
 - 「稳定长期获取」基建再闭环：E12 cookie 合规管道确认完备（待人工步骤已文档化）；填充管线从断流修复为 12 任务持续流动，章节总队列 35.4 万→44.6 万+且持续增长
+---
+Task ID: 60-R22
+Agent: main (Z.ai Code)
+Task: R22 精简/验证轮——工具去重 + DQS 缺陷族第二例根修（homeConfig）+ 首页区块数据态补齐 + 视觉终验
+
+Work Log:
+- 【精简】dbcheck 双份去重（scripts/dbcheck 移除，cmd/dbcheck 权威单份）；curl-impersonate 对齐仓库 canonical 脚本升级 v0.6.1（21 二进制）；活库安全备份落 /home/z/db-backup/（250MB+wal+shm）；根 node_modules 仅 4KB shim、package.json 为沙箱启动契约 shim——v4-1「纯 Go 零 Node」确认达成（Task 58 已拆干净，本轮复核归档）
+- 【DQS 第二例】SiteSetting 存量表缺 homeConfig 列 → seed.go/api_settings.go 的 SELECT "homeConfig" 拿到字符串字面量 → seed 静默跳过默认三区块写入（首页推荐区空）+ settings API 空块降级；根修=db.go ensureColumn("SiteSetting","homeConfig")（schema 迁移块内）；重启后 seed 自动补写三块实证
+- 【防御性扫描】代码引用列 vs 实际库列全量比对：除已修 insecureTLS/homeConfig 外无第三处 DQS 陷阱（其余命中均为 JSON 键/SELECT 别名，人工逐一复核）
+- 【数据态补齐】isHot 全 0 → 首页「热门推荐」（主题 .Hot 源）空态；一次性按点击榜 Top12 标记 isHot=1（WAL+busy_timeout 外部写安全）；api/home hot=10、空态文案消除
+- 【视觉终验】agent-browser：首页四区块全渲染（热门推荐 10 卡/小编精选 8 本含渐变封面+1 张真实封面成天氏/热门小说/最新上架+分类排行榜三榜），零裂图零空块；title 站名前缀正常
+
+Stage Summary:
+- R22 完成「清理整合优化精简」+ DQS 缺陷族清零（第二例根修）+ 首页视觉全要素恢复；纯 Go 栈复核归档（v4-1 关账）

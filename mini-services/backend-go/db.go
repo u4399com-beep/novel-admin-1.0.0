@@ -127,6 +127,14 @@ func getDB() (*sql.DB, error) {
 			`ALTER TABLE "ScrapeRule" ADD COLUMN "insecureTLS" BOOLEAN NOT NULL DEFAULT false`); err != nil {
 			log.Printf("[db] ScrapeRule.insecureTLS 加列失败（规则 TLS 开关不可用，采集不受影响）: %v", err)
 		}
+		// Task 60-R22: SiteSetting.homeConfig 首页自定义区块配置（存量库幂等加列）。
+		// 同 DQS 缺陷族第二例：列缺失时 seed.go/api_settings.go 的 SELECT "homeConfig"
+		// 拿到字符串字面量 → seed 静默跳过默认三区块写入（首页「热门推荐」空），
+		// api_settings GET 降级空块。加列后 seed 下次启动自动补写默认块。
+		if err := ensureColumn(db, "SiteSetting", "homeConfig",
+			`ALTER TABLE "SiteSetting" ADD COLUMN "homeConfig" TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			log.Printf("[db] SiteSetting.homeConfig 加列失败（首页自定义区块降级空块）: %v", err)
+		}
 		// ===== 以下为数据回填链（Task 60-R18 起与 schema 迁移严格分层）=====
 		// Task 40: 存量词一次性归一回填（幂等：只扫 kwNorm='' 行；空池零开销）
 		if err := backfillPseoKeywordNorm(db); err != nil {
