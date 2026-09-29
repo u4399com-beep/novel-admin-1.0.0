@@ -2985,3 +2985,18 @@ Work Log:
 
 Stage Summary:
 - R22 完成「清理整合优化精简」+ DQS 缺陷族清零（第二例根修）+ 首页视觉全要素恢复；纯 Go 栈复核归档（v4-1 关账）
+---
+Task ID: 60-R23
+Agent: main (Z.ai Code)
+Task: R23 深审/验证轮——Phase 2 填充链逐行审查 + 章节页/pseo 种子书 E2E 终验 + 16 任务重启恢复
+
+Work Log:
+- 【运维】R22 热替换的 16 条自动暂停任务批量 resume（恢复惯例第 4 轮）；17 任务 running
+- 【深审 storeChapter】入库一致性三保险在档：ChapterContent 写败回滚删章（无孤儿骨架）/唯一冲突 idx 顺延重试有界（MAX_IDX_BUMPS）/detectVolume 兜底；loadChapterContent 三级回落读（分表→legacy→TXT）契约完整
+- 【深审 phase2Fill】防御纵深复核：Task 55-b Add-first 原子日志闸/Task 29 熔断快照防矛盾消息/Task 31 车道感知自适应/Task 33-34 跨 resume 降档记忆+软起步/Task 35-b atomic onProgress——历轮加固全部在位，零新缺陷
+- 【E2E 章节页】/chapter/472679（novel 525 第34章）：200/62KB/3142 汉字正文/上一章下一章导航/标题混淆渲染（&#x591c;​ 实体+零宽）全要素
+- 【E2E pseo 种子书】/pseo/南城小巷小说：200/26KB；页面含种子书名《南城小巷》+种子作者时玖远（seed 血缘取数路径在恢复库上依然正确）——v4-③ 关账复核通过
+- 【LLM 429 长观察】smart-fill 兜底链 429 指数退避冷却持续生效，采集主流程零阻塞（优雅降级设计实证）
+
+Stage Summary:
+- 填充链逐行深审零新缺陷（历轮加固清点齐全）；章节页与 pseo 种子书两大用户可见面 E2E 全绿；任务队列 17 路活跃
