@@ -101,6 +101,33 @@ func getDB() (*sql.DB, error) {
 			`ALTER TABLE "PseoKeyword" ADD COLUMN "seed" TEXT NOT NULL DEFAULT ''`); err != nil {
 			log.Printf("[db] PseoKeyword.seed 加列失败（书籍页标签血缘直取降级为归一匹配）: %v", err)
 		}
+		// Task 45-b: Chapter.volume 分卷列（存量库幂等加列，Task 40 kwNorm/seed 先例）
+		// Task 60-R18 顺序根修：schema 迁移必须全部先于数据回填——旧快照库实证
+		// backfillT2SExisting 先于 volume 加列执行 → UPDATE 命中 no such column，
+		// 整条 t2s 存量回填链在 boot 即废（重启重试永远失败）。
+		if err := ensureColumn(db, "Chapter", "volume",
+			`ALTER TABLE "Chapter" ADD COLUMN "volume" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] Chapter.volume 加列失败（分卷分组渲染降级为平铺，功能不受影响）: %v", err)
+		}
+		// Task 50: Novel.coverSrc 源站封面 URL（封面补抓通道的数据源；存量库幂等加列）
+		if err := ensureColumn(db, "Novel", "coverSrc",
+			`ALTER TABLE "Novel" ADD COLUMN "coverSrc" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] Novel.coverSrc 加列失败（封面补抓降级为重采驱动）: %v", err)
+		}
+		// Task 53: ScrapeRule.cookies 规则级静态 cookie 底座（人工过验会话；存量库幂等加列）
+		if err := ensureColumn(db, "ScrapeRule", "cookies",
+			`ALTER TABLE "ScrapeRule" ADD COLUMN "cookies" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] ScrapeRule.cookies 加列失败（规则 cookie 底座不可用，采集不受影响）: %v", err)
+		}
+		// Task 60-R18: ScrapeRule.insecureTLS 跳过证书校验开关（存量库幂等加列）。
+		// 历史缺陷：列缺失时 web_data 的 SELECT 中带引号标识符 "insecureTLS" 被 SQLite
+		// DQS 特性当字符串字面量返回（每行值='insecureTLS'）→ /api/scrape-rules Scan
+		// bool 失败 500，规则面板全瘫。schema.go:114 仅保证新库；存量库必须幂等加列。
+		if err := ensureColumn(db, "ScrapeRule", "insecureTLS",
+			`ALTER TABLE "ScrapeRule" ADD COLUMN "insecureTLS" BOOLEAN NOT NULL DEFAULT false`); err != nil {
+			log.Printf("[db] ScrapeRule.insecureTLS 加列失败（规则 TLS 开关不可用，采集不受影响）: %v", err)
+		}
+		// ===== 以下为数据回填链（Task 60-R18 起与 schema 迁移严格分层）=====
 		// Task 40: 存量词一次性归一回填（幂等：只扫 kwNorm='' 行；空池零开销）
 		if err := backfillPseoKeywordNorm(db); err != nil {
 			log.Printf("[db] PseoKeyword.kwNorm 存量回填失败（书籍页标签归一匹配暂不可用，重启重试）: %v", err)
@@ -115,21 +142,6 @@ func getDB() (*sql.DB, error) {
 		// 「相关小说」尾块转换进 PseoKeyword）。失败不阻断启动，下次重启重试
 		if err := backfillNovelIntroClean(db); err != nil {
 			log.Printf("[db] 简介噪声清洗回填失败（存量简介噪声暂存，重启重试）: %v", err)
-		}
-		// Task 45-b: Chapter.volume 分卷列（存量库幂等加列，Task 40 kwNorm/seed 先例）
-		if err := ensureColumn(db, "Chapter", "volume",
-			`ALTER TABLE "Chapter" ADD COLUMN "volume" TEXT NOT NULL DEFAULT ''`); err != nil {
-			log.Printf("[db] Chapter.volume 加列失败（分卷分组渲染降级为平铺，功能不受影响）: %v", err)
-		}
-		// Task 50: Novel.coverSrc 源站封面 URL（封面补抓通道的数据源；存量库幂等加列）
-		if err := ensureColumn(db, "Novel", "coverSrc",
-			`ALTER TABLE "Novel" ADD COLUMN "coverSrc" TEXT NOT NULL DEFAULT ''`); err != nil {
-			log.Printf("[db] Novel.coverSrc 加列失败（封面补抓降级为重采驱动）: %v", err)
-		}
-		// Task 53: ScrapeRule.cookies 规则级静态 cookie 底座（人工过验会话；存量库幂等加列）
-		if err := ensureColumn(db, "ScrapeRule", "cookies",
-			`ALTER TABLE "ScrapeRule" ADD COLUMN "cookies" TEXT NOT NULL DEFAULT ''`); err != nil {
-			log.Printf("[db] ScrapeRule.cookies 加列失败（规则 cookie 底座不可用，采集不受影响）: %v", err)
 		}
 		// Task 45-b: 存量章节「第X卷」前缀回填（幂等：只处理命中行且与入库链路
 		// detectVolume 同口径，回填后存量标题与新采集标题归一一致——Phase 2 续传按

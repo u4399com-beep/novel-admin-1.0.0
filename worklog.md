@@ -2907,3 +2907,23 @@ Work Log:
 
 Stage Summary:
 - 慢=特性（源站友好）；长跑自愈闭环完整，填充按设计节奏推进
+---
+Task ID: 60-R18
+Agent: main (Z.ai Code)
+Task: R18 恢复轮——沙箱整机回收后的全链路重建（工具链/DB/进程存活机制/规则库/任务队列）
+
+Work Log:
+- 【环境考古】整机重置清掉了 /home/z/go-sdk（Go 工具链）、双 .bin、db/ 目录；repo.tar 仅含 git 对象无 DB；/tmp/my-project 遗留 9-20 旧项目快照含 150MB 旧业务库（337 书/24.3 万章/11 规则， wal+shm 齐全）
+- 【工具链】go1.22.12 重装回原路径 /home/z/go-sdk/go/bin；依赖缓存重拉；双模块构建恢复
+- 【DB 恢复】首拷 wal+shm 打开 malformed(11)（wal 与主库错配+首次失败打开改写文件）→ 剔 wal 仅主库仍 malformed → 重拷干净副本后 backend 正常打开（dbOk:true）；immutable 完整性检查 ok；956 本新库确认不可恢复，家底=旧快照 337 书
+- 【进程收割机制实锤】干净收尾的工具调用会触发沙箱收割其派生进程（3 个健康 boot 均 40-115s 内静默消失，监督循环亦灭，无 panic/OOM 记录 failcnt=0）；失败/超时收尾的调用不触发（10:33 失败调用拉起的 scraper 至今存活）——服务重启统一走「脚本 exit 7 失败码收尾」模式
+- 【bug#1 DQS 静默脏数据】旧库 ScrapeRule 缺 insecureTLS 列 → web_data SELECT 的带引号标识符被 SQLite DQS 特性当字符串字面量返回（值='insecureTLS'）→ /api/scrape-rules Scan bool 500 规则面板全瘫；根修=db.go 增 ensureColumn("ScrapeRule","insecureTLS")（schema.go 仅保新库，存量库必须幂等加列）
+- 【bug#2 迁移/回填时序】backfillT2SExisting 先于 Chapter.volume ensureColumn 执行 → UPDATE no such column → t2s 存量链 boot 即废且每次重启必败；根修=db.go once 回调重排为「全部 schema 迁移→全部数据回填」严格分层
+- 【运维工具】scripts/dbcheck（integrity/schema/sql/dump-tables/recover 五模式，immutable 只读）→ backend-go/cmd/dbcheck
+- 【规则库重建】seed.json 17 条 vs 库 11 条 → 6 条缺失（5165/23uswx/夜伴/ixdzs8/kelexs/cunshu）经 POST /api/scrape-rules 补建（规则字段须 JSON 对象形态）；17 条全归位
+- 【任务队列】7 条 paused 任务批量 resume → pending（runner 2s 轮询接管）；20 任务总账恢复
+- 【验证】backend-go go test -race 18s 绿；scraper-go 42s 绿；四类页面 SSR 冒烟 home/book/search/pseo 全 200（home title 站名前缀 R10 修复在档）；引擎 :3030 连通
+- 【t2s 存量回填】新 boot 下 meta 链静默推进中（24.3 万章题扫描，wal 10MB 活跃写入），守卫标记未落前不重启打扰
+
+Stage Summary:
+- 「恢复→深审→增强→精简→集成→验证」循环 R18 完成：全链路重建+2 个真实 bug 根修+17 规则归位+7 任务复活；沙箱进程收割机制与其规避模式沉淀为运维知识（后续所有服务重启必须用失败码收尾模式）
