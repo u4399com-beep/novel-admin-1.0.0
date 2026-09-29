@@ -2846,3 +2846,15 @@ Work Log:
 
 Stage Summary:
 - E18 落地：出口池「固化 seed（R5）+ 自动换血（R12）」双保险，黑洞站采集长期稳定性闭环
+---
+Task ID: 59-R13
+Agent: main (Z.ai Code)
+Task: R13 E18 文档入表 + 首轮生产实证 + api_settings 深审
+
+Work Log:
+- 【文档】docs/anti-anti-crawl.md §6.2 增「出口池自愈（E18，Task 59）」行——与 E17/种子固化构成「活池→换血→重建不丢」三层长期稳定性闭环
+- 【E18 首轮生产实证】01:07-01:08：规则 #13 剔 3 死口补 3 新口（池 10）；#15 剔 9 死口补 9 新口（池 10——9/10 死口若无自愈将断链！）；#20 剔 1 补 1——换血机制完整生效，采集面无感
+- 【深审】api_settings.go（renderTpl/sanitizeHref 拒 javascript:/footer 白名单/seo 白名单 1000 截断）写路径加固在档零新缺陷
+
+Stage Summary:
+- E18 生产首轮即抓住 #15 9/10 死口并自动补救——「稳定长期获取」从口号变为机制
