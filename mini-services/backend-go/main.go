@@ -60,6 +60,7 @@ func main() {
 	if mode == "runner" || mode == "all" {
 		go startRunner()
 		go startPseoEnrichLoop() // PSEO 书名种子后台富集（12s/种子，见 pseo_book.go）
+		go startProxyWatch()     // E18 出口池自愈（10min/轮，PROXYWATCH_OFF=1 停用，见 proxywatch.go）
 	}
 	// startDevWatcher 已随 Next.js 退役（Task 27）：3000 端口由本进程直接承载，
 	// 看护职责归沙箱 dev 链路 / systemd（见 scripts/dev-go.sh 与 deployment.md）。

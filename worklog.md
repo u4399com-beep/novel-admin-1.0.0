@@ -2834,3 +2834,15 @@ Work Log:
 
 Stage Summary:
 - 章节提取与 pseo 富集双链健康；verify 轮无代码改动（诚实记录）
+---
+Task ID: 59-R12
+Agent: main (Z.ai Code)
+Task: R12 旗舰增强 E18 出口池自愈（proxywatch.go）——稳定长期获取的基建闭环
+
+Work Log:
+- 【设计】免费公共代理天然腐化：池全灭时 E17「换代理即逃生」无代理可换=断链（R1 已实证一次人工重建）。E18 让出口池自愈：10min/轮遍历 enabled 且 proxy≠'' 的规则 → 并发探测池内出口对 siteUrl 可达性（任何 HTTP 状态含 403 WAF=可达，超时/连接失败=死口）→ 有死口拉取免费候选（proxyscrape，40 个并发 16 实测）补位 → 仅 UPDATE proxy 列（引擎无缓存路径即时生效）
+- 【治理】单 goroutine 单飞遍历；探测 UA=chrome 画像与抓取语义一致；候选 host:port 严格校验（端口 1-65535、凭据注入拒）；PROXYWATCH_OFF=1 停用开关；全程 best-effort 候选源不可达时至少剔除死口保活口
+- 【测试】audit59f 四用例（isHostPort 九态含攻击面/splitNonEmpty/envOff 三态/refreshRuleProxyPool 集成死口剔除+池形态）；全量回归绿；热替换上线（下轮验证换血日志）
+
+Stage Summary:
+- E18 落地：出口池「固化 seed（R5）+ 自动换血（R12）」双保险，黑洞站采集长期稳定性闭环
