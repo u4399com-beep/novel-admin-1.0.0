@@ -327,6 +327,7 @@ cd /opt/novel-admin && ls
 | `BACKEND_MODE` | backend-go | 同上，缺省 `all`（api\|runner\|all 三选一） |
 | `SCRAPER_PORT` | scraper-go | 同上，缺省 3030 |
 | `BACKEND_ENGINE_URL` | backend-go → 引擎地址 | 同上，缺省 `http://127.0.0.1:3030`（多引擎/测试实例时才需要改） |
+| `PROXYWATCH_OFF` | backend-go E18 出口池自愈 | `=1` 停用后台出口池换血循环（自建稳定代理出口时使用）；缺省开启，10min/轮 |
 | `COVERS_DIR` | backend-go 封面落盘目录 | 同上，缺省向上查找 `public/covers` |
 | `SCRAPER_PYTHON` | scraper-go browser 策略 | 同上，自定义 python 路径；缺省从 PATH 找 |
 | `SCRAPER_MIN_INTERVAL_MS` | scraper-go 域名限速 | 同上，缺省 1200，**不允许低于 1000** |

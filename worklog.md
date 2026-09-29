@@ -2871,3 +2871,16 @@ Work Log:
 
 Stage Summary:
 - 壳简介三族根修（数据驱动取实形→锚定模板→幂等回填→逐一复验）；阈值式拒收教训留档
+---
+Task ID: 59-R15
+Agent: main (Z.ai Code)
+Task: R15 验证轮——采集面全景 + api_noveltools 深审 + 导出/审计工具实跑 + 部署文档补 E18 开关
+
+Work Log:
+- 【采集面】13 任务全活跃（R9 实时 Flush 生效：#11 done=11/262 连续推进）；books 937→956；DB 147MB；#1 ch 241/0 为 resume 后新旧两轮计数过渡态（Phase 1 完成时 ChaptersDone 归零自洽），非缺陷
+- 【深审】api_noveltools.go 692 行：resortApplyReorder 双层 staging 事务（负数暂存区防 swap 互覆）+ resortTxtMoves 两段式 rename + recalc-words 审计——设计完好零新缺陷
+- 【工具实跑】POST /api/novels/69/export-txt → 200（57832B/226 章合并文件）；GET recalc-words → 956 书审计（35 处 stored/actual 漂移=采集中的正常滞后，工具即为此设）
+- 【文档】deployment.md §4.1 环境变量表补 PROXYWATCH_OFF（E18 停用开关）
+
+Stage Summary:
+- 章节工具链深审+实跑双通过；E18 部署文档闭环
