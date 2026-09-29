@@ -1,0 +1,64 @@
+{{/* ggd66 分类页 —— 移植 Category：分类导航条 + 图文两区块 + 3 列虚线盒列表（全量无分页）。 */}}
+{{define "content"}}{{$path := .Path}}
+<div class="mx-auto mt-1 w-[90%] max-w-[1200px]">
+
+  {{/* 分类导航条 */}}
+  <nav aria-label="分类导航" class="mb-3 grid grid-cols-3 gap-1 rounded-[4px] border border-[#ccc] bg-white p-1 sm:grid-cols-4 md:grid-cols-8">
+    <a href="/" class="grid h-[38px] cursor-pointer place-items-center rounded-[3px] text-[15px] text-[#00886d] transition-colors duration-200 hover:bg-[#cdf3eb] hover:text-[#f50]">全部</a>
+    {{range .Nav}}<a href="{{catURL .id}}" class="grid h-[38px] cursor-pointer place-items-center rounded-[3px] text-[15px] transition-colors duration-200 {{if eq $path (catURL .id)}}bg-[#56ccb5] text-white{{else}}text-[#00886d] hover:bg-[#cdf3eb] hover:text-[#f50]{{end}}">{{.name}}</a>{{end}}
+  </nav>
+
+  {{/* 图文推荐 / 热门书籍区块（theme-extras 同构） */}}
+  {{if .FeaturedBlock}}<section class="mb-6" aria-label="图文推荐">
+    {{/* Task 28-c: 区块标题/卡片风格对齐源站 h2（#333 底线）与直角 #ccc 盒风，原中性样式与 gg 六版式不搭 */}}
+    <h2 class="mb-3 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">图文推荐</h2>
+    <div class="grid gap-3 md:grid-cols-3">
+      {{range $i, $n := .FeaturedBlock}}{{if lt $i 3}}<a href="{{bookURL .id}}" class="group flex gap-3 rounded-[4px] border border-[#ccc] bg-white p-3 text-left transition-colors duration-200 hover:border-[#f50]">
+        <span class="relative block h-28 w-20 shrink-0 overflow-hidden rounded-none border border-[#ddd] bg-white p-[1px] {{gcls .cover}}">
+          {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
+        </span>
+        <span class="block min-w-0 flex-1 py-0.5">
+          <span class="block truncate text-[15px] font-bold text-[#00886d] group-hover:text-[#f50]">{{.title}}</span>
+          <span class="mt-0.5 block truncate text-xs text-[#888]">{{.author}} · {{.categoryName}}</span>
+          <span class="mt-1.5 line-clamp-2 block text-xs leading-relaxed text-[#888]">{{excerpt .description 50}}</span>
+          <span class="mt-1.5 block text-[11px] text-[#999]">{{.chapterCount}}章 · {{.clicks}}点击</span>
+        </span>
+      </a>{{end}}{{end}}
+    </div>
+  </section>{{end}}
+
+  {{if .HotBlock}}<section class="mb-6" aria-label="热门书籍">
+    <h2 class="mb-3 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">热门书籍</h2>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {{range $i, $n := .HotBlock}}{{if lt $i 8}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-[4px] border border-[#ccc] bg-white p-2 text-left transition-colors duration-200 hover:border-[#f50]">
+        <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden {{gcls .cover}}">
+          {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
+        </span>
+        <span class="mt-2 truncate text-[13px] font-bold text-[#00886d] group-hover:text-[#f50]">{{.title}}</span>
+        <span class="truncate text-[11px] text-[#888]">{{.author}}</span>
+      </a>{{end}}{{end}}
+    </div>
+  </section>{{end}}
+
+  {{/* 书籍列表（虚线边框盒 + 左上序号徽章 + 右侧「阅读」描边按钮） */}}
+  <section class="rounded-[4px] border border-[#ccc] bg-white p-3">
+    <h2 class="mb-2 border-b border-[#ccc] pb-[6px] text-center text-[18px] font-medium text-[#333]">{{.Category.name}}<span class="ml-2 text-[13px] font-normal text-[#999]">共 {{len .Novels}} 本</span></h2>
+
+    <div class="grid gap-4 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+      {{$gid := .Category.id}}{{range $i, $n := .Novels}}<div class="group relative flex min-w-0 cursor-pointer items-center gap-3 rounded-[4px] border border-dashed border-[#ccc] p-[10px] transition-colors duration-200 hover:border-[#f50]">
+        <a href="{{bookURL $n.id}}" aria-hidden="true" tabindex="-1" class="absolute left-[10px] top-1/2 grid h-[22px] w-[22px] -translate-y-1/2 place-items-center rounded-[4px] bg-[#56ccb5] text-[15px] font-bold text-[#eee] transition-colors duration-200 group-hover:bg-[#f50]">{{add $i 1}}</a><!-- Task 29-a: 序号徽章字号对齐源站 .num 15px -->
+        <div class="min-w-0 flex-1 pl-[28px]">
+          <h4 class="truncate text-[15px] font-bold text-[#00886d] transition-colors duration-200 group-hover:text-[#f50]">{{$n.title}}</h4>
+          {{/* Task 29-a: 元信息行拆分/字号/颜色对齐源站 .author/.cat/.update（14px #888 独立行） */}}
+          <p class="mt-1 truncate text-[14px] text-[#888]">作者：{{$n.author}}</p>
+          <p class="truncate text-[14px] text-[#888]">字数：{{if $n.wordCount}}{{wcFmt $n.wordCount}}{{else}}—{{end}}</p>
+          <p class="truncate text-[14px] text-[#888]">阅读量：{{$n.clicks}}</p>
+          <p class="truncate text-[14px] text-[#888]">更新到：{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}暂无章节{{end}}</p>
+          <p class="mt-1 line-clamp-3 text-[14px] text-[#888]">简介：{{if $n.description}}{{$n.description}}{{else}}暂无简介{{end}}</p>
+        </div>
+        <a href="{{bookURL $n.id}}" class="shrink-0 cursor-pointer rounded-[3px] border border-[#56ccb5] px-3 py-2 text-[13px] text-[#56ccb5] transition-colors duration-200 hover:border-[#f50] hover:text-[#f50]">阅读</a><!-- Task 29-a: 按钮字色/圆角对齐源站 .del_but（#56ccb5 / 3px） -->
+      </div>{{else}}<div class="col-span-full rounded-[4px] border border-dashed border-[#ccc] bg-white p-10 text-center text-[14px] text-[#999]">该分类下暂无收录小说</div>{{end}}
+    </div>
+  </section>
+</div>
+{{end}}

@@ -1,0 +1,11 @@
+{
+  "name": "novel-admin-go",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev-go.sh",
+    "build": "bash scripts/build-go.sh",
+    "start": "bash scripts/dev-go.sh"
+  },
+  "description": "novel-admin 纯 Go 全栈：Task 27 拆除 Next.js、Task 38 拆除 Prisma/TS 工具链、Task 58 拆除最后一环 bun/Tailwind 构建期管线（tw.css 已固化为仓库内 vendored 资产，漂移检测用 mini-services/backend-go/cmd/csscheck）。零 Node/TS/依赖项——本文件仅是沙箱启动契约（bun run dev/build）的命令 shim，scripts 的值全部是 Go/bash 脚本。"
+}

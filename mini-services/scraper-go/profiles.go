@@ -1,0 +1,239 @@
+/**
+ * 请求头画像（逐行移植自 strategies/profiles.ts）：UA 派生 + 各浏览器/爬虫画像构造。
+ *
+ * UA 与 Sec-CH-UA 版本严格一致（同一常量派生），Chrome 主版本进程启动时随机化避免固定指纹；
+ * Referer 链以目标站自身首页为来源模拟站内导航。
+ *
+ * 已知 Go 运行时差异：net/http 按字典序发送请求头，TS 版 humanizeHeaderOrder 的
+ * 「非核心头顺序随机抖动」在 Go 版退化为固定序（UA 仍按进程随机版本派生）；curl-impersonate
+ * 策略不受影响（其头序由二进制精确复刻）。
+ */
+package main
+
+import (
+	"math/rand"
+	"net/url"
+)
+
+// headerProfile 单个请求头画像：id 用于 attempts 明细展示，withReferer 决定是否覆盖 Referer 变体
+type headerProfile struct {
+	id string // Task 58-a 精简：label 死字段删除（全仓零读取点——attempts 明细展示走 id，策略描述走 strategyDef.description）
+	// withReferer 决定是否覆盖 Referer 变体
+	withReferer bool
+	headers     func(targetURL string, withReferer bool, explicitReferer string) map[string]string
+}
+
+// chromeMajor 进程启动时从近期版本集随机挑选一次，UA 与 Sec-CH-UA 全部由它派生
+// （Task 26-d：候选集对齐当前活跃大版本，降低「陈旧 UA 白名单外被拒」概率；
+// sec-ch-ua 与 UA 同源派生，版本一致性不受候选集变化影响）
+// Task 39-a（E1 指纹保鲜 2026-09）：候选集 130-137 → 147-154（近一年活跃带，现势 stable=154），
+// Firefox 126 → 154（现势 stable=154），Safari 17.4 → 27.0 / iOS 18.x → 27.0 —— UA 白名单型 WAF 对「超出近期窗口」的
+// 浏览器版本拒绝概率随时间单调上升，旧版本画像反而比无画像更可疑。
+var chromeMajor = func() int {
+	candidates := []int{147, 148, 149, 150, 151, 152, 153, 154}
+	return candidates[rand.Intn(len(candidates))]
+}()
+
+var (
+	chromeUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" +
+		itoa(chromeMajor) + ".0.0.0 Safari/537.36"
+	chromeSecCHUA = `"Chromium";v="` + itoa(chromeMajor) + `", "Google Chrome";v="` + itoa(chromeMajor) + `", "Not-A.Brand";v="99"`
+	edgeUA        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" +
+		itoa(chromeMajor) + ".0.0.0 Safari/537.36 Edg/" + itoa(chromeMajor) + ".0.0.0"
+	edgeSecCHUA = `"Chromium";v="` + itoa(chromeMajor) + `", "Microsoft Edge";v="` + itoa(chromeMajor) + `", "Not-A.Brand";v="99"`
+)
+
+const acceptHTML = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+const acceptLangZH = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7"
+
+// baseHeaders 公共头构造；withReferer 时优先显式来路，缺省以目标站自身首页为来源
+func baseHeaders(targetURL string, withReferer bool, ua string, extra map[string]string, explicitReferer string) map[string]string {
+	h := map[string]string{
+		"user-agent":      ua,
+		"accept":          acceptHTML,
+		"accept-language": acceptLangZH,
+		// Task 50-a（E8·反反爬头族指纹一致性）：显式声明与真实浏览器一致的压缩能力。
+		// 旧实现不发该键——Go 传输层自动补「Accept-Encoding: gzip」，单 gzip 是稳定的
+		// Go 客户端指纹（真实浏览器恒含 deflate/br），与画像 UA 构成头族矛盾；只声明
+		// 引擎能解的（gzip/deflate，br/zstd 无解压依赖不声明，声明即必须能解）。
+		// 配套 httpguard.contentDecodedReader 透明解包（锁定测试见 audit50_test.go）。
+		"accept-encoding":           "gzip, deflate",
+		"upgrade-insecure-requests": "1",
+	}
+	for k, v := range extra {
+		h[k] = v
+	}
+	if withReferer {
+		// Referer 链：优先使用调用方显式提供的来路（如书页 URL），
+		// 未提供时以目标站自身首页为来源，模拟从站内导航进入
+		ref := explicitReferer
+		if ref == "" {
+			if u, err := url.Parse(targetURL); err == nil && u.Host != "" {
+				ref = u.Scheme + "://" + u.Host + "/"
+			}
+		}
+		if ref != "" {
+			h["referer"] = ref
+			// Task 49-a（E7·反反爬指纹一致性）：sec-fetch-site 声明必须与实际 Referer
+			// 拓扑一致。旧实现恒 same-origin——显式 Referer 与目标非同源时（子域/镜像
+			// 域变体），WAF 比对「site 陈述 vs Referer origin」即得稳定矛盾自曝。仅在
+			// 画像已声明该键且非 none 时改写（spider/safari 无键的「无来路
+			// 直接导航」语义保持原样，Task 51-a E10 后 safari 整族不再声明 Sec-Fetch）；
+			// 缺省 Referer（=目标站自身 origin）派生结果恒
+			// same-origin，行为不变。hop>0 由 refineHopHeaders 逐跳接管，本处只覆盖首跳。
+			if cur, ok := h["sec-fetch-site"]; ok && cur != "none" {
+				if site := deriveSecFetchSite(targetURL, ref); site != "" {
+					h["sec-fetch-site"] = site
+				}
+			}
+		}
+	}
+	return h
+}
+
+// a) Chrome 桌面：全套 Sec-Fetch-* + 客户端提示
+// Task 52-a（E11·反反爬头族指纹一致性）：移除 cache-control: no-cache + pragma: no-cache。
+// 威胁模型（沙箱内实测 Chromium 143 / Playwright chromium-1200 抓包，MDN HTTP 缓存语义一致）：
+// 真实浏览器「全新导航」（引擎形态：全新会话/无缓存基线的首次 GET）不发送任何请求侧
+// cache-control/pragma；显式 reload（F5）发 cache-control: max-age=0；cache-control: no-cache
+// + pragma: no-cache 是硬刷新/DevTools Disable-cache 专属形态——旧画像对每个 URL 的首次请求
+// 都声称硬刷新，属可稳定识别的脚本客户端自曝指纹（curl/requests 用户的常见追加头）。
+// 移除后请求形态与全新导航全对齐；副作用仅为响应可经 CDN 缓存正常命中（真实首访浏览器
+// 同样如此），对采集语义无影响（章节内容不可变、列表页短时缓存可接受）。
+var chromeDesktopProfile = headerProfile{
+	id:          "chrome-desktop",
+	withReferer: true,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		return baseHeaders(u, withReferer, chromeUA, map[string]string{
+			"sec-ch-ua":          chromeSecCHUA,
+			"sec-ch-ua-mobile":   "?0",
+			"sec-ch-ua-platform": `"Linux"`,
+			"sec-fetch-dest":     "document",
+			"sec-fetch-mode":     "navigate",
+			"sec-fetch-site":     "same-origin",
+			"sec-fetch-user":     "?1",
+		}, explicitReferer)
+	},
+}
+
+// b) Firefox 桌面：不发客户端提示，保留 Sec-Fetch
+var firefoxDesktopProfile = headerProfile{
+	id:          "firefox-desktop",
+	withReferer: true,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		return baseHeaders(u, withReferer,
+			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0",
+			map[string]string{
+				"sec-fetch-dest":  "document",
+				"sec-fetch-mode":  "navigate",
+				"sec-fetch-site":  "same-origin",
+				"sec-fetch-user":  "?1",
+				"accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+			}, explicitReferer)
+	},
+}
+
+// b) Safari 桌面（无 Referer 变体）
+// Task 51-a（E10·反反爬头族指纹一致性）：Safari 系画像不携带 Sec-Fetch-* 与
+// Upgrade-Insecure-Requests。威胁模型：真实 Safari/WebKit 从未实现 Fetch Metadata 请求头
+// （Sec-Fetch-Dest/Mode/Site/User，WebKit 多年未落地，现势 Safari 全系不发）、同样不发
+// UIR（caniuse unsupported）——旧画像的 sec-fetch-site:none「无来路导航」是 Chrome 语义，
+// WAF 按 UA 分族比对头族时「Safari UA + Chrome 导航头族」即跨家族矛盾自曝（与 44-a FIX-1
+// 「Firefox JA3 配 Chrome 客户端提示」同族、与 E8 头族版同向）。修复=整族移除（移除建议性
+// 元数据头不改变站点响应决策，误杀面为零；真实 Safari 流量本就如此）。E6/E7 的「只改写
+// 已存在键、绝不注入」语义不受影响（跳间头集零 Sec-Fetch 可注入/改写的键）。E1 指纹保鲜
+// 刷新版本常量时需复核：若 WebKit 未来落地 Fetch Metadata 再随保鲜轮补回。
+var safariDesktopProfile = headerProfile{
+	id:          "safari-desktop",
+	withReferer: false,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		h := baseHeaders(u, withReferer,
+			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15",
+			map[string]string{}, explicitReferer)
+		delete(h, "upgrade-insecure-requests") // E10：真实 Safari 不发送（与 googlebot 剥离同款手法）
+		return h
+	},
+}
+
+// b) Edge 桌面
+var edgeDesktopProfile = headerProfile{
+	id:          "edge-desktop",
+	withReferer: true,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		return baseHeaders(u, withReferer, edgeUA, map[string]string{
+			"sec-ch-ua":          edgeSecCHUA,
+			"sec-ch-ua-mobile":   "?0",
+			"sec-ch-ua-platform": `"Windows"`,
+			"sec-fetch-dest":     "document",
+			"sec-fetch-mode":     "navigate",
+			"sec-fetch-site":     "same-origin",
+			"sec-fetch-user":     "?1",
+		}, explicitReferer)
+	},
+}
+
+// d) Android Chrome 移动端
+var androidChromeProfile = headerProfile{
+	id:          "android-chrome",
+	withReferer: true,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		return baseHeaders(u, withReferer,
+			"Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/"+
+				itoa(chromeMajor)+".0.0.0 Mobile Safari/537.36",
+			map[string]string{
+				"sec-ch-ua":          chromeSecCHUA,
+				"sec-ch-ua-mobile":   "?1",
+				"sec-ch-ua-platform": `"Android"`,
+				"sec-fetch-dest":     "document",
+				"sec-fetch-mode":     "navigate",
+				"sec-fetch-site":     "same-origin",
+				"sec-fetch-user":     "?1",
+			}, explicitReferer)
+	},
+}
+
+// d) iPhone Safari 移动端（无客户端提示、无 Referer；E10 同桌面 Safari：无 Sec-Fetch-*/UIR）
+var iphoneSafariProfile = headerProfile{
+	id:          "iphone-safari",
+	withReferer: false,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		h := baseHeaders(u, withReferer,
+			"Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1",
+			map[string]string{}, explicitReferer)
+		delete(h, "upgrade-insecure-requests") // E10：真实 Safari 不发送
+		return h
+	},
+}
+
+// c) Googlebot 降级：真实 Googlebot 不发送 Upgrade-Insecure-Requests / Accept-Language，
+// 但会发送标识身份的 From 头（蜘蛛 UA + 浏览器专属头是可检测矛盾）
+var googlebotProfile = headerProfile{
+	id:          "googlebot",
+	withReferer: false,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		h := baseHeaders(u, withReferer,
+			"Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/"+
+				itoa(chromeMajor)+".0.0.0 Safari/537.36",
+			map[string]string{}, explicitReferer)
+		h["accept"] = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"
+		delete(h, "upgrade-insecure-requests")
+		delete(h, "accept-language")
+		h["from"] = "googlebot(at)googlebot.com"
+		return h
+	},
+}
+
+// c) Baiduspider 降级：真实 Baiduspider 仅发送极简头（UA/Accept/Accept-Encoding）
+var baiduspiderProfile = headerProfile{
+	id:          "baiduspider",
+	withReferer: false,
+	headers: func(u string, withReferer bool, explicitReferer string) map[string]string {
+		h := baseHeaders(u, withReferer,
+			"Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)",
+			map[string]string{}, explicitReferer)
+		h["accept"] = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"
+		delete(h, "upgrade-insecure-requests")
+		delete(h, "accept-language")
+		return h
+	},
+}

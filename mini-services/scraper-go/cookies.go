@@ -1,0 +1,491 @@
+/**
+ * 按主机 Cookie 会话持久化（移植自 strategies/cookies.ts，语义一致）。
+ *
+ * - 捕获各策略响应的 Set-Cookie，按 host 存入进程内 jar；该主机后续请求自动回放；
+ *   覆盖「首访种 cookie（如安全检查/频控种子）、二访才放行」的站点；
+ * - 仅进程内存，不落盘；仅回放本 host 自己收到的 cookie（不实现 Domain 跨子域传播）；
+ * - 容量上界：host 数 ≤ 128（LRU），单 host cookie 数 ≤ 50（先到先淘汰）；
+ * - 过期：Max-Age/Expires 照 RFC 6265 解析（过期即删），无过期属性的会话 cookie 按默认 TTL 存活；
+ * - Secure 属性 cookie 只在 https 请求上回放；
+ * - 并发安全：TS 版依赖单线程事件循环，Go 版以互斥锁保证。
+ *
+ * 合规边界：只回放目标站自己下发的公开访问 cookie（等价于浏览器正常会话行为），
+ * 不伪造身份、不携带登录态/付费内容凭证。Task 53 演进：支持「规则级静态 cookie 底座」——
+ * 用户人工在浏览器通过目标站强制人机验证（如 GoEdge WAF 图形验证码）后，把会话
+ * cookie 提供给规则配置；引擎在每次抓取前将其种入 host 桶作为底座，后续 Set-Cookie
+ * 照常接管。这是真人已通过站点人机检查后的会话延续（等价于把浏览器会话交给采集器），
+ * 与验证码破解/账号伪装/登录内容采集红线无关；引擎仍不提供任何验证码求解能力。
+ */
+package main
+
+import (
+	"math"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	cookieMaxHosts     = 128
+	cookieMaxPerHost   = 50
+	cookieSessionTTLMS = 30 * 60 * 1000
+	cookieMaxTTLMS     = 7 * 24 * 60 * 60 * 1000
+	// ruleCookieSeedTTLMS 规则种子 cookie 默认存活期：浏览器复制的 Cookie 头只有 k=v 对，
+	// 无 Max-Age/Expires 可解析。取 6h（WAF 通关 cookie 常见有效期中位量级）：
+	// 比会话 30min 长（避免人工过验后半小时就整轮失效），比 7 天上界保守（站点侧
+	// 轮换/失效后自愈路径是用户重新过验更新规则值）。到期自动失效，不无限续期。
+	ruleCookieSeedTTLMS = 6 * 60 * 60 * 1000
+)
+
+type storedCookie struct {
+	value      string
+	expiresAt  int64
+	secureOnly bool
+}
+
+type cookieBucket struct {
+	m     map[string]storedCookie
+	order []string // 插入序（LRU 淘汰用）
+}
+
+// cookieJar host（含端口）→ 桶；读写均刷新 LRU 淘汰序。
+// order 为 host 级 LRU 序（尾部=最近触达）。Task 29-b 修复：旧实现只有 map 没有序，
+// touchHostLocked 的「淘汰」实为 map 随机迭代取第一个非自身 host（Go map 迭代无序），
+// 文件头宣称的 LRU 退化为随机淘汰——>128 hosts 时热 host 的会话可被冷 host 挤掉
+// （「首访种 cookie、二访放行」站点三访丢会话）。现以 order 切片维护真实 LRU：
+// 读写触达均移到尾部，容量触顶淘汰队首（最久未触达；本次触达的 host 刚移到尾部，
+// 结构性保证不会被自逐，Task 27-c「不逐自身」不变式由结构保持而非循环内特判）。
+type cookieJar struct {
+	mu    sync.Mutex
+	hosts map[string]*cookieBucket
+	order []string
+}
+
+var jar = &cookieJar{hosts: map[string]*cookieBucket{}}
+
+// touchOrderLocked 把 host 刷到 LRU 尾部（调用方必须已持有 j.mu；不建桶不淘汰）。
+// Task 29-b：读路径（cookieHeaderFor/cookiesForPlaywright）此前只读不刷新，与函数头
+// 「读取也刷新 LRU 淘汰序」的声明不符——只回放不种新 cookie 的活跃 host 会被误淘汰。
+func (j *cookieJar) touchOrderLocked(host string) {
+	for i, n := range j.order {
+		if n == host {
+			j.order = append(j.order[:i], j.order[i+1:]...)
+			break
+		}
+	}
+	j.order = append(j.order, host)
+}
+
+// touchHostLocked 取/建 host 桶并刷新 LRU 淘汰序；调用方必须已持有 j.mu。
+// Task 27-c（25-a 修复⑥残留竞态补齐）：旧版 touchHost 自持锁取桶、返回后调用方再锁写桶，
+// 两临界区之间并发的另一 host touchHost 可能把本桶从 map 淘汰（跳过自身不跳过他人），
+// 写入孤儿桶静默丢失（>128 hosts 场景）。改为调用方持锁的 touchHostLocked，取桶+写桶
+// 单临界区完成，彻底消除窗口。
+// Task 29-b：淘汰序由 map 随机迭代改为真实 LRU（见 cookieJar.order 注释）；host 刷新到
+// 尾部后淘汰恒取队首，结构性排除「逐出本次触达 host」。
+// Task 51-a 注释修正：旧注释「返回 nil 表示容量淘汰后仍放不下（极端情况）」与实现不符——
+// 桶取/建先于淘汰、host 刚刷到 LRU 尾部（生产路径 order 无陈旧条目），本函数恒返回非 nil，
+// 调用方（recordSetCookieLines/recordBridgeCookies）按非 nil 消费是正确的。
+func (j *cookieJar) touchHostLocked(host string) *cookieBucket {
+	b, ok := j.hosts[host]
+	if !ok {
+		b = &cookieBucket{m: map[string]storedCookie{}}
+		j.hosts[host] = b
+	}
+	j.touchOrderLocked(host)
+	for len(j.hosts) > cookieMaxHosts {
+		if len(j.order) == 0 {
+			break
+		}
+		oldest := j.order[0]
+		j.order = j.order[1:]
+		if _, exists := j.hosts[oldest]; exists {
+			delete(j.hosts, oldest)
+		}
+		// order 可能含陈旧条目（测试直接替换 hosts 等非常规路径）：队首是陈旧条目时
+		// 只弹序不删桶，继续下一轮直至淘汰到真实桶
+	}
+	return b
+}
+
+func (b *cookieBucket) set(name string, c storedCookie) {
+	if _, exists := b.m[name]; !exists {
+		b.order = append(b.order, name)
+	} else {
+		// 重新插入 = 刷新淘汰序
+		for i, n := range b.order {
+			if n == name {
+				b.order = append(b.order[:i], b.order[i+1:]...)
+				break
+			}
+		}
+		b.order = append(b.order, name)
+	}
+	b.m[name] = c
+}
+
+func (b *cookieBucket) del(name string) {
+	if _, exists := b.m[name]; exists {
+		delete(b.m, name)
+		for i, n := range b.order {
+			if n == name {
+				b.order = append(b.order[:i], b.order[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+func (b *cookieBucket) capSize() {
+	for len(b.m) > cookieMaxPerHost {
+		if len(b.order) == 0 {
+			break
+		}
+		oldest := b.order[0]
+		b.order = b.order[1:]
+		delete(b.m, oldest)
+	}
+}
+
+// cookie-name 必须是合法 token（RFC 6265 cookie-name），防解析产物污染回放头
+var reCookieName = regexp.MustCompile(`^[!#$%&'*+\-.^_\x60|~0-9a-zA-Z]+$`)
+var reCtlChars = regexp.MustCompile(`[\r\n\0]`)
+
+// setCookieAttrNames RFC 6265 §5.2/§5.3 cookie-av 属性名（小写）。Task 53-a 审计修复①：
+// seedRuleCookies 的输入契约是「浏览器复制的 Cookie 头」（纯 k=v 对）；用户误粘贴
+// Set-Cookie 响应头整行时（"session=abc; Path=/; Max-Age=86400; Domain=…"），属性段会被
+// 逐段当 k=v 种入并回放（Cookie: session=abc; Path=/; Max-Age=86400）——请求头被垃圾对
+// 污染，GoEdge 类 WAF 异常检测可识别并再次触发挑战，恰好破坏本特性要维系的会话。
+// 已知属性名一律跳过；真实站点以这些词做 cookie 名的先例可忽略（误跳过的代价=该对不生效，
+// 远小于回放垃圾对的代价）。parseSetCookieLine 不需要此防线：其属性段结构上已被分离。
+var setCookieAttrNames = map[string]bool{
+	"max-age": true, "expires": true, "path": true, "domain": true, "secure": true,
+	"httponly": true, "samesite": true, "partitioned": true, "priority": true,
+}
+
+type parsedCookie struct {
+	name       string
+	value      string
+	expiresAt  int64
+	secureOnly bool
+	remove     bool
+}
+
+func parseSetCookieLine(line string, now int64) *parsedCookie {
+	semi := strings.Index(line, ";")
+	pair := line
+	if semi != -1 {
+		pair = line[:semi]
+	}
+	pair = strings.TrimSpace(pair)
+	eq := strings.Index(pair, "=")
+	if eq <= 0 {
+		return nil // RFC 6265 5.2：无 '=' 的整条忽略
+	}
+	name := strings.TrimSpace(pair[:eq])
+	value := strings.TrimSpace(pair[eq+1:])
+	if !reCookieName.MatchString(name) || len(name) > 128 || len(value) > 2048 {
+		return nil
+	}
+	if reCtlChars.MatchString(value) {
+		return nil
+	}
+
+	expiresAt := int64(0) // Task 34 (P2-1)：显式过期属性直接定 TTL（钳 7 天上界，可长于 30min）；无属性才落默认会话 TTL。
+	// 旧实现先赋 30min 再只允许缩短 —— WAF 通关 cookie（如 __jsl_clearance 系，带数小时 Max-Age）
+	// 30 分钟后被判过期删除，触发整轮重新挑战，二访放行型站点反复丢会话；7 天上界分支也是死代码
+	secureOnly := false
+	remove := false
+	// Task 39-a（FIX-2 P3）：有效 Max-Age 存在时完全忽略 Expires（RFC 6265 §5.3 存储模型：
+	// max-age 属性优先于 expires，含 expires 的删除语义）。旧实现对两属性按出现顺序各自生效：
+	// ①后置过期 Expires 会覆盖/作废已算出的 Max-Age TTL；②前置过期 Expires 的 remove 旗标
+	// 在后续有效 Max-Age>0 时仍生效（仅 maxAgeSeen 后置序可豁免）→ 「a=1; Expires=<past>;
+	// Max-Age=3600」这种过期 Expires 与长效 Max-Age 并存的 WAF 通关 cookie 被误删
+	// →「首访种 cookie、二访放行」站点每请求都重新过挑战。maxAgeValid 预检 + 正向
+	// Max-Age 重置 remove 双向覆盖两种属性顺序。
+	maxAgeValid := false
+	if semi != -1 {
+		for _, attr := range strings.Split(line[semi+1:], ";") {
+			aeq := strings.Index(attr, "=")
+			key := attr
+			val := ""
+			if aeq == -1 {
+				key = strings.TrimSpace(attr)
+			} else {
+				key = strings.TrimSpace(attr[:aeq])
+				val = strings.TrimSpace(attr[aeq+1:])
+			}
+			switch strings.ToLower(key) {
+			case "max-age":
+				sec, err := strconv.ParseFloat(val, 64)
+				// Task 33-a: Max-Age=inf/NaN（"inf"/"nan" 可被 ParseFloat 接受）或超大有限值时
+				// int64(sec*1000) 属实现定义转换（amd64 得 MinInt64），now+ms 整型回绕为负 →
+				// cookie 以负过期时间入库、回放侧必删——恶意 Set-Cookie 头可毒化同名会话 cookie。
+				// 非有限值忽略该属性；有限值先在 float 域钳到 TTL 上界再转换，杜绝溢出。
+				if err != nil || math.IsNaN(sec) || math.IsInf(sec, 0) {
+					continue // 无效 Max-Age 整条属性忽略（RFC 6265 §5.2.2），不影响 expires 生效
+				}
+				maxAgeValid = true
+				if sec <= 0 {
+					remove = true
+				} else {
+					if sec > float64(cookieMaxTTLMS)/1000 {
+						sec = float64(cookieMaxTTLMS) / 1000
+					}
+					ms := int64(sec * 1000)
+					if ms > cookieMaxTTLMS {
+						ms = cookieMaxTTLMS
+					}
+					expiresAt = now + ms
+					remove = false // 有效 Max-Age>0 覆盖此前 Expires（含过期删除）语义
+				}
+			case "expires":
+				if maxAgeValid {
+					continue // 有效 Max-Age 已生效：忽略 Expires（RFC 6265 §5.3，含其删除语义）
+				}
+				if t := parseHTTPDate(val); t > 0 {
+					if t <= now {
+						remove = true
+					} else {
+						limit := t
+						if limit > now+cookieMaxTTLMS {
+							limit = now + cookieMaxTTLMS
+						}
+						expiresAt = limit
+					}
+				}
+			case "secure":
+				secureOnly = true
+			}
+		}
+	}
+	if expiresAt == 0 {
+		expiresAt = now + cookieSessionTTLMS
+	}
+	return &parsedCookie{name: name, value: value, expiresAt: expiresAt, secureOnly: secureOnly, remove: remove}
+}
+
+// parseHTTPDate 尽力解析 HTTP 日期（多格式）
+func parseHTTPDate(v string) int64 {
+	for _, layout := range []string{
+		http.TimeFormat, // RFC1123: Mon, 02 Jan 2006 15:04:05 GMT
+		"Monday, 02-Jan-06 15:04:05 GMT",
+		"Mon Jan  2 15:04:05 2006",
+		time.RFC850,
+		time.ANSIC,
+	} {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t.UnixMilli()
+		}
+	}
+	return 0
+}
+
+// recordSetCookieLines 记录一批 Set-Cookie 行；返回实际入库条数（删除指令不计）
+func recordSetCookieLines(host string, lines []string, https bool) int {
+	if host == "" || len(lines) == 0 {
+		return 0
+	}
+	// Task 27-c: 单临界区取桶+写桶（见 touchHostLocked 注释）
+	jar.mu.Lock()
+	bucket := jar.touchHostLocked(host)
+	now := nowMs()
+	stored := 0
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parsed := parseSetCookieLine(line, now)
+		if parsed == nil {
+			continue
+		}
+		if parsed.remove {
+			bucket.del(parsed.name)
+		} else {
+			bucket.set(parsed.name, storedCookie{value: parsed.value, expiresAt: parsed.expiresAt, secureOnly: parsed.secureOnly})
+			stored++
+		}
+	}
+	bucket.capSize()
+	jar.mu.Unlock()
+	_ = https // Secure 判定在回放侧进行（与 TS 版一致）
+	return stored
+}
+
+// recordResponseCookies 从 Go http.Response 捕获 Set-Cookie（每一跳都会经过）
+func recordResponseCookies(host string, res *http.Response, https bool) {
+	if host == "" || res == nil {
+		return
+	}
+	lines := res.Header.Values("Set-Cookie")
+	if len(lines) > 0 {
+		recordSetCookieLines(host, lines, https)
+	}
+}
+
+// seedRuleCookies Task 53：把规则配置的静态 cookie 底座（"k=v; k2=v2" 形态，用户人工过验
+// 后提供）注入 host 桶。语义：
+//   - 同名覆盖 jar 既有值（人工会话优先于引擎自收——jar 里可能是挑战页种的无效会话）；
+//   - 注入后站点下发的 Set-Cookie 照常接管（recordSetCookieLines 同名覆盖），引擎行为与
+//     浏览器一致；
+//   - 每次 fetchPage 幂等重种（种子到期被删后下一轮请求自动补上，规则值就是刷新源）。
+//
+// 安全面：复用 reCookieName 合法 token 校验 + 128/2048 长度钳制 + 控制字符拒绝，
+// 防止解析产物污染回放头（与 parseSetCookieLine 同强度）；另跳过 Set-Cookie 属性段
+// 误粘贴对（setCookieAttrNames，修复①——见其注释）。
+// 返回实际入库条数（调用方可记 warning）。
+func seedRuleCookies(host, header string) int {
+	if host == "" || header == "" {
+		return 0
+	}
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+	bucket := jar.touchHostLocked(host)
+	now := nowMs()
+	stored := 0
+	for _, pair := range strings.Split(header, ";") {
+		pair = strings.TrimSpace(pair)
+		eq := strings.Index(pair, "=")
+		if eq <= 0 {
+			continue // 无 '=' 的片段/空片段忽略
+		}
+		name := strings.TrimSpace(pair[:eq])
+		value := strings.TrimSpace(pair[eq+1:])
+		if setCookieAttrNames[strings.ToLower(name)] {
+			continue // Set-Cookie 属性段误粘贴（Path=/、Max-Age=… 等），非真 cookie
+		}
+		if !reCookieName.MatchString(name) || len(name) > 128 || len(value) > 2048 || reCtlChars.MatchString(value) {
+			continue
+		}
+		bucket.set(name, storedCookie{value: value, expiresAt: now + ruleCookieSeedTTLMS})
+		stored++
+	}
+	bucket.capSize()
+	return stored
+}
+
+// cookieHeaderFor 为某 host 构造回放用的 Cookie 头值（如 "a=1; b=2"）；无可回放 cookie 返回 ""。
+// 过期条目顺手清除；Secure cookie 仅在 https 请求上回放；读取也刷新 LRU 淘汰序（Task 29-b 落地）。
+func cookieHeaderFor(host string, https bool) string {
+	jar.mu.Lock()
+	bucket, ok := jar.hosts[host]
+	if !ok || len(bucket.m) == 0 {
+		jar.mu.Unlock()
+		return ""
+	}
+	jar.touchOrderLocked(host)
+	now := nowMs()
+	parts := []string{}
+	for _, name := range append([]string{}, bucket.order...) {
+		c, exists := bucket.m[name]
+		if !exists {
+			continue
+		}
+		if c.expiresAt <= now {
+			bucket.del(name)
+			continue
+		}
+		if c.secureOnly && !https {
+			continue
+		}
+		parts = append(parts, name+"="+c.value)
+	}
+	if len(parts) == 0 {
+		jar.mu.Unlock()
+		return ""
+	}
+	jar.mu.Unlock()
+	return strings.Join(parts, "; ")
+}
+
+// playwrightCookie Playwright/渲染桥注入格式
+type playwrightCookie struct {
+	Name    string  `json:"name"`
+	Value   string  `json:"value"`
+	URL     string  `json:"url"`
+	Expires float64 `json:"expires"`
+}
+
+// cookiesForPlaywright 渲染桥注入格式列表；无 cookie 返回空数组
+func cookiesForPlaywright(host string, https bool) []playwrightCookie {
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+	bucket, ok := jar.hosts[host]
+	if !ok || len(bucket.m) == 0 {
+		return []playwrightCookie{}
+	}
+	jar.touchOrderLocked(host)
+	now := nowMs()
+	scheme := "http"
+	if https {
+		scheme = "https"
+	}
+	origin := scheme + "://" + host
+	out := []playwrightCookie{}
+	for _, name := range append([]string{}, bucket.order...) {
+		c, exists := bucket.m[name]
+		if !exists {
+			continue
+		}
+		if c.expiresAt <= now {
+			bucket.del(name)
+			continue
+		}
+		if c.secureOnly && !https {
+			continue
+		}
+		out = append(out, playwrightCookie{Name: name, Value: c.value, URL: origin, Expires: -1})
+	}
+	return out
+}
+
+// recordBridgeCookies 渲染完成后把浏览器上下文的 cookie 回存引擎 jar
+func recordBridgeCookies(host string, cookies []bridgeCookie) {
+	if host == "" || len(cookies) == 0 {
+		return
+	}
+	// Task 27-c: 单临界区取桶+写桶（见 touchHostLocked 注释）
+	jar.mu.Lock()
+	bucket := jar.touchHostLocked(host)
+	now := nowMs()
+	for _, c := range cookies {
+		if c.Name == "" || c.Value == "" {
+			continue
+		}
+		if !reCookieName.MatchString(c.Name) || len(c.Value) > 2048 {
+			continue
+		}
+		expires := now + cookieSessionTTLMS
+		if c.Expires > 0 {
+			expires = int64(c.Expires * 1000)
+		}
+		if expires <= now {
+			bucket.del(c.Name)
+			continue
+		}
+		limit := expires
+		if limit > now+cookieMaxTTLMS {
+			limit = now + cookieMaxTTLMS
+		}
+		bucket.set(c.Name, storedCookie{value: c.Value, expiresAt: limit, secureOnly: c.Secure})
+	}
+	bucket.capSize()
+	jar.mu.Unlock()
+}
+
+// bridgeCookie render.py 回传的 cookie 子集
+type bridgeCookie struct {
+	Name    string  `json:"name"`
+	Value   string  `json:"value"`
+	Expires float64 `json:"expires"`
+	Secure  bool    `json:"secure"`
+}
+
+func cookieStats() (trackedHosts, maxHosts, maxPerHost, ttlMS int) {
+	jar.mu.Lock()
+	defer jar.mu.Unlock()
+	return len(jar.hosts), cookieMaxHosts, cookieMaxPerHost, cookieSessionTTLMS
+}

@@ -1,0 +1,180 @@
+/**
+ * pseo_tags_test.go —— Task 40 书籍页「相关标签」pseo 下拉词取词回归锁定：
+ * 1) kwNormalize 归一形向量：全半角折叠（全角？书名 vs 半角?下拉词）、空白剔除、大小写；
+ * 2) novelPseoTags 双通道取词：seed 血缘直取（含不含书名字面的相关词）+
+ *    kwNorm 归一形 LIKE 兜底（seed 列引入前的存量词、无血缘跨引擎词）；
+ * 3) backfillPseoKeywordNorm 存量回填幂等。
+ */
+package main
+
+import (
+	"testing"
+)
+
+func TestKwNormalizeVectors(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		// 核心病灶：全角？书名 与 半角?下拉词 归一后必须一致（书 293 实证漏配形态）
+		{"我的职业面板怎么是二次元画风？", "我的职业面板怎么是二次元画风?"},
+		{"我的职业面板怎么是二次元画风?", "我的职业面板怎么是二次元画风?"},
+		// 空白形态差异：「捡个总裁老婆 小说」与「捡个总裁老婆小说」必须一致
+		{"捡个总裁老婆 小说", "捡个总裁老婆小说"},
+		{"捡个　总裁老婆　小说", "捡个总裁老婆小说"},
+		// 大小写与全角字母数字折叠
+		{"ABC def", "abcdef"},
+		{"ＡＢＣ１２３", "abc123"},
+		// 全角标点族：：！，：（）
+		{"书名：续！卷，二（完）", "书名:续!卷,二(完)"},
+		// 空串与纯空白
+		{"", ""},
+		{"  \t\n　", ""},
+	}
+	for _, c := range cases {
+		if got := kwNormalize(c.in); got != c.want {
+			t.Errorf("kwNormalize(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// 归一等价性：核心病灶对（全角？/半角?）归一形必须相等
+	if kwNormalize("画风？") != kwNormalize("画风?") {
+		t.Error("全角？与半角?归一形不相等（回归病灶）")
+	}
+	if kwNormalize("老婆 小说") != kwNormalize("老婆小说") {
+		t.Error("含空格与无空格归一形不相等（回归病灶）")
+	}
+}
+
+func TestNovelPseoTagsSeedAndNorm(t *testing.T) {
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("getDB: %v", err)
+	}
+	cleanup := func() { _, _ = db.Exec(`DELETE FROM "PseoKeyword"`) }
+	cleanup()
+	t.Cleanup(cleanup)
+
+	// 书名带全角？（复刻书 293 病灶形态），下拉词为半角?变体 + 不含书名的相关词 + 存量无血缘词
+	title := "测试之书？"
+	entries := []kwEntry{
+		{Word: "测试之书?笔趣阁", Engine: "baidu"},    // seed 血缘 + 含归一书名
+		{Word: "测试之书?TXT下载", Engine: "bing"},   // seed 血缘 + 含归一书名
+		{Word: "类似测试之书的小说推荐", Engine: "so360"}, // seed 血缘但词面不含书名（血缘直取的价值面）
+		{Word: "测试之书?免费阅读", Engine: "sogou"},   // 无血缘（seed=''）存量词形态，靠 kwNorm 兜底
+	}
+	if _, err := insertKeywords(entries, 50, title); err != nil {
+		t.Fatalf("insertKeywords: %v", err)
+	}
+	// 存量词模拟：seed 列引入前的行（kwNorm 已回填、seed=''）
+	if _, err := db.Exec(
+		`INSERT INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm","seed") VALUES ('测试之书?最新章节','duckduckgo','generated',1,1,?, '')`,
+		kwNormalize("测试之书?最新章节")); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	// 未生成词（pending）：Task 47 起血缘直取通道仅取 generated——pending 词不上榜
+	// （SSR 聚合页实时计算兜底负责其渲染，chips 内链不得指向潜在 404）
+	if _, err := db.Exec(
+		`UPDATE "PseoKeyword" SET "status" = 'pending' WHERE "keyword" = '测试之书?TXT下载'`); err != nil {
+		t.Fatalf("set pending: %v", err)
+	}
+	// 干扰词：他人书籍的血缘词 + 不含书名的无血缘词，均不得上榜
+	if _, err := insertKeywords([]kwEntry{{Word: "别的书?笔趣阁", Engine: "baidu"}}, 50, "别的书"); err != nil {
+		t.Fatalf("insert other book: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE "PseoKeyword" SET "status" = 'generated' WHERE "keyword" != '测试之书?TXT下载'`); err != nil {
+		t.Fatalf("set generated: %v", err)
+	}
+
+	tags := novelPseoTags(title, "佚名")
+	if len(tags) == 0 || tags[0] != title {
+		t.Fatalf("首标签必须是书名种子词，got %v", tags)
+	}
+	has := func(kw string) bool {
+		for _, x := range tags {
+			if x == kw {
+				return true
+			}
+		}
+		return false
+	}
+	// ① 血缘直取：含书名变体与不含书名字面的相关词都必须上榜（generated 行）
+	for _, kw := range []string{"测试之书?笔趣阁", "类似测试之书的小说推荐"} {
+		if !has(kw) {
+			t.Errorf("血缘/归一通道漏词 %q，tags=%v", kw, tags)
+		}
+	}
+	// ①-b pending 词不得上榜（Task 47：chips 只链接已生成聚合页，防 404 内链）
+	if has("测试之书?TXT下载") {
+		t.Errorf("pending 词不应上榜（chips 指向 404），tags=%v", tags)
+	}
+	// ② kwNorm 兜底：无血缘存量词（半角?变体）必须上榜
+	if !has("测试之书?免费阅读") || !has("测试之书?最新章节") {
+		t.Errorf("kwNorm 兜底漏存量词，tags=%v", tags)
+	}
+	// ③ 干扰词不得上榜
+	if has("别的书?笔趣阁") {
+		t.Errorf("他人书籍血缘词误上榜，tags=%v", tags)
+	}
+	// ④ 作者词第二位
+	tags2 := novelPseoTags(title, "作者甲")
+	if len(tags2) < 2 || tags2[1] != "作者甲" {
+		t.Errorf("第二标签必须是作者词，got %v", tags2)
+	}
+	// ⑤ Task 47 后无独立排序断言：pending 词已整体从 chips 摘除（见①-b）
+}
+
+func TestBackfillPseoKeywordNorm(t *testing.T) {
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("getDB: %v", err)
+	}
+	cleanup := func() { _, _ = db.Exec(`DELETE FROM "PseoKeyword"`) }
+	cleanup()
+	t.Cleanup(cleanup)
+
+	if _, err := db.Exec(
+		`INSERT INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm") VALUES ('测试之书?笔趣阁','baidu','generated',1,1, '')`); err != nil {
+		t.Fatalf("insert unbackfilled row: %v", err)
+	}
+	if err := backfillPseoKeywordNorm(db); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	var norm string
+	if err := db.QueryRow(`SELECT "kwNorm" FROM "PseoKeyword" WHERE "keyword" = '测试之书?笔趣阁'`).Scan(&norm); err != nil {
+		t.Fatalf("read kwNorm: %v", err)
+	}
+	if norm != kwNormalize("测试之书?笔趣阁") || norm == "" {
+		t.Fatalf("回填结果错误 kwNorm=%q", norm)
+	}
+	// 幂等：第二遍零错误（全表已回填，零扫描零写入）
+	if err := backfillPseoKeywordNorm(db); err != nil {
+		t.Fatalf("backfill idempotent: %v", err)
+	}
+}
+
+// TestPseoVariantDistribution 锁定 Task 45-a 伪原创变体分布：
+// 小整数 tick 盐与 FNV 基底奇偶共振曾致同毫秒批量生成塌缩为 2 句式交替（生产探针实证），
+// 联合哈希雪崩后 24 词必须覆盖 ≥6 种句式，且同词跨批次（tick 推进）必然轮换。
+func TestPseoVariantDistribution(t *testing.T) {
+	configured := defaultSeo["pseoTitle"]
+	seen := map[string]bool{}
+	for i := 0; i < 24; i++ {
+		got := pickPseoTpl(configured, pseoTitleVariants, nil, "分布测试词"+itoa(i)+"号", nil)
+		seen[got] = true
+	}
+	if len(seen) < 6 {
+		t.Fatalf("24 词仅覆盖 %d 种句式（池 %d），分布塌缩", len(seen), len(pseoTitleVariants))
+	}
+	// 自定义模板不被变体池覆盖
+	custom := "自定义句式_{keyword}"
+	if got := pickPseoTpl(custom, pseoTitleVariants, nil, "任意词", nil); got != custom {
+		t.Fatalf("自定义模板被改写: %q", got)
+	}
+	// 相邻页错开（lastIdx 游标）
+	last := -1
+	a := pickPseoTpl(configured, pseoTitleVariants, nil, "相邻词甲", &last)
+	b := pickPseoTpl(configured, pseoTitleVariants, nil, "相邻词乙", &last)
+	if a == b && len(pseoTitleVariants) > 1 {
+		t.Fatalf("相邻页句式未错开: %q", a)
+	}
+}

@@ -1,0 +1,46 @@
+{{/* aijjxs pseo 聚合页（Task 32-a）：面包屑卡 + 关键词简介卡 + 双列 CoverCard 结果区。
+骨架/类名与 search.html 同源（aj-card / aj-panel-head / 88×122 封面卡），复用主题类名零新增 CSS。 */}}
+{{define "content"}}
+<div class="mx-auto w-full max-w-[860px]">
+
+  {{/* 面包屑 */}}
+  <nav aria-label="面包屑" class="mt-1 flex flex-wrap items-center gap-1.5 text-[13px] text-[#6b7280]">
+    <a href="/" class="transition-colors hover:text-[#0f766e] hover:underline">首页</a>
+    <span class="text-[#d6cec0]">/</span>
+    <span class="max-w-[240px] truncate font-medium text-[#b45309]">{{.Keyword}}</span>
+  </nav>
+
+  {{/* 关键词简介卡 */}}
+  <section class="aj-card mt-3 p-4 sm:p-5">
+    <h1 class="text-[20px] font-bold text-[#1f2937]">{{.Keyword}}小说大全</h1>
+    <p class="mt-2 text-[13px] leading-[1.7] text-[#6b7280]">{{.Description}}</p>
+  </section>
+
+  {{/* 结果区 */}}
+  <section class="aj-card mt-4 overflow-hidden">
+    <header class="aj-panel-head">
+      <span class="aj-panel-bar" aria-hidden="true"></span>
+      <h2 class="aj-panel-title">{{.Keyword}} · 相关小说</h2>
+      <div class="ml-auto"><span class="text-xs text-[#9ca3af]">{{len .Novels}} 本</span></div>
+    </header>
+    <div class="p-3 sm:p-4">
+      <div class="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+        {{range .Novels}}
+        <article class="group flex cursor-pointer gap-3">
+          {{if isLocalCover .cover}}<a href="{{bookURL .id}}" class="relative h-[122px] w-[88px] flex-none overflow-hidden rounded-[8px] shadow-[inset_0_0_24px_rgba(0,0,0,0.18)]"><img src="{{.cover}}" alt="{{.title}}封面" class="absolute inset-0 h-full w-full object-cover" loading="lazy"></a>
+          {{else}}<a href="{{bookURL .id}}" class="relative flex h-[122px] w-[88px] flex-none items-center justify-center overflow-hidden rounded-[8px] text-white shadow-[inset_0_0_24px_rgba(0,0,0,0.18)] {{gcls .cover}}"><span class="font-bold tracking-[0.2em] text-[22px] [text-shadow:0_1px_4px_rgba(0,0,0,0.35)]" aria-hidden="true">{{title0 .title}}</span></a>{{end}}
+          <div class="min-w-0 flex-1">
+            <h3 class="flex items-center gap-1.5 text-[15px] font-bold text-[#1f2937] transition-colors group-hover:text-[#0f766e]">
+              <a class="min-w-0 truncate" href="{{bookURL .id}}">{{.title}}</a>
+              {{if .isHot}}<span class="aj-badge">热</span>{{end}}
+            </h3>
+            <p class="mt-1 truncate text-xs text-[#6b7280]">{{.categoryName}} · {{.author}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</p>
+            <p class="mt-1.5 line-clamp-3 text-[13px] leading-[1.6] text-[#6b7280]">{{if .description}}{{.description}}{{else}}暂无简介{{end}}</p>
+          </div>
+        </article>
+        {{else}}<p class="py-10 text-center text-[14px] text-[#6b7280] sm:col-span-2">暂无相关小说，看看首页推荐吧。</p>{{end}}
+      </div>
+    </div>
+  </section>
+</div>
+{{end}}

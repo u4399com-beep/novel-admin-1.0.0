@@ -1,0 +1,595 @@
+{{/* admin.html —— 管理后台完整版（Go 服务端渲染 + vanilla JS）。
+     自包含页面：直接定义 layout，不依赖 _shared.html。
+     交互逻辑全部在 /static/js/admin.js（模板内不写 JS，避免 {{ }} 冲突）。
+     初始数据服务端渲染；JS 交互后按 tab 用 fetch 重渲染。
+     数据契约见 web_data.go handleWebAdmin。 */}}
+{{define "layout"}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>站点管理后台 | {{.Site.siteName}}</title>
+<link rel="stylesheet" href="/static/css/tw.css">
+<link rel="stylesheet" href="/static/css/admin.css">
+<script src="/static/js/admin.js" defer></script>
+</head>
+<body class="adm-body min-h-screen bg-neutral-100 text-[13px] leading-normal text-neutral-800">
+<header class="sticky top-0 z-40 bg-neutral-900 text-white shadow">
+  <div class="mx-auto flex h-12 max-w-6xl items-center justify-between gap-3 px-3">
+    <div class="flex min-w-0 items-center gap-2">
+      <span class="rounded bg-emerald-600 px-1.5 py-0.5 text-[11px] font-bold">GO</span>
+      <h1 class="truncate text-[15px] font-semibold">站点管理后台 · {{.Site.siteName}}</h1>
+    </div>
+    <div class="flex shrink-0 items-center gap-2 text-[11px] text-neutral-400">
+      <span id="adm-health" class="rounded-full bg-neutral-800 px-2 py-0.5">健康检测中…</span>
+      <a href="/" class="rounded bg-neutral-800 px-2 py-0.5 text-neutral-200 hover:bg-neutral-700">返回前台</a>
+    </div>
+  </div>
+  <nav id="adm-tabs" class="adm-tabs mx-auto flex max-w-6xl gap-1 overflow-x-auto px-3 pb-0 text-[13px]">
+    <button type="button" data-tab="overview" class="adm-tab adm-tab-on">总览</button>
+    <button type="button" data-tab="rules" class="adm-tab">采集规则</button>
+    <button type="button" data-tab="tasks" class="adm-tab">采集任务</button>
+    <button type="button" data-tab="novels" class="adm-tab">书籍管理</button>
+    <button type="button" data-tab="categories" class="adm-tab">分类管理</button>
+    <button type="button" data-tab="chapters" class="adm-tab">章节工具</button>
+    <button type="button" data-tab="pseo" class="adm-tab">PSEO</button>
+    <button type="button" data-tab="settings" class="adm-tab">站点设置</button>
+    <button type="button" data-tab="sites" class="adm-tab">站群管理</button>
+  </nav>
+</header>
+
+<main class="mx-auto max-w-6xl px-3 py-4">
+
+  <!-- ============ 总览 ============ -->
+  <section id="tab-overview" class="adm-panel space-y-4">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+      <div class="adm-card !mb-0"><p class="text-[11px] text-neutral-500">书籍</p><p class="text-xl font-bold tabular-nums">{{.Stats.novelCount}}</p></div>
+      <div class="adm-card !mb-0"><p class="text-[11px] text-neutral-500">章节</p><p class="text-xl font-bold tabular-nums">{{.Stats.chapterCount}}</p></div>
+      <div class="adm-card !mb-0"><p class="text-[11px] text-neutral-500">任务</p><p class="text-xl font-bold tabular-nums">{{.Stats.taskCount}}</p></div>
+      <div class="adm-card !mb-0"><p class="text-[11px] text-neutral-500">规则</p><p class="text-xl font-bold tabular-nums">{{.Stats.ruleCount}}</p></div>
+      <div class="adm-card !mb-0 col-span-2 sm:col-span-1"><p class="text-[11px] text-neutral-500">PSEO 关键词</p><p class="text-xl font-bold tabular-nums">{{.Stats.pseoCount}}</p></div>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">运行健康</h2>
+      <div id="adm-health-detail" class="flex flex-wrap items-center gap-3 text-xs text-neutral-500">检测中…</div>
+    </div>
+
+    <div class="adm-card">
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">最近任务</h2>
+        <span class="text-[11px] text-neutral-400">每 10 秒自动刷新（页面可见时）</span>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>规则</th><th>模式</th><th>状态</th><th>进度</th><th>章节</th><th>更新时间</th></tr></thead>
+          <tbody id="adm-overview-tbody">
+            {{range $i, $t := .Tasks}}{{if lt $i 10}}<tr>
+              <td class="tabular-nums text-neutral-500">{{$t.id}}</td>
+              <td>{{if $t.ruleName}}{{$t.ruleName}}{{else}}<span class="text-neutral-400">无规则</span>{{end}}</td>
+              <td>{{$t.mode}}</td>
+              <td>{{template "admBadge" $t.status}}</td>
+              <td class="tabular-nums">{{$t.done}}/{{$t.total}}</td>
+              <td class="tabular-nums">{{$t.chapters}}</td>
+              <td class="whitespace-nowrap text-neutral-400">{{fullFmt $t.updatedAt}}</td>
+            </tr>{{end}}{{else}}<tr><td colspan="7" class="adm-empty">暂无任务</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 采集规则 ============ -->
+  <section id="tab-rules" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">采集规则（<span id="adm-rule-count">{{len .Rules}}</span>）</h2>
+        <div class="flex items-center gap-2">
+          <button type="button" id="adm-rule-healthcheck" class="adm-btn">立即巡检（E19）</button>
+          <button type="button" id="adm-rule-new" class="adm-btn adm-btn-primary">+ 新建规则</button>
+        </div>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>名称</th><th>站点 URL</th><th>启用</th><th>健康</th><th>编码</th><th>代理</th><th>跳过TLS</th><th>Cookie</th><th>备注</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-rules-tbody">
+            {{range .Rules}}<tr>
+              <td class="tabular-nums text-neutral-500">{{.id}}</td>
+              <td class="font-medium">{{.name}}</td>
+              <td class="adm-cell-url" title="{{.siteUrl}}">{{.siteUrl}}</td>
+              <td>{{if .enabled}}<span class="text-emerald-600">✓</span>{{else}}<span class="text-neutral-400">✗</span>{{end}}</td>
+              <td>{{if .health}}{{if .health.lastOK}}<span class="text-emerald-600" title="连续健康 {{.health.okStreak}} 轮">✓ 连续 {{.health.okStreak}} 轮</span>{{else}}<span class="text-red-600" title="{{.health.lastNote}}">✗ 连败 {{.health.failStreak}}</span>{{end}}{{else}}<span class="text-neutral-300">未巡检</span>{{end}}</td>
+              <td>{{.charset}}</td>
+              <td class="adm-cell-url">{{if .proxy}}{{.proxy}}{{else}}<span class="text-neutral-300">—</span>{{end}}</td>
+              <td>{{if .insecureTLS}}<span class="text-amber-600">✓</span>{{else}}<span class="text-neutral-300">—</span>{{end}}</td>
+              <td>{{if .cookies}}<span class="text-amber-600" title="已配置静态 cookie 底座">✓</span>{{else}}<span class="text-neutral-300">—</span>{{end}}</td>
+              <td class="adm-cell-note" title="{{.notes}}">{{.notes}}</td>
+              <td class="whitespace-nowrap text-right">
+                <button type="button" class="adm-btn-xs" data-act="rule-edit" data-id="{{.id}}">编辑</button>
+                <button type="button" class="adm-btn-xs adm-danger" data-act="rule-del" data-id="{{.id}}" data-name="{{.name}}">删除</button>
+              </td>
+            </tr>{{else}}<tr><td colspan="11" class="adm-empty">暂无规则，点击「新建规则」创建</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="adm-card hidden" id="adm-rule-form-card">
+      <h2 class="adm-h2" id="adm-rule-form-title">新建采集规则</h2>
+      <p class="mb-3 text-[11px] text-neutral-400">选择器支持逗号分隔备选与 sel@attr 取属性语法；三个规则组下方为 JSON 文本域（留空对象即用引擎内置启发式）。</p>
+      <input type="hidden" id="adm-rule-id" value="">
+      <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        <label class="adm-field">规则名称 *<input id="adm-rule-name" class="adm-input" placeholder="如：笔趣阁系通用模板"></label>
+        <label class="adm-field">站点 URL *<input id="adm-rule-url" class="adm-input" placeholder="https://www.example.com/"></label>
+        <label class="adm-field">编码 charset
+          <select id="adm-rule-charset" class="adm-input">
+            <option value="utf-8">utf-8</option><option value="gbk">gbk</option>
+            <option value="gb2312">gb2312</option><option value="big5">big5</option>
+          </select>
+        </label>
+        <label class="adm-field">出口代理 proxy（空 = 直连）<input id="adm-rule-proxy" class="adm-input" placeholder="如 socks5h://user:pass@host:1080，多个逗号分隔"></label>
+        <div class="flex items-center gap-4 pt-1">
+          <label class="flex items-center gap-1.5"><input type="checkbox" id="adm-rule-enabled" checked> 启用该规则</label>
+          <label class="flex items-center gap-1.5"><input type="checkbox" id="adm-rule-insecure"> 跳过 TLS 证书校验</label>
+        </div>
+        <label class="adm-field sm:col-span-2">静态 Cookie 底座 cookies（空 = 不注入；站点强制人机验证时，人工过验后从浏览器复制 Cookie 请求头粘贴至此）<input id="adm-rule-cookies" class="adm-input adm-mono" placeholder="如：wzws_cid=xxx; token=yyy（k=v 用分号分隔，引擎每次抓取前种入会话桶）"></label>
+      </div>
+      <div class="mt-3 space-y-3">
+        <div class="adm-field">
+          <div class="flex items-center justify-between"><span>列表页规则 listRule（范围采集）</span><button type="button" class="adm-btn-xs" data-act="rule-fmt" data-target="adm-rule-list">格式化 JSON</button></div>
+          <textarea id="adm-rule-list" class="adm-input adm-mono" rows="4" placeholder='{"itemSelector":"#newscontent li","titleSelector":".s2 a"}'></textarea>
+        </div>
+        <div class="adm-field">
+          <div class="flex items-center justify-between"><span>书籍页规则 bookRule（单本/范围共用）</span><button type="button" class="adm-btn-xs" data-act="rule-fmt" data-target="adm-rule-book">格式化 JSON</button></div>
+          <textarea id="adm-rule-book" class="adm-input adm-mono" rows="5" placeholder='{"titleSelector":"#info h1","chapterLinkSelector":"#list dl dd a"}'></textarea>
+        </div>
+        <div class="adm-field">
+          <div class="flex items-center justify-between"><span>正文页规则 chapterRule</span><button type="button" class="adm-btn-xs" data-act="rule-fmt" data-target="adm-rule-chapter">格式化 JSON</button></div>
+          <textarea id="adm-rule-chapter" class="adm-input adm-mono" rows="4" placeholder='{"titleSelector":"h1","contentSelector":"#content"}'></textarea>
+        </div>
+        <label class="adm-field block">备注 notes<textarea id="adm-rule-notes" class="adm-input" rows="2" placeholder="站点结构说明、注意事项等"></textarea></label>
+      </div>
+      <div class="mt-3 flex justify-end gap-2">
+        <button type="button" id="adm-rule-cancel" class="adm-btn">取消</button>
+        <button type="button" id="adm-rule-save" class="adm-btn adm-btn-primary">保存规则</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 采集任务 ============ -->
+  <section id="tab-tasks" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <h2 class="adm-h2">新建采集任务</h2>
+      <div class="grid gap-x-4 gap-y-2 md:grid-cols-[auto_1fr_auto_auto_auto] md:items-end">
+        <label class="adm-field">模式
+          <select id="adm-new-mode" class="adm-input"><option value="single">单本采集（书页 URL）</option><option value="list">范围采集（列表页 URL）</option></select>
+        </label>
+        <label class="adm-field">目标 URL *<input id="adm-new-url" class="adm-input" placeholder="https://www.example.com/book/1.html"></label>
+        <label class="adm-field">采集规则
+          <select id="adm-new-rule" class="adm-input"><option value="">不使用规则</option>{{range .Rules}}<option value="{{.id}}">{{.name}}</option>{{end}}</select>
+        </label>
+        <!-- Task 32-b: 存储模式（db=仅入库分表 / txt=仅分章 TXT 文件 / both=双写） -->
+        <label class="adm-field">存储模式
+          <select id="adm-new-storage" class="adm-input" title="db=数据库（默认）｜txt=一章一 TXT 文件｜both=数据库+文件双写">
+            <option value="db">数据库（默认）</option>
+            <option value="txt">TXT 文件</option>
+            <option value="both">双写（库+文件）</option>
+          </select>
+        </label>
+        <label class="adm-field hidden" id="adm-new-pages-wrap">列表页数（1-999）<input id="adm-new-pages" type="number" min="1" max="999" value="1" class="adm-input md:w-24"></label>
+      </div>
+      <div class="mt-2 flex justify-end">
+        <button type="button" id="adm-new-submit" class="adm-btn adm-btn-primary">创建任务</button>
+      </div>
+    </div>
+
+    <div class="adm-card">
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="adm-h2 !mb-0">采集任务（<span id="adm-task-total">0</span>）</h2>
+        <div class="flex items-center gap-1.5 text-[11px] text-neutral-400">
+          <button type="button" id="adm-task-resume-all" class="adm-btn-xs" title="全部暂停任务重新入队（进度保留，E21）">复活全部暂停任务（E21）</button>
+          <button type="button" id="adm-task-prev" class="adm-btn-xs">上一页</button>
+          <span id="adm-task-page" class="tabular-nums">1 / 1</span>
+          <button type="button" id="adm-task-next" class="adm-btn-xs">下一页</button>
+          <button type="button" id="adm-task-refresh" class="adm-btn-xs">刷新</button>
+        </div>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>模式</th><th>规则</th><th>目标 URL</th><th>状态</th><th>进度</th><th>成果</th><th>时间</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-tasks-tbody">
+            {{range .Tasks}}<tr data-task-id="{{.id}}" data-mode="{{.mode}}" data-url="{{.targetUrl}}" data-pages="{{.pages}}" data-rule-id="{{.ruleId}}">
+              <td class="tabular-nums text-neutral-500">{{.id}}</td>
+              <td>{{if eq .mode "list"}}<span class="adm-badge adm-badge-neutral">范围</span>{{else}}<span class="adm-badge adm-badge-outline">单本</span>{{end}}</td>
+              <td>{{if .ruleName}}{{.ruleName}}{{else}}<span class="text-neutral-400">无规则</span>{{end}}</td>
+              <td class="adm-cell-url"><span title="{{.targetUrl}}">{{.targetUrl}}</span>{{if .message}}<span class="block truncate text-[11px] text-neutral-400" title="{{.message}}">{{.message}}</span>{{end}}</td>
+              <td>{{template "admBadge" .status}}</td>
+              <td class="whitespace-nowrap tabular-nums">{{.done}}/{{.total}}</td>
+              <td class="whitespace-nowrap text-[11px] text-neutral-500">新建 {{fullFmt .created}} · 章节 <span class="tabular-nums">{{.chapters}}</span></td>
+              <td class="whitespace-nowrap text-[11px] text-neutral-400">{{fullFmt .updatedAt}}</td>
+              <td class="whitespace-nowrap text-right">
+                <button type="button" class="adm-btn-xs" data-act="task-log" data-id="{{.id}}" title="查看日志">日志</button>
+                {{if ne .status "running"}}<button type="button" class="adm-btn-xs" data-act="task-edit" data-id="{{.id}}" title="编辑参数（终态改完可重启重采）">编辑</button>{{else}}<button type="button" class="adm-btn-xs" disabled title="执行中不可编辑，请先暂停">编辑</button>{{end}}
+                {{if eq .status "running"}}<button type="button" class="adm-btn-xs" data-act="task-pause" data-id="{{.id}}" title="暂停（进度保留）">暂停</button>{{end}}
+                {{if eq .status "paused"}}<button type="button" class="adm-btn-xs" data-act="task-resume" data-id="{{.id}}" title="恢复（重新入队续采）">恢复</button>{{end}}
+                {{if or (eq .status "pending") (eq .status "running") (eq .status "paused")}}<button type="button" class="adm-btn-xs adm-warn" data-act="task-cancel" data-id="{{.id}}" title="停止/取消任务">停止</button>{{end}}
+                {{if or (eq .status "failed") (eq .status "partial") (eq .status "canceled") (eq .status "success")}}<button type="button" class="adm-btn-xs adm-ok" data-act="task-restart" data-id="{{.id}}" title="重启（进度清零重新入队）">重启</button>{{end}}
+                <button type="button" class="adm-btn-xs adm-danger" data-act="task-del" data-id="{{.id}}" title="删除任务">删除</button>
+              </td>
+            </tr>{{else}}<tr><td colspan="9" class="adm-empty">暂无任务，请在上方创建</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-[11px] text-neutral-400">状态机：编辑=非执行中均可（执行中提示先暂停）；暂停=执行中→暂停；恢复=暂停→重新入队；停止=待执行/执行中/已暂停；重启=终态（失败/部分成功/已取消/成功）进度清零重新入队。限流/空壳类自动暂停的任务会在冷却 ≥3 分钟后自动恢复重新入队（每任务每进程至多 4 次，多次仍未成功请人工检查源站）。</p>
+    </div>
+  </section>
+
+  <!-- ============ 书籍管理 ============ -->
+  <section id="tab-novels" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <h2 class="adm-h2 !mb-0">书籍管理</h2>
+        <input id="adm-novel-q" class="adm-input w-48" placeholder="搜索书名/作者/简介">
+        <button type="button" id="adm-novel-search" class="adm-btn adm-btn-primary">搜索</button>
+        <!-- Task 33: 全库智能补全（空简介/占位作者/其他分类滞留/智能完结 一键体检+修复） -->
+        <button type="button" id="adm-novel-smartfill" class="adm-btn">智能补全</button>
+        <span class="flex-1"></span>
+        <span class="flex items-center gap-1.5 text-[11px] text-neutral-400">
+          <button type="button" id="adm-novel-prev" class="adm-btn-xs">上一页</button>
+          <span id="adm-novel-page" class="tabular-nums">1 / 1</span>
+          <button type="button" id="adm-novel-next" class="adm-btn-xs">下一页</button>
+        </span>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>书名</th><th>作者</th><th>分类</th><th>字数</th><th>章节</th><th>更新时间</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-novels-tbody">
+            {{range .Novels}}<tr>
+              <td class="tabular-nums text-neutral-500">{{.id}}</td>
+              <td class="font-medium"><a class="hover:underline" href="/book/{{.id}}" target="_blank" rel="noopener">{{.title}}</a></td>
+              <td>{{.author}}</td>
+              <td>{{.categoryName}}</td>
+              <td class="whitespace-nowrap tabular-nums">{{wcFmt .wordCount}}</td>
+              <td class="tabular-nums">{{.chapterCount}}</td>
+              <td class="whitespace-nowrap text-neutral-400">{{fullFmt .updatedAt}}</td>
+              <td class="text-right whitespace-nowrap">
+                <button type="button" class="adm-btn-xs" data-act="novel-edit" data-id="{{.id}}">编辑</button>
+                <button type="button" class="adm-btn-xs" data-act="novel-chapters" data-id="{{.id}}" data-title="{{.title}}">章节</button>
+                <button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="{{.id}}" data-title="{{.title}}">删除</button>
+              </td>
+            </tr>{{else}}<tr><td colspan="8" class="adm-empty">暂无书籍</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 分类管理 ============ -->
+  <section id="tab-categories" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <h2 class="adm-h2 !mb-0">分类管理</h2>
+        <input id="adm-cat-name" class="adm-input w-40" placeholder="新分类名称">
+        <button type="button" id="adm-cat-add" class="adm-btn adm-btn-primary">添加</button>
+        <span class="flex-1"></span>
+        <button type="button" id="adm-cat-merge-btn" class="adm-btn">智能归并建议</button>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>名称</th><th>排序</th><th>书籍数</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-cats-tbody">
+            {{range .Categories}}<tr>
+              <td class="tabular-nums text-neutral-500">{{.id}}</td>
+              <td class="font-medium">{{.name}}</td>
+              <td class="tabular-nums">{{.sort}}</td>
+              <td class="tabular-nums">{{.novelCount}}</td>
+              <td class="whitespace-nowrap text-right">
+                <button type="button" class="adm-btn-xs" data-act="cat-edit" data-id="{{.id}}">改名/排序</button>
+                <button type="button" class="adm-btn-xs adm-danger" data-act="cat-del" data-id="{{.id}}" data-name="{{.name}}">删除</button>
+              </td>
+            </tr>{{else}}<tr><td colspan="5" class="adm-empty">暂无分类</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="adm-card hidden" id="adm-cat-merge-card">
+      <h2 class="adm-h2">智能归并建议</h2>
+      <p class="mb-2 text-[11px] text-neutral-400">按规范名归一化检测可合并的分类（同义/异写），合并会把源分类下全部书籍迁入目标并删除源分类。</p>
+      <div id="adm-cat-merge-list" class="space-y-2"></div>
+    </div>
+  </section>
+
+  <!-- ============ 章节工具（Task 45-b：分卷结构 / 目录体检 / 乱序重排 / 字数重算） ============ -->
+  <section id="tab-chapters" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <h2 class="adm-h2">选择书籍</h2>
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="adm-field">书籍 ID<input id="adm-chtool-novel-id" class="adm-input adm-mono w-28" placeholder="如 4"></label>
+        <button type="button" id="adm-chtool-load" class="adm-btn adm-btn-primary">加载</button>
+        <span id="adm-chtool-novel" class="pb-2 text-xs text-neutral-500"></span>
+      </div>
+      <p class="mt-1 text-[11px] text-neutral-400">也可从「书籍管理」页签每行的「章节工具」按钮直达。分卷来自采集中自动识别的「第X卷」标题前缀（Task 45-b 起新入库章节生效，存量已回填）。</p>
+    </div>
+
+    <div id="adm-chtool-body" class="hidden space-y-4">
+      <div class="adm-card">
+        <h2 class="adm-h2">分卷结构</h2>
+        <p class="mb-2 text-[11px] text-neutral-400">按章节顺序的连续同卷段切组（与前台目录页渲染同口径）；「未分卷」为未识别卷前缀的章节。</p>
+        <div class="adm-table-wrap">
+          <table class="adm-table">
+            <thead><tr><th>卷</th><th>章节数</th><th>起始 idx</th><th>结束 idx</th></tr></thead>
+            <tbody id="adm-chtool-volumes-tbody"><tr><td colspan="4" class="adm-empty">加载后展示</td></tr></tbody>
+          </table>
+        </div>
+        <p id="adm-chtool-vol-summary" class="mt-2 text-xs text-neutral-500"></p>
+      </div>
+
+      <div class="adm-card">
+        <h2 class="adm-h2">目录体检</h2>
+        <div id="adm-chtool-audit" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-6"></div>
+        <p id="adm-chtool-audit-samples" class="mt-2 text-xs text-neutral-500"></p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button type="button" id="adm-chtool-audit-run" class="adm-btn-xs">重新体检</button>
+          <button type="button" id="adm-chtool-dedupe" class="adm-btn-xs adm-danger">去重（同名保留字数最大）</button>
+          <button type="button" id="adm-chtool-reindex" class="adm-btn-xs">重排编号（第N章升序压实）</button>
+        </div>
+        <p class="mt-1 text-[11px] text-neutral-400">去重/重排为写操作且不可撤销；重排为两阶段事务（失败自动回滚），TXT 分章文件随 idx 同步改名。</p>
+      </div>
+
+      <div class="adm-card">
+        <h2 class="adm-h2">乱序重排（全站序号语义）</h2>
+        <p class="mb-2 text-[11px] text-neutral-400">按章节标题「第N章」序号重编 idx（未编号章节锚定前一编号章节之后）。存在进行中的采集任务时后端 409 拒绝（防骨架快照失效），服务端消息将原样展示。</p>
+        <button type="button" id="adm-chtool-resort" class="adm-btn">对本书执行重排</button>
+        <p id="adm-chtool-resort-msg" class="mt-2 text-xs text-neutral-500"></p>
+      </div>
+
+      <div class="adm-card">
+        <h2 class="adm-h2">字数重算（全站）</h2>
+        <p class="mb-2 text-[11px] text-neutral-400">比对全部书籍 Novel.wordCount 与章节字数聚合合计，仅对不符的书执行修正。</p>
+        <button type="button" id="adm-chtool-recalc" class="adm-btn">执行字数重算</button>
+        <p id="adm-chtool-recalc-msg" class="mt-2 text-xs text-neutral-500"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PSEO ============ -->
+  <section id="tab-pseo" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <h2 class="adm-h2 !mb-0">PSEO 关键词</h2>
+        <input id="adm-pseo-kw" class="adm-input w-56" placeholder="搜索生成关键词，如：圣墟">
+        <button type="button" id="adm-pseo-gen" class="adm-btn adm-btn-primary">搜索生成</button>
+        <span class="flex-1"></span>
+        <button type="button" id="adm-pseo-refresh" class="adm-btn-xs">刷新列表</button>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>关键词</th><th>来源</th><th>状态</th><th>时间</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-pseo-tbody">
+            {{range .Pseo}}<tr>
+              <td class="tabular-nums text-neutral-500">{{.id}}</td>
+              <td class="font-medium"><a class="hover:underline" href="/pseo/{{.keyword}}" target="_blank" rel="noopener">{{.keyword}}</a></td>
+              <td>{{.source}}</td>
+              <td>{{if eq .status "generated"}}<span class="adm-badge adm-badge-ok">已生成</span>{{else if eq .status "pending"}}<span class="adm-badge adm-badge-warn">待生成</span>{{else if eq .status "error"}}<span class="adm-badge adm-badge-bad">失败</span>{{else}}<span class="adm-badge adm-badge-neutral">{{.status}}</span>{{end}}</td>
+              <td class="whitespace-nowrap text-neutral-400">{{fullFmt .createdAt}}</td>
+              <td class="text-right"><button type="button" class="adm-btn-xs adm-danger" data-act="pseo-del" data-id="{{.id}}" data-kw="{{.keyword}}">删除</button></td>
+            </tr>{{else}}<tr><td colspan="6" class="adm-empty">暂无关键词</td></tr>{{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 站点设置 ============ -->
+  <section id="tab-settings" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <h2 class="adm-h2">站点基础</h2>
+      <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        <label class="adm-field">站点名称 *（全站页头/页脚/TDK 根变量）<input id="adm-set-name" class="adm-input" value="{{.Settings.siteName}}"></label>
+        <label class="adm-field">激活主题 activeTheme
+          <select id="adm-set-theme" class="adm-input">
+            {{range .Themes}}<option value="{{.}}"{{if eq . $.Settings.activeTheme}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+      </div>
+      <label class="adm-field mt-2 block">站点公告（部分主题在首页展示）<textarea id="adm-set-notice" class="adm-input" rows="2">{{.Settings.notice}}</textarea></label>
+      <div class="mt-2 flex justify-end"><button type="button" id="adm-set-basic-save" class="adm-btn adm-btn-primary">保存基础设置</button></div>
+    </div>
+
+    <div class="adm-card">
+      <div class="flex items-center justify-between"><h2 class="adm-h2 !mb-0">首页图文区块（homeConfig）</h2>
+        <span class="text-[11px] text-neutral-400">最多 8 块；前台按顺序渲染封面图文卡</span>
+      </div>
+      <div id="adm-home-blocks" class="space-y-2"><p class="text-[11px] text-neutral-400">加载中…（首次打开本页签时拉取）</p></div>
+      <div class="mt-2 flex justify-between">
+        <button type="button" id="adm-home-add" class="adm-btn">+ 添加区块</button>
+        <button type="button" id="adm-set-home-save" class="adm-btn adm-btn-primary">保存区块</button>
+      </div>
+    </div>
+
+    <div class="adm-card">
+      <div class="flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">页脚配置</h2>
+        <span class="text-[11px] text-neutral-400">填文本即可，无需写 JSON</span>
+      </div>
+      <div class="mt-2 grid gap-2">
+        <label class="adm-field block">版权文字（页脚第一行）<input id="adm-footer-text" class="adm-input" maxlength="300" placeholder="Copyright © 2026 青阅文学 版权所有"></label>
+        <label class="adm-field block">附加说明（免责声明等，可留空）<textarea id="adm-footer-extra" class="adm-input" rows="2" maxlength="300" placeholder="本站所有小说仅供学习演示使用…"></textarea></label>
+      </div>
+      <div class="mt-2">
+        <div class="flex items-center justify-between"><span class="text-[13px] font-medium">页脚链接（最多 10 个）</span>
+          <button type="button" id="adm-footer-link-add" class="adm-btn-xs">+ 添加链接</button></div>
+        <div id="adm-footer-links" class="mt-1 space-y-1.5"></div>
+      </div>
+      <div class="mt-3">
+        <div class="flex items-center justify-between"><span class="text-[13px] font-medium">友情链接（最多 30 个，仅支持 http(s):// 站外地址）</span>
+          <button type="button" id="adm-footer-friend-add" class="adm-btn-xs">+ 添加友链</button></div>
+        <div id="adm-footer-friends" class="mt-1 space-y-1.5"></div>
+        <p class="mt-1.5 text-[11px] leading-4 text-neutral-400">友情链接模块同时自动注入链轮（Task 46）：站内随机书籍页 ×4 + 站群随机首页 ×2 + 站群随机书籍页 ×2，每请求随机抽样、无需配置；在「站群管理」启用站点后群链轮自动生效。</p>
+      </div>
+      <div class="mt-2 flex justify-end"><button type="button" id="adm-set-footer-save" class="adm-btn adm-btn-primary">保存页脚</button></div>
+    </div>
+
+    <div class="adm-card">
+      <div class="flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">SEO 配置（TDK 模板）</h2>
+        <div class="flex items-center gap-2">
+          <span class="hidden text-[11px] text-neutral-400 sm:inline">逐项填写，变量如 {siteName} 自动替换，留空用默认</span>
+          <button type="button" class="adm-btn-xs" data-act="seo-shuffle" title="Task 31：内置 18 套风格预设（标准官方/简洁直达/全品类书城/每日更新/正版免费/经典必读/排行榜向/完结好书/新书首发/文艺书香/轻快活泼/专业书评/极简白描/清爽无广/移动畅读/书友社区/编辑精选），每键独立随机抽取组合">🎲 随机换一套</button>
+        </div>
+      </div>
+      <label class="mt-2 flex items-center gap-2 text-[13px]"><input type="checkbox" id="adm-seo-auto" class="h-4 w-4"> 根据内容自动补充 TDK（autoFromContent）</label>
+      <div class="mt-2 grid gap-x-4 gap-y-1 md:grid-cols-2">
+        <div class="adm-field md:col-span-2 !mt-0 text-[12px] font-semibold text-neutral-600">首页（变量：{siteName}）</div>
+        <label class="adm-field">首页标题 <input id="adm-seo-homeTitle" class="adm-input" placeholder="{siteName} - 免费小说在线阅读_原创小说网站"></label>
+        <label class="adm-field">首页关键词 <input id="adm-seo-homeKeywords" class="adm-input" placeholder="小说,免费小说,{siteName}"></label>
+        <label class="adm-field md:col-span-2">首页描述 <textarea id="adm-seo-homeDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">分类页（变量：{siteName} {categoryName}）</div>
+        <label class="adm-field">分类标题 <input id="adm-seo-categoryTitle" class="adm-input"></label>
+        <label class="adm-field">分类关键词 <input id="adm-seo-categoryDescription" class="adm-input"></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">书籍页（变量：{siteName} {novelTitle} {author} {statusText} {descShort} {categoryName}）</div>
+        <label class="adm-field">书籍标题 <input id="adm-seo-bookTitle" class="adm-input"></label>
+        <label class="adm-field">书籍关键词 <input id="adm-seo-bookKeywords" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">书籍描述 <textarea id="adm-seo-bookDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">目录页（变量：{siteName} {novelTitle}）</div>
+        <label class="adm-field">目录标题 <input id="adm-seo-tocTitle" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">目录描述 <textarea id="adm-seo-tocDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">章节页（变量：{siteName} {novelTitle} {chapterTitle} {idx} {author}）</div>
+        <label class="adm-field">章节标题 <input id="adm-seo-chapterTitle" class="adm-input"></label>
+        <label class="adm-field">章节关键词 <input id="adm-seo-chapterKeywords" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">章节描述 <textarea id="adm-seo-chapterDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">搜索页（变量：{siteName} {query}）</div>
+        <label class="adm-field">搜索标题 <input id="adm-seo-searchTitle" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">搜索描述 <textarea id="adm-seo-searchDescription" class="adm-input" rows="2"></textarea></label>
+
+        <div class="adm-field md:col-span-2 text-[12px] font-semibold text-neutral-600">PSEO 聚合页（变量：{siteName} {keyword} {count}）</div>
+        <label class="adm-field">PSEO 标题 <input id="adm-seo-pseoTitle" class="adm-input"></label>
+        <label class="adm-field">PSEO 关键词 <input id="adm-seo-pseoKeywords" class="adm-input"></label>
+        <label class="adm-field md:col-span-2">PSEO 描述 <textarea id="adm-seo-pseoDescription" class="adm-input" rows="2"></textarea></label>
+      </div>
+      <p class="mt-1 text-[11px] text-neutral-400">留空的项保存时自动用默认模板；每个字段最长 1000 字。</p>
+      <div class="mt-2 flex justify-end"><button type="button" id="adm-set-seo-save" class="adm-btn adm-btn-primary">保存 SEO</button></div>
+    </div>
+  </section>
+
+  <!-- ============ 站群管理（Task 30-a 站群模式：一库多站按 Host 分站点渲染；交互逻辑在 admin-fleet.js） ============ -->
+  <section id="tab-sites" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">站点列表（<span id="adm-site-count">0</span>）</h2>
+        <button type="button" id="adm-site-refresh" class="adm-btn-xs">刷新</button>
+      </div>
+      <p class="mb-2 text-[11px] text-neutral-400">一库多站：访问 Host 与下方档案精确匹配（enabled）时，前台按该站点的名称/主题/公告/SEO/页脚/首页区块渲染；未配置的 Host 一律走「站点设置」的默认站点。Host 需解析/反代到本服务。</p>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>ID</th><th>Host</th><th>站点名称</th><th>主题</th><th>状态</th><th>更新时间</th><th class="text-right">操作</th></tr></thead>
+          <tbody id="adm-sites-tbody">
+            <tr><td colspan="7" class="adm-empty">加载中…（首次打开本页签时拉取）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">新建站点</h2>
+      <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        <label class="adm-field">Host *（纯域名，不带协议/路径/端口）<input id="adm-site-host" class="adm-input adm-mono" placeholder="novel.example.com"></label>
+        <label class="adm-field">站点名称 *（≤50 字）<input id="adm-site-name" class="adm-input" placeholder="如：青阅小说站"></label>
+        <label class="adm-field">主题
+          <select id="adm-site-theme" class="adm-input">
+            {{range .Themes}}<option value="{{.}}">{{.}}</option>{{end}}
+          </select>
+        </label>
+        <label class="adm-field">站点公告（留空继承默认行为：部分主题首页展示）<input id="adm-site-notice" class="adm-input" placeholder="可选"></label>
+      </div>
+      <div class="mt-2 flex justify-end"><button type="button" id="adm-site-create" class="adm-btn adm-btn-primary">创建站点</button></div>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">匹配语义说明</h2>
+      <ul class="list-disc space-y-1 pl-5 text-[11px] leading-5 text-neutral-500">
+        <li>命中即整站覆盖：站点名称、激活主题、公告、SEO TDK 模板、页脚、首页图文区块全部取站点档案；</li>
+        <li>未命中（含停用/已删除）→ 默认站点（「站点设置」页配置的那份），行为与站群功能上线前完全一致；</li>
+        <li>host 不做通配/后缀匹配；带端口请求会先去端口再匹配（如 novel.example.com:8080 → novel.example.com）；</li>
+        <li>编辑弹层中的 SEO/页脚/首页区块为 JSON 高级形态，键集与「站点设置」页一致（保存时白名单清洗）。</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<div id="adm-toast-wrap" class="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2"></div>
+
+<!-- 书籍编辑弹层（Task 30 主线：书名/作者/分类/状态/精选/简介） -->
+<div id="adm-modal-novel" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+  <div class="adm-card max-h-[88vh] w-full max-w-xl overflow-y-auto">
+    <div class="mb-2 flex items-center justify-between"><h2 class="adm-h2 !mb-0">编辑书籍 <span id="adm-novel-edit-id" class="text-neutral-400"></span></h2>
+      <button type="button" class="adm-btn-xs" data-act="modal-close" data-modal-close="adm-modal-novel">关闭</button></div>
+    <div class="grid gap-2">
+      <label class="adm-field block">书名 *<input id="adm-novel-f-title" class="adm-input" maxlength="120"></label>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="adm-field block">作者<input id="adm-novel-f-author" class="adm-input" maxlength="60"></label>
+        <label class="adm-field block">分类<select id="adm-novel-f-category" class="adm-input"></select></label>
+      </div>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label class="adm-field block">状态<select id="adm-novel-f-status" class="adm-input"><option value="serial">连载中</option><option value="finished">已完结</option></select></label>
+        <label class="adm-field block">小编精选<input type="checkbox" id="adm-novel-f-featured" class="h-4 w-4"></label>
+      </div>
+      <label class="adm-field block">简介<textarea id="adm-novel-f-desc" class="adm-input" rows="5"></textarea></label>
+    </div>
+    <div class="mt-3 flex justify-end gap-2">
+      <button type="button" class="adm-btn" data-act="modal-close" data-modal-close="adm-modal-novel">取消</button>
+      <button type="button" id="adm-novel-edit-save" class="adm-btn adm-btn-primary">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- 章节管理弹层（Task 30 主线：列表/搜索/编辑标题与正文） -->
+<div id="adm-modal-chapters" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+  <div class="adm-card flex max-h-[88vh] w-full max-w-3xl flex-col">
+    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="adm-h2 !mb-0">章节管理 <span id="adm-chapters-title" class="text-[13px] text-neutral-400"></span></h2>
+      <div class="flex items-center gap-1.5">
+        <input id="adm-chapters-q" class="adm-input w-40" placeholder="搜索章节标题">
+        <button type="button" class="adm-btn-xs" data-act="modal-close" data-modal-close="adm-modal-chapters">关闭</button>
+      </div>
+    </div>
+    <div class="flex items-center justify-between text-[11px] text-neutral-400">
+      <span id="adm-chapters-count"></span>
+      <span class="flex items-center gap-1">
+        <button type="button" id="adm-chapters-prev" class="adm-btn-xs">上一页</button>
+        <span id="adm-chapters-page" class="tabular-nums">1 / 1</span>
+        <button type="button" id="adm-chapters-next" class="adm-btn-xs">下一页</button>
+      </span>
+    </div>
+    <div class="adm-table-wrap mt-1 min-h-0 flex-1"><table class="adm-table">
+      <thead><tr><th>序</th><th>标题</th><th>字数</th><th class="text-right">操作</th></tr></thead>
+      <tbody id="adm-chapters-tbody"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- 章节编辑弹层（Task 30 主线） -->
+<div id="adm-modal-chapter-edit" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+  <div class="adm-card flex max-h-[90vh] w-full max-w-2xl flex-col">
+    <div class="mb-2 flex items-center justify-between"><h2 class="adm-h2 !mb-0">编辑章节</h2>
+      <button type="button" class="adm-btn-xs" data-act="modal-close" data-modal-close="adm-modal-chapter-edit">关闭</button></div>
+    <label class="adm-field block">章节标题<input id="adm-chapter-f-title" class="adm-input" maxlength="120"></label>
+    <label class="adm-field mt-2 block flex-1">正文<span class="text-[11px] text-neutral-400">（保存后自动重算字数）</span>
+      <textarea id="adm-chapter-f-content" class="adm-input min-h-[45vh] font-mono text-[13px] leading-6" rows="14"></textarea></label>
+    <div class="mt-3 flex justify-end gap-2">
+      <button type="button" class="adm-btn" data-act="modal-close" data-modal-close="adm-modal-chapter-edit">取消</button>
+      <button type="button" id="adm-chapter-edit-save" class="adm-btn adm-btn-primary">保存章节</button>
+    </div>
+  </div>
+</div>
+<script src="/static/js/admin-fleet.js" defer></script>
+</body></html>
+{{end}}
+
+{{/* 任务/PSEO 状态徽章（行内类，勿改键名；与 admin.js STATUS_CLS 保持一致） */}}
+{{define "admBadge"}}{{if eq . "pending"}}<span class="adm-badge adm-badge-neutral">待执行</span>{{else if eq . "running"}}<span class="adm-badge adm-badge-run">执行中</span>{{else if eq . "paused"}}<span class="adm-badge adm-badge-warn">已暂停</span>{{else if eq . "success"}}<span class="adm-badge adm-badge-ok">成功</span>{{else if eq . "partial"}}<span class="adm-badge adm-badge-partial">部分成功</span>{{else if eq . "failed"}}<span class="adm-badge adm-badge-bad">失败</span>{{else if eq . "canceled"}}<span class="adm-badge adm-badge-gray">已取消</span>{{else}}<span class="adm-badge adm-badge-neutral">{{.}}</span>{{end}}{{end}}

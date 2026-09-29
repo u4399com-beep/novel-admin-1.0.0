@@ -1,0 +1,34 @@
+{{define "content"}}
+<div class="fb-panel">
+  <h2 class="fb-h2">关于"{{.Keyword}}"的小说推荐</h2>
+  <p class="fb-novel-desc" style="font-size:14px">{{.Description}}</p>
+</div>
+{{/* Task 50-①: 主打书区块（书籍页前两区块语义：封面+属性+简介+标签），有数据才渲染 */}}
+{{if .Featured}}
+<div class="fb-panel">
+  <h2 class="fb-h2">《{{.Featured.title}}》——{{.Keyword}}相关主打书</h2>
+  <div style="display:flex;gap:16px;flex-wrap:wrap">
+    <a href="{{bookURL .Featured.id}}" style="flex:0 0 auto">{{if isLocalCover .Featured.cover}}<span class="fb-cover"><img src="{{.Featured.cover}}" alt="{{.Featured.title}}封面" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>{{else}}<span class="fb-cover {{gcls .Featured.cover}}">{{title0 .Featured.title}}</span>{{end}}</a>
+    <div style="flex:1 1 240px;min-width:0">
+      <a class="fb-novel-title" href="{{bookURL .Featured.id}}">{{.Featured.title}}</a>
+      <p class="fb-novel-meta">{{.Featured.author}} · {{.Featured.categoryName}} · {{if eq .Featured.status "finished"}}完本{{else}}连载{{end}}{{if .Featured.wordCount}} · {{wcFmt .Featured.wordCount}}{{end}} · 共{{.FeaturedChaptersTotal}}章</p>
+      {{if .FeaturedLastChapter}}<p class="fb-novel-meta">最新章节：<a href="{{chapterURL .FeaturedLastChapter.id}}">{{.FeaturedLastChapter.title}}</a></p>{{end}}
+      <p class="fb-novel-desc">{{if .Featured.description}}{{.Featured.description}}{{else}}作者尚未填写简介。{{end}}</p>
+      {{if .FeaturedTags}}<p class="fb-novel-meta">{{range .FeaturedTags}}<a href="{{pseoURL .}}" style="margin-right:8px">{{.}}</a>{{end}}</p>{{end}}
+      {{if .FeaturedChapters}}<p><a class="fb-pager-btn" href="{{with $fc := index .FeaturedChapters 0}}{{chapterURL $fc.id}}{{end}}">开始阅读</a> <a class="fb-pager-btn" href="{{tocURL .Featured.id}}">查看目录</a></p>{{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+<div class="fb-panel">
+  <div class="fb-grid">
+    {{range .Novels}}<article>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span></a>
+      {{else}}<a href="{{bookURL .id}}"><span class="fb-cover {{gcls .cover}}">{{title0 .title}}</span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{if .wordCount}}{{wcFmt .wordCount}}{{else}}—{{end}}</p>
+      <p class="fb-novel-desc">{{excerpt .description 60}}</p>
+    </article>{{else}}<p>暂无匹配书籍</p>{{end}}
+  </div>
+</div>
+{{end}}
