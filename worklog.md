@@ -2729,3 +2729,17 @@ Work Log:
 Stage Summary:
 - LLM 429 风暴根修（指数退避+成功归零），上游限流友好化；退避序列测试锁定
 - v4-③ pseo 种子书主打 E2E 实证通过；语料面封面/标题/简介质量全绿
+---
+Task ID: 59-R4
+Agent: main (Z.ai Code)
+Task: R4 深审（E17 出口熔断链路+Phase2 正文填充核心+低产规则抽取面）→ 增强（首页编辑推荐空态自愈代码化）→ 验证（agent-browser 桌面/移动全套 E2E）
+
+Work Log:
+- 【深审】scraper-go chain.go E17 出口归因/pickProxy 健康优先轮换/链层预算感知取槽逐行复审——与 backend isRateLimitErrText/isSoftBlockErrText 词元边界契约闭合，零新缺陷；worker.go Phase2 核心（consecFails CAS 熔断/laneFloor LoadOrStore/logCap Add-first/确定性书序）多轮审计在案零新缺陷
+- 【抽取面核查】77shuku 6 条/页=站点真实密度（fetch-browser 26.9s 经代理成功）非选择器收窄；规则代理 seed 已含部分站点出口
+- 【增强落地】ensureFeaturedBootstrap——Task 58 手工补标口径代码化：isFeatured=0 且库内 ≥8 本时字数 Top8 自动补标（进程级 atomic 一次性闸+条件守卫），DB 重建/沙箱回收后首页推荐区永不再空；生产触发实证（649 本 Top8 补标）
+- 【E2E 全套】首页（编辑推荐 8 本渲染/最新更新/排行）、书页 75（8451 章目录+元信息+TXT 下载态）、章节页（80786 正文渲染 2202B/上一页返回目录下一页/字号夜间模式）、pseo 页（TDK+主打区块种子书在位）、搜索页；移动端 390px scrollWidth=clientWidth 零溢出；页脚短页粘底(docH=vh=844)/长页自然推底；console+errors 零输出
+
+Stage Summary:
+- 首页推荐空态自愈代码化（此前每轮 DB 重建均复发）；E17/Phase2 复审零新缺陷
+- agent-browser 黄金路径全绿（桌面+移动），v4 六项持续闭环

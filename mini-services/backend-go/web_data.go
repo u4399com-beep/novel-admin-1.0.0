@@ -37,11 +37,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"html/template"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // ---------- 站点设置 ----------
@@ -307,8 +309,35 @@ func applyWebKeywords(data map[string]any, key string, vars map[string]string, f
 
 // ---------- 首页 ----------
 
+// gFeaturedBootDone 进程级一次性闸：自愈检查每进程只做一次（命中与否都不再重复查库）
+var gFeaturedBootDone atomic.Bool
+
+// ensureFeaturedBootstrap 首页「编辑推荐」空态自愈（Task 59-R4）：DB 重建/沙箱回收后
+// isFeatured 无人打标，首页推荐区永久「暂无数据」。守卫触发条件：库内 ≥8 本且
+// isFeatured=1 计数为 0 → 按字数 Top8 补标（Task 58 手工补标口径代码化，重启后
+// 若存量推荐书全被删亦可重新武装）。AppMeta 锁防并发双跑与重复打标扰动。
+func ensureFeaturedBootstrap() {
+	if gFeaturedBootDone.Load() {
+		return
+	}
+	gFeaturedBootDone.Store(true) // 无论结果如何本进程只检一次（后台再重建→重启自愈）
+	var featured, total int
+	if err := queryOne(`SELECT (SELECT COUNT(*) FROM "Novel" WHERE "isFeatured" = 1), (SELECT COUNT(*) FROM "Novel")`, []any{&featured, &total}); err != nil {
+		return
+	}
+	if featured > 0 || total < 8 {
+		return
+	}
+	if _, err := exec(`UPDATE "Novel" SET "isFeatured" = 1 WHERE "id" IN (SELECT "id" FROM "Novel" ORDER BY "wordCount" DESC, "id" DESC LIMIT 8)`); err != nil {
+		log.Printf("[web-home] 编辑推荐空态补标失败: %v", err)
+		return
+	}
+	log.Printf("[web-home] 编辑推荐空态自愈：已按字数 Top8 补标 isFeatured=1（库内 %d 本）", total)
+}
+
 func handleWebHome(w http.ResponseWriter, r *http.Request) {
 	data := webCommon(r)
+	ensureFeaturedBootstrap()
 	featured, _ := queryNovelList(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 12, 0)
 	hot, _ := queryNovelList(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10, 0)
 	latest, _ := queryNovelList("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 14, 0)
