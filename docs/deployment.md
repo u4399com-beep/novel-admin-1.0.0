@@ -1129,3 +1129,7 @@ Phase 1 建骨架快，Phase 2 回填正文受目标站限速约束。
 > 教程完成即拥有：3000 口可访问的 SSR 站点 + 管理后台、15 条已播种的采集规则、
 > 可持续自愈的采集管线。深入阅读：[scrape-rules.md](scrape-rules.md)（规则校准方法论）、
 > [anti-anti-crawl.md](anti-anti-crawl.md)（引擎 8 策略链原理）。
+
+## 沙箱整机重置恢复
+
+见 [recovery-playbook.md](recovery-playbook.md)（Task 60-R18~R22 实战全流程：工具链/DB/进程收割规避/任务复活/自愈机制清单/DQS 陷阱备忘）。
