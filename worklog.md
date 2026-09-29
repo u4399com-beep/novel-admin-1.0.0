@@ -2822,3 +2822,15 @@ Work Log:
 
 Stage Summary:
 - R6 收敛回归当天抓当天修（0 陈化成本），「收敛必须配同值 E2E」教训固化为 audit59e 契约锁
+---
+Task ID: 59-R11
+Agent: main (Z.ai Code)
+Task: R11 验证轮——extractor 章节提取深审 + pseo 富集消化面核查
+
+Work Log:
+- 【深审】extract.go extractChapter（700 行面）：多候选正文容器择优（rune 计防 CJK 截胡）+规则选择器 80 字早断+首段章题去重（Task 28-a）+三层 nextUrl 兜底（规则/启发式/内联脚本变量）+启发式防上一页误标——零新缺陷
+- 【pseo 消化面】词池 2315 词全 generated（book 851/baidu 1122/bing 141/so360 85/intro 115）；books=852、book 种子 851——富集 12s/种节奏与采集入库速率齐平；AppMeta enrichRetry 记账 0 条=引擎全败路径未触发（有界重试待命态）
+- 【富集日志】种子 +10~11 词/轮、11~17 聚合页/轮稳定输出
+
+Stage Summary:
+- 章节提取与 pseo 富集双链健康；verify 轮无代码改动（诚实记录）
