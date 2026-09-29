@@ -3013,3 +3013,16 @@ Work Log:
 
 Stage Summary:
 - 「稳定长期获取」三链复验：出口池自愈（E18）+ 封面自愈（自愈回填+补抓+有机回写）+ 简介清洗（幂等回填）全部在恢复库上自动运转；恢复知识从会话记忆固化为仓库文档
+---
+Task ID: 60-R25
+Agent: main (Z.ai Code)
+Task: R25 收官集成/验证轮——双模块全量 race 测试 + 11 端点 E2E 扫描 + 终态数据总览
+
+Work Log:
+- 【测试】backend-go + scraper-go 双模块 go test -race 全绿（18.9s/41.9s）
+- 【E2E】11 端点扫描：/ /category/1 /book/525 /chapter/472679 /search /pseo/… /admin /sitemap.xml /robots.txt /api/health 全 200；/library 404 为测试 URL 误猜（导航「书库」实指 /，非缺陷）
+- 【终态数据】任务 16 running+1 success（舰队奔流）；封面文件 479（恢复时 0→185→479）；书 773（恢复时 337，+436）；章 629159（+38.6 万）；正文 18085；pSEO 词 1720（+1487）；规则 17 全归位
+- 【导航核查】nav 链接逐条 agent-browser 读取：首页/书库→/、分类 6 条→/category/{1-6}——全链路可达
+
+Stage Summary:
+- Task 60「恢复→深审→增强→精简→集成→验证」8 轮（R18-R25）收官：全链路重建+4 真实 bug 根修（DQS×2/迁移时序/裂图）+15/17 规则实测突破+填充管线重建+恢复手册固化；系统从「整机回收废墟」恢复至「773 书 63 万章 16 任务奔流」且全链自愈闭环运转
