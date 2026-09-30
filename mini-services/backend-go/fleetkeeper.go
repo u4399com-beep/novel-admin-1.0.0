@@ -60,18 +60,23 @@ func fleetKeepOnce() {
 			continue
 		}
 		// 冷却：最近一条任务（任意状态）updatedAt 距今不足 45min → 跳过
-		//（规则从未有过任务时 COALESCE 取 0 → 视为远过冷却，首轮即建）
-		var lastUp int64
+		//（规则从未有过任务时 COALESCE 取 0 → 视为远过冷却，首轮即建）。
+		// Task 51-a: MAX 聚合值可能是 TEXT 存储类（历史工具写入的 DateTime 文本行，
+		// 与 recoverStaleTasks Task 26-d 同族实证）——int64 直扫会 Scan 报错 → 该规则
+		// 每轮在 err != nil 分支被静默跳过，E26 对该规则永不补建（填充断流无自愈）。
+		// 改为 any 读出后经 normalizeMillis 归一：integer/TEXT 多格式均可判定冷却；
+		// NULL（无任务）/0/无法解析 → 不可判定 → 不跳过（保留「首轮即建」语义）
+		var lastUp any
 		if err := queryOne(`SELECT COALESCE(MAX("updatedAt"), 0) FROM "ScrapeTask" WHERE "ruleId" = ?`,
 			[]any{&lastUp}, r.id); err != nil {
 			continue
 		}
-		if nowMillis()-lastUp < fleetKeepCooldownMs {
+		if lastMs, ok := normalizeMillis(lastUp); ok && nowMillis()-lastMs < fleetKeepCooldownMs {
 			continue
 		}
 		newID, err := execRetryReturningID(
 			`INSERT INTO "ScrapeTask" ("mode","targetUrl","ruleId","pages","storageMode","status","total","done","chaptersDone","chaptersTotal","created","updated","chapters","message","log","createdAt","updatedAt")
-			 VALUES ('list', ?, ?, ?, 'db', 'pending', 0, 0, 0, 0, 0, 0, 0, 'E26 舰队自持：规则无活跃任务，自动重建范围采集', '', ?, ?)`,
+                         VALUES ('list', ?, ?, ?, 'db', 'pending', 0, 0, 0, 0, 0, 0, 0, 'E26 舰队自持：规则无活跃任务，自动重建范围采集', '', ?, ?)`,
 			r.siteURL, r.id, fleetKeepPageLimit, nowMillis(), nowMillis())
 		if err != nil {
 			log.Printf("[fleet-keeper] 规则 #%d《%s》自动建任务失败: %v", r.id, truncateRunes(r.name, 20), err)

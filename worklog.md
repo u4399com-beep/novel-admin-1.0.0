@@ -3612,3 +3612,32 @@ Work Log:
 - 【25 轮总览】R26 恢复（第 4 次整机回收：工具链+双服务+舰队重建，15 分钟级）→ R27-R28 双线深审（Phase 2 填充管线+反反爬七层链路，零新 bug，瓶颈=礼貌限速×域名数×免费口时延）→ R29 E25 多源延迟感知出口池（5 源+快口优先+温和置换）→ R30-R31 E26 舰队自持（终态任务自动补建，任务面生命周期闭环）→ R32 精简+文档同步 → R33-R34 E2E 全绿 → R35-R38 长稳观察+恢复手册 v5 → R39-R40 race 终验 → R41-R42 admin 首屏竞态修复（1 真实缺陷）→ R43-R44 备份落档+节律量化 → R45-R46 稳态长跑 → R47-R48 资产 git 固化 → R49-R50 收官
 Stage Summary:
 - R26-R50 25 轮收官：从第 4 次整机回收废墟到「2824 书 / 124 万骨架章 / 11K 章/h 填充、E17-E26 十件套自愈、race/E2E 全绿、全部资产 git 固化」的无人值守长稳形态；骨架章 124 万已超 46.9 万目标 2.6 倍，填充面以 11K+/h 持续消化，全部自愈与自持机制无人值守运转
+---
+Task ID: 51-b
+Agent: auditor-engine
+Task: R51/R52 深审轮——scraper-go 反反爬链路逐行深审
+
+Work Log:
+- 辖区全量逐行复审（27 个生产文件 ≈8000 行 + scripts/render.py 桥接）：反反爬核心链（httpguard/hosthealth/ratelimit/challenge/cookies/profiles/affinity）+ 抓取实现（fetchcurl/curlimp/browser/strategies/chain/selectors）+ 内容处理（content/cleanx/extract/charsetx/jstext/jsontoc）+ 服务面（main/handlers/helpers/ssrf/stats/util/types）+ cmd/ruletest 工具。与 worklog R26-R50 及 docs/anti-anti-crawl.md §6 增强表逐项核对，未重复报已修/已取舍项
+- 并发正确性专项：全部 10 处共享可变状态逐一核对锁保护（healthMap/egressMap/hostSlots/affinity/jar/transportPool/dnsCache/robotsCache/statsHosts+statsStrats 均 mutex；proxyCursor/curlBinCursor/aimdMs/lastUsedNano 等均 atomic）；runWithHardGate 唯一裸 go func 已用缓冲 chan(cap 1)+hcancel 双路收口无泄漏；strategies.go:376 硬闸 goroutine 内写 ctx.hardCtx 与主 goroutine 读 ctx.proxy 为不同字段无竞争；go1.22 loopvar 语义排除捕获陷阱。附加诊断：go test -race -count=1 . 全绿（42.3s）
+- 资源泄漏专项：5 处 http Client.Do 调用点（fetchWithRedirectGuard/gotStrategyRun/checkRobots×3/tocHTTPClient）全路径 Body 关闭逐一走查（含 redirect/错误/304 分支）；curl 系临时文件 exec 成功/失败/重定向三路径均 os.Remove；硬闸超时后策略 goroutine 有界收尾（curl 自身 ctx≈硬闸同刻、python 桥接 watchdog timeout+3s < Go ctx timeout+4s 级联兜底，render.py:148-160 原注释自证）；contentDecodedReader 解压路径 cleanup 闭包三形态（gzip/zlib/flate）均关底层流
+- 溢出/边界专项：熔断冷却 60s<<exp 溢出有 `cooldown <= 0` 兜底（hosthealth.go:304）；Max-Age inf/NaN/超大钳制（cookies.go:228）；clampTimeout ±Inf/NaN 守卫（util.go:243）；proxyCursor 32 位取模补正（chain.go:313）；jsonStr 2^53 整数边界（jsontoc.go:352）——全部既有守卫有效
+- 评估后不修（6 项，全部为已锁定语义/极低影响取舍，见下 Stage Summary 前清单）
+
+Stage Summary:
+- 本轮零新缺陷（未达修复判定标准）：scraper-go 经 12 轮历史审计（audit32d→audit58a，120+ 回归测试）+ 本轮逐行深审，反反爬链路（指纹一致性 E1-E17/熔断 E17/AIMD/挑战四层/cookie 会话/出口池亲和）与并发面均处于闭环健康态
+- 验证全绿：go build ✅ / go vet ✅ / gofmt -l 空 ✅ / go test -count=1 ./... ✅（scraper-go 37.5s + cmd/ruletest 0.002s）/ 附加 go test -race ✅（42.3s）
+- 评估后不修清单（report-only）：① gotStrategyRun shed/timeout-budget 路径未置 stopVariants→http1.1 变体多一次零副作用复检（attempts 多一条 shed 记录+sheds 计数+1，观测噪声级）② browser.go "render-error" 不在 isEngineStateNote 内——与 "timeout" 家族同口径（站点停滞计入真实尝试），桥接级故障（python 崩溃/解析失败）亦落此档，两向语义均有理（站点挂起 vs 环境故障），且 browser 为链末策略、真实尝试通常在先，触发面极窄 ③ checkRobots TTL 过期并发 miss 无 single-flight→至多重复一次 robots 抓取且仍受 1.2s 域槽约束 ④ detectCurlImpersonates/detectPlainCurl 成功结果进程级缓存不重探（仅空结果 60s 重探）——运行中卸载二进制会 exec-error 至重启，极罕见运维边角 ⑤ checkRobots 重定向后按目标 origin 的 robots 应用于原 origin（RFC 应按 origin 分域）——warn-only 无强制面 ⑥ fetchPage 链层+策略层双重取槽（Task 34 P3-17 TS 对齐语义，有 worklog 锁定）——真实请求间隔仍 ≥1.2s 合规
+- 服务运行中零触碰：无代码改动、无重启、无 DB 写入；线上 13+ 任务采集不受影响
+---
+Task ID: 51-a
+Agent: auditor-backend
+Task: R51/R52 深审轮——backend-go 采集管线逐行深审
+
+Work Log:
+- ✅ 真实缺陷（修复）：fleetkeeper.go:65 → E26 冷却判定 `COALESCE(MAX("updatedAt"),0)` 以 int64 直扫 → SQLite 混合存储类下 MAX 返回 TEXT（TEXT 恒 > INTEGER），历史工具写入的 DateTime 文本行使 Scan 报错 → 该规则每轮在 err 分支被静默 continue，E26 对该规则永不补建（填充断流无自愈、零日志线索）。根因与 recoverStaleTasks Task 26-d（ScrapeTask.createdAt TEXT 行实证）同族。修复：any 读出 + normalizeMillis 归一（integer/TEXT 多格式均可判冷却；NULL/0/不可解析 → 不跳过，保留「首轮即建」语义），+9/-4 行最小 diff，对外契约不变。验证：新增 fleetkeeper_audit_test.go 四断言（TEXT 已过冷却→补建 / TEXT 冷却中→不建 / 无任务→首轮即建 / running 在册→禁补建）+ 全量 build/vet/gofmt/test 绿
+- 深审覆盖面（未发现新缺陷）：worker.go 1760 行逐段（Phase 0 翻页变体/去重/截断、Phase 1 并发骨架 shouldStop 三重停止条件/flusher 收停时序/fatal 通道、Phase 2 断点续采 wordCount=0 判据/连败熔断快照口径 breakerConsec/车道软起步-降档-回开/顺序页智能续传/持久化写序 persistChapterFill、finalize 四分支条件更新与 pause→resume 竞态领取语义、runTask pending→running 条件领取/参数读取失败自愈、recoverStaleTasks/sweepOrphanRunningTasks 双防线）；pool.go（runPool/runPoolDynamic 锁序、laneLimiter acquire/release/setLimit/kick、watchdog 防全 Wait 死锁、wg.Wait 提供 breakerKindLimit 跨 goroutine happens-before）；runner.go（领取循环/pkill 防自匹配/runBashSync zombie 收尾/autoResume 4 次护栏+LIKE 词表契约）；fleetkeeper.go（INSERT 17 列与 schema/POST handler 同构核对）；pool+proxywatch（多源候选缓冲=源数无 goroutine 泄漏/rotateBy 轮转/isHostPort/换血与温升路径语义/每探针独立 Transport 由 Go≥1.12 Transport finalizer 收口）；api_scrape_tasks.go（状态机 8 端点条件更新+count=0 回读、TOCTOU 双防线、参数 float 域防溢出）；rulehealth.go（单飞 CAS、E23 复活词表、upsert 连击计数）；engineclient.go（callEngine 四路失败归一/softBlock null 防御/同章分页前缀续写）；storex.go（upsertBook 冲突回读三段、骨架分片锁、批量退化逐条回查 fillRows）；db.go（once 回调局部句柄纪律、迁移/回填分层与 rows.Err 上返）；辅助面 pagination/chapterorder/txtdir/runlog/httpx/limits/typesx
+- 评估后不修（报告项）：① phase2Fill bumpLaneOnSuccess——laneOKStreak.Add 达标窗口内并发成功可多记多档（24/25/26 各自 Store(0)+CAS 回开），限流突发下车道回升偏快；有 CHAPTER_CONCURRENCY 封顶+下次 shrink 自纠，属自适应控制精度非正确性缺陷，修则需重设计 streak 记账（风险>收益）；② finalize default 分支无条件写 log——极小窗口内（暂停确认与手动 resume/重派并发）旧 worker 日志覆盖新日志，仅日志层噪声、状态机不受影响（条件更新哲学有意为之）；③ phase2Fill 书级循环被熔断/停止中断时仍打「正文填充完成」日志——措辞性；④ fleetkeeper 活跃检查与 INSERT 间 check-then-act 窗口理论可重复建任务——单实例部署+45min 冷却下不可达（R35 实证零重复），加唯一约束反伤手动建任务自由度；⑤ scrapeTaskListCols 的 pages/total/done 等数值列 int64 直扫——若未来出现 TEXT 存储类会使列表 500（现库实证全 integer，时间戳列已由 Task 33-b 加固，同族风险挂账观察）；⑥ proxyProbeAll 每探针新建 Transport——idle conn 由 Transport GC finalizer 关闭（Go≥1.12），生产 RSS 数周稳定实证无 fd 泄漏
+
+Stage Summary:
+- backend-go 采集管线深审收官：1 真实缺陷修复（E26 冷却判定存储类容错，同族第 3 例——26-d/33-b 之后补齐最后一处未加固面）+ 4 项回归测试锁定；25 轮前序加固后的管线主体（两阶段 worker/runner/出口池/巡检/任务状态机/存储层）零新缺陷，2 项自适应控制精度观察与 4 项理论窗口挂账不修；build/vet/gofmt/test 全绿（服务运行中，源码修复待下次部署窗口生效）
