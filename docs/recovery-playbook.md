@@ -1,11 +1,12 @@
 # 沙箱重置恢复手册（Recovery Playbook）
 
-> 背景：沙箱环境会**整机回收**（实例重建），已实证 4 次（Task 39、Task 59 前、Task 60-R18、Task 62-R26）。
+> 背景：沙箱环境会**整机回收**（实例重建），已实证 5 次（Task 39、Task 59 前、Task 60-R18、Task 62-R26、Task 65-R51）。
 > 重置清掉的内容：Go 工具链、编译产物 `.bin`、运行时产物（`public/covers/`）、**DB 文件**、
 > `~/.local/bin`（curl-impersonate）、进程。保留的内容：`/home/z/my-project`（repo.tar 恢复，
-> 仅 git 内文件）、`/tmp`（若未清）。
+> 仅 git 内文件）。**Task 65-R51 实证：/tmp 与 /home/z/db-backup 也会被清**——跨会话 DB 备份
+> 不可依赖，唯一持久化是 git 内文件（worklog/docs/scripts/代码）。
 >
-> 本手册 = Task 60-R18~R22 实战全流程沉淀 + Task 62-R26 第 4 次恢复工具链固化。按序执行，全程约 15 分钟。
+> 本手册 = Task 60-R18~R22 实战全流程沉淀 + Task 62-R26 第 4 次恢复工具链固化 + Task 65-R51 第 5 次实证修订。按序执行，全程约 15 分钟。
 >
 > **快捷路径（第 4 次恢复实证）**：装 Go（§1）→ `bash scripts/install-curl-impersonate.sh` →
 > `bash scripts/build-go.sh` → `bash scripts/recover-r26.sh`（失败码收尾拉起双服务+看护）→

@@ -3657,3 +3657,49 @@ Work Log:
 
 Stage Summary:
 - 第 5 次恢复完成：15 分钟级从废墟到生产形态（手册快捷路径全程无卡点）；深审 1 缺陷修复+E2E 全绿；系统进入填充长跑（7K/h 爬坡，目标面 95.5 万章）
+---
+Task ID: 59-a
+Agent: auditor-api
+Task: R59/R60 深审轮——backend-go 读者面/管理面 API 逐行深审
+
+Work Log:
+- 辖区全量逐行走查（21 文件 ≈8,000 行）：api_novels / api_chapters / api_home / api_categories / api_export / api_pseo / pseo_book / pseo_gen / api_settings / api_sites / api_health / api_noveltools / api_categories_merge / chapterorder / web / web_data / router / pagination / limits / util / httpx；相邻支撑面同轮核对：txtdir（safeTitle 清洗/reindex 两段 rename/写失败保留旧文件）、web_footer（两处 TTL 缓存均 mutex 保护）、pseo_suggest（限并发 3/ctx 硬闸/4MB 体限/2xx 闸）、cleanx（RE2 无回溯）、categoryx（缓存+in-flight 去重+冷却 fail-fast）、llm（59-R3 指数退避在位）、obfMaybe（panic 兜底+admin 跳过）、loadChapterContent/normalizeMillis/main.go 超时面/schema 索引面（Chapter.novelId 有索引，COUNT 子查询非全表扫）
+- 与前序轮次核对不重复报：33-b 存储类时间戳容错/49-b+56-b float 域 2^53 上界/42-b 暂存区碰撞/36-b xmlEscape+搜索 ESCAPE/45-b 分卷端点/47 pseo 实时兜底/50-b 封面预算/59 系列种子置顶+引擎全败重试+TDK vars/61-R10 health 2xx 闸——全部在位且有回归测试锁定
+- 并发正确性专项：辖区仅 2 处 go func（runSeedBatch/runSuggestWithConcurrency 车道 goroutine，cursor+mutex 取件、wg.Wait 收口、results[i] 各车道写唯一下标）+4 处共享态（cleanAllMu/pseoBatchMu/settingsWriteMu/sitesWriteMu/fleetLinks/wheelPool/catCache）全部锁保护；tx 三处（audit reindex/categories merge/resort）committed 标志+defer Rollback 纪律一致，Rows 关闭先于 Commit（33-b 注释在位）
+- 事务边界专项：audit dedupe+reindex 单事务原子（删行→负数暂存→落位 1..n），提交后 txt 清理顺序正确（先按旧 idx 清 dropped 文件、后两段 rename 落新 idx——构造上无串章窗口）；resortApplyReorder 暂存值与存量/落位域无交集论证成立；categories merge 迁书+删源单事务、FK 冲突 409 对齐
+- 注入面专项：全部 SQL 拼接点走查——whereSQL/IN 占位符（500 上限/去重后）/LIKE（Prisma contains 对齐+搜索页 36-b 已加 ESCAPE）均参数化；路径面 exportTxtPath/novelTxtDir 经 safeTitle（\/:*?"<>|→_ + Trim "_. " + untitled 兜底）无穿越；/static/ Clean("/"+rel)+前缀闸、/covers/ Base+..// 闸；SSR 输出全 html/template（实测 /search?q=<script> 输出 &lt;script&gt; 转义、零裸插值）；theme 双层白名单（写入侧+渲染侧 31-d）
+- 运行时只读探针（服务零触碰）：分页边界 page=0/NaN→1、pageSize=999→60 实证；categoryId=abc/1.5→400、novelId 不存在→404、volumes novelId=1.5→400；SSR / /category/3 /book/200 /book/200/toc /search /admin /robots.txt /sitemap.xml 全 200；/api/pseo/__none__ 实时兜底 3 本（matchNovels 保真补位语义）、已生成词页变体模板正常；/api/health ok
+- 评估后不修（5 项，全部 report-only，见 Stage Summary）
+
+Stage Summary:
+- 本轮零新缺陷（未达修复判定标准）：读者面/管理面经 26 轮前序加固（33-b/36-b/42-b/45-b/47/49-b/50-b/56-b/59 系列/61-R10）后处于闭环健康态——分页边界、错误路径、注入面、事务边界、并发面、XSS 面逐项实证通过；build/vet/gofmt/test 全绿（go test -count=1 32.9s），服务运行中零触碰（无代码改动、无重启、无 DB 写入、探针全只读）
+- 评估后不修清单（report-only）：① handlePseoBatch TTL 锁 180s < 极端批次时长（16 种子+8 二级、5 引擎÷3 车道×8s÷2 车道 ≈192s）——TTL 过期后第二次 batch 可与首次并发跑：insertKeywords 唯一约束去重+generatePendingPages 幂等，无数据损坏，且为 TS globalThis 锁同款语义 ② scanChapters write 路径会把纯 txt 模式章「升级」写进 ChapterContent（注释宣称纯 txt 书只读不写）——DB 在三级回落中胜出故内容语义正确、仅磁盘留脏文件+txt 模式 DB 增重；现网为 db 模式该路径不可达，修则需区分存储模式引入新分支（风险>收益）③ novelsByIDs IN 占位符数受存量 pageData JSON 控制（现由生成器限 ≤12+1）——畸形超长数组只会查询报错落回实时计算，优雅降级 ④ 长跑管理面（clean-all dry-run 全库 124 万章逐行、audit overview、resortAudit N+1）在 65s WriteTimeout 内可能客户端超时而服务端继续——TS 移植既定设计、互斥防重入、分批扫描内存有界 ⑤ 全站无 CSP/X-Frame-Options 响应头——部署拓扑级取舍（网关隔离，见 router.go E24/Task 37 注释），加头属对外契约变更
+---
+Task ID: 65-R57~R60
+Agent: main (Z.ai Code)
+Task: R57-R60 精简排查 + 集成观察 + API 面深审（59-a）
+
+Work Log:
+- 【R57/R58 精简轮】确认项目已是纯 Go 全栈极致形态（Task 27 拆 Next.js / Task 38 拆 Prisma / Task 58 拆 bun/Tailwind 构建期管线，package.json 仅沙箱启动契约 shim）——精简余量为零，方向转为运行时健康集成验证
+- 【运行时观察】双服务日志健康：E18 出口池换血节律在岗（aijjxs 剔1补1、xinjianpan 剔4补4）、pseo 富集循环 12s/轮（+11~12 词/种子）、LLM 429 指数退避优雅降级、引擎启动窗口双拉起竞态为良性（watchdog 幂等兜底）
+- 【pseo 超时审查】3.5s cap + 双引擎尝试 + 本地词根兜底的完整降级链确认，引擎高负载下超时为正常表现非缺陷
+- 【E26 治理确认】paused 计入活跃任务（fleetkeeper.go:58）——不可达站（trxsw 23 万章目标）熔断转 paused 后不会被反复重建空烧，符合「封禁站需人工」设计；#7 (101kks partial) 冷却计时正常（45min 从终态 updatedAt 起算）
+- 【R59/R60 深审轮 59-a】读者面/管理面 API 21 文件 ≈8,000 行逐行走查（api_novels/chapters/home/categories/export/pseo/settings/sites/health/noveltools/web/router 等）：零达标缺陷——分页钳制/SQL 参数化/路径穿越闸/html/template XSS 转义/事务原子性/并发锁保护全部实证健康；运行时探针 8 页面 SSR 全 200；go test 全绿 32.9s
+- 【长稳观察窗 7min】填充面 4,691→5,452（6.5K 章/h 稳态）；骨架面 102.4 万章 / 2,305 书；任务 14 running + 1 partial；填充目标面 1,132,613 章（list 持续发现新书）
+
+Stage Summary:
+- 三轮深审（51-a 管线 / 51-b 引擎 / 59-a API 面）累计 ≈2 万行走查：1 缺陷修复 + 全链闭环健康；系统进入 6.5K/h 无人值守填充长跑
+---
+Task ID: 65-R61/R62
+Agent: main (Z.ai Code)
+Task: R61/R62 验证轮——E26 生命周期闭环第 2 次实证 + 速率爬坡确认
+
+Work Log:
+- 【E26 闭环实证】12:02:52 规则 #16《101kks》partial 终态 → 45min 冷却 → E26 自动重建 list 任务 #16——「终态→冷却→重建」任务面生命周期循环第 2 次无人值守实证（第 1 次为 R37/R38 窗口）
+- 【速率爬坡】填充面 5,452 → 8,662（DB 口径），~15min 窗口 ≈ 10.7-12.8K 章/h——超过前会话 11K/h 基线（多任务进入 Phase 2 稳态）
+- 【数据面】骨架 110.6 万章 / 2,583 书 / 填充目标面 122.3 万章；任务 15 running + 1 partial
+- 【E2E 复查】最新填充章 /chapter/381541 正文 4,192 字完整渲染，零页面错误
+- 【手册同步】recovery-playbook.md 修订至第 5 次实证：/tmp 与 /home/z/db-backup 也会被清（R51 发现），跨会话 DB 备份不可依赖，唯一持久化=git 内文件
+
+Stage Summary:
+- 自愈体系（E18/E21/E25/E26）全部实证在岗；系统以 11K+ 章/h 无人值守消化 122 万填充目标面
