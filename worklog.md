@@ -3641,3 +3641,19 @@ Work Log:
 
 Stage Summary:
 - backend-go 采集管线深审收官：1 真实缺陷修复（E26 冷却判定存储类容错，同族第 3 例——26-d/33-b 之后补齐最后一处未加固面）+ 4 项回归测试锁定；25 轮前序加固后的管线主体（两阶段 worker/runner/出口池/巡检/任务状态机/存储层）零新缺陷，2 项自适应控制精度观察与 4 项理论窗口挂账不修；build/vet/gofmt/test 全绿（服务运行中，源码修复待下次部署窗口生效）
+---
+Task ID: 65-R51~R56
+Agent: main (Z.ai Code)
+Task: R51-R56 三轮迭代——第 5 次整机恢复 + 双模块深审 + E2E 全绿验证
+
+Work Log:
+- 【恢复】第 5 次整机回收（比以往彻底：/tmp 与 /home/z/db-backup 均清空，DB 丢失）：Go 1.22.12 重装 → curl-impersonate 21 二进制重装 → build-go.sh 构建双 .bin → recover-r26.sh 失败码收尾拉起双服务+watchdog → 空库自动 DDL+seed（17 规则/9 分类）
+- 【舰队重建】create-fleet.py 13 规则 list 任务全建；E26 舰队自持 90s 内即自动补建规则 23 任务（#14）实证复活；恢复后 25 分钟数据面：1,773 书 / 85 万骨架章 / 13 任务 running
+- 【脚本修复】create-fleet.py 响应解析 bug：d.get('id') → (d.get('task') or {}).get('id')（POST /api/scrape-tasks 响应结构为 {ok,runner,task:{id}}）
+- 【R51/R52 深审轮】51-a（backend-go）修复 1 真实缺陷：fleetkeeper.go:65 冷却判定 COALESCE(MAX(updatedAt),0) int64 直扫——TEXT 存储类行会使该规则 E26 永不补建（静默失效）；改 any+normalizeMillis 归一，+4 条回归测试（fleetkeeper_audit_test.go），git 固化 fb4ff40。51-b（scraper-go）27 文件≈8000 行全走查：零达标缺陷（指纹面/并发面/资源面全已加固），附加 -race 42.3s 全绿
+- 【存储类核查】新库 ScrapeTask.createdAt/updatedAt 全 integer——fleetkeeper TEXT bug 现网不触发，修复随下次自然重启部署
+- 【R53/R54 增强轮】填充速率实测 7,044 章/h（5min 窗口）；磁盘核查：8.0G 可用 vs 46.9 万章填充约需 1.5-2G，充足；填充目标面合计 955,716 章（15 任务全进 Phase 2）；failed 章回收闭环确认（保留骨架→E26 45min 冷却重建→Phase 2 只填 wordCount=0 自动续传）；autoResumePausedTasks 节律验证（3min 静默+4 次上限+词表 LIKE '%限流%软拦截%' 命中现网文案）
+- 【R55/R56 E2E 验证轮】agent-browser 全绿：首页 200 零 console 错误（72 书链接/27 分类/footer 在位）；书页 /book/480《水刀子》14 章渲染；已填章节 /chapter/381316 正文完整；骨架章 /chapter/237 优雅降级「本章内容为空」；admin 总览首屏任务表即有数据（R41 首屏竞态修复在本次构建中生效实证），健康面板 ok（规则健康 13/14，引擎 ok=8,428 fail=262）
+
+Stage Summary:
+- 第 5 次恢复完成：15 分钟级从废墟到生产形态（手册快捷路径全程无卡点）；深审 1 缺陷修复+E2E 全绿；系统进入填充长跑（7K/h 爬坡，目标面 95.5 万章）

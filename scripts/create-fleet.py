@@ -27,6 +27,7 @@ for rid, name, url, pages in FLEET:
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             d = json.loads(r.read())
-        print(f"{name:12s} -> task #{d.get('id')} created (pages={pages})")
+        tid = (d.get('task') or {}).get('id')
+        print(f"{name:12s} -> task #{tid} created (pages={pages})")
     except urllib.error.HTTPError as e:
         print(f"{name:12s} -> HTTP {e.code}: {e.read().decode()[:100]}")
