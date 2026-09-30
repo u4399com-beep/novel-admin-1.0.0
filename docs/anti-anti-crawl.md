@@ -119,4 +119,6 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 1. 默认每域名 ≥1.2 秒间隔，禁止并发轰炸；2. robots.txt 解析并对 Disallow 路径返回 warning（warn-only）；3. 不实现、不预留任何验证码破解、登录态伪造、付费内容绕过逻辑；4. 仅抓取规则中显式配置的公开页面。
 | E19 规则健康巡检（61-R4） | backend 后台 45min/轮（RULEHEALTH_INTERVAL_MIN 可调 [5,720]，RULEHEALTH_OFF=1 停用）遍历全部启用规则：走与真实采集同契约的 loadRule→engineRuleBody→/api/test(listRule) 路径探活，判定三态（传输失败/软拦截空壳/200 零条目=不健康，条目>0=健康）落 RuleHealth 表（连击计数 SQL 内维护）；规则面板「健康」列透出 + 「立即巡检」按钮手动触发（单飞闸防重叠）。E18 管出口死口，E19 管选择器漂移/入口下线/站点死亡——规则级病灶从被动踩坑变为面板一瞥可知 |
 | E23 巡检联动复活（61-R11） | 巡检实测健康的规则名下「限流软拦截」暂停任务（静默≥30min）自动重新入队——runner autoResume 4 次上限后的无人值守断流点闭环；频率受巡检轮间隔约束（45min 至多一轮），站点不健康永不复活 |
+| E25 多源延迟感知出口池（62-R29） | E18 升级：候选源 1→5 路（proxyscrape/TheSpeedX/monosans/openproxylist/geonode，单源失败不致命）；补位从「先到先得」改「最快先得」（探测记时延，时延升序取位）；候选按规则 id 轮转偏移防同质化；温和升级——死口=0 且最慢活口 >6s 时用 <2.5s 快口每轮至多置换一口（免费口「活着但 10s+」是代理站吞吐主瓶颈）；探测并发 24、候选批量 120 |
+| E26 舰队自持（62-R31） | backend 后台 5min/轮（FLEETKEEPER_OFF=1 停用）扫描 enabled 规则：无 pending/running/paused 任务且最近任务 updatedAt ≥45min 冷却 → 自动建 list 任务（targetUrl=siteUrl，pages=10，db 模式）——list 任务终态后域名断流的最后一环无人值守闭环，与 E21/E23（暂停复活）构成任务面完整生命周期自持 |
 | E20 引擎可观测统计（61-R5） | GET /api/stats（:3030）：主机×策略两维整链成功/失败/挑战页/连接层断网四类 atomic 计数 + 主机 Top32 fail 降序 + 策略命中率，自启动累计。与 E17 熔断/E19 巡检构成「探测→计数→自愈」闭环，运营面一端点看全景 |

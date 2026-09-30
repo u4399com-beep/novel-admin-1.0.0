@@ -3409,3 +3409,159 @@ Work Log:
 - 【25 轮总览】R1 恢复（工具链+移植+种子+舰队）→ R2-R3 双模块深审（1 bug）→ R4 E19 规则健康巡检 → R5 E20 引擎观测 → R6 E21 批量复活 → R7-R8 规则实测（aijjxs 重建断链根修+R4 双 CAS 自锁自修）→ R9 新增码独立复审（3 修）→ R10 E22 健康端点扩展 → R11 E23 巡检联动复活 → R12-R13 E2E/race/一致性 → R14 精简（5 项 -36 行）→ R15 文档同步 → R16 封面链 → R17 pseo/TXT 导出 → R18 E24 安全收口（CORS loopback+HEAD）→ R19 备份落档 → R20 看护部署自证 → R21 亲和重建+E23 扩展 → R22-R23 增长/礼貌纪律量化 → R24 契约完整性审计（1 修）→ R25 本轮收官
 Stage Summary:
 - 25 轮「恢复→深审→增强→精简→集成→验证」迭代收官：系统从整机回收废墟恢复至「863 书 61.8 万章、14/14 规则连续 9 轮健康、六件套自愈体系（E17-E24）+常驻看护无人值守、race/E2E 全绿」的长稳形态；全程自抓自修 6 个真实 bug（R4 双 CAS/封面种子缺口/首插连击/stats 竞态/口径漂移/2xx 闸）+3 处安全收口
+
+---
+Task ID: 62-R26
+Agent: main (Z.ai Code)
+Task: 新一轮 25 迭代 R26 恢复轮——整机回收后全栈复活 + 46.9 万骨架章填充舰队重建
+
+Work Log:
+- 整机回收判定：Go 工具链/.bin/DB/covers/curl-impersonate/进程全灭；git 内代码（backend-go+scraper-go）与 docs/scripts 幸存；/tmp/my-project 快照 worklog 与现行一致无新会话数据
+- Go 1.22.12 重装（/home/z/go-sdk）+ build-go.sh 双模块构建 + curl-impersonate 21 二进制重装
+- 双服务失败码收尾拉起（backend-go all :3000 空库自动 DDL+seed 17 规则/9 分类/首页区块；scraper-go :3030）+ /tmp/watchdog-loop.sh 常驻看护（60s/轮 ensure-services）；双实例 bind 竞态自愈（败者自退出，单实例确认）
+- 连通性普查：7 站直连可达（23qb/ggd66/101kks/x2552/5165/23uswx/ixdzs8），7 站直连 000（本沙箱出口对大陆站 TCP 重置）；seed 内置中国代理实测存活（101.206.186.99:8080 等对 aijjxs 200）——引擎走规则代理通道即可达
+- ddyueshu 原无代理（旧会话出口直连可达，本出口不可达）→ 从 aijjxs 复制存活代理池（PUT /api/scrape-rules 全字段提交，发现 siteUrl 必填约束）
+- 舰队重建：13 规则 × list 任务（pages 按站点 2-40 梯度），任务 #1-#13 全 running；巡检 14/14 健康（2m23s）
+- 首批观测（+2.5min）：Novel 276 / Chapter 286,416 / ChapterContent 76——骨架建造速率极快，x2552 单任务 35 书 156,554 章
+
+Stage Summary:
+- 系统从第 4 次整机回收中满血复活（15 分钟级恢复手册再度验证）；13 任务舰队开跑，骨架章快速积累中，填充（Phase 2）为长跑主力
+
+---
+Task ID: 62-R27
+Agent: main (Z.ai Code)
+Task: R27 深审轮——填充管线（Phase 2 内容抓取）逐行审查 + 吞吐瓶颈定位
+
+Work Log:
+- phase2Fill（worker.go:789-1093）逐行复查：车道感知自适应（软起步/降档/回升/跨 resume 记忆）、连败熔断快照口径、失败形态四桶统计、顺序页智能续传、persistChapterFill 统一写序——25 轮加固后的代码无新 bug
+- 瓶颈定位（实测）：单章 fetch 实际抓取 510ms，但整链 12.9s——差值为引擎每域名礼貌限速队列（1.2s 基础间隔+AIMD）+并发车道排队；engine stats lastMs 10-33s 为整链口径含排队
+- 吞吐模型确认：每域名上限 ≈1/1.2s≈3000 fetch/h × 13 域名 ≈ 39k fetch/h 理论上界；实测填充速率 5.6k→6.6k 章/h 并随任务从 Phase 1 进入 Phase 2 持续爬坡（9 任务进入 P2）
+- 结论：吞吐受「礼貌限速×活跃域名数」设计性约束，非 bug；提升杠杆 = ①代理池质量（免费口 10-30s 时延是代理站瓶颈）②域名数（已满配 13 规则）
+
+Stage Summary:
+- Phase 2 无新 bug；瓶颈为设计性限速与免费代理时延——增强方向锁定代理池质量（转入 R29）
+
+---
+Task ID: 62-R28
+Agent: main (Z.ai Code)
+Task: R28 深审轮——反反爬链路逐行审查（E17 出口熔断/E18 池自愈/亲和/AIMD/车道控制）
+
+Work Log:
+- 引擎 chain.go 逐段复查：主机×出口独立熔断记账、healthy-first 轮换（pickProxy 优先未熔断出口）、策略亲和提链首、robots Crawl-delay 礼貌下限采纳、限流退避——语义闭环无缺陷
+- E18 proxywatch.go 全文审查，发现 3 项增强空间：①单源依赖（proxyscrape 不可达→整轮无补位）②候选批量 40 过小（免费口存活率 1-10%，40 个常空手）③时延盲选（任何 HTTP 状态=活口，10s+ 劣化口与 0.5s 快口同权——R27 实证免费口时延即代理站吞吐主瓶颈）
+- 实战观测佐证：E18 首轮即实战换血（77shuku 1/3 死口、aijjxs 4/10、ddyueshu 5/10、huangjinwu 3/10、xinjianpan 2/4 全部剔除补位）；101kks/trxsw 池仅 1 口（单点脆弱）
+- 限流熔断实战自证：ddyueshu 任务连续 60 章限流失败→自动暂停防烧穿（车道 4→2→熔断），符合设计
+Stage Summary:
+- 反反爬七层（熔断/轮换/亲和/AIMD/车道/退避/挑战判定）语义完好；E18 三项增强空间锁定，转 R29 实施 E25
+
+---
+Task ID: 62-R29
+Agent: main (Z.ai Code)
+Task: R29 增强轮——E25 多源延迟感知出口池（proxywatch.go 升级）+ 部署上线
+
+Work Log:
+- E25-a 多源候选：单源 proxyscrape → 5 路并行（proxyscrape/TheSpeedX/monosans/openproxylist/geonode-JSON），单源失败不致命，跨源去重上限 400；geonode JSON 解析含 port any 归一+protocols 过滤（先实测 5 源本沙箱可达性，proxy-list.download 502 弃用）
+- E25-b 快口优先：probeProxyViaProxy 返回 (可达, 时延ms)；补位从「先到先得」改「最快先得」（时延升序取位）；候选按规则 id 轮转偏移（rotateBy），防多规则同时换血收致同一批口
+- E25-c 温和升级（upgradeRuleProxyPool）：死口=0 且最慢活口 >6s（proxySlowExitMs）时，候选 <2.5s（proxyFastCandidateMs）者置换最慢一口/轮（渐进无抖动）；+7 偏移与补位路径错开候选窗
+- 参数：探测并发 16→24、候选批量 40→120（补位）/80（升级）；可达性判定口径不变（任何 HTTP 状态=活口）
+- 验证：gofmt 归一 + go build ✅ + go vet ✅ + 既有 E18 测试四连（isHostPort/splitNonEmpty/envOff/refreshRuleProxyPool 换血语义）全绿；deploy-backend.sh（R21 加固模式：pkill→轮询→cp→启动）上线，恢复 13 任务（resume-paused 13/0），14/14 规则健康
+Stage Summary:
+- E25 上线：出口池从「单源先到先得」升级为「多源最快先得+劣化口渐进置换」——代理站吞吐主瓶颈（免费口时延）获得结构性缓解
+
+---
+Task ID: 62-R30
+Agent: main (Z.ai Code)
+Task: R30 增强轮 II 验证——E25 首轮实战 + 填充速率基线复测
+
+Work Log:
+- E25 首轮实战（23:47-23:49）：ddyueshu 2/10 死口、huangjinwu 1/10、xinjianpan 1/4 全部剔除补位（5 源候选池供位正常）；温升级路径待「全活口且最慢>6s」场景自然触发（口径正确不强行触发）
+- 数据基线：骨架章 913,364（46.9 万目标已达成于骨架面）；ChapterContent 爬坡中（重启后任务重建期速率回落 3.6k/h，属恢复期正常）
+
+Stage Summary:
+- E25 实战通道全通；系统回到增长轨道
+
+---
+Task ID: 62-R31
+Agent: main (Z.ai Code)
+Task: R31 增强轮 III——E26 舰队自持（终态任务自动补建）+ 新增码独立复审 + 部署
+
+Work Log:
+- 生命周期缺口定位：E18/E21/E23 覆盖出口池与暂停任务自愈，但 list 任务终态（success/failed/partial）后规则域名空闲——填充断流只能人工重建（R26 实证 13 任务全手工）
+- E26 fleetkeeper.go（+95 行）：5min/轮扫描 enabled 规则——无 pending/running/paused 任务且最近任务 updatedAt ≥45min 冷却 → 自动建 list 任务（targetUrl=siteUrl，pages=10，db）；FLEETKEEPER_OFF 停用开关；单飞 best-effort 不触碰主流程
+- 新增码复审：INSERT 占位符/参数序与 POST handler 同构核对（5 参数严格对齐）；rotateBy 尾部 append 源重叠安全（copy 语义）；fetchProxyCandidates 早退无 goroutine 泄漏（缓冲=源数）；E26 首跳 2min 延迟防恢复场景重复建
+- 首轮实战：规则 #23（唯一无任务规则）自动建任务 #14，其余 13 规则正确跳过（活跃任务在册）；14 任务 13 running + 1 partial（101kks 终态后 E26 将于冷却后自动补建）
+- 验证：gofmt/build/vet/test 全绿；deploy-backend.sh 上线 + resume-paused 复活 12 任务；14/14 规则健康
+Stage Summary:
+- 自愈体系收官形态：E17-E26 十件套 = 出口池(E18/E25)+暂停复活(E21/E23)+终态补建(E26)+健康巡检(E19)+进程看护(watchdog)——「稳定长期获取」的全链路无人值守闭环
+
+---
+Task ID: 62-R32
+Agent: main (Z.ai Code)
+Task: R32 精简轮——E25/E26 代码扫尾 + 文档同步
+
+Work Log:
+- upgradeRuleProxyPool 死参数 pool 清理（签名收敛）；gofmt -w main/proxywatch/fleetkeeper 归一（Edit 工具空格注入回 tab）
+- 文档同源：anti-anti-crawl.md §6.4 表补 E25/E26 行；deployment.md 环境变量表补 FLEETKEEPER_OFF——文档与代码同源
+- scripts/recover-r26.sh（恢复拉起）、scripts/deploy-backend.sh（R21 加固部署模式）、scripts/probe-sites.py（14 站连通性快探）、scripts/create-fleet.py（舰队批量重建）固化入库——第 5 次整机恢复的工具链沉淀
+Stage Summary:
+- 精简收官：零冗余参数、文档闭环、恢复工具链固化
+
+---
+Task ID: 62-R33/R34
+Agent: main (Z.ai Code)
+Task: R33/R34 验证轮——全站 E2E（浏览器实证）+ 读者金路径
+
+Work Log:
+- 浏览器 E2E（agent-browser）：①首页 200 零 console 错误、导航/分类/搜索结构完整、footer 自然下推（内容 2918px > viewport 577px）②书页 /book/200（异度旅社）200 零错误 ③已填章节 /chapter/246199 正文完整渲染（读者 UI 字号/夜间模式/翻章全在位）④未填骨架章节 /chapter/875938 优雅降级「本章内容为空」（骨架章预期行为，Phase 2 填充后自动转正）
+- 数据面：1,756 书 / 958,674 骨架章 / 3,263 已填——46.9 万骨架目标在骨架面已达成，填充面持续爬坡
+Stage Summary:
+- E2E 全绿：读者金路径（首页→书页→章节）实证可用；骨架章降级语义正确
+
+---
+Task ID: 62-R35/R36
+Agent: main (Z.ai Code)
+Task: R35/R36 集成+验证轮——系统活力全景核查 + 恢复手册第 5 版
+
+Work Log:
+- 系统活力：引擎 ok=14,449 fail=204（fail 率 1.4% 稳定）；backend RSS 208MB / engine 1.8MB；watchdog 60s 节律双 200；pseo 富集循环在跑（12s/种子 +12/+11 词）；封面补抓通道重建中（covers/*.jpg 200 实证）
+- 策略亲和分布健康：fetch-curl 7353 / ua-rotate 3001 / fetch-browser 1433 / curl-impersonate 259（CF 站专用，lastMs 1391ms 全场最快）——第 4 次重启后亲和自学习重建完成
+- 舰队健康不变式：每规则恰好 1 活跃任务（E26 单实例语义验证，零重复建任务）；101kks partial → E26 冷却后自动补建（任务 #15 success 闭环实证）
+- 填充速率轨迹：4.4k → 6.3k 章/h 爬坡（任务陆续进入 Phase 2）；骨架章 99.4 万
+- 恢复手册升级 v5：第 4 次恢复实证的快捷路径（recover-r26.sh/probe-sites.py/create-fleet.py 一条龙）写入手册头部
+Stage Summary:
+- 自愈十件套协同运转零异常；填充进入无人值守长跑形态
+
+---
+Task ID: 62-R37/R38
+Agent: main (Z.ai Code)
+Task: R37/R38 验证轮——长稳观察窗 1（填充爬坡 + 终态生命周期闭环实证）
+
+Work Log:
+- 观察窗数据（2×9min）：Novel 1,758→2,107；Chapter 96.4万→99.4万（骨架继续 +3 万/窗）；ChapterContent 3,859→6,457
+- E26 生命周期闭环实证：101kks partial 终态 → 45min 冷却 → 自动补建任务 #15 → success —— 任务面「终态→重建」无人值守循环首证
+- Phase 2 活跃任务 12/13（合计填充目标面 42.5 万章在册），系统进入稳态填充轨道
+Stage Summary:
+- 无人值守节律全面运转；46.9 万骨架章填充按礼貌限速持续消化中
+
+---
+Task ID: 62-R39/R40
+Agent: main (Z.ai Code)
+Task: R39/R40 验证轮——双模块 race 终验（含 E25/E26 新增代码并发检验）
+
+Work Log:
+- backend-go go test -race -count=1 ✅ 20.5s（含 E25 出口池/E26 舰队自持全部新增路径）；scraper-go go test -race -count=1 ✅ 42.8s；go vet 双模块 ✅；gofmt 双模块清零
+- E25 温和升级路径观察：现网免费口腐化快（每轮 1-4 死口），换血路径主导、升级路径待「全活口+慢口」场景自然触发（口径正确不强行触发）；池位保持 10/10/10/4/1/1/3 满供
+Stage Summary:
+- race/vet/gofmt 全绿；E25/E25 并发安全实证
+
+---
+Task ID: 62-R41/R42
+Agent: main (Z.ai Code)
+Task: R41/R42 深审轮 2——admin 面板 E2E 逐行抓 bug（捕获 1 真实缺陷并修复）
+
+Work Log:
+- 浏览器 E2E：admin 首页/任务页签/新建表单/规则下拉/E21 复活按钮全渲染，任务表实时数据在位（#15 可见），零 console 错误
+- ✅ 真实缺陷（首屏竞态）：init() 从未调用 refreshTasks()——任务表只靠 10s 自动轮询加载，①首访 tasks 页签最长空 10s（计数器「采集任务（0）」+空表假象）②document.hidden 期（后台标签页）轮询被 document.hidden 闸跳过→永久空表。修复：init() 补 refreshTasks(true) 静默首拉（与既有 refreshRules(true) 同款模式，+2 行含注释）；服务端静态目录直出无需重建，浏览器 reload 后 counter=15 首屏即现（实测两轮：新会话 3s 内 counter=15，零 console 错误）
+- 数据面同步观察：ChapterContent 6,457→7,000+ 持续爬坡；骨架 99.5 万章
+Stage Summary:
+- admin 面板深审 1 缺陷修复（首屏竞态）；填充轨道持续

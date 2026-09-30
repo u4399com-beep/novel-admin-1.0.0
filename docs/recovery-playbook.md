@@ -1,11 +1,16 @@
 # 沙箱重置恢复手册（Recovery Playbook）
 
-> 背景：沙箱环境会**整机回收**（实例重建），已实证 3 次（Task 39、Task 59 前、Task 60-R18）。
+> 背景：沙箱环境会**整机回收**（实例重建），已实证 4 次（Task 39、Task 59 前、Task 60-R18、Task 62-R26）。
 > 重置清掉的内容：Go 工具链、编译产物 `.bin`、运行时产物（`public/covers/`）、**DB 文件**、
 > `~/.local/bin`（curl-impersonate）、进程。保留的内容：`/home/z/my-project`（repo.tar 恢复，
 > 仅 git 内文件）、`/tmp`（若未清）。
 >
-> 本手册 = Task 60-R18~R22 实战全流程沉淀。按序执行，全程约 15 分钟。
+> 本手册 = Task 60-R18~R22 实战全流程沉淀 + Task 62-R26 第 4 次恢复工具链固化。按序执行，全程约 15 分钟。
+>
+> **快捷路径（第 4 次恢复实证）**：装 Go（§1）→ `bash scripts/install-curl-impersonate.sh` →
+> `bash scripts/build-go.sh` → `bash scripts/recover-r26.sh`（失败码收尾拉起双服务+看护）→
+> `python3 scripts/probe-sites.py`（连通性普查，可选）→ `python3 scripts/create-fleet.py`
+> （13 规则舰队重建）→ 1-2min 后观测骨架/填充即恢复增长。E18/E25 池自愈+E26 舰队自持随后接管。
 
 ## 1. Go 工具链重装（原路径）
 

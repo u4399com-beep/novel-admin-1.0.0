@@ -1879,6 +1879,8 @@
     setInterval(checkHealth, 30000);
 
     refreshRules(true); // 规则名映射 + 新建任务下拉（失败静默，SSR 数据仍在）
+    refreshTasks(true); // 任务表首屏立即加载（旧版只靠 10s 轮询：首访 tasks 页签最长空 10s，
+                        // document.hidden 期永久空表——与 refreshRules 同款静默首拉）
   }
 
   if (document.readyState === 'loading') {

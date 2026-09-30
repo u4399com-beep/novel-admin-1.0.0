@@ -329,6 +329,7 @@ cd /opt/novel-admin && ls
 | `BACKEND_ENGINE_URL` | backend-go → 引擎地址 | 同上，缺省 `http://127.0.0.1:3030`（多引擎/测试实例时才需要改） |
 | `RULEHEALTH_OFF` / `RULEHEALTH_INTERVAL_MIN` | backend-go E19 规则健康巡检 | `=1` 停用巡检循环；`_INTERVAL_MIN` 轮间隔分钟数（[5,720] 夹取，缺省 45） |
 | `PROXYWATCH_OFF` | backend-go E18 出口池自愈 | `=1` 停用后台出口池换血循环（自建稳定代理出口时使用）；缺省开启，10min/轮 |
+| `FLEETKEEPER_OFF` | backend-go E26 舰队自持 | `=1` 停用终态任务自动补建循环（想完全手动控制任务面时使用）；缺省开启，5min/轮、45min 冷却 |
 | `COVERS_DIR` | backend-go 封面落盘目录 | 同上，缺省向上查找 `public/covers` |
 | `SCRAPER_PYTHON` | scraper-go browser 策略 | 同上，自定义 python 路径；缺省从 PATH 找 |
 | `SCRAPER_MIN_INTERVAL_MS` | scraper-go 域名限速 | 同上，缺省 1200，**不允许低于 1000** |
