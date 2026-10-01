@@ -142,22 +142,42 @@ func TestNovelsBackfillCoversHandlerEndToEnd(t *testing.T) {
 	}
 }
 
-// TestNovelsBackfillCoversBatchingRemaining limit=1 分批：attempted=1、remaining=1
-// （循环调用契约：remaining 计入未尝试候选）。
+// TestNovelsBackfillCoversBatchingRemaining Task 50-b 分批语义（Task 69 起为游标分页）：
+// limit=1 时单批只取 1 本（scanned=1），hasMore=true + nextAfterId 驱动调用方翻页；
+// 第二批 afterId 游标续上处理下一本。旧「全量扫描+内存截断」契约（scanned=全量）已
+// 被「SQL 分页」取代（force 全量面可达万级书，全量加载不再合适）。
 func TestNovelsBackfillCoversBatchingRemaining(t *testing.T) {
 	mustInitBackfillFixtures(t)
 	insertBackfillNovel(t, 95140, "分批书A", "g9", "http://192.168.1.1/a.jpg")
 	insertBackfillNovel(t, 95141, "分批书B", "g12", "http://192.168.1.1/b.jpg")
 
 	resp := runBackfillCovers(t, "?limit=1")
-	if resp["scanned"].(float64) != 2 || resp["attempted"].(float64) != 1 {
-		t.Fatalf("scanned/attempted = %v/%v, want 2/1", resp["scanned"], resp["attempted"])
+	if resp["scanned"].(float64) != 1 || resp["attempted"].(float64) != 1 {
+		t.Fatalf("scanned/attempted = %v/%v, want 1/1（SQL 分页语义）", resp["scanned"], resp["attempted"])
 	}
-	if resp["remaining"].(float64) != 1 {
-		t.Fatalf("remaining = %v, want 1（未尝试书须计入）", resp["remaining"])
+	if resp["remaining"].(float64) != 0 {
+		t.Fatalf("remaining = %v, want 0（批内未尝试书为 0）", resp["remaining"])
+	}
+	if resp["hasMore"] != true {
+		t.Fatalf("hasMore = %v, want true（还有下一批）", resp["hasMore"])
+	}
+	if int64(resp["nextAfterId"].(float64)) != 95140 {
+		t.Fatalf("nextAfterId = %v, want 95140（本批处理的书 id）", resp["nextAfterId"])
 	}
 	if resp["failed"].(float64) != 1 {
 		t.Fatalf("failed = %v, want 1", resp["failed"])
+	}
+
+	// 第二批：afterId 游标翻页，处理 95141
+	resp = runBackfillCovers(t, "?limit=1&afterId=95140")
+	if resp["scanned"].(float64) != 1 || resp["attempted"].(float64) != 1 {
+		t.Fatalf("第二批 scanned/attempted = %v/%v, want 1/1", resp["scanned"], resp["attempted"])
+	}
+	if resp["hasMore"] != false {
+		t.Fatalf("第二批 hasMore = %v, want false（候选耗尽）", resp["hasMore"])
+	}
+	if int64(resp["nextAfterId"].(float64)) != 95141 {
+		t.Fatalf("第二批 nextAfterId = %v, want 95141", resp["nextAfterId"])
 	}
 }
 

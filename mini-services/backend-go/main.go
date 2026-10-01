@@ -63,6 +63,7 @@ func main() {
 		go startProxyWatch()     // E18 出口池自愈（10min/轮，PROXYWATCH_OFF=1 停用，见 proxywatch.go）
 		go startRuleHealthLoop() // E19 规则健康巡检（45min/轮，RULEHEALTH_OFF=1 停用，见 rulehealth.go）
 		go startFleetKeeper()    // E26 舰队自持（5min/轮，FLEETKEEPER_OFF=1 停用，见 fleetkeeper.go）
+		go startCoverSweepLoop() // 封面巡检自愈（30min/轮，COVERSWEEP_OFF=1 停用，见 api_noveltools.go）
 	}
 	// startDevWatcher 已随 Next.js 退役（Task 27）：3000 端口由本进程直接承载，
 	// 看护职责归沙箱 dev 链路 / systemd（见 scripts/dev-go.sh 与 deployment.md）。

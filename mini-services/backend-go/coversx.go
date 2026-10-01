@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -291,6 +292,15 @@ func coverTransport(proxyURL string) *http.Transport {
 // Task 50-b：响应消费段（状态/类型/读体/解码/编码）抽为 consumeCoverResponse，
 // 本函数保留 SSRF 校验/下载/落盘骨架与 panic 兜底。
 func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath, failReason string) {
+	return fetchAndStoreCoverOpt(novelID, remoteURL, proxy, false)
+}
+
+// fetchAndStoreCoverOpt 下载远程封面并落盘为 JPEG（Task 69 全量重取核心）。
+// force=false 与 fetchAndStoreCover 完全同语义；force=true 跳过幂等复用：重下后
+// tmp+rename 原子覆盖旧图——下载失败时旧文件原样保留（不降级、不留空窗），成功时
+// 新图原子替换（错位/模糊/站方更新封面一并修正）。供全量封面重取通道
+// （backfill-covers?force=1）使用；采集内联与常规补抓仍走幂等复用。
+func fetchAndStoreCoverOpt(novelID int, remoteURL, proxy string, force bool) (localPath, failReason string) {
 	defer func() {
 		if r := recover(); r != nil {
 			localPath, failReason = "", fmt.Sprintf("panic: %v", r)
@@ -299,25 +309,51 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath, failRe
 	dir := coversDir()
 	localAbs := filepath.Join(dir, itoa(novelID)+".jpg")
 	localPath = LOCAL_PREFIX + itoa(novelID) + ".jpg"
-	if st, err := os.Stat(localAbs); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
-		return localPath, ""
+	if !force {
+		if st, err := os.Stat(localAbs); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
+			return localPath, ""
+		}
 	}
 
-	u := assertPublicHttpURL(remoteURL)
-	if u == nil {
-		return "", "SSRF 校验未过（非 http(s)/解析失败/私网地址）"
+	// 下载+消费（SSRF/重定向守卫/x509 insecure 重试/解码编码，Task 69-b 拆分）
+	ob, reason := downloadCoverBytes(remoteURL, proxy)
+	if reason != "" {
+		return "", reason
 	}
+	return storeCoverJPEG(dir, novelID, ob)
+}
 
-	req, err := http.NewRequest("GET", remoteURL, nil)
-	if err != nil {
-		return "", "请求构造失败: " + err.Error()
+// isCertVerifyErr 判定是否 TLS 证书链验证类失败（x509）。裸 IP 图床（
+// https://38.34.172.127/... 实证）证书 CN/ SAN 不含该 IP、或自签/过期证书，
+// 标准验证恒败——源站页面用浏览器也是带警告访问的（图床为站点自有资源）。
+func isCertVerifyErr(err error) bool {
+	if err == nil {
+		return false
 	}
-	req.Header.Set("User-Agent", coverUA)
-	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-	req.Header.Set("Referer", u.Scheme+"://"+u.Host+"/")
-	client := &http.Client{
+	s := err.Error()
+	return strings.Contains(s, "x509:") ||
+		strings.Contains(s, "tls: failed to verify") ||
+		strings.Contains(s, "certificate is not trusted") ||
+		strings.Contains(s, "certificate has expired") ||
+		strings.Contains(s, "certificate is valid for")
+}
+
+// coverHTTPClient 封面下载客户端（Task 69-b 自 fetchAndStoreCover 抽出复用）。
+// insecure=true 时放宽证书链验证（x509 失败后的单次重试语义）：SSRF 全链守卫
+// （文本层+DNS+逐跳重定向+拨号 Control）与内容校验（状态/类型/限量/解码/解压炸弹）
+// 全部不变，仅证书链验证放宽——封面为无凭据公开资源，无 Cookie/会话泄露面，
+// MITM 最坏结果是拿到被篡改的图片字节，消费端解码+尺寸+JPEG 重编码已收敛风险。
+func coverHTTPClient(proxy string, insecure bool) *http.Client {
+	t := coverTransport(pickCoverProxy(proxy))
+	if insecure {
+		if t.TLSClientConfig == nil {
+			t.TLSClientConfig = &tls.Config{}
+		}
+		t.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // 封面通道 x509 兑底，威胁模型见函数头注释
+	}
+	return &http.Client{
 		Timeout:   COVER_DL_TIMEOUT,
-		Transport: coverTransport(pickCoverProxy(proxy)),
+		Transport: t,
 		// 逐跳 SSRF 校验：默认客户端自动跟随重定向，图床 302 到内网地址会绕过
 		// 对首跳 URL 的校验（SSRF 重定向变体）。每一跳终点重新过 assertPublicHttpURL。
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -330,23 +366,75 @@ func fetchAndStoreCover(novelID int, remoteURL, proxy string) (localPath, failRe
 			return nil
 		},
 	}
+}
+
+// downloadCoverBytes 下载远程封面并消费为可落盘的 JPEG 字节（Task 69-b 自
+// fetchAndStoreCover 抽出网络段，与磁盘段 storeCoverJPEG 解耦；fetchCoverWithFallback
+// 的多出口回退语义不变——本函数单出口，回退在包装层）。
+// Task 69-b 新增：TLS 证书验证失败时单次 insecure 重试（实战：#240/#243 封面源
+// https://38.34.172.127/uploads/cover/... 裸 IP 证书不可验证 → x509 恒败，且
+// 「请求失败」分类触发 12 代理回退全链空烧）。重试后仍失败返回「TLS 证书校验失败
+// （insecure 重试未过）」——不带「请求失败」前缀 = 确定性失败，不再触发代理回退空转。
+func downloadCoverBytes(remoteURL, proxy string) (ob []byte, reason string) {
+	u := assertPublicHttpURL(remoteURL)
+	if u == nil {
+		return nil, "SSRF 校验未过（非 http(s)/解析失败/私网地址）"
+	}
+	buildReq := func() (*http.Request, error) {
+		req, err := http.NewRequest("GET", remoteURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", coverUA)
+		req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+		req.Header.Set("Referer", u.Scheme+"://"+u.Host+"/")
+		return req, nil
+	}
+	req, err := buildReq()
+	if err != nil {
+		return nil, "请求构造失败: " + err.Error()
+	}
+	client := coverHTTPClient(proxy, false)
 	// Task 27-c（重新应用 25-a 修复⑤收尾，合并时丢失）：每次下载新建 Transport，用完
 	// CloseIdleConnections 释放空闲连接，防长跑任务连接池驻留累积
 	defer client.CloseIdleConnections()
 	res, err := client.Do(req)
 	if err != nil {
-		return "", "请求失败: " + truncateRunes(err.Error(), 120)
+		if isCertVerifyErr(err) {
+			// Task 69-b：x509 单次 insecure 重试（守卫/内容校验不变，仅放宽证书链）
+			iclient := coverHTTPClient(proxy, true)
+			defer iclient.CloseIdleConnections()
+			if ireq, berr := buildReq(); berr == nil {
+				if ires, ierr := iclient.Do(ireq); ierr == nil {
+					defer func() {
+						_ = ires.Body.Close()
+						iclient.CloseIdleConnections()
+					}()
+					return consumeCoverResponse(ires)
+				} else if isCertVerifyErr(ierr) {
+					// 两跳均证书失败：确定性失败（同证书恒败），不触发代理回退空转
+					return nil, "TLS 证书校验失败（insecure 重试未过）: " + truncateRunes(ierr.Error(), 100)
+				} else {
+					// insecure 跳换成网络类失败（dial/timeout）：保留网络类语义允许回退
+					return nil, "请求失败: " + truncateRunes(ierr.Error(), 120)
+				}
+			}
+		}
+		return nil, "请求失败: " + truncateRunes(err.Error(), 120)
 	}
 	defer func() {
 		_ = res.Body.Close()
 		// body 关闭后再释放空闲连接（CloseIdleConnections 只关已归还池的连接）
 		client.CloseIdleConnections()
 	}()
-	ob, reason := consumeCoverResponse(res)
-	if reason != "" {
-		return "", reason
-	}
+	return consumeCoverResponse(res)
+}
 
+// storeCoverJPEG 封面字节落盘（Task 69-b 自 fetchAndStoreCover 抽出磁盘段）。
+// CreateTemp(O_EXCL)+chmod+rename 原子覆盖，失败路径遗留 tmp 由 defer Remove 兑底。
+func storeCoverJPEG(dir string, novelID int, ob []byte) (localPath, failReason string) {
+	localPath = LOCAL_PREFIX + itoa(novelID) + ".jpg"
+	localAbs := filepath.Join(dir, itoa(novelID)+".jpg")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", "落盘目录创建失败: " + err.Error()
 	}
@@ -579,7 +667,14 @@ const maxCoverFallbackCandidates = 12
 // 瓦解（与修复目标相反）。现记录首个候选确定性原因后继续尝试其余候选，全部失败时
 // 优先透出该原因（比传输层错误更能定位真因）。
 func fetchCoverWithFallback(novelID int, remoteURL, primaryProxy string, hardDeadline time.Time) (localPath, failReason string) {
-	localPath, failReason = fetchAndStoreCover(novelID, remoteURL, primaryProxy)
+	return fetchCoverWithFallbackOpt(novelID, remoteURL, primaryProxy, hardDeadline, false)
+}
+
+// fetchCoverWithFallbackOpt fetchCoverWithFallback 的 force 全量重取变体（Task 69）：
+// force 透传 fetchAndStoreCoverOpt——force=true 时每次候选尝试都跳过幂等复用，首个
+// 成功候选即落盘返回，同书同轮不会重复下载。
+func fetchCoverWithFallbackOpt(novelID int, remoteURL, primaryProxy string, hardDeadline time.Time, force bool) (localPath, failReason string) {
+	localPath, failReason = fetchAndStoreCoverOpt(novelID, remoteURL, primaryProxy, force)
 	if localPath != "" || !isNetworkLikeCoverReason(failReason) {
 		return localPath, failReason
 	}
@@ -597,7 +692,7 @@ func fetchCoverWithFallback(novelID int, remoteURL, primaryProxy string, hardDea
 			break // 回退预算耗尽：停止候选，保留首因
 		}
 		tried++
-		stored, r := fetchAndStoreCover(novelID, remoteURL, p)
+		stored, r := fetchAndStoreCoverOpt(novelID, remoteURL, p, force)
 		if stored != "" {
 			return stored, ""
 		}
@@ -692,7 +787,16 @@ func backfillBrokenCoverLocal(db *sql.DB) error {
 // 重置渐变 token，补抓通道按 coverSrc 重建——与既有自愈链天然衔接。
 // 有书目的库（正常重启/存量恢复）绝不触碰。幂等：清后目录为空，重复执行零删除。
 // 必须在 backfillBrokenCoverLocal 之前调用（时序：先清文件，缺失自愈才能看见断裂）。
+//
+// Task 69-c 生产护栏（双层之一）：DB_PATH 被重定向（=测试进程，recover_test.go TestMain
+// 沙箱）时立即返回——测试库 Novel 恒空会被误判「全新库」，配合真实 coversDir 会把
+// 生产封面目录全量清空（2026-10-01 实证：两次 go test 抹掉 1690 张封面）。双层防线：
+// 测试面由 TestMain 的 COVERS_DIR 沙箱兜底（本护栏失效时也只碰沙箱目录），生产面由
+// 本护栏直接拒绝执行。
 func purgeStaleCoversOnFreshDB(db *sql.DB) {
+	if os.Getenv("DB_PATH") != "" {
+		return // 测试进程：DB 被重定向到临时库，绝不触碰真实 covers 目录
+	}
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM "Novel"`).Scan(&n); err != nil {
 		log.Printf("[db] stale 封面清理探测失败（跳过本轮清理，重启重试）: %v", err)

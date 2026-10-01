@@ -3777,3 +3777,20 @@ Work Log:
 
 Stage Summary:
 - 三指令闭环：纯 Go 化零残留（node_modules 空壳移除）+ 双用户 bug 根修（pseo 种子书主打双路径兜底 + 封面推荐位排除）+ 第 7 次回收 12 分钟恢复；双模块 race/E2E/视觉验证全绿，系统以 14 任务全速运转进入无人值守长跑，worklog+git 固化延续
+
+---
+Task ID: 69
+Agent: main (Z.ai Code)
+Task: R76 迭代——第 8 次整机回收恢复 + 全量封面重取通道（用户指令 1）+ x509 封面反反爬增强 + 测试文件系统隔离根修（用户指令 2/3）
+
+Work Log:
+- 【第 8 次整机回收恢复】双服务全灭（DB/Go 工具链/.bin/curl-impersonate 全灭，无 DB 备份残留）。按手册快捷路径：Go 1.22.12 → curl-impersonate 21 二进制 → build-go.sh → restart-backend.sh 首次失败（db/ 目录缺失，mkdir 后恢复）→ 空库 DDL+seed（17 规则/9 分类/homeConfig）→ create-fleet.py 重建 13 任务 → 手册 §4 批量复活。上轮两项修复（pseo 种子书主打 pseoFeaturedNovel / 封面推荐位排除 pickCoverHref）均随 git 幸存，实证 git 内文件是唯一持久化的设计正确
+- 【全量封面重取通道（Task 69，用户指令「根据采集任务日志重新获取所有在库书籍封面」）】coverSrc（采集时落库的每书源站封面 URL）即任务日志的结构化沉淀。实现：① fetchAndStoreCoverOpt/fetchCoverWithFallbackOpt 增加 force 语义（跳过幂等复用，tmp+rename 原子覆盖旧图；失败旧文件原样保留=不降级不留空窗），旧签名薄包装零破坏；② coverBackfillCandidatesPaged(afterID, onlyToken, limit) 游标分页候选扫描（force 全量面=coverSrc≠'' 全部书；常规 token 面原语义；LIMIT+1 探测 hasMore 无边界歧义）；③ runCoverBackfillBatch 抽出供端点/巡检共用，响应新增 nextAfterId/hasMore（remaining/attempted 契约保留）；④ handleNovelsBackfillCovers 新增 force=1/afterId 参数；⑤ startCoverSweepLoop 30min/轮常规面补抓 20 本（COVERSWEEP_OFF=1 停用）入 main.go boot；⑥ scripts/backfill-covers.py 驱动脚本（POST-only 修正/游标循环/预算截断重试语义）
+- 【x509 封面反反爬增强（Task 69-b）】实战发现 #240/#243 封面源 https://38.34.172.127/uploads/cover/* 裸 IP 证书不可验证 → x509 恒败且「请求失败」分类触发 12 代理回退全链空烧（每书浪费 ≈3.4min）。修复：coversx 重构三段式（downloadCoverBytes 网络段/storeCoverJPEG 磁盘段/coverHTTPClient 客户端工厂），isCertVerifyErr 分类（x509:/tls failed to verify/expired/SAN 不符五形态），证书失败→单次 insecure 重试（SSRF 四层守卫+内容校验全链不变，仅放宽证书链；封面为无凭据公开资源威胁模型收敛），双跳证书失败返回「TLS 证书校验失败（insecure 重试未过）」确定性原因不再触发回退空转。部署后实测：原恒败书批量重取 41 attempted/41 fixed/0 failed
+- 【测试文件系统隔离根修（Task 69-c，本会话最重要发现）】1690 张封面离奇消失根因坐实：recover_test.go TestMain 只隔离 DB 半边（DB_PATH→临时库），getDB() boot 链的 purgeStaleCoversOnFreshDB 对 Novel 恒空的临时库判「全新库」→ purgeStaleCoversIn(coversDir()) 把真实生产 public/covers/ 全目录清空——每次 go test 都在静默抹封面（Task 66 引入 purge 以来潜伏）。双层修复：① TestMain 增加 COVERS_DIR 沙箱（coversDir() 首选 env，文件半边隔离）；② purgeStaleCoversOnFreshDB 增加 DB_PATH 守卫（测试进程直接拒绝执行）。回归测试 TestPurgeStaleCoversTestIsolation69 双断言锁定。事故自愈链闭环验证：boot 自愈重置 1690 token → 补抓通道+force 重取重建，DB cover=/covers/N.jpg 计数与目录文件数精确一致（1266==1266）
+- 【测试】新增 audit69_test.go 6 用例（分页/游标/两面过滤/force 失败不降级/常规面幂等/x509 分类/force 透传/隔离防线）；audit50b 分批测试按游标契约演进更新（两轮翻页断言）。backend race 全绿 34.5s / scraper race 全绿 41.7s / vet+gofmt 全清
+- 【验证】滚动重启部署（失败码收尾+DB 保留+任务批量复活 14/14）；agent-browser E2E：首页（26 封面 0 裂图、推荐位互不相同）/book/1964（封面印书名与页面书名精确对应）/pseo/圣墟（主打=种子书本体 辰东 1696 章真封面——上轮 bug1 修复视觉终验）/390px 移动端（无横向滚动、footer gap:0 贴底）
+- 【管线状态】1,936 书 / 97 万+骨架章 / 12 任务 running；force 全量重取后台长跑中（≈40min/全库轮）；10/15 域名零失败，失败簇均为瞬态超时（车道控制自愈中），101kks CF 挑战间歇（策略链消化）
+
+Stage Summary:
+- 三指令闭环：全量封面重取能力落地（force 端点+驱动脚本+30min 巡检+x509 增强）+ 测试静默抹封面根因根修（DB_PATH 守卫+COVERS_DIR 沙箱，双层防线+回归锁定）+ 第 8 次恢复 18 分钟级完成。系统进入无人值守长跑：填充管线 12 任务全速、封面四通道自愈（内联采集/boot 自愈/30min 巡检/force 手动）

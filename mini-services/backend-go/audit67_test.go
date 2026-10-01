@@ -39,7 +39,7 @@ func seedA67Novel(t *testing.T, title string, clicks int64) int64 {
 	return id
 }
 
-// ① 词面兜底：无血缘词（manual，seed=''）但 keyword 恰为某书名——该书必须置顶主打，
+// ① 词面兜底：无血缘词（manual，seed=”）但 keyword 恰为某书名——该书必须置顶主打，
 // 不得让 clicks 更高的相关小说第一本冒充。旧实现 novels[0]=热门甲（clicks 降序）。
 func TestPseoFeaturedWordFaceFallback(t *testing.T) {
 	db, err := getDB()

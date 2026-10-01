@@ -21,6 +21,21 @@ func TestMain(m *testing.M) {
 	tmp := filepath.Join(os.TempDir(), "t26d-recover-test.db")
 	_ = os.Remove(tmp)
 	_ = os.Setenv("DB_PATH", tmp)
+
+	// Task 69-c 封面文件系统隔离（实战事故根修）：getDB() boot 链含
+	// purgeStaleCoversOnFreshDB——临时库 Novel 恒空 → 被判「全新库」→ 若不隔离
+	// coversDir()，会把真实生产 public/covers/ 全目录清空（2026-10-01 实证：两次
+	// go test 静默抹掉 1690 张已落盘封面，boot 自愈+补抓通道重建才恢复）。
+	// DB_PATH 只隔离了 DB 半边，文件半边由 COVERS_DIR 沙箱补齐（coversDir() 首选该 env）。
+	covTmp, err := os.MkdirTemp("", "t69-covers-test-*")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("COVERS_DIR", covTmp)
+	defer func() {
+		_ = os.RemoveAll(covTmp)
+	}()
+
 	code := m.Run()
 	_ = os.Remove(tmp)
 	os.Exit(code)
