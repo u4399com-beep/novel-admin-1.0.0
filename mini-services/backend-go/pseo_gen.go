@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode"
 )
 
@@ -436,8 +437,16 @@ func pseoSeedBookNovel(seedTitle string, novels []map[string]any) (map[string]an
 				return n, id
 			}
 		}
-		// 精确命中但不在已加载列表（被 12 本截断/生成窗口新增）→ 按幂等字段直取
-		if full, ferr := webNovelFull(id); ferr == nil {
+		// 精确命中但不在已加载列表（被 12 本截断/生成窗口新增）→ 按幂等字段直取。
+		// Task 67-①: SQLite 写入高峰（填充管线 10K/h + WAL）下单次查询可能 busy 失败，
+		// 渲染路径瞬时抖动会把可解析的种子书打回 novels[0]（用户可见回归：pSEO 页主打书
+		// 变相关小说第一本）——重试一次（100ms 退避）再放弃
+		full, ferr := webNovelFull(id)
+		if ferr != nil {
+			time.Sleep(100 * time.Millisecond)
+			full, ferr = webNovelFull(id)
+		}
+		if ferr == nil {
 			return full, id
 		}
 		return nil, id
@@ -452,6 +461,27 @@ func pseoSeedBookNovel(seedTitle string, novels []map[string]any) (map[string]an
 			if nid, ok := n["id"].(int64); ok {
 				return n, nid
 			}
+		}
+	}
+	return nil, 0
+}
+
+// pseoFeaturedNovel pSEO 页主打书解析（Task 67-② 渲染端强化，三调用点统一语义）：
+//  1. 血缘 seed/source 解析（既有语义，Task 59 v4-③）；
+//  2. 血缘不可考时按词面兜底——keyword 恰与某书 title 完全相等（精确，未中再归一形比对）
+//     即「关键词本身就是书名」：书名种子词 source=book 的等价形态在词行不存在（聚合 URL
+//     直达/行被清理）或 seed=” 且 source!='book'（manual/配置种子词）的页面上同样成立；
+//     该书即种子书，不再把相关小说第一本冒充主打书。
+//
+// 两级皆不可考 → (nil, 0)，调用方维持 novels[0] 现行语义。
+func pseoFeaturedNovel(keyword, source, seed string, novels []map[string]any) (map[string]any, int64) {
+	seedTitle := pseoSeedBookTitle(keyword, source, seed)
+	if sn, sid := pseoSeedBookNovel(seedTitle, novels); sn != nil {
+		return sn, sid
+	}
+	if seedTitle != keyword {
+		if sn, sid := pseoSeedBookNovel(keyword, novels); sn != nil {
+			return sn, sid
 		}
 	}
 	return nil, 0
@@ -643,9 +673,10 @@ func generatePendingPages(limit int, exclude ...string) (int, error) {
 		}
 		// Task 59 v4-③: 书名/作者取种子书（血缘 seed/source 解析）而非 novels[0]，
 		// TDK《{novelTitle}》与聚合页主打书一致指向种子书；种子书置顶绑定列表；
-		// 无种子书回退 novels[0] 现行语义
+		// Task 67-②: 血缘不可考时按词面兑底（keyword 恰为某书名 → 该书即种子书），
+		// 无血缘可循仍回退 novels[0] 现行语义
 		novelTitle, author := "", ""
-		seedNovel, seedID := pseoSeedBookNovel(pseoSeedBookTitle(row.keyword, row.source, row.seed), novels)
+		seedNovel, seedID := pseoFeaturedNovel(row.keyword, row.source, row.seed, novels)
 		if seedNovel != nil {
 			novelTitle, _ = seedNovel["title"].(string)
 			author, _ = seedNovel["author"].(string)

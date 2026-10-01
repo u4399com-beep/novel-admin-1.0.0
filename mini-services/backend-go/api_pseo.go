@@ -570,7 +570,8 @@ func handlePseoKeywordPage(w http.ResponseWriter, r *http.Request, ps map[string
 				// Task 59 v4-③ 起对已生成页也做渲染时重排，此处 API 路径此前漏了
 				// 同款重排 → novels[0]（相关小说）冒充种子书，两条渲染路径语义
 				// 劈叉。对齐：血缘 seed/source 解析种子书并置顶，不可考维持原序
-				if sn, sid := pseoSeedBookNovel(pseoSeedBookTitle(keyword, srcCol, seedCol), novels); sn != nil {
+				// （Task 67-②: 词面兑底同源）
+				if sn, sid := pseoFeaturedNovel(keyword, srcCol, seedCol, novels); sn != nil {
 					novels = pseoPromoteSeedNovel(novels, sn, sid)
 				}
 				writeJSON(w, 200, map[string]any{
@@ -593,8 +594,9 @@ func handlePseoKeywordPage(w http.ResponseWriter, r *http.Request, ps map[string
 		return
 	}
 	// Task 59 v4-③: 种子书置顶（与 web 聚合页同语义）：书籍信息/简介主打种子书而非
-	// 匹配列表点击最高者；种子书不可考时维持 matchNovels 序
-	if sn, sid := pseoSeedBookNovel(pseoSeedBookTitle(keyword, srcCol, seedCol), novels); sn != nil {
+	// 匹配列表点击最高者；种子书不可考时维持 matchNovels 序。
+	// Task 67-②: 血缘不可考时按词面兑底（keyword 恰为某书名 → 该书即种子书）
+	if sn, sid := pseoFeaturedNovel(keyword, srcCol, seedCol, novels); sn != nil {
 		novels = pseoPromoteSeedNovel(novels, sn, sid)
 	}
 	siteName := "青阅文学" // TS setting?.siteName ?? '青阅文学'：无行时回退默认，行存在时空串原样保留

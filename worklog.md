@@ -3759,3 +3759,21 @@ Work Log:
 
 Stage Summary:
 - 双缺陷根修闭环：渲染路径语义统一（种子书主打）+ 启动自愈链补上「全新库 stale 封面清理」一环（第 7 次回收起自动免疫）；服务恢复+修复部署完成
+---
+Task ID: 67-R76~R77
+Agent: main (Z.ai Code)
+Task: 用户三项指令——彻底纯 Go 化收尾 + 双 bug 修复（pseo 种子书主打 + 封面错位）+ 迭代循环续跑
+
+Work Log:
+- 【第 7 次整机回收恢复】dev.log/DB/双 .bin/Go 工具链/curl-impersonate 全灭（git 内文件幸存）；按手册快捷路径 12 分钟级恢复：Go 1.22.12（后台 & 下载被沙箱收割器绞杀的教训再现——改前台执行）+ curl-impersonate 21 二进制 + build-go.sh + recover-r26.sh（失败码收尾）+ create-fleet.py 重建 13 任务舰队 + §4 批量复活 14/14
+- 【纯 Go 化收尾】根 package.json 已是 Go/bash shim（沙箱启动契约，内容如实描述零 Node）；删除空壳 node_modules/；核查无 tsconfig/next.config/src/prisma/.next/lockfiles 残留；子目录 package.json 均为零依赖元数据 shim——「彻底放弃 Next.js」目标达成，全站由 backend-go SSR 承载
+- 【bug 1 根因定位（用户：pseo 页书籍信息+简介应是种子书籍）】静态审查 + 受控数据实证双管：Task 59 v4-③ 血缘置顶在位，但血缘不可考页（词行不存在/手动词/配置种子词 seed='' 且 source!='book'）与 SQLite 写入高峰 busy 抖动（webNovelFull 单查失败 → (nil,id) → 不置顶）两条路径仍回退 novels[0]（matchNovels clicks 降序 = 相关小说第一本冒充主打）
+- 【bug 1 修复（Task 67）】a) pseoSeedBookNovel 直取失败重试一次（100ms 退避）——渲染路径瞬时抖动不再把可解析种子书打回 novels[0]；b) 新增 pseoFeaturedNovel 两级解析（血缘 → 词面兜底：keyword 恰与某书 title 相等即种子书，精确+归一形），三调用点（handleWebPseo/handlePseoKeywordPage 双路径/generatePendingPages TDK novelTitle）统一切换；c) audit67_test.go 4 条回归（词面兜底 API 路径/词行不存在/归一形态漂移/生成期 TDK 置顶）
+- 【bug 2 根因定位（用户：封面图和书籍不对应）】extractBook 封面回退选择器（.cover img 等通用类）页面级搜索且逐选择器取首个命中——「推荐书籍/排行/相关书」侧栏 img 同形且可能先于主封面出现在 DOM 序 → 推荐位书籍封面误配本书；另一变体：og:image 恒为全站 logo → 全库同图
+- 【bug 2 修复（Task 68）】a) 新增 pickCoverHref（遍历每选择器全部命中 + coverNoiseContainers 祖先链排除：recommend/rank/related/tuijian 等 27 形态）+ inCoverNoiseContainer；全部候选被排除 → 空串（渐变兜底+补抓通道可重试），绝不回退被污染候选——错图比无图更糟；b) rePlaceholderCover 追加 logo 形态（[/._-]logo[._-] 边界式，Logan 不误伤）；c) audit68a_test.go 6 条回归（推荐位先于主封面/全排除/规则选择器过滤/基线不回归/logo 形态/容器直测）
+- 【验证】双模块 gofmt/vet/go test -race 全绿（backend 34.9s / scraper 42.0s）；滚动重启部署；受控 E2E：无血缘 manual 词恰为书名 → 主打书=种子书（修复前=高点击相关书）；血缘词已生成快照序 → API 重排置顶；agent-browser 视觉终验：首页（封面正常流动）/pseo/圣墟（主打书信息盒=圣墟+辰东+1696 章+真实封面+简介+chips+相关列表种子书置顶+贴底 footer）/book/3（封面与书名对应）/390px 移动端/admin 面板（1256 书/67.5 万章/14 任务/健康全绿）——全部通过
+- 【封面健康实证】新库封面 237→688 张流动中，DB cover=/covers/N.jpg 计数与目录文件数精确一致；coverSrc 样本全为杰奇 CMS 每书唯一路径（files/article/image/{a}/{id}/{id}s.jpg），零 logo 命中；purgeStaleCoversOnFreshDB（Task 66-②）+ backfillBrokenCoverLocal 双自愈在岗
+- 【管线状态】675,307 章 / 14 任务 running / pseo 词池 2,885（1,420 generated+861 pending）富集循环正常出页；软 404 防护（垃圾词 404）与封面静态服务实测 404/200 正确
+
+Stage Summary:
+- 三指令闭环：纯 Go 化零残留（node_modules 空壳移除）+ 双用户 bug 根修（pseo 种子书主打双路径兜底 + 封面推荐位排除）+ 第 7 次回收 12 分钟恢复；双模块 race/E2E/视觉验证全绿，系统以 14 任务全速运转进入无人值守长跑，worklog+git 固化延续

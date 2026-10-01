@@ -139,8 +139,74 @@ var reAuthorLabel = regexp.MustCompile(`(?i)^(?:(?:书籍)?作\s*者\s*[:：]?\s
 
 func stripAuthorLabel(t string) string { return trimJSSpace(reAuthorLabel.ReplaceAllString(t, "")) }
 
-// Task 28-a: 占位封面 URL 特征（URL 任意段含这些 token 即视为占位图，不做网络探测）
-var rePlaceholderCover = regexp.MustCompile(`(?i)(?:nocover|no_cover|nopic|no-img|noimage|no_image|placeholder|zanwu|wufengmian)`)
+// Task 28-a: 占位封面 URL 特征（URL 任意段含这些 token 即视为占位图，不做网络探测）。
+// Task 68: 追加 logo——部分站点 og:image 恒指向全站 logo（每本书同一张图，属另类
+// 封面-书籍不对应：全库同图），与 nocover 同理拒绝，由渐变 token 兜底
+var rePlaceholderCover = regexp.MustCompile(`(?i)(?:nocover|no_cover|nopic|no-img|noimage|no_image|placeholder|zanwu|wufengmian|/logo[._-]|^logo[._-]|[._-]logo[._-])`)
+
+// coverNoiseContainers 封面候选排除容器（Task 68 封面错位根修）：书页 DOM 常见
+// 「推荐书籍/排行/相关书」侧栏与底部推荐块，其内 img 与封面回退选择器（.cover img 等
+// 通用类）同形，且可能先于主封面出现在 DOM 序——pickHref 逐选择器取首个命中时会把
+// 推荐位书籍的封面误配给本书（用户实测：「封面图和书籍不对应」）。候选命中若祖先链
+// 落在这些容器内则跳过，同选择器内取首个干净命中；全部候选被排除 → 返回空串
+// （渐变 token 兜底 + coverSrc 补抓通道可重试），绝不回退到被污染候选——错图比无图更糟。
+var coverNoiseContainers = []string{
+	".recommend", "#recommend", ".recomm", ".tuijian", "#tuijian",
+	".rank", ".ranking", "#rank", "#ranking", ".ranklist", ".rank_list", ".rank-list",
+	".toplist", ".top-list", ".weeks-hot", ".hot-book", ".hotbook", ".hotbooks",
+	".related", "#related", ".relate", ".xgss", ".xgbooks", ".xg_book",
+	".rec-book", ".reco-book", ".recbox", ".rec_box",
+	".sidebar .bookbox", ".aside .bookbox", "#sidebar .bookbox",
+}
+
+// inCoverNoiseContainer 候选节点是否位于封面排除容器（推荐位/排行位）内
+func inCoverNoiseContainer(el *goquery.Selection) bool {
+	for _, sel := range coverNoiseContainers {
+		if el.Closest(sel).Length() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// pickCoverHref 推荐位排除版 pickHref（Task 68 封面错位根修）：与 pickHref 同签名同
+// @attr 语义，但遍历每个选择器的**全部**命中，跳过 coverNoiseContainers 祖先链内的
+// 候选，取首个干净命中；自身即命中节点（s.IsMatcher）时同样过排除检查。全部候选被
+// 排除或无命中返回空串。
+func pickCoverHref(s *goquery.Selection, rawSelectors []string, base string) string {
+	for _, raw := range rawSelectors {
+		selector, attr := parseSel(raw)
+		if selector == "" {
+			continue
+		}
+		m := compileSel(selector)
+		if m == nil {
+			continue
+		}
+		var node *goquery.Selection
+		s.FindMatcher(m).EachWithBreak(func(_ int, el *goquery.Selection) bool {
+			if inCoverNoiseContainer(el) {
+				return true // 推荐位候选，继续找下一个
+			}
+			node = el
+			return false
+		})
+		if node == nil && s.Length() > 0 && s.IsMatcher(m) && !inCoverNoiseContainer(s) {
+			node = s
+		}
+		if node == nil {
+			continue
+		}
+		href := node.AttrOr("href", "")
+		if attr != "" {
+			href = node.AttrOr(attr, "")
+		}
+		if abs := toAbs(href, base); abs != "" {
+			return abs
+		}
+	}
+	return ""
+}
 
 // removeExcluded 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），
 // 多备用逗号分隔。extractBook 与 extractChapter 各自的入口只调一次。
@@ -451,7 +517,8 @@ func extractBook(doc *goquery.Document, rule map[string]string, baseURL string, 
 	// 逐候选跳过占位 URL，全部占位时返回空串，由主站落「确定性渐变封面」兜底。
 	cover := ""
 	for _, sel := range coverSels {
-		if u := pickHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) {
+		// Task 68: pickCoverHref——推荐位容器内候选先排除（封面-书籍错位根修）
+		if u := pickCoverHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) {
 			cover = u
 			break
 		}

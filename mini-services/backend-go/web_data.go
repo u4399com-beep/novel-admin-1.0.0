@@ -793,8 +793,9 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	}
 	// Task 59 v4-③: 种子书置顶主打——pSEO 页书籍信息+简介应为种子书（血缘 seed/source
 	// 解析）的信息，而非匹配列表里点击最高的另一本；种子书不可考时维持 novels[0] 语义。
-	// 存量已生成页 novelIds 非种子书置顶的，也在此处重排（渲染时根治，不依赖重新生成）
-	if sn, sid := pseoSeedBookNovel(pseoSeedBookTitle(kw, srcCol, seedCol), novels); sn != nil {
+	// 存量已生成页 novelIds 非种子书置顶的，也在此处重排（渲染时根治，不依赖重新生成）。
+	// Task 67-②: 血缘不可考时按词面兜底（keyword 恰为某书名 → 该书即种子书）
+	if sn, sid := pseoFeaturedNovel(kw, srcCol, seedCol, novels); sn != nil {
 		novels = pseoPromoteSeedNovel(novels, sn, sid)
 	}
 	if desc == "" {
