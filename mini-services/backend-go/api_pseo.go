@@ -564,6 +564,15 @@ func handlePseoKeywordPage(w http.ResponseWriter, r *http.Request, ps map[string
 		if json.Unmarshal([]byte(pageData.String), &saved) == nil {
 			novels, qerr := novelsByIDs(saved.NovelIDs)
 			if qerr == nil {
+				// Task 66-①: 已生成路径同样执行种子书置顶——pageData.novelIds 是
+				// 生成时刻的快照顺序（生成窗口期种子书可能尚未入库/被 12 本截断，
+				// 首元素未必是种子书）。SSR 聚合页（web_data.go handleWebPseo）自
+				// Task 59 v4-③ 起对已生成页也做渲染时重排，此处 API 路径此前漏了
+				// 同款重排 → novels[0]（相关小说）冒充种子书，两条渲染路径语义
+				// 劈叉。对齐：血缘 seed/source 解析种子书并置顶，不可考维持原序
+				if sn, sid := pseoSeedBookNovel(pseoSeedBookTitle(keyword, srcCol, seedCol), novels); sn != nil {
+					novels = pseoPromoteSeedNovel(novels, sn, sid)
+				}
 				writeJSON(w, 200, map[string]any{
 					"keyword":              keyword,
 					"novels":               novels,

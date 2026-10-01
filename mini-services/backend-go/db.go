@@ -151,6 +151,11 @@ func getDB() (*sql.DB, error) {
 		if err := backfillNovelIntroClean(db); err != nil {
 			log.Printf("[db] 简介噪声清洗回填失败（存量简介噪声暂存，重启重试）: %v", err)
 		}
+		// Task 66-②: 全新库 stale 封面清理（必须先于缺失自愈——先清错位旧文件，
+		// 缺失自愈才能看见断裂并重置渐变 token）。时序根修：整机回收后 DB 空库
+		// 重建而 covers 运行时产物残留时，旧 {id}.jpg 挂新库同 id 新书（张冠李戴，
+		// 第 6 次回收 2946 个残留实证），且「文件存在即健康」自愈判定对错位失明
+		purgeStaleCoversOnFreshDB(db)
 		// Task 60-R20: 本地封面文件缺失自愈（运行时产物 public/covers/ 被环境重置清空
 		// 的实证场景）——本地形态 cover 指向的文件不存在时重置渐变 token，渲染层即刻
 		// 恢复；重置行自动落入补抓候选面（token+coverSrc≠''），与补抓通道双层闭环

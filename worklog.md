@@ -3744,3 +3744,18 @@ Work Log:
 
 Stage Summary:
 - R51-R75 共 25 轮收官：第 5 次整机回收（/tmp+DB 备份均灭）→ 15 分钟级恢复 → 三模块深审 ≈2.8 万行（1 缺陷修复：E26 TEXT 静默失效）→ 滚动部署 → 重启恢复链路全实证 → race/E2E/质量全绿 → 系统以 135 万骨架 / 10K/h 填充进入无人值守长跑
+---
+Task ID: 66
+Agent: main (Z.ai Code)
+Task: 用户报告双缺陷修复——pseo 种子书语义 + 封面张冠李戴
+
+Work Log:
+- 【背景】会话间第 6 次整机回收（进程/DB/Go 全灭，covers 运行时产物残留 2946 个旧库文件）：先按手册快捷路径 5 分钟恢复（Go+curl-imp+构建+双服务+13 舰队，create-fleet.py 任务号解析修复生效），随后处理用户报告
+- 【缺陷 ①根因】pseo 聚合页两条渲染路径语义劈叉：SSR（handleWebPseo）Task 59 v4-③ 已有种子书置顶；API（handlePseoKeywordPage）已生成 pageData 路径按快照 novelIds 原序返回——生成窗口期种子书未入库/被 12 本截断时 novels[0]（相关小说）冒充种子书。修复：已生成路径补同款血缘解析+置顶（+7 行含注释），与 SSR 对齐
+- 【缺陷 ①验证】httptest 集成回归（audit66_test.go TestPseoKeywordPageGeneratedPathSeedPromotion）：seed 血缘形态下快照序热门书在首、修复后种子书置顶；生产三词实测 novels[0] 全部命中种子书（凌霄花上/他和她们的群星/圣墟）；测试首轮失败暴露测试自身构造错误（source=book 语义=keyword 即书名），改 seed 血缘形态后通过——语义验证副产品
+- 【缺陷 ②根因】整机回收后 DB 空库重建（novelId 从 1 重分配）而 public/covers/ 残留旧库封面 → 旧 {id}.jpg 挂新库同 id 新书（张冠李戴实证：covers/1.jpg=Sep29 旧文件挂新库《圣墟》）；且 backfillBrokenCoverLocal「文件存在即健康」判定对错位完全失明（文件恰好在掩盖断裂）；ensureCover 幂等复用语义使错位文件永不自愈
+- 【缺陷 ②修复·双层】a) 代码根治：db.go 启动链新增 purgeStaleCoversOnFreshDB（Novel 零行=全新库 → covers 目录全清，先于缺失自愈执行；存量库绝不触碰），purgeStaleCoversIn 独立可测；b) 当前库处置：手动清空 2946 个错位文件 → 重启后自愈链 900 本重置渐变 token → 补抓通道按新库 coverSrc 重建
+- 【验证】书页/聚合页渐变渲染正常（截图目检《圣墟》橙色渐变+首字，零裂图）；全量 go test 32.9s 绿；go vet/gofmt 清零；重启后 SSR 不回归（主打书语义在位）
+
+Stage Summary:
+- 双缺陷根修闭环：渲染路径语义统一（种子书主打）+ 启动自愈链补上「全新库 stale 封面清理」一环（第 7 次回收起自动免疫）；服务恢复+修复部署完成

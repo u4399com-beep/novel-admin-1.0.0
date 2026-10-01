@@ -677,3 +677,50 @@ func backfillBrokenCoverLocal(db *sql.DB) error {
 	log.Printf("[db] 本地封面文件缺失自愈：%d 本已重置渐变 token（补抓通道将按 coverSrc 重下）", len(broken))
 	return nil
 }
+
+// purgeStaleCoversOnFreshDB 全新库 stale 封面清理（Task 66-② 根治）。
+//
+// 背景：整机回收后 DB 文件被删、重启后空库重建（novelId 从 1 重新分配），而
+// public/covers/ 运行时产物若未被回收同步清空（第 6 次回收实证：残留 2946 个旧库
+// 封面文件），旧 {id}.jpg 会挂到新库同 id 新书头上——封面与书籍张冠李戴；且
+// backfillBrokenCoverLocal 的「文件存在即健康」判定对错位完全失明（文件恰好在，
+// 断裂被掩盖），错位封面会长期留存。
+//
+// 判定与动作：Novel 表零行（全新库——任何真实存量恢复都不可能为空）时，covers
+// 目录现存文件必然全部错位 → 整目录清空。清空后本库新书若已有 cover='/covers/N.jpg'
+// 指向（恢复流程手工导入等极端时序），紧随其后的 backfillBrokenCoverLocal 会将其
+// 重置渐变 token，补抓通道按 coverSrc 重建——与既有自愈链天然衔接。
+// 有书目的库（正常重启/存量恢复）绝不触碰。幂等：清后目录为空，重复执行零删除。
+// 必须在 backfillBrokenCoverLocal 之前调用（时序：先清文件，缺失自愈才能看见断裂）。
+func purgeStaleCoversOnFreshDB(db *sql.DB) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM "Novel"`).Scan(&n); err != nil {
+		log.Printf("[db] stale 封面清理探测失败（跳过本轮清理，重启重试）: %v", err)
+		return
+	}
+	if n > 0 {
+		return // 存量库：封面与书目共生，不动
+	}
+	if removed := purgeStaleCoversIn(coversDir()); removed > 0 {
+		log.Printf("[db] 全新库检测：清空 stale 封面 %d 个（旧库 novelId 与新库重新分配错位，张冠李戴根治；渲染回退渐变，补抓通道按新库重建）", removed)
+	}
+}
+
+// purgeStaleCoversIn 清空目录下全部 .jpg 文件（跳过子目录与非 jpg），返回删除数。
+// 独立成函数便于测试注入临时目录（绝不触碰真实 covers 目录）。
+func purgeStaleCoversIn(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0 // 目录不存在/不可读 = 无 stale 面，静默
+	}
+	removed := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".jpg") {
+			continue
+		}
+		if rmErr := os.Remove(filepath.Join(dir, e.Name())); rmErr == nil {
+			removed++
+		}
+	}
+	return removed
+}
