@@ -3794,3 +3794,20 @@ Work Log:
 
 Stage Summary:
 - 三指令闭环：全量封面重取能力落地（force 端点+驱动脚本+30min 巡检+x509 增强）+ 测试静默抹封面根因根修（DB_PATH 守卫+COVERS_DIR 沙箱，双层防线+回归锁定）+ 第 8 次恢复 18 分钟级完成。系统进入无人值守长跑：填充管线 12 任务全速、封面四通道自愈（内联采集/boot 自愈/30min 巡检/force 手动）
+
+---
+Task ID: 76
+Agent: main (Z.ai Code)
+Task: R76 迭代——第 9 次整机回收恢复 + 任务 1 封面全量重取通道在新库实证 + SSRF v4 保留段加固 + pseo 种子书路径三面复审 + E2E 全绿（用户指令 1/2/3/5）
+
+Work Log:
+- 【第 9 次整机回收恢复】双服务全灭（DB/Go 工具链/.bin/curl-impersonate/covers 全灭，/tmp 与 /home/z/db-backup 均清）。按手册快捷路径 15 分钟级恢复：Go 1.22.12 → curl-impersonate 21 二进制 → build-go.sh → recover-r26.sh（先 mkdir db/，Task 69 教训）→ 空库 DDL+seed（17 规则）→ create-fleet.py 重建 13 任务 → §4 批量复活。Task 66-69 的全部修复（pseo 种子书主打/封面推荐位排除/force 重取通道/测试隔离）随 git 幸存并即刻生效——git 内文件唯一持久化设计第 9 次实证
+- 【任务 1（封面全量重取）新库端到端实证】coverSrc（采集日志的结构化沉淀）内联落库正常（1,238 书中 1,210 有源 URL）；force 通道 `backfill-covers.py --force` 实跑验证：批次 fix 率 95-100%，失败样本全为源站确定性拒绝（text/html 拦截页、404——旧图原样保留不降级，契约正确）；30min 巡检 sweep 在岗（main.go boot 挂载）；后台 force 全量长跑运行中（≈全库一轮），仅 38 本仍 token 渐变（持续收敛中）
+- 【SSRF v4 保留段加固（Task 76，深审唯一落地项）】isPrivateIPv4Text 补 224/4 组播+240/4 保留（含 255.255.255.255）+TEST-NET-2+6to4 relay——永不承载公网图床的段早期确定性拒绝，避免「dial 必败→代理回退链空烧」（Task 69-b x509 同理由）。⚠ 例外契约：TEST-NET-3（203.0.113/24）有意保留公网判定（audit51/51b/60/69 系列免 DNS 测试夹具依赖），注释+测试双锁定。regression：TestIsPrivateIp 增 9 断言（6 拦截+3 豁免/边界）
+- 【深审覆盖】coversx.go 831 行全文逐行（coversDir 解析序/三段式下载/force 原子覆盖/回退预算/自愈链时序均正确）+ api_noveltools.go 补抓面（游标契约/remaining 语义/预算护栏正确）+ pseo 种子书三渲染路径复审（generatePendingPages/API generated/API realtime/SSR handleWebPseo 四调用点统一走 pseoFeaturedNovel，置顶后 Featured 区块取 novels[0]——bug 1 修复链完整无回归）+ pseo_book.go 233 行全文（富集重试记账/novelPseoTags 双通道取词正确）
+- 【滚动重启部署】build-go.sh + recover-r26.sh（失败码收尾），后验 ps+curl 直查；14 任务复活全 running；pseo 富集循环 12s/轮正常出页；force 后台进程被重启中断 → 重启续跑（从头覆盖，幂等安全）
+- 【验证】backend race 全绿 38.8s / scraper race 全绿 41.7s / build+vet+gofmt 全清；agent-browser E2E：首页（24 封面 0 裂图）/pseo/圣墟（API 主打=种子书本体 圣墟·辰东·1696 章；SSR h1「“圣墟”小说大全」+封面/书名对应 0 裂图——bug 1/bug 2 修复视觉终验）/book/1226（cover 1226.jpg alt=书名精确对应）/390px 移动端（无横向滚动）/footer 长页自然推下
+- 【管线状态】1,238 书 / 698,172 章（填充管线随 fleet 全速重建中）/ 1,200 封面文件与 DB 计数一致流动 / 14 任务 running / LLM 429 指数退避正常消化
+
+Stage Summary:
+- 三指令闭环：第 9 次恢复 15 分钟级完成 + 封面全量重取通道在新库端到端实证（用户任务 1 落地：内联落库+force 长跑+30min 巡检三通道在岗）+ SSRF 保留段加固（唯一落地代码改动，双锁回归）+ pseo 种子书三面复审零回归。系统进入无人值守长跑

@@ -133,7 +133,14 @@ func isPrivateIp(host string) bool {
 	return isPrivateIPv4Text(h)
 }
 
-// isPrivateIPv4Text 点分四段文本层判定（含越界八位组拒绝；仅接受 v4 文本形态）
+// isPrivateIPv4Text 点分四段文本层判定（含越界八位组拒绝；仅接受 v4 文本形态）。
+// Task 76 加固：补 224/4 组播、240/4 保留（含 255.255.255.255）、TEST-NET-2
+// （198.51.100/24）、6to4 relay（192.88.99/24，2014 年已弃用）——这些段永不承载
+// 公网 Web/图床，早期确定性拒绝可避免「dial 必败 → 代理回退链空烧」（与 Task 69-b
+// x509 修复同理由：确定性失败不消耗回退预算）。
+// ⚠ 例外契约：TEST-NET-3（203.0.113/24）**有意保留公网判定**——测试夹具依赖
+// （audit51/51b/60/69 系列用它做免 DNS 短路的 URL 字面量，见 audit51_test.go 文件头），
+// 不得加入本判定。
 func isPrivateIPv4Text(h string) bool {
 	if v4m := ipv4TextRE.FindStringSubmatch(h); v4m != nil {
 		nums := [4]int{}
@@ -166,7 +173,16 @@ func isPrivateIPv4Text(h string) bool {
 		if a == 192 && b == 0 && (c == 0 || c == 2) {
 			return true
 		}
+		if a == 192 && b == 88 && c == 99 { // 6to4 relay anycast（已弃用）
+			return true
+		}
+		if a == 198 && b == 51 && c == 100 { // TEST-NET-2
+			return true
+		}
 		if a == 198 && (b == 18 || b == 19) {
+			return true
+		}
+		if a >= 224 { // 224/4 组播 + 240/4 保留（含 255.255.255.255）
 			return true
 		}
 		_ = d
