@@ -1,5 +1,8 @@
 /**
  * backend-go —— 采集封面落盘：下载远程封面 → 解码规范化 → 转存 public/covers/。
+ * （实际落盘目录由 coversDir() 解析：COVERS_DIR env > cwd 向上查找 public/covers >
+ *   项目根兜底 /home/z/my-project/public/covers —— 生产运行时为项目根 public/covers，
+ *   与渲染层 web.go 静态服务同源，读写永远一致；勿按本注释字面找 backend-go/public）
  *
  * TS 源：src/lib/covers-store.ts（SSRF 校验/代理/幂等/渐变 token 逐行移植）
  *

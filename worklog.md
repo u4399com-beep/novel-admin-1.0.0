@@ -3811,3 +3811,18 @@ Work Log:
 
 Stage Summary:
 - 三指令闭环：第 9 次恢复 15 分钟级完成 + 封面全量重取通道在新库端到端实证（用户任务 1 落地：内联落库+force 长跑+30min 巡检三通道在岗）+ SSRF 保留段加固（唯一落地代码改动，双锁回归）+ pseo 种子书三面复审零回归。系统进入无人值守长跑
+
+---
+Task ID: 77
+Agent: main (Z.ai Code)
+Task: R77 迭代——恢复快照+封面源头深审（scraper-go extract.go 链路+storex.go upsertBook 流转）+ 精简两落地（node_modules 空壳+格式统一）
+
+Work Log:
+- 【恢复相】系统快照全绿：14 任务 running / 1,243 书 / 70.6 万章 / 1,523 已填 / force 封面重取长跑推进中（id 142+，fix 率 95-100%）/ E26 fleetkeeper 在岗（main.go:65）/ pseo 富集 12s 轮正常
+- 【深审相：封面数据源头】scraper-go extract.go 封面提取链逐行（rePlaceholderCover 占位过滤含 logo 变体 / coverNoiseContainers 推荐位排除容器 25 选择器 / pickCoverHref 全命中遍历+祖先链排除+自命中检查——Task 68 根修完整无回归）+ 规则选择器与 og:image 回退序（og:image → #fmimg → .book-img → .cover → .book-cover → img.cover）+ storex.go upsertBook 封面流转（coverSrc first-write-wins 落库 → 新书/token 书触发下载 → 回退链包装 → 失败保留渐变 token）。零缺陷
+- 【精简相两落地】① node_modules 空壳（4KB）移除（Task 68 先例；package.json 系沙箱启动契约 shim 保留）；② coversx.go 头注释补实际落盘目录说明（coversDir() 解析序+生产实际为项目根 public/covers，防恢复时按注释字面找错目录——本次恢复实证的困惑点）；③ api_noveltools.go gofmt 空格→tabs 格式统一（1146 行纯空白，历史存量）
+- 【部署决策】本轮改动均为注释/格式/仓库卫生，无功能变化——运行中 .bin 功能等同，跳过滚动重启（避免打扰填充管线与 force 长跑；若回收，git 源码已是最新）
+- 【验证】backend build+vet+gofmt 全清 / scraper vet+build 全清 / 14 任务 running 持续
+
+Stage Summary:
+- R77 以「审源头、清死角」为主题：封面链路上游（提取端）与中游（入库端）逐行验证零缺陷，三处精简落地，无功能变更零扰动部署决策（重启仅在功能变更时执行）
