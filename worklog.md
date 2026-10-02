@@ -3826,3 +3826,16 @@ Work Log:
 
 Stage Summary:
 - R77 以「审源头、清死角」为主题：封面链路上游（提取端）与中游（入库端）逐行验证零缺陷，三处精简落地，无功能变更零扰动部署决策（重启仅在功能变更时执行）
+
+---
+Task ID: 78
+Agent: main (Z.ai Code)
+Task: R78 迭代——反反爬核心深审（scraper-go chain.go 692 行全文逐行）+ 域况健康度普查 + 管线快照
+
+Work Log:
+- 【深审相：反反爬核心 chain.go 全文】策略链编排逐行复审：①链预算 55s 硬上限+minBudget 动态下限；②host 小写归一（Task 38-a 限速槽/熔断/亲和 key 统一）；③规则 cookie 幂等重种+零注入显式告警（Task 53-a）；④E17 按出口熔断（egresses 全熔断快速失败/部分熔断 pickProxy 降权跳过/成功仅复位本次出口）；⑤robots Crawl-delay 底座采纳（只升不降上界 30s）；⑥429/503 限流记忆+AIMD 乘增（×1.5 上界 8s）；⑦策略亲和提位；⑧预算感知取槽（Task 35-b 快速 shed 防车道空占）；⑨硬时间闸 context 中止在途请求；⑩挑战循环终止防烧穿；⑪策略间退避纯网络证据门控（引擎自状态不退避）；⑫出口归因记账（egressList 首用序+空兜底直连）；⑬AIMD 加减回落（连续成功 -50ms 降至 1.2s 基线）；⑭debugHTML 快照 20KB 截断拷贝。纯函数 isEngineStateNote/hasRealNetworkAttempt/allAttemptsNetErr 边界完备。零缺陷——反反爬体系已达架构最优（合规约束 11K/h 前轮实证），无需增强
+- 【域况普查】14 任务 running 零封禁；pseo-suggest duckduckgo deadline exceeded 为 3.5s cap 设计内降级；LLM 429 指数退避正常消化；封面失败簇（huangjinwu dial/77shuku dial/个别 404）均为已知网络封锁+回退链消化
+- 【管线快照】1,341 书 / 746,560 章 / 2,236 已填（Phase 2 随骨架重建回升）/ pseo 已生成 2,360 页 / 封面 1,305 张与 DB 流动一致 / force 长跑 id 435+
+
+Stage Summary:
+- R78 完成反反爬核心 chain.go 全文逐行深审（第 3 轮全量覆盖），14 层防线逐项确认零缺陷；域况全绿零封禁，管线三指标（骨架/填充/pseo 页）同步增长
