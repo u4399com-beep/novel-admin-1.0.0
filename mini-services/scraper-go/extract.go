@@ -36,6 +36,28 @@ func isNoiseTocTitle(title string) bool {
 	return noiseTocTitles[trimJSSpace(title)]
 }
 
+// R82（目录分页修复①）：biquge2023 系模板的 JS 混淆锚——目录分页页（list-N.html）
+// 章节锚形如 <a href="javascript:;" onclick="location.href='/txt/xx/ab7.html'" title=..>，
+// 仅看 href 会整页提 0 章（实测 xinjianpan list-2.html 99 条全混淆）。
+// reOnclickHref 匹配 onclick 内 location.href='...' 赋值目标（含 window.location.href）。
+var reOnclickHref = regexp.MustCompile(`(?i)location(?:\.href)?\s*=\s*['"]([^'"]+)['"]`)
+
+// effectiveAnchorHref 锚点有效 URL：href 为空/#/javascript: 时回退 onclick 内
+// location.href='...' 赋值目标；正常 href 原样返回（不覆盖真实链接）。
+func effectiveAnchorHref(a *goquery.Selection) string {
+	h := strings.TrimSpace(a.AttrOr("href", ""))
+	lh := strings.ToLower(h)
+	if h != "" && lh != "#" && !strings.HasPrefix(lh, "javascript:") {
+		return h
+	}
+	if oc := a.AttrOr("onclick", ""); oc != "" {
+		if m := reOnclickHref.FindStringSubmatch(oc); m != nil {
+			return strings.TrimSpace(m[1])
+		}
+	}
+	return h
+}
+
 const maxDescriptionChars = 2000
 const maxTitleChars = 200
 
@@ -442,7 +464,8 @@ func extractChapterRefs(doc *goquery.Document, rule map[string]string, baseURL s
 			if title == "" {
 				title = collapse(a.Text())
 			}
-			url := toAbs(a.AttrOr("href", ""), baseURL)
+			// R82：effectiveAnchorHref——href=javascript:; 的混淆锚回退 onclick 提取
+			url := toAbs(effectiveAnchorHref(a), baseURL)
 			// 无 URL 的引用无法被采集（下游 worker 也会过滤），直接跳过
 			if url == "" {
 				return
@@ -550,6 +573,46 @@ func extractBook(doc *goquery.Document, rule map[string]string, baseURL string, 
 		}
 	}
 
+	// R82（目录分页修复②）：目录分页链接（可选规则键 chapterListPaginationSelector）。
+	// 分页目录站（biquge2023 系实测 xinjianpan：书页 .all 块服务端只渲染前 100 章）
+	// 在目录块尾部放「更多章节列表」锚组（a.morechapter → list-1.html…list-N.html，
+	// 每页 100 章且导航全列出）。命中锚的 href（含 onclick 混淆）转绝对 URL 作 tocPages
+	// 返回，供 worker 目录 walker 逐页跟随。去重保序；自页剔除；上限 200 防异常页。
+	tocPages := []string{}
+	if ps, ok := rule["chapterListPaginationSelector"]; ok && ps != "" {
+		seenPage := map[string]bool{}
+		selfPage := ""
+		if u := toAbs(baseURL, baseURL); u != "" {
+			if idx := strings.Index(u, "#"); idx >= 0 {
+				u = u[:idx]
+			}
+			selfPage = u
+		}
+		for _, sel := range splitAlternatives(ps) {
+			els := findSafe(root, sel)
+			if els == nil || els.Length() == 0 {
+				continue
+			}
+			sliceSel(els, 200).Each(func(_ int, a *goquery.Selection) {
+				u := toAbs(effectiveAnchorHref(a), baseURL)
+				if u == "" {
+					return
+				}
+				if idx := strings.Index(u, "#"); idx >= 0 {
+					u = u[:idx]
+				}
+				if u == selfPage || seenPage[u] {
+					return
+				}
+				seenPage[u] = true
+				tocPages = append(tocPages, u)
+			})
+		}
+		if len(tocPages) > 0 {
+			*warnings = append(*warnings, "chapterListPaginationSelector：发现目录分页 "+strconv.Itoa(len(tocPages))+" 页，由 worker 逐页跟随")
+		}
+	}
+
 	if title == "" {
 		*warnings = append(*warnings, "书籍标题未提取到（规则与内置回退均未命中）")
 	}
@@ -558,6 +621,7 @@ func extractBook(doc *goquery.Document, rule map[string]string, baseURL string, 
 		Type: "book", Title: title, Author: author, Description: description,
 		Cover: strPtr(cover), Status: status, Category: category,
 		ChapterCount: len(chapters), Chapters: chapters, CatalogUrl: catalogURL,
+		TocPages: tocPages,
 	}
 }
 

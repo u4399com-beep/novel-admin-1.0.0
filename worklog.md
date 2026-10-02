@@ -3881,3 +3881,25 @@ Work Log:
 
 Stage Summary:
 - R81 收口用户任务 1：封面体系在新库上四层闭环（内联采集落库 coverSrc → force 全量重取 → 30min 巡检补缺 → token 渐变兜底不裂图），账目 1,412==1,412 精确一致
+
+---
+Task ID: 82
+Agent: main (Z.ai Code)
+Task: R82 迭代——用户指令：检查所有采集规则的章节目录页分页设置，修复完善后根据采集任务日志增量采集在库书籍
+
+Work Log:
+- 【全规则目录分页普查】17 规则三路目录提取路径逐条审查（书页内嵌 chapterLinkSelector / catalogLinkSelector 目录页二次提取 / chapterListApi JSON 目录）+ 分源章节量分布实证（Novel.coverSrc 域名代理统计）：23qb/5165/x2552/trxsw/77shuku/ddyueshu/23uswx 等源目录单页全量（实测 23qb catalog 单页 415 章、5165 书页 224 章无分页），大书 DB 顶格完整（23qb 5348 章、jianpanxs 2825 章历史值）
+- 【实锤 bug①xinjianpan 目录分页未处理】biquge2023 系模板书页 .all 块服务端只渲染前 100 章，「更多章节列表」a.morechapter → list-1.html…list-N.html 分页（100 章/页，每页含全部分页导航）；且分页页章节锚 href="javascript:;" onclick="location.href='…'" 混淆（旧引擎整页提 0 章）。DB 受害实证：539/565 本 ≤100 章（95% 截断率）
+- 【实锤 bug②ixdzs8 遗留 8 章书】532 本恰 8 章 = 书页内嵌「最新 8 章」骨架化时 JSON 目录未生效的历史遗留；现规则 chapterListApi 已工作（任务日志 16 次 JSON 调用），重发任务即自愈
+- 【修复①引擎 onclick 反混淆】extract.go effectiveAnchorHref：href 为空/#/javascript: 时回退 onclick 内 location.href 赋值目标（单双引号/window. 前缀），正常 href 不覆盖；仅作用于目录章节锚提取
+- 【修复②引擎目录分页透出】新规则键 chapterListPaginationSelector（util.go bookKeys 白名单 + extract.go extractBook）→ BookData.TocPages（绝对 URL 去重保序/自页剔除/上限 200）；types.go/typesx.go 双侧 DTO
+- 【修复③backend 目录 walker】fetchCatalogChapters 重构为 fetchTocPage + fetchFullToc：种子（catalogURL+书页 tocPages）BFS 逐页跟随，visited 防回环（书页自身预标记），MAX_TOC_PAGES_PER_BOOK=120（覆盖 9993 章顶格书）、mergeTocRefs 按 URL 去重首现者胜；Phase 1 REPLACE 语义保持（walker 合并结果多于书页内嵌时整体替换，sawCatalog 计数沿用）
+- 【二轮实战抓虫】walker 首版种子预标记 visited + 循环「已 visited 且非首个即跳过」→ 第二个及以后种子页被静默跳过（实测 list-2 全新章页被跳过，REPLACE 永不触发，书卡 100 章）→ 改为出队记账制；伪引擎（BACKEND_ENGINE_URL httptest 注入）端到端回归锁定「两种子页必抓、合并 199、引擎恰收 2 请求」
+- 【顺带修复④预存 flaky 测试】audit54c TestStickyGotProfileFamilyInvariants：stickyHashIndex 含 45min 时间窗，3 固定样本「覆盖≥2 画像族」断言每轮 ~11% 概率天然翻车（本轮 -race 连续两次命中）→ 24 样本 + 三族全覆盖断言（漏检概率 ≤1e-4）
+- 【测试与部署】scraper-go 新增 audit82a_test.go（onclick 反混淆 8 用例 + TocPages 提取/去重/自页剔除 3 用例）；backend-go 新增 audit82b_test.go（mergeTocRefs/stripURLHash/MAX 上界 + walker 伪引擎 E2E）；双模块 go vet + go test -race 全绿；gofmt 清零（含历史遗留 audit68a_test.go）；build-go.sh + recover-r26.sh 滚动重启 ×2（保 DB，任务自动暂停→resume-paused 复活 13 任务）
+- 【规则更新】xinjianpan（id 15）bookRule 增 chapterListPaginationSelector=a.morechapter（PUT /api/scrape-rules 持久化，loadRule 无缓存即时生效）
+- 【增量采集实证】任务日志在案任务批量复活（resume-paused 13 条）；xinjianpan 任务 6 实测：书页 100 条内嵌 → 引擎「发现目录分页 2 页」→ walker「目录分页跟随生效 2 页，目录 200 条」→ 骨架入库 +100 新章/本；DB 验证书 1264/1261 由 100→200 章；23qb 任务 3 大书 +1207 新章正常；全 13 任务在岗、域况零封禁
+- 【E2E】agent-browser 验证首页 SSR 正常 + 书 1264 目录页第 1 章→第 200 章全量渲染（修复前上限 100 章）、零页面错误
+
+Stage Summary:
+- R82 完成「目录分页」专项：普查 17 规则确认唯一分页源站 xinjianpan（biquge2023 系），引擎 onclick 反混淆 + TocPages 透出 + backend 目录 walker 三件套修复，实战抓出并修复 walker 种子跳过二阶 bug；539 本截断书增量修复启动（100→200/本实证），ixdzs8 532 本 8 章遗留书随任务重发自愈；新增 5 个回归测试文件级用例组，race/E2E/域况全绿；管线快照 3,094 书 / 1,381,948 章 / 15,430 已填（较轮初 +230 书 / +28,860 章 / +2,847 填充）

@@ -121,6 +121,8 @@ var bookKeys = []string{
 	"titleSelector", "authorSelector", "descriptionSelector", "coverSelector",
 	"statusSelector", "categorySelector", "chapterLinkSelector", "chapterTitleSelector",
 	"catalogLinkSelector", "excludeSelector", "chapterListApi",
+	// R82：目录分页链接选择器（a.morechapter 等），命中锚的 URL 作 BookData.TocPages 透出
+	"chapterListPaginationSelector",
 }
 var chapterKeys = []string{"titleSelector", "contentSelector", "nextSelector", "excludeSelector"}
 

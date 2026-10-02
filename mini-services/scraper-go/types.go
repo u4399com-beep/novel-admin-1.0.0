@@ -119,6 +119,9 @@ type BookData struct {
 	ChapterCount int              `json:"chapterCount"`
 	Chapters     []BookChapterRef `json:"chapters"`
 	CatalogUrl   *string          `json:"catalogUrl"`
+	// R82：目录分页页 URL（chapterListPaginationSelector 命中的锚，绝对 URL 去重保序）。
+	// 空数组时 JSON 序列化为 []（非 null），worker 侧 len 判空即可
+	TocPages []string `json:"tocPages"`
 }
 
 // ChapterData 章节提取结果

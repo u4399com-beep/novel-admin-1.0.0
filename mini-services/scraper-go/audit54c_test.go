@@ -9,6 +9,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,7 +86,15 @@ func TestStickyHashIndexContract(t *testing.T) {
 // 画像族一致性：粘性选中的画像仍保持既有头族约束（Chrome/Edge 带客户端提示、
 // Firefox 不带；Accept-Encoding 声明 E8 口径），防 E14 粘性化时误伤画像构造。
 func TestStickyGotProfileFamilyInvariants(t *testing.T) {
-	hosts := []string{"fam-chrome54.example.com", "fam-edge54.example.com", "fam-ff54.example.com"}
+	// R82 修复：原版仅 3 个固定样本主机断言「覆盖 ≥2 画像族」，而 stickyHashIndex
+	// 含时间窗参数（45min 窗，window=nowMs()/window）——任意窗口内 3 个样本全落同族
+	// 的概率约 1/9，每轮 go test 天然 ~11% 概率翻车（本轮 -race 全量实测两次连续命中）。
+	// 改为 24 个样本主机（任意窗口内漏检某族概率 ≤ 2×(2/3)^24 ≈ 1e-4）+ 三族全覆盖
+	// 断言；逐样本头族不变式（Chrome/Edge 带 CH、Firefox 不带、E8 accept-encoding）不变
+	hosts := make([]string, 0, 24)
+	for i := 0; i < 24; i++ {
+		hosts = append(hosts, fmt.Sprintf("fam-r82-%02d.example.com", i))
+	}
 	sawFamilies := map[string]bool{}
 	for _, host := range hosts {
 		h := headerGeneratorHeaders("https://" + host + "/book/1")
@@ -114,8 +123,8 @@ func TestStickyGotProfileFamilyInvariants(t *testing.T) {
 			t.Fatalf("E8 accept-encoding 口径被 E14 破坏: %q", h["accept-encoding"])
 		}
 	}
-	if len(sawFamilies) < 2 {
-		t.Fatalf("三样本主机至少应覆盖两个画像族（哈希分布异常）: %v", sawFamilies)
+	if len(sawFamilies) < 3 {
+		t.Fatalf("24 样本主机应覆盖全部三个画像族（哈希分布异常）: %v", sawFamilies)
 	}
 }
 

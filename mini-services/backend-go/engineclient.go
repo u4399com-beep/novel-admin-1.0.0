@@ -20,19 +20,19 @@
 package main
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net"
-	"net/http"
-	"net/url"
-	"os"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
+        "bytes"
+        "context"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "net"
+        "net/http"
+        "net/url"
+        "os"
+        "regexp"
+        "strconv"
+        "strings"
+        "time"
 )
 
 // SCRAPER_BASE 引擎地址（Task 26-d 起可经环境变量覆盖，修复旧版三处硬编码：
@@ -41,17 +41,17 @@ import (
 //   - BACKEND_ENGINE_PORT：仅端口（如 3131）
 //   - 缺省 http://127.0.0.1:3030（生产默认，与历史行为一致）
 func engineBaseURL() string {
-	if u := strings.TrimSpace(os.Getenv("BACKEND_ENGINE_URL")); u != "" {
-		if p, err := url.Parse(u); err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != "" {
-			return strings.TrimRight(u, "/")
-		}
-	}
-	if p := strings.TrimSpace(os.Getenv("BACKEND_ENGINE_PORT")); p != "" {
-		if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
-			return fmt.Sprintf("http://127.0.0.1:%d", n)
-		}
-	}
-	return "http://127.0.0.1:3030"
+        if u := strings.TrimSpace(os.Getenv("BACKEND_ENGINE_URL")); u != "" {
+                if p, err := url.Parse(u); err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != "" {
+                        return strings.TrimRight(u, "/")
+                }
+        }
+        if p := strings.TrimSpace(os.Getenv("BACKEND_ENGINE_PORT")); p != "" {
+                if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
+                        return fmt.Sprintf("http://127.0.0.1:%d", n)
+                }
+        }
+        return "http://127.0.0.1:3030"
 }
 
 // isDefaultEngineURL 引擎地址是否为生产默认（runner 互监护仅对默认地址执行
@@ -68,42 +68,42 @@ var engineHTTPClient = &http.Client{Timeout: ENGINE_TIMEOUT_MS * time.Millisecon
 
 // engineResult 引擎调用结果（TS EngineResult<T> 联合类型 → struct + OK 标志）
 type engineResult[T any] struct {
-	OK       bool
-	Data     T
-	Error    string
-	Warnings []string
-	Strategy string
-	Attempts *int // 引擎响应缺 attempts 时为 nil
-	// SoftBlock 引擎 softBlock 档案存在标记（Task 46-b 接线）：引擎 handlers 对「HTTP 200
-	// 但规则提取结果全空/正文为空」的成功响应附 softBlock 对象（Task 32-d 专为 backend
-	// 消费而加，旧版从未解析）——该形态下 ok=true 且提取为空，仅看 Error 会误判为
-	// 「规则失效/选择器不命中」failed 终态；凭此标记可归入软拦截（isSoftBlockErrText 同族），
-	// 列表/书页阶段撞限流空壳窗口时任务转 paused 可自动恢复而非烧成终态
-	SoftBlock bool
+        OK       bool
+        Data     T
+        Error    string
+        Warnings []string
+        Strategy string
+        Attempts *int // 引擎响应缺 attempts 时为 nil
+        // SoftBlock 引擎 softBlock 档案存在标记（Task 46-b 接线）：引擎 handlers 对「HTTP 200
+        // 但规则提取结果全空/正文为空」的成功响应附 softBlock 对象（Task 32-d 专为 backend
+        // 消费而加，旧版从未解析）——该形态下 ok=true 且提取为空，仅看 Error 会误判为
+        // 「规则失效/选择器不命中」failed 终态；凭此标记可归入软拦截（isSoftBlockErrText 同族），
+        // 列表/书页阶段撞限流空壳窗口时任务转 paused 可自动恢复而非烧成终态
+        SoftBlock bool
 }
 
 // engineIsTimeout 判定是否客户端超时（对齐 TS /timeout|abort/i || name==='TimeoutError'）
 func engineIsTimeout(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var ne net.Error
-	return errors.As(err, &ne) && ne.Timeout()
+        if err == nil {
+                return false
+        }
+        if errors.Is(err, context.DeadlineExceeded) {
+                return true
+        }
+        var ne net.Error
+        return errors.As(err, &ne) && ne.Timeout()
 }
 
 // rawJSONString JSON 字段 → 字符串（字符串原样；其他类型转文本；缺失/空 → ""）
 func rawJSONString(r json.RawMessage) string {
-	if len(r) == 0 {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(r, &s); err == nil {
-		return s
-	}
-	return string(r)
+        if len(r) == 0 {
+                return ""
+        }
+        var s string
+        if err := json.Unmarshal(r, &s); err == nil {
+                return s
+        }
+        return string(r)
 }
 
 // callEngine 调用引擎；网络异常/超时/非 2xx 一律返回结构化失败，绝不 panic。
@@ -111,142 +111,142 @@ func rawJSONString(r json.RawMessage) string {
 // return 路径可达性（对齐 TS 12-g2 核对）：①响应非合法 JSON → 失败；②!HTTP 2xx 或引擎
 // ok:false → 失败；③成功但缺 data 对象 → 失败；④正常成功。
 func callEngine[T any](path string, body map[string]any) engineResult[T] {
-	jb, err := json.Marshal(body)
-	if err != nil {
-		return engineResult[T]{OK: false, Error: "引擎请求体序列化失败", Warnings: []string{}}
-	}
-	req, err := http.NewRequest("POST", engineBaseURL()+path, bytes.NewReader(jb))
-	if err != nil {
-		return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
-	}
-	req.Header.Set("Content-Type", "application/json")
-	res, err := engineHTTPClient.Do(req)
-	if err != nil {
-		if engineIsTimeout(err) {
-			return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎请求超时(%ds)", ENGINE_TIMEOUT_MS/1000), Warnings: []string{}}
-		}
-		return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
-	}
-	defer res.Body.Close()
-	rb, _ := readAllLimited(res.Body, 8<<20)
+        jb, err := json.Marshal(body)
+        if err != nil {
+                return engineResult[T]{OK: false, Error: "引擎请求体序列化失败", Warnings: []string{}}
+        }
+        req, err := http.NewRequest("POST", engineBaseURL()+path, bytes.NewReader(jb))
+        if err != nil {
+                return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
+        }
+        req.Header.Set("Content-Type", "application/json")
+        res, err := engineHTTPClient.Do(req)
+        if err != nil {
+                if engineIsTimeout(err) {
+                        return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎请求超时(%ds)", ENGINE_TIMEOUT_MS/1000), Warnings: []string{}}
+                }
+                return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
+        }
+        defer res.Body.Close()
+        rb, _ := readAllLimited(res.Body, 8<<20)
 
-	var env struct {
-		OK        *bool           `json:"ok"`
-		Error     json.RawMessage `json:"error"`
-		Detail    json.RawMessage `json:"detail"`
-		Warnings  []any           `json:"warnings"`
-		Strategy  json.RawMessage `json:"strategy"`
-		Attempts  []any           `json:"attempts"`
-		Data      json.RawMessage `json:"data"`
-		SoftBlock json.RawMessage `json:"softBlock"` // Task 32-d: 200 空壳档案（对象存在即视为命中）
-	}
-	if err := json.Unmarshal(rb, &env); err != nil {
-		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应解析失败(HTTP %d)", res.StatusCode), Warnings: []string{}}
-	}
-	warnings := []string{}
-	for _, w := range env.Warnings {
-		warnings = append(warnings, fmt.Sprintf("%v", w))
-	}
+        var env struct {
+                OK        *bool           `json:"ok"`
+                Error     json.RawMessage `json:"error"`
+                Detail    json.RawMessage `json:"detail"`
+                Warnings  []any           `json:"warnings"`
+                Strategy  json.RawMessage `json:"strategy"`
+                Attempts  []any           `json:"attempts"`
+                Data      json.RawMessage `json:"data"`
+                SoftBlock json.RawMessage `json:"softBlock"` // Task 32-d: 200 空壳档案（对象存在即视为命中）
+        }
+        if err := json.Unmarshal(rb, &env); err != nil {
+                return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应解析失败(HTTP %d)", res.StatusCode), Warnings: []string{}}
+        }
+        warnings := []string{}
+        for _, w := range env.Warnings {
+                warnings = append(warnings, fmt.Sprintf("%v", w))
+        }
 
-	if res.StatusCode < 200 || res.StatusCode >= 300 || (env.OK != nil && !*env.OK) {
-		base := rawJSONString(env.Error)
-		if base == "" {
-			base = fmt.Sprintf("HTTP %d", res.StatusCode)
-		}
-		detail := rawJSONString(env.Detail)
-		if detail != "" {
-			detail = truncateRunes(detail, 200)
-		}
-		if detail != "" {
-			base = base + "（" + detail + "）"
-		}
-		return engineResult[T]{OK: false, Error: base, Warnings: warnings}
-	}
+        if res.StatusCode < 200 || res.StatusCode >= 300 || (env.OK != nil && !*env.OK) {
+                base := rawJSONString(env.Error)
+                if base == "" {
+                        base = fmt.Sprintf("HTTP %d", res.StatusCode)
+                }
+                detail := rawJSONString(env.Detail)
+                if detail != "" {
+                        detail = truncateRunes(detail, 200)
+                }
+                if detail != "" {
+                        base = base + "（" + detail + "）"
+                }
+                return engineResult[T]{OK: false, Error: base, Warnings: warnings}
+        }
 
-	// 成功响应必须携带 data 对象（引擎 handlers 成功路径恒有）
-	trimmed := strings.TrimSpace(string(env.Data))
-	if trimmed == "" || trimmed == "null" || trimmed[0] != '{' {
-		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应缺少 data 字段(HTTP %d)", res.StatusCode), Warnings: warnings}
-	}
-	var data T
-	if err := json.Unmarshal(env.Data, &data); err != nil {
-		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应 data 解析失败(HTTP %d)", res.StatusCode), Warnings: warnings}
-	}
-	// Task 49-b: softBlock 显式 null 防御——RawMessage 对 `"softBlock": null` 也有 4 字节，
-	// 旧版 len>0 判定会把 null 误当档案命中（空提取被归入软拦截 → paused 自动恢复空转
-	// 烧预算，真实规则失效被掩盖）。引擎现行实现只在命中时附对象（非 null），此处为契约
-	// 纵深防御
-	softBlockPresent := len(env.SoftBlock) > 0 &&
-		!bytes.Equal(bytes.TrimSpace(env.SoftBlock), []byte("null"))
-	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: softBlockPresent}
-	if env.Attempts != nil {
-		n := len(env.Attempts)
-		out.Attempts = &n
-	}
-	return out
+        // 成功响应必须携带 data 对象（引擎 handlers 成功路径恒有）
+        trimmed := strings.TrimSpace(string(env.Data))
+        if trimmed == "" || trimmed == "null" || trimmed[0] != '{' {
+                return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应缺少 data 字段(HTTP %d)", res.StatusCode), Warnings: warnings}
+        }
+        var data T
+        if err := json.Unmarshal(env.Data, &data); err != nil {
+                return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应 data 解析失败(HTTP %d)", res.StatusCode), Warnings: warnings}
+        }
+        // Task 49-b: softBlock 显式 null 防御——RawMessage 对 `"softBlock": null` 也有 4 字节，
+        // 旧版 len>0 判定会把 null 误当档案命中（空提取被归入软拦截 → paused 自动恢复空转
+        // 烧预算，真实规则失效被掩盖）。引擎现行实现只在命中时附对象（非 null），此处为契约
+        // 纵深防御
+        softBlockPresent := len(env.SoftBlock) > 0 &&
+                !bytes.Equal(bytes.TrimSpace(env.SoftBlock), []byte("null"))
+        out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: softBlockPresent}
+        if env.Attempts != nil {
+                n := len(env.Attempts)
+                out.Attempts = &n
+        }
+        return out
 }
 
 // engineRuleBody 组装引擎请求体（charset/proxy/insecureTLS/cookies/referer 可选字段按存在性展开）
 func engineRuleBody(u string, ruleVal any, rule LoadedRule, referer string) map[string]any {
-	body := map[string]any{"url": u, "rule": ruleVal}
-	if rule.Charset != "" {
-		body["charset"] = rule.Charset
-	}
-	if rule.Proxy != "" {
-		body["proxy"] = rule.Proxy
-	}
-	if rule.InsecureTLS {
-		body["insecureTLS"] = true
-	}
-	// Task 53: 规则级静态 cookie 底座——Trim 后非空才下发（与 loadRule 装载端 TrimSpace、
-	// 引擎 strField TrimSpace+4096 rune 钳制同口径；条件自含不依赖调用方预裁剪，空白值
-	// 绝不发空/纯空白键，引擎侧缺省=无注入）
-	if c := strings.TrimSpace(rule.Cookies); c != "" {
-		body["cookies"] = c
-	}
-	if referer != "" {
-		body["referer"] = referer
-	}
-	return body
+        body := map[string]any{"url": u, "rule": ruleVal}
+        if rule.Charset != "" {
+                body["charset"] = rule.Charset
+        }
+        if rule.Proxy != "" {
+                body["proxy"] = rule.Proxy
+        }
+        if rule.InsecureTLS {
+                body["insecureTLS"] = true
+        }
+        // Task 53: 规则级静态 cookie 底座——Trim 后非空才下发（与 loadRule 装载端 TrimSpace、
+        // 引擎 strField TrimSpace+4096 rune 钳制同口径；条件自含不依赖调用方预裁剪，空白值
+        // 绝不发空/纯空白键，引擎侧缺省=无注入）
+        if c := strings.TrimSpace(rule.Cookies); c != "" {
+                body["cookies"] = c
+        }
+        if referer != "" {
+                body["referer"] = referer
+        }
+        return body
 }
 
 // bookPageResult fetchBookPage 结果
 type bookPageResult struct {
-	OK   bool
-	Book BookData
-	Err  string
+        OK   bool
+        Book BookData
+        Err  string
 }
 
 // fetchBookPage 抓取并提取一个书页（每次调用成功命中后记一行策略日志；quiet 抑制日志）。
 // referer 可选（""=不传）：列表页场景把站点首页/上一页作为来路传入。
 func fetchBookPage(run *Run, u string, rule LoadedRule, referer string, quiet bool) bookPageResult {
-	res := callEngine[struct {
-		Book *BookData `json:"book"`
-	}]("/api/test", engineRuleBody(u, map[string]any{"bookRule": rule.BookRule}, rule, referer))
-	if !res.OK {
-		return bookPageResult{OK: false, Err: res.Error}
-	}
-	if len(res.Warnings) > 0 && !quiet {
-		run.LogWarnings(res.Warnings)
-	}
-	if res.Strategy != "" && !quiet {
-		n := "?"
-		if res.Attempts != nil {
-			n = itoa(*res.Attempts)
-		}
-		run.Log(fmt.Sprintf("书页命中策略 %s（尝试 %s 次）", res.Strategy, n))
-	}
-	if res.Data.Book == nil || res.Data.Book.Title == "" {
-		// Task 46-b: 200 空壳误判修正——引擎 ok=true 但附 softBlock 档案时，
-		// 提取为空是「限流软拦截/挑战竞态」而非「规则失效」；旧文案不含任何软拦截
-		// 字样 → isTransientScrapeErr 不命中 → 单本任务书目全败时被烧成 failed 终态
-		//（自动恢复永不接手）。改用软拦截文案让 Phase 1 全败路径转 paused 可自动恢复
-		if res.SoftBlock {
-			return bookPageResult{OK: false, Err: softBlockEmptyErrText}
-		}
-		return bookPageResult{OK: false, Err: "未提取到书籍标题（规则与内置回退均未命中）"}
-	}
-	return bookPageResult{OK: true, Book: *res.Data.Book}
+        res := callEngine[struct {
+                Book *BookData `json:"book"`
+        }]("/api/test", engineRuleBody(u, map[string]any{"bookRule": rule.BookRule}, rule, referer))
+        if !res.OK {
+                return bookPageResult{OK: false, Err: res.Error}
+        }
+        if len(res.Warnings) > 0 && !quiet {
+                run.LogWarnings(res.Warnings)
+        }
+        if res.Strategy != "" && !quiet {
+                n := "?"
+                if res.Attempts != nil {
+                        n = itoa(*res.Attempts)
+                }
+                run.Log(fmt.Sprintf("书页命中策略 %s（尝试 %s 次）", res.Strategy, n))
+        }
+        if res.Data.Book == nil || res.Data.Book.Title == "" {
+                // Task 46-b: 200 空壳误判修正——引擎 ok=true 但附 softBlock 档案时，
+                // 提取为空是「限流软拦截/挑战竞态」而非「规则失效」；旧文案不含任何软拦截
+                // 字样 → isTransientScrapeErr 不命中 → 单本任务书目全败时被烧成 failed 终态
+                //（自动恢复永不接手）。改用软拦截文案让 Phase 1 全败路径转 paused 可自动恢复
+                if res.SoftBlock {
+                        return bookPageResult{OK: false, Err: softBlockEmptyErrText}
+                }
+                return bookPageResult{OK: false, Err: "未提取到书籍标题（规则与内置回退均未命中）"}
+        }
+        return bookPageResult{OK: true, Book: *res.Data.Book}
 }
 
 // softBlockEmptyErrText 200 空壳响应的统一失败文案（Task 46-b）。
@@ -261,69 +261,152 @@ const softBlockEmptyErrText = "HTTP 200 空壳响应（引擎 softBlock 档案�
 // Task 46-b: 引擎 ok=true 但附 softBlock 档案（200 空壳）时返回软拦截文案——旧版返回
 // 空错误串，首页空壳在 runList 被误判「列表页未提取到书籍条目」failed 终态。
 func fetchListPage(run *Run, u string, rule LoadedRule, referer string) ([]ListItem, string) {
-	res := callEngine[struct {
-		List *struct {
-			Items []ListItem `json:"items"`
-		} `json:"list"`
-	}]("/api/test", engineRuleBody(u, map[string]any{"listRule": rule.ListRule}, rule, referer))
-	if !res.OK {
-		run.Log(fmt.Sprintf("列表页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
-		return nil, res.Error
-	}
-	if len(res.Warnings) > 0 {
-		run.LogWarnings(res.Warnings)
-	}
-	items := []ListItem{}
-	if res.Data.List != nil {
-		for _, it := range res.Data.List.Items {
-			if it.URL != "" { // TS filter(!!it.url)
-				items = append(items, it)
-			}
-		}
-	}
-	if len(items) == 0 && res.SoftBlock { // Task 46-b: 200 空壳 → 软拦截文案（见函数注释）
-		return nil, softBlockEmptyErrText
-	}
-	return items, ""
+        res := callEngine[struct {
+                List *struct {
+                        Items []ListItem `json:"items"`
+                } `json:"list"`
+        }]("/api/test", engineRuleBody(u, map[string]any{"listRule": rule.ListRule}, rule, referer))
+        if !res.OK {
+                run.Log(fmt.Sprintf("列表页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
+                return nil, res.Error
+        }
+        if len(res.Warnings) > 0 {
+                run.LogWarnings(res.Warnings)
+        }
+        items := []ListItem{}
+        if res.Data.List != nil {
+                for _, it := range res.Data.List.Items {
+                        if it.URL != "" { // TS filter(!!it.url)
+                                items = append(items, it)
+                        }
+                }
+        }
+        if len(items) == 0 && res.SoftBlock { // Task 46-b: 200 空壳 → 软拦截文案（见函数注释）
+                return nil, softBlockEmptyErrText
+        }
+        return items, ""
 }
 
-// fetchCatalogChapters 抓取完整目录页并提取章节链接（配合 bookRule.catalogLinkSelector）。
-// 目录页只需 chapterLinkSelector/excludeSelector；失败记录日志返回空数组（调用方回退书页章节链接）。
-func fetchCatalogChapters(run *Run, u string, rule LoadedRule, referer string, quiet bool) []ChapterRef {
-	bookRule := RuleMap{}
-	for _, key := range []string{"chapterLinkSelector", "excludeSelector"} {
-		if v := rule.BookRule[key]; v != "" {
-			bookRule[key] = v
-		}
-	}
-	res := callEngine[struct {
-		Book *BookData `json:"book"`
-	}]("/api/test", engineRuleBody(u, map[string]any{"bookRule": bookRule}, rule, referer))
-	if !res.OK {
-		if !quiet {
-			run.Log(fmt.Sprintf("目录页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
-		}
-		return nil
-	}
-	if len(res.Warnings) > 0 && !quiet {
-		run.LogWarnings(res.Warnings)
-	}
-	if res.Data.Book == nil {
-		return nil
-	}
-	return res.Data.Book.Chapters
+// fetchTocPage 抓取一个目录页并提取章节链接与下级分页链接（配合 bookRule.
+// chapterLinkSelector / chapterListPaginationSelector）。失败记录日志返回 ok=false
+// （调用方回退书页章节链接）。R82：目录分页站（biquge2023 系）书页只内嵌第一页
+// 章节，全量目录按 list-N.html 分页承载，且分页页章节锚 href=javascript:; 混淆
+// （引擎侧 effectiveAnchorHref 反混淆）——分页链接经 chapterListPaginationSelector
+// 以 BookData.TocPages 透出。
+func fetchTocPage(run *Run, u string, rule LoadedRule, referer string, quiet bool) ([]ChapterRef, []string, bool) {
+        bookRule := RuleMap{}
+        for _, key := range []string{"chapterLinkSelector", "excludeSelector", "chapterListPaginationSelector"} {
+                if v := rule.BookRule[key]; v != "" {
+                        bookRule[key] = v
+                }
+        }
+        res := callEngine[struct {
+                Book *BookData `json:"book"`
+        }]("/api/test", engineRuleBody(u, map[string]any{"bookRule": bookRule}, rule, referer))
+        if !res.OK {
+                if !quiet {
+                        run.Log(fmt.Sprintf("目录页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
+                }
+                return nil, nil, false
+        }
+        if len(res.Warnings) > 0 && !quiet {
+                run.LogWarnings(res.Warnings)
+        }
+        if res.Data.Book == nil {
+                return nil, nil, false
+        }
+        return res.Data.Book.Chapters, res.Data.Book.TocPages, true
+}
+
+// MAX_TOC_PAGES_PER_BOOK 单本书目录分页跟随上限（分页目录站 100 章/页实测，
+// 9993 章顶格书 ≈100 页；120 留冗余，防御分页环/异常无限页集）
+const MAX_TOC_PAGES_PER_BOOK = 120
+
+// stripURLHash 去锚点变体（列表页跳转 #frag 与正页同址）
+func stripURLHash(u string) string {
+        if idx := strings.Index(u, "#"); idx >= 0 {
+                return u[:idx]
+        }
+        return u
+}
+
+// mergeTocRefs 按 URL 去重合并目录页章节引用（同 URL 首现者胜、保持首现顺序——
+// 同章可能同时出现在书页内嵌块与分页页/多页重复，标题以首次提取为准）。
+// R82 抽为纯函数便于回归锁定。
+func mergeTocRefs(dst []ChapterRef, add []ChapterRef) []ChapterRef {
+        seen := make(map[string]bool, len(dst)+len(add))
+        for _, r := range dst {
+                seen[stripURLHash(r.URL)] = true
+        }
+        for _, r := range add {
+                if r.URL == "" {
+                        continue
+                }
+                key := stripURLHash(r.URL)
+                if seen[key] {
+                        continue
+                }
+                seen[key] = true
+                dst = append(dst, r)
+        }
+        return dst
+}
+
+// fetchFullToc 目录 walker：从种子页（catalogURL / 书页命中的分页链接）出发逐页
+// 抓取合并章节引用，直到无新分页或触及页数/章数上限。返回合并后的引用与实际
+// 抓取页数（0=种子全部失败，调用方保持旧回退语义）。
+// R82 二轮修复：种子不得预先入 visited——旧写法把全部种子先标记 visited，而循环
+// 出队时「已 visited 且非首个」即跳过，导致第二个及以后的种子页（list-2…list-N，
+// 往往是唯一含新章的页）被静默跳过，walker 永远只抓到第一页（实测全为重复章，
+// 合并数恰等于书页内嵌数，REPLACE 永不触发）。改为：书页自身（referer）预标记
+// 防回链；种子出队去重后逐个记账再抓；分页链接仅在未访问时入队。
+func fetchFullToc(run *Run, seeds []string, rule LoadedRule, referer string, quiet bool) ([]ChapterRef, int) {
+        visited := map[string]bool{}
+        if referer != "" {
+                visited[stripURLHash(referer)] = true // 书页自身（分页页常回链书页）
+        }
+        queue := make([]string, 0, len(seeds))
+        for _, s := range seeds {
+                s = stripURLHash(s)
+                if s == "" || visited[s] {
+                        continue
+                }
+                visited[s] = true
+                queue = append(queue, s)
+        }
+        refs := []ChapterRef{}
+        pages := 0
+        for len(queue) > 0 && pages < MAX_TOC_PAGES_PER_BOOK && len(refs) <= MAX_CHAPTERS_PER_BOOK {
+                u := queue[0]
+                queue = queue[1:]
+                pageRefs, tocPages, ok := fetchTocPage(run, u, rule, referer, quiet)
+                if !ok {
+                        continue
+                }
+                pages++
+                refs = mergeTocRefs(refs, pageRefs)
+                for _, p := range tocPages {
+                        p = stripURLHash(p)
+                        if p == "" || visited[p] {
+                                continue
+                        }
+                        visited[p] = true
+                        queue = append(queue, p)
+                }
+        }
+        return refs, pages
 }
 
 // fetchChapter 抓取并提取一个章节（warnings 由调用方按存储成败决定是否记录）
 func fetchChapter(u string, rule LoadedRule, referer string) engineResult[ChapterData] {
-	return callEngine[ChapterData]("/api/chapter", engineRuleBody(u, rule.ChapterRule, rule, referer))
+        return callEngine[ChapterData]("/api/chapter", engineRuleBody(u, rule.ChapterRule, rule, referer))
 }
 
 var (
-	// htmlSuffixRE \.[sx]?html?$（.html/.htm/.shtml/.xhtml 等，忽略大小写）
-	htmlSuffixRE = regexp.MustCompile(`(?i)\.[sx]?html?$`)
-	// pageParamRE (?:^|[&?])page=\d+（?page=2 形态的 page 参数递增语义）
-	pageParamRE = regexp.MustCompile(`(?:^|[&?])page=\d+`)
+        // htmlSuffixRE \.[sx]?html?$（.html/.htm/.shtml/.xhtml 等，忽略大小写）
+        htmlSuffixRE = regexp.MustCompile(`(?i)\.[sx]?html?$`)
+        // pageParamRE (?:^|[&?])page=\d+（?page=2 形态的 page 参数递增语义）
+        pageParamRE = regexp.MustCompile(`(?:^|[&?])page=\d+`)
 )
 
 // isSameChapterPagination 判断 nextUrl 是否是「当前章节的下一分页」而非下一章：
@@ -331,109 +414,109 @@ var (
 // 必须是 _ / / ? # 之一，防止 /book/1/ 误匹配 /book/12/ 这类数字续写。
 // 逐行移植自 engine-client.ts（Task 3 第二轮：huangjinwu/ggd66 长章节缺半修复点）。
 func isSameChapterPagination(base, next string) bool {
-	// JS new URL() 对非法/相对 URL 抛异常 → catch 返回 false；Go 以 IsAbs 等价判定
-	b, err := url.Parse(base)
-	if err != nil || !b.IsAbs() {
-		return false
-	}
-	n, err := url.Parse(next)
-	if err != nil || !n.IsAbs() {
-		return false
-	}
-	// 同章分页必在同主机同路径空间（跨域/换路径视为另一页）
-	if b.Host != n.Host {
-		return false
-	}
-	np := n.EscapedPath()
-	// 前缀匹配（允许 base 省略 .html 后缀的差异；前缀后第一个字符必须是 _ / ? #，
-	// 防 /book/1/ 误匹配 /book/12/）
-	prefixes := []string{strings.TrimRight(b.EscapedPath(), "/")}
-	if htmlSuffixRE.MatchString(prefixes[0]) {
-		prefixes = append(prefixes, htmlSuffixRE.ReplaceAllString(prefixes[0], ""))
-	}
-	for _, bp := range prefixes {
-		// Task 27-c（重新应用 25-a 修复⑧①，合并时丢失）：base 为站点根（如 https://x.com）
-		// 时 TrimRight 得空前缀使 HasPrefix 恒真 → 同主机任意路径（/2.html）被误判为
-		// 同章分页，正文串章；空前缀跳过
-		if bp == "" {
-			continue
-		}
-		// Task 27-c（重新应用 25-a 修复⑧②，合并时丢失）：EscapedPath 恒不含 '?'，
-		// 下方 sep=='?' 分支实际不可达（Go 与 JS pathname 同病）；「路径完全相等 +
-		// ?page=N」形态的同章分页（/reader.php?cid=1 → /reader.php?cid=1&page=2）
-		// 需显式判定，否则长章节分页从未被拼接（缺半）。pageParamRE 限定 page 参数
-		// 递增语义，?cid= 等非 page 参数不受影响
-		if np == bp && pageParamRE.MatchString(n.RawQuery) {
-			return true
-		}
-		if !strings.HasPrefix(np, bp) || len(np) == len(bp) {
-			continue
-		}
-		sep := np[len(bp)]
-		if sep != '_' && sep != '/' && sep != '?' && sep != '#' {
-			continue
-		}
-		if sep == '?' {
-			// ?page=2 形态：要求 page 参数递增语义存在（JS 检测 n.search；Go 用 RawQuery 等价）
-			return pageParamRE.MatchString(n.RawQuery)
-		}
-		return true
-	}
-	return false
+        // JS new URL() 对非法/相对 URL 抛异常 → catch 返回 false；Go 以 IsAbs 等价判定
+        b, err := url.Parse(base)
+        if err != nil || !b.IsAbs() {
+                return false
+        }
+        n, err := url.Parse(next)
+        if err != nil || !n.IsAbs() {
+                return false
+        }
+        // 同章分页必在同主机同路径空间（跨域/换路径视为另一页）
+        if b.Host != n.Host {
+                return false
+        }
+        np := n.EscapedPath()
+        // 前缀匹配（允许 base 省略 .html 后缀的差异；前缀后第一个字符必须是 _ / ? #，
+        // 防 /book/1/ 误匹配 /book/12/）
+        prefixes := []string{strings.TrimRight(b.EscapedPath(), "/")}
+        if htmlSuffixRE.MatchString(prefixes[0]) {
+                prefixes = append(prefixes, htmlSuffixRE.ReplaceAllString(prefixes[0], ""))
+        }
+        for _, bp := range prefixes {
+                // Task 27-c（重新应用 25-a 修复⑧①，合并时丢失）：base 为站点根（如 https://x.com）
+                // 时 TrimRight 得空前缀使 HasPrefix 恒真 → 同主机任意路径（/2.html）被误判为
+                // 同章分页，正文串章；空前缀跳过
+                if bp == "" {
+                        continue
+                }
+                // Task 27-c（重新应用 25-a 修复⑧②，合并时丢失）：EscapedPath 恒不含 '?'，
+                // 下方 sep=='?' 分支实际不可达（Go 与 JS pathname 同病）；「路径完全相等 +
+                // ?page=N」形态的同章分页（/reader.php?cid=1 → /reader.php?cid=1&page=2）
+                // 需显式判定，否则长章节分页从未被拼接（缺半）。pageParamRE 限定 page 参数
+                // 递增语义，?cid= 等非 page 参数不受影响
+                if np == bp && pageParamRE.MatchString(n.RawQuery) {
+                        return true
+                }
+                if !strings.HasPrefix(np, bp) || len(np) == len(bp) {
+                        continue
+                }
+                sep := np[len(bp)]
+                if sep != '_' && sep != '/' && sep != '?' && sep != '#' {
+                        continue
+                }
+                if sep == '?' {
+                        // ?page=2 形态：要求 page 参数递增语义存在（JS 检测 n.search；Go 用 RawQuery 等价）
+                        return pageParamRE.MatchString(n.RawQuery)
+                }
+                return true
+        }
+        return false
 }
 
 // fetchChapterPaged 抓取整章（含同章分页拼接）：首版 fetchChapter 后，若引擎返回的
 // nextUrl 是当前章节的下一分页，继续抓取并把正文按段落合并，直至无分页/达上限。
 // 任何一页失败都保留已抓到的部分（partial 内容优于整体失败）。
 func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[ChapterData] {
-	first := fetchChapter(u, rule, referer)
-	if !first.OK {
-		return first
-	}
-	data := first.Data
-	warnings := append([]string(nil), first.Warnings...)
-	strategy := first.Strategy
-	attempts := first.Attempts
-	visited := map[string]bool{u: true}
-	mergedChars := 0 // Task 27-c: 已合并正文 rune 计（内存护栏用）
-	next := data.NextURL
-	for page := 2; next != "" && page <= MAX_CHAPTER_PAGES+1; page++ {
-		if !isSameChapterPagination(u, next) {
-			break
-		}
-		if visited[next] { // 引擎 nextUrl 环路防御
-			break
-		}
-		// Task 27-c（重新应用 25-a 修复⑧③，合并时丢失）：分页合并内存护栏——
-		// 已合并内容达 MAX_CONTENT_CHARS×4（同 fetchChapterPaged 上限 5 页 × 单页上限
-		// 的量级）即停，防异常大页 × 多分页 × 12 车道瞬时内存尖峰
-		if mergedChars >= MAX_CONTENT_CHARS*4 {
-			break
-		}
-		visited[next] = true
-		sub := fetchChapter(next, rule, referer)
-		if !sub.OK || strings.TrimSpace(sub.Data.Content) == "" {
-			break
-		}
-		// 合并正文：分页边界按段落直接续接（各页正文已由引擎清洗过）
-		mergedChars += runeLen(sub.Data.Content)
-		data.Content = data.Content + "\n" + sub.Data.Content
-		data.Paragraphs = append(append([]string(nil), data.Paragraphs...), sub.Data.Paragraphs...)
-		data.WordCount += sub.Data.WordCount
-		data.NextURL = sub.Data.NextURL
-		warnings = append(warnings, sub.Warnings...)
-		strategy = sub.Strategy
-		attempts = sub.Attempts
-		next = sub.Data.NextURL
-	}
-	// warnings 去重保序（[...new Set(warnings)] 语义）
-	seen := map[string]bool{}
-	uniq := make([]string, 0, len(warnings))
-	for _, w := range warnings {
-		if !seen[w] {
-			seen[w] = true
-			uniq = append(uniq, w)
-		}
-	}
-	return engineResult[ChapterData]{OK: true, Data: data, Warnings: uniq, Strategy: strategy, Attempts: attempts}
+        first := fetchChapter(u, rule, referer)
+        if !first.OK {
+                return first
+        }
+        data := first.Data
+        warnings := append([]string(nil), first.Warnings...)
+        strategy := first.Strategy
+        attempts := first.Attempts
+        visited := map[string]bool{u: true}
+        mergedChars := 0 // Task 27-c: 已合并正文 rune 计（内存护栏用）
+        next := data.NextURL
+        for page := 2; next != "" && page <= MAX_CHAPTER_PAGES+1; page++ {
+                if !isSameChapterPagination(u, next) {
+                        break
+                }
+                if visited[next] { // 引擎 nextUrl 环路防御
+                        break
+                }
+                // Task 27-c（重新应用 25-a 修复⑧③，合并时丢失）：分页合并内存护栏——
+                // 已合并内容达 MAX_CONTENT_CHARS×4（同 fetchChapterPaged 上限 5 页 × 单页上限
+                // 的量级）即停，防异常大页 × 多分页 × 12 车道瞬时内存尖峰
+                if mergedChars >= MAX_CONTENT_CHARS*4 {
+                        break
+                }
+                visited[next] = true
+                sub := fetchChapter(next, rule, referer)
+                if !sub.OK || strings.TrimSpace(sub.Data.Content) == "" {
+                        break
+                }
+                // 合并正文：分页边界按段落直接续接（各页正文已由引擎清洗过）
+                mergedChars += runeLen(sub.Data.Content)
+                data.Content = data.Content + "\n" + sub.Data.Content
+                data.Paragraphs = append(append([]string(nil), data.Paragraphs...), sub.Data.Paragraphs...)
+                data.WordCount += sub.Data.WordCount
+                data.NextURL = sub.Data.NextURL
+                warnings = append(warnings, sub.Warnings...)
+                strategy = sub.Strategy
+                attempts = sub.Attempts
+                next = sub.Data.NextURL
+        }
+        // warnings 去重保序（[...new Set(warnings)] 语义）
+        seen := map[string]bool{}
+        uniq := make([]string, 0, len(warnings))
+        for _, w := range warnings {
+                if !seen[w] {
+                        seen[w] = true
+                        uniq = append(uniq, w)
+                }
+        }
+        return engineResult[ChapterData]{OK: true, Data: data, Warnings: uniq, Strategy: strategy, Attempts: attempts}
 }

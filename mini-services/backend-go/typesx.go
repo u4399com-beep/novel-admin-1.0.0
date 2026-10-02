@@ -46,6 +46,10 @@ type BookData struct {
 	ChapterCount *int         `json:"chapterCount"`
 	Chapters     []ChapterRef `json:"chapters"`
 	CatalogURL   string       `json:"catalogUrl"`
+	// R82：目录分页页 URL（规则键 chapterListPaginationSelector 命中锚，引擎已去重保序
+	// 并转绝对 URL）。分页目录站（biquge2023 系实测 xinjianpan）书页只内嵌第一页章节，
+	// 全量目录按 list-1.html…list-N.html 分页承载——walker 逐页跟随补全
+	TocPages []string `json:"tocPages"`
 }
 
 // ListItem 列表页条目
