@@ -3839,3 +3839,18 @@ Work Log:
 
 Stage Summary:
 - R78 完成反反爬核心 chain.go 全文逐行深审（第 3 轮全量覆盖），14 层防线逐项确认零缺陷；域况全绿零封禁，管线三指标（骨架/填充/pseo 页）同步增长
+
+---
+Task ID: 79
+Agent: main (Z.ai Code)
+Task: R79 迭代——新库填充质量抽查（用户指令 2 验证面）+ 存储架构实证 + 读路径端到端验证
+
+Work Log:
+- 【质量抽查踩坑与澄清】首查 Chapter.content 列显示 filled 章 content 全空（2,366/2,366），疑似「数据毁灭级」bug → 复核 persistChapterFill（worker.go:1144）确认虚惊：db 模式正文写入独立分表 ChapterContent（Chapter.content 为 Prisma 时代遗留列，db/txt 双模式均不写）；按 playbook 警告补拷 -wal/-shm 三件套直查分表——2,366 行全非空、均值 2,747 字、filled==stored 1:1 对应
+- 【正文质量实证】分表抽样（妖精的尾巴同人等 4 章原文）全为干净中文正文，零 JS/404/垃圾污染；字数自洽（wordCount≈length）
+- 【读路径端到端】/api/novels/1/chapters 目录正常（伏天氏 3,050-3,244 字/章）→ /api/chapters/1 详情回读分表 3,110 字干净正文——存储与读取双路径闭环验证
+- 【教训沉淀】质量抽查 SQL 必须查 ChapterContent 分表而非 Chapter.content（本次误报根因）；活库直查必须拷三件套（WAL 不可见性，playbook 已有警告本次再次实证）
+- 【管线状态】填充与骨架同步增长，双服务健康，force 封面长跑持续推进
+
+Stage Summary:
+- R79 以「抽查即踩坑、澄清即实证」完成新库填充质量审计：存储架构（ChapterContent 分表）+ 读路径 + 正文质量三重验证全绿，零真实缺陷；沉淀质量抽查 SQL 口径教训
