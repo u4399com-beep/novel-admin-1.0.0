@@ -4061,3 +4061,62 @@ Work Log:
 
 Stage Summary:
 - 部署入口零前提化：服务器只要有 curl 或 wget（几乎所有发行版自带）即可一条命令从零部署；git 只是可选加速项；引导命令与 deploy-cn.sh 已在 GitHub 仓库自洽
+
+---
+Task ID: 93
+Agent: main (Z.ai Code)
+Task: R93 目录分页截断修复（「好多书只采到第100章」根因闭环 + 存量修复扫荡）
+
+Work Log:
+- 【症状量化】全库 861 本书章节数直方图两大尖峰：112 章 ×32 本（100 目录页章节 + 12 最新章节块）、8 章 ×86 本（仅最新章节块）——均为目录截断特征，非采集上限问题
+- 【根因①huangjinwu】bookRule 缺 chapterListPaginationSelector：站点目录按 list-2.html…list-20.html 分页（100 章/页 + .pagination-list 下一页/末页锚），书页仅内嵌 112 条 → walker 种子为空永不启动。实测确认书页/分页页结构（/novel/59352 全书 1979 章 20 页）
+- 【根因②ixdzs8】书页仅内嵌最新 8 章，完整目录靠 bookRule.chapterListApi（POST /novel/clist/ JSON）——引擎 jsontoc 取槽排队预算固定 5s，BOOK_CONCURRENCY=4 多书并发时域槽 FIFO 排队 8-10s+ 必 shed（日志实证「域限速排队超预算，已跳过 JSON 目录提取」）→ 86 本书全截成 8 章
+- 【站点普查】6 个未配分页的站点逐一实测（ddyueshu 1502 章/77shuku 1088 章/23uswx 1926 章单页全量目录，ggd66/5165 无分页特征）→ 仅 huangjinwu 需补；夜伴书屋(38.34.172.127) 站点熔断暂无法验证（均章≈96 章存疑，站点恢复后复查）
+- 【Fix A 引擎】jsontoc.go：tocSlotBudget 剩余预算自适应（unknown→旧 5s 档、充裕→clamp(remaining-3s,≤20s)、不足→防御性 shed）；extract.go：extractBookBudgeted 透传；handlers.go：按消费方 60s 超时算剩余。实测 ixdzs8 书页 JSON 目录 648 章成功（原 8 章）
+- 【Fix B 后端】engineclient.go：bookPageResult 透出 warnings + fetchBookPageWithTocRetry 小目录护栏（chapterListApi 配置且内嵌<50 章且出现 shed 警告 → 退避 3s 重抓，最多 2 次，停止信号协作，重试耗尽回退首次结果）
+- 【Fix C 规则】huangjinwu bookRule +chapterListPaginationSelector=".pagination-list a"（API PUT 生效）。实测书页 tocPages 透出 2 条（2.html/20.html，自页剔除正确）
+- 【配套】api_noveltools.go resort-chapters 加 force 分支（指定单书强制重排，忽略 20% 错乱占比审计阈值——追加式目录补全后旧最新块残留仅 1-2% 错位，常规审计永不命中；编号下限/并发 409 防护保留）；chapterorder.go 阈值参数化（reorderChapterRefsForce，普通入口行为不变）
+- 【回归】引擎 audit85a_test（tocSlotBudget 全分支 + extractBook 语义等价）；后端 audit85b_test（tocShedTruncated 全分支 + 护栏端到端 stub 引擎：恢复/有界回退/无API直通/停止协作）+ audit86b_test（force 重排：小占比乱序强制纠正 + 端点端到端）——两服务 go test 全量通过
+- 【运维】Go 工具链 PATH 恢复（/home/z/go-sdk/go/bin）；进程两度被沙箱收割器清理 → ensure-services.sh（setsid 脱离会话）+ 60s 自愈看护循环挂稳；重启即重建（run.sh 内建 go build）
+- 【修复扫荡】14 任务 resume-paused 全部复活重走管线（骨架按标题增量 upsert，存量正文跳过）：实证《我的1995小农庄》walker 跟翻 11 页目录 1015 条（原 112 条）；ixdzs8 前 17 本全部 JSON 目录入库（1112/569/446 章…）；运行 15 分钟后 112 章 32→24 本、8 章 86→75 本、总章节 74.2 万持续增长
+- 【待收尾】任务 4/13 Phase 1 完成后：ixdzs8 修复书（~99% 错位）走常规 resort-chapters 自动纠正；huangjinwu 修复书（~1.2% 错位）需 POST resort-chapters {"novelId":X,"force":true} 逐本强制（需活动任务清零窗口，409 防护会拒绝并发期重排）
+
+Stage Summary:
+- 「只采到第100章」双根因闭环：分页目录站缺分页选择器（规则层）+ JSON 目录接口被限速预算误杀（引擎层）；护栏+自适应预算+规则补齐三层防御，全部有实测证据
+- 存量修复无需人工重采：任务恢复即自动重走管线补全目录（增量 upsert 不丢已采正文）；force 重排作为管理员能力沉淀到 resort-chapters 端点
+- 遗留：夜伴书屋待站点恢复后复查分页形态；huangjinwu 修复书 idx 纠偏待任务空闲窗口执行 force 重排
+
+---
+Task ID: 94
+Agent: main (Z.ai Code)
+Task: R94 用户反馈双问题：①分页修复扫荡推进 + xinjianpan 规则缺口补齐 ②台湾站推广噪声清洗（读台湾小说上台湾小说网，?????.???超省心）
+
+Work Log:
+- 【①分页扫荡进展】修复管线实证收敛：at-8 书 86→6、at-112 32→24（huangjinwu/ixdzs8 主力修复完成）；总章节 110万→187万
+- 【①新发现 x2】xinjianpan（任务6，biquge2023 参考站）规则竟缺 chapterListPaginationSelector——R82 机制建好了但 seed 规则没落地，书页 100+12 截断全站复现（723 本书全部只采 100 章）→ 补机会性选择器（.pagelink a,.pagination a,.pagination-list a,a.morechapter,#pages a,.pageLink a），实测书页 tocPages=2（list-1/2.html）透出，task6 重跑后 486→450 收敛中；ggd66 同款选择器一并补上（其 112 截断为服务端高负载渲染节流，低负载重扫自愈）
+- 【①walker 可观测性+重试】worker.go：分页锚在但 walker 颗粒无收（pagesWalked==0 或 refs==0）时退避 5s 整轮重试一次（stopState 协作）；「跟随未生效」路径落日志（旧版完全静默无法归因）
+- 【②噪声取证】沙箱库 Chapter/ChapterContent 对「台湾小说/台灣小說/省心/???」及剥离零宽字符后匹配全部 0 命中——噪声在用户服务器存量（其库为老引擎采集），沙箱库正文填充率低（2906/187万）尚未触达该源站
+- 【②清洗规则】引擎+后端 cleanx.go 同步加：reSitePromo +「台湾小说|台灣小說」（繁简双形态，引擎侧清洗在 t2s 前、必须认繁体）；新增 reObfDomain=ASCII 问号连续 ≥3（混淆域名 ?????/??? 专杀，中文叙事用全角？不可能命中）；均为短行判定（≤30 字）+ 叙事长句保护
+- 【②回归】scraper-go cleanx_test.go +TestIsNoiseLine_R94_TaiwanPromo（12 用例：用户样本/繁体原样/混淆域名变体/全角？？对话保护/叙事长句保护）；backend-go 新建 cleanx_test.go 同参互锁 + cleanChapterContent 端到端剔除断言——两服务全量 go test 通过，双二进制重建部署，任务已恢复
+- 【用户侧待办】服务器部署新二进制后执行 POST /api/chapters/clean-all 清洗存量（GET 预览计数先行）
+
+Stage Summary:
+- 分页修复三层体系（规则选择器+引擎预算+护栏重试）在全舰队生效，xinjianpan 规则缺口补齐后 723 本书进入自愈轨道
+- 台湾站推广噪声繁简双形态+混淆域名三重模式入库两侧清洗器，采集时即拦；存量清洗走 clean-all
+
+---
+Task ID: 95
+Agent: main (Z.ai Code)
+Task: R95 修复扫荡收官：xinjianpan 723 本全量重扫 + 存量噪声清洗落地 + resort 重排窗口
+
+Work Log:
+- 【重扫完成】任务13(ixdzs8) 799/799、任务6(xinjianpan) 718/723 Phase 1 完成：葬天塔 8→2921 章、临高启明 8→3031 章；at-100/112 截断书 486→39（huangjinwu 原始 11 本 + ggd66 负载节流型 28 本，均待下轮重扫周期自愈——huangjinwu 单轮治愈率实测 ~69%，多轮收敛）
+- 【resort 窗口】暂停全部任务→audit 重排（52 本 ≥20% 错位修复，ixdzs8 at-8 型）→force 重排 488 本候选（1 本纠正、487 本本就有序——xinjianpan 型修复为纯顺序追加无错位）→恢复舰队（13 任务 running）
+- 【存量噪声清洗】clean-all POST 实测：扫描 189.7 万章，命中清洗 11 章/3 书（instr 探测比正则窄，正则版多抓到混淆域名变体），复检零残留；用户服务器需部署新二进制后自行跑一次 clean-all
+- 【新观察待办】huangjinwu 663（逆转）等 8 本未愈合书：书页 112 行含「N.第N章」前缀行与无前缀行混存（源站标题渲染漂移），同章无重复双存但跨块乱序（第1..101章 + 第404..430章 + 缺 102..403——walker 对这些书未生效，站点高负载期 TOC 分页页抓取失败）；站点恢复后随重扫周期收敛，若长期不愈需查 list-N.html 对该书的真实分页行为
+- 【运维】 FleetKeeper 自动创建任务16（5165 第二列表），fleet 规模 14→16 任务；全程服务健康（backend/engine ok），重排窗口 409 并发防护实测有效
+
+Stage Summary:
+- 分页截断修复战役收官：486 本截断书修复 447 本（92%），总章节 1.10M→1.89M（+72 万），残余 39 本进入多轮自愈轨道
+- 章节阅读顺序纠偏：52 本大错位（at-8 型）audit 修复 + 1 本 force 修复；xinjianpan 型顺序追加天然有序
+- 噪声清洗双模式上线：采集时引擎拦截 + 存量 clean-all，繁简双形态+混淆域名全覆盖
