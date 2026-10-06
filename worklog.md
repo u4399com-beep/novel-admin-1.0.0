@@ -4047,3 +4047,17 @@ Work Log:
 
 Stage Summary:
 - https://github.com/u4399com-beep/novel-admin-1.0.0 已承载本项目终态（main=f9ca850）；开箱即用链路实证：git clone <repo> && bash scripts/deploy-cn.sh = 从零到可用站点全自动（依赖→Go→模块代理→构建→军火→启动→健康检查），数据目录相对 repoRoot 自适应任意部署路径
+
+---
+Task ID: 92
+Agent: main (Z.ai Code)
+Task: R92 无 git 服务器引导部署（git: command not found 场景闭环）
+
+Work Log:
+- 【场景】用户全新服务器报 -bash: git: command not found——deploy-cn.sh 前置假设「仓库已在服务器上」存在缺口
+- 【方案验证】ghfast.top 代理 GitHub archive tarball 链路实测可用（200, 2.1MB）；两个坑实测抓出：tarball 解压目录名为 {repo}-{branch}=novel-admin-1.0.0-main（非仓库名）、/opt 普通用户无写权限（Permission denied）——最终方案解压到 $HOME 并 mv 为 ~/novel-admin（免 sudo）
+- 【全流程实测】pkill 现役 → curl tarball → 解压 mv → deploy-cn.sh：7/7 全通 + 首页 200；清理测试实例、现役恢复（backend/engine 200）
+- 【文档固化】deployment.md §0.1 增补「服务器连 git 都没有？」引导命令（curl 版+wget 变体）+ 真实仓库地址替换占位符；已推送 GitHub（main=2b3553c）
+
+Stage Summary:
+- 部署入口零前提化：服务器只要有 curl 或 wget（几乎所有发行版自带）即可一条命令从零部署；git 只是可选加速项；引导命令与 deploy-cn.sh 已在 GitHub 仓库自洽
