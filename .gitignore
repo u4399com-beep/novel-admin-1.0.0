@@ -37,3 +37,6 @@ mini-services/backend-go/backend-go
 mini-services/backend-go/backend-go.bin
 mini-services/scraper-go/scraper-go
 mini-services/scraper-go/scraper-go.bin
+
+# deploy-cn.sh generated watchdog loop (runtime artifact)
+.watchdog-loop.sh
