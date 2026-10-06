@@ -166,6 +166,12 @@ func stripAuthorLabel(t string) string { return trimJSSpace(reAuthorLabel.Replac
 // 封面-书籍不对应：全库同图），与 nocover 同理拒绝，由渐变 token 兜底
 var rePlaceholderCover = regexp.MustCompile(`(?i)(?:nocover|no_cover|nopic|no-img|noimage|no_image|placeholder|zanwu|wufengmian|/logo[._-]|^logo[._-]|[._-]logo[._-])`)
 
+// reGarbageCoverSrc 垃圾封面 URL（R84）：源站模板 bug 实证（ixdzs8 系无封面书返回
+// https://img22.ixdzs.com/None——图床域名拼接 Python 风格 None 字面量），恒 404；
+// 与 backend sanitizeGarbageCoverSrc（存量清洗）双层闭环，提取层挡新数据。
+// 末段精确匹配 none/null/undefined（避免误杀路径中间含这些子串的正常图）。
+var reGarbageCoverSrc = regexp.MustCompile(`(?i)/(?:none|null|undefined)(?:[?#].*)?$`)
+
 // coverNoiseContainers 封面候选排除容器（Task 68 封面错位根修）：书页 DOM 常见
 // 「推荐书籍/排行/相关书」侧栏与底部推荐块，其内 img 与封面回退选择器（.cover img 等
 // 通用类）同形，且可能先于主封面出现在 DOM 序——pickHref 逐选择器取首个命中时会把
@@ -541,7 +547,8 @@ func extractBook(doc *goquery.Document, rule map[string]string, baseURL string, 
 	cover := ""
 	for _, sel := range coverSels {
 		// Task 68: pickCoverHref——推荐位容器内候选先排除（封面-书籍错位根修）
-		if u := pickCoverHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) {
+		// R84: 垃圾 URL 双重拒绝——占位特征 + None/null 字面量末段
+		if u := pickCoverHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) && !reGarbageCoverSrc.MatchString(u) {
 			cover = u
 			break
 		}

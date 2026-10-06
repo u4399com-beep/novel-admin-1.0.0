@@ -847,3 +847,45 @@ func purgeStaleCoversIn(dir string) int {
 	}
 	return removed
 }
+
+// reGarbageCoverSrc 垃圾 coverSrc 清洗（R84）：源站模板 bug 实证（ixdzs8 系无封面书
+// 返回 https://img22.ixdzs.com/None——图床域名拼接 Python 风格 None 字面量），此类
+// URL 恒 404，留在 coverSrc 里会让补抓通道每次巡检空烧一次下载预算。
+var reGarbageCoverSrc = regexp.MustCompile(`(?i)/(?:none|null|undefined)(?:[?#].*)?$`)
+
+// sanitizeGarbageCoverSrc boot 自愈（幂等）：coverSrc 以 /None /null /undefined 结尾
+// 的行清空源 URL（回退渐变 token，与「提取层拒绝占位 URL」双层闭环——提取层挡新数据，
+// 本清洗消化存量）。失败不阻断启动，重启重试。单条 UPDATE 正则过滤不可行（SQLite
+// 无内置 regexp），故先全量拉非空 coverSrc 再逐行判定、按 id 精确清空；
+// 书目量级 ≤万行、启动时一次，开销可忽略。
+func sanitizeGarbageCoverSrc(db *sql.DB) {
+	rows, err := db.Query(`SELECT "id","coverSrc" FROM "Novel" WHERE "coverSrc" != ''`)
+	if err != nil {
+		log.Printf("[db] 垃圾 coverSrc 清洗失败（暂存，重启重试）: %v", err)
+		return
+	}
+	bad := []int64{}
+	for rows.Next() {
+		var id int64
+		var src string
+		if err := rows.Scan(&id, &src); err != nil {
+			rows.Close()
+			return
+		}
+		if reGarbageCoverSrc.MatchString(src) {
+			bad = append(bad, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return
+	}
+	for _, id := range bad {
+		if _, err := db.Exec(`UPDATE "Novel" SET "coverSrc" = '' WHERE "id" = ?`, id); err != nil {
+			return // 写失败即停（重启重试），避免半清状态反复日志
+		}
+	}
+	if len(bad) > 0 {
+		log.Printf("[db] 垃圾 coverSrc 清洗：%d 行源 URL 为 None/null 字面量已清空（渐变 token 兜底）", len(bad))
+	}
+}

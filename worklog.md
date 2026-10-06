@@ -3923,3 +3923,21 @@ Work Log:
 
 Stage Summary:
 - R83 完成用户指令双项：下拉词获取检查（sogou 死端点下线、google+qwant 补位恢复 5 引擎、duckduckgo 快败硬帽）+ 书籍页标签结构性修复（富集批量化 ×4、词池扫荡吞种子旧病根治、衍生词兜底保底 8 标签）；未富集书标签 2→8、富集覆盖率 5%→90.7%；新增 4 组回归测试，race/E2E/域况全绿
+
+---
+Task ID: 84
+Agent: main (Z.ai Code)
+Task: R84 迭代——用户指令：根据采集任务日志重新获取所有在库书籍封面图（任务 C 收口）+ 持续开发审查修复 + 清理精简 + 迭代循环
+
+Work Log:
+- 【恢复与普查】双服务/工具链/DB 健康（backend 06:09 boot、15 域名 13 健康、trxsw 波动 503）；管线快照轮初 2,067 书 / 1,353,088 骨架 / 12,583 已填
+- 【封面全量重取（用户任务 C 主指令）】根因确认：第 6 次整机回收清空 covers/ 运行时产物 + DB 重建重编号（张冠李戴窗口）→ Task 69 force 端点（POST /api/novels/backfill-covers?force=1，按每本书采集时落库 coverSrc 逐本重下、失败旧图保留、40s 预算护栏）由 scripts/backfill-covers.py --force 驱动全量重取；轮 46 推进至 id 1415/2030（fixed 率 ~98%，失败=jianpanxs 图床沙箱网络不可达+源站真 404）；滚动部署后加 --after 断点参数续跑（scripts/backfill-covers.py 新增 --after 游标，避免 force 幂等跳过语义下重烧已下书）
+- 【任务 D 深层收口（消息 7 标签问题数据级根治）】R83 代码修复已在部署态，但数据实证 1,395/2,062（67.7%）book 种子血缘词=0（富集窗口引擎故障 3 次重试放弃后永久缺失）→ 新增维护工具 cmd/kwreset（判定 source='book' 且 generated 血缘<8，dry-run/apply 双模式，事务批量重置 pending）对活库执行重置 1,396 种子；富集循环（4 种子/12s）以健康引擎重新取词，实测每种子 +8~12 词，E2E 圣墟 2→13 标签实证
+- 【增强①种子重富集自愈巡检】手工 kwreset 固化为常驻通道 pseo_reenrich.go：60min/轮扫描血缘<8 的 generated book 种子重置 pending（50/轮克制节奏），单发闸门 AppMeta pseoReenrichDone:<kwNorm> 保证每种子终身仅重富集一次（真无下拉词冷门书不空转）；PSEO_REENRICH_OFF=1 停用；main.go runner/all 接线
+- 【增强②垃圾 coverSrc 双层闭环】实战抓虫：coverSrc='https://img22.ixdzs.com/None'（源站模板 bug：图床域名拼 Python None 字面量，恒 404 白烧补抓预算，全库 5 行）——提取层 scraper-go extract.go reGarbageCoverSrc（末段精确匹配 none/null/undefined，路径中间含子串不误杀）+ 存量层 backend coversx.go sanitizeGarbageCoverSrc（boot 自愈链接入，幂等）；部署首启即清洗 5 行实证
+- 【测试与部署】新增 audit84_test.go（backend：扫描判定/单发闸门/批量上限/闸门键归一/垃圾清洗幂等 5 组）+ audit84a_test.go（scraper：垃圾 URL 正则 9 用例）；双模块 gofmt+vet+go test -race 全绿；build-go.sh + recover-r26.sh 滚动重启（保 DB）；resume-paused 复活 13 任务（12 running+1 paused+2 partial）
+- 【E2E（部署后）】首页 SSR（27 图+footer）✓；book/7 元尊自有封面 7.jpg 加载✓+13 标签✓；移动端 390px 零横向溢出✓；pseo/元尊主打推荐=天蚕土豆元尊（bug 1 种子书信息，Task 59/67 修复链复核确认）✓；零页面错误
+- 【管线健康】填充速率实测 ~6.2K/h（与 Phase 1/suggest/封面共车道正常波动）；重富集累计 1,361 种子成功；DDG 引擎代理路径深审无缺陷（预算传播/超时判定/结构化错误）
+
+Stage Summary:
+- R84 收口用户任务 C（封面全量重取）：force 长跑 id 2030 面推进至 1415+（断点续跑中）、书图对齐 E2E 实证（book/2、book/7 自有封面加载）；任务 D 数据级根治（1,396 种子重富集，67.7% 缺失→标签 13 个）；新增种子重富集自愈巡检+垃圾 coverSrc 双层清洗两项常驻增强；bug 1 复核确认已由 Task 59/67 修复链根治；新增 6 组回归测试，race/E2E/域况全绿

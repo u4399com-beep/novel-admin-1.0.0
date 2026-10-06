@@ -36,11 +36,12 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=50, help="单批书数（1-100，缺省 50）")
     ap.add_argument("--sleep", type=float, default=1.5, help="批间休眠秒数")
     ap.add_argument("--proxy", default="", help="主出口代理（缺省直连，失败自动回退规则池）")
+    ap.add_argument("--after", type=int, default=0, help="起始游标（只处理 id > after，用于断点续跑）")
     ap.add_argument("--max-rounds", type=int, default=10000, help="安全上限轮数")
     args = ap.parse_args()
 
     totals = {"attempted": 0, "fixed": 0, "failed": 0, "batches": 0}
-    after_id = 0
+    after_id = args.after
     mode = "force 全量重取" if args.force else "常规补抓"
     print(f"[backfill-covers] 模式={mode} base={args.base} limit={args.limit}")
 
