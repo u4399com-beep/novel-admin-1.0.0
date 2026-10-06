@@ -19,7 +19,12 @@
  *    （worklog Task 18 已知差异①）→ 其下拉词请求改经 scraper-go 引擎
  *    （127.0.0.1:3030，见 suggestFetchViaEngineStrategy）反指纹策略链代理发出；经引擎的
  *    新路径失败时在 results[].error 如实报告（TS 版 duckduckgo 从未真正成功过，
- *    无历史语义可破坏）；其余引擎（baidu/bing/sogou/so360）保持 Go 直连不动
+ *    无历史语义可破坏）；其余引擎保持 Go 直连不动
+ * 6. Task 83 引擎换血（用户指令「检查下拉词获取」）：实测 sogou sugproxy/suggnew 端点
+ *    均已 404（2026-10）、sor.html5.qq.com 空响应 → 下线 sogou；新增 google
+ *    （suggestqueries client=firefox JSON，~80ms）与 qwant（api.qwant.com v3，~0.9s，
+ *    中文长尾质量高）——直连可用引擎恢复至 5 个；duckduckgo 重试预算硬帽（见
+ *    suggestFetchDuckDuckGo）防单个引擎吃满整体预算
  */
 package main
 
@@ -44,8 +49,9 @@ const (
 	suggestWordMax  = 60 // 关键词限长（MAX_WORD_LEN）
 )
 
-// supportedEngines 引擎白名单（顺序即默认聚合顺序）
-var supportedEngines = []string{"baidu", "bing", "duckduckgo", "sogou", "so360"}
+// supportedEngines 引擎白名单（顺序即默认聚合顺序；sogou 端点已死 Task 83 下线，
+// 存量配置中的 sogou 由 sanitizePseoConfig 白名单过滤自然淘汰）
+var supportedEngines = []string{"baidu", "bing", "google", "qwant", "so360", "duckduckgo"}
 
 var supportedEngineSet = func() map[string]bool {
 	m := map[string]bool{}
@@ -173,9 +179,12 @@ func fetchSuggestions(engine, keyword string, timeoutMs int) suggestResult {
 		// 经 scraper-go 引擎代理（Go TLS 被 Cloudflare JA3 指纹掐死 → 直连超时），
 		// 见 suggestFetchViaEngineStrategy；响应仍为 ["查询词",[...]]，解析逻辑不变
 		words, fetchErr = suggestFetchDuckDuckGo(ctx, "https://duckduckgo.com/ac/?q="+q+"&type=list")
-	case "sogou":
-		// 容错解析 JSON/JSONP 混合返回
-		words, fetchErr = suggestFetchText(ctx, "https://www.sogou.com/sugproxy?p=1&ie=utf8&from=pc&wd="+q, suggestBracketParse)
+	case "google":
+		// client=firefox 返回 ["查询词",["词1",...],...]，形同 bing osjson（Task 83）
+		words, fetchErr = suggestFetchJSON(ctx, "https://suggestqueries.google.com/complete/search?client=firefox&q="+q, suggestParseGoogle)
+	case "qwant":
+		// v3 suggest JSON {status,data:{items:[{value}]}}（Task 83）
+		words, fetchErr = suggestFetchJSON(ctx, "https://api.qwant.com/v3/suggest/?q="+q+"&locale=zh_CN", suggestParseQwant)
 	case "so360":
 		words, fetchErr = suggestFetchText(ctx, "https://sug.so.360.cn/suggest?word="+q+"&ie=utf-8", suggestParseSO360)
 	default:
@@ -213,6 +222,43 @@ func suggestParseBaidu(body []byte) []string {
 		}
 		if v != "" {
 			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// suggestParseGoogle client=firefox 响应解析：["查询词",[...],...]，取第二元素字符串数组；
+// 形态同 bing osjson（Task 83；畸形/非 JSON 返回 nil）
+func suggestParseGoogle(body []byte) []string {
+	var j [2]json.RawMessage
+	if json.Unmarshal(body, &j) != nil {
+		return nil
+	}
+	var arr []string
+	if len(j) > 1 {
+		_ = json.Unmarshal(j[1], &arr)
+	}
+	return filterNonEmpty(arr)
+}
+
+// suggestParseQwant v3 suggest 响应解析：{status,data:{items:[{value}]}}，取 items[].value
+// （Task 83；status 非 success/畸形返回 nil，不硬失败）
+func suggestParseQwant(body []byte) []string {
+	var j struct {
+		Status string `json:"status"`
+		Data   struct {
+			Items []struct {
+				Value *string `json:"value"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &j) != nil || (j.Status != "" && j.Status != "success") {
+		return nil
+	}
+	out := make([]string, 0, len(j.Data.Items))
+	for _, x := range j.Data.Items {
+		if x.Value != nil && *x.Value != "" {
+			out = append(out, *x.Value)
 		}
 	}
 	return out
@@ -306,7 +352,7 @@ func suggestFetchJSON(ctx context.Context, url string, parse func([]byte) []stri
 	return parse(body), nil
 }
 
-// suggestFetchText 文本响应拉取（sogou/360）：JSON 核心的薄封装，parse 收 string。
+// suggestFetchText 文本响应拉取（360）：JSON 核心的薄封装，parse 收 string。
 func suggestFetchText(ctx context.Context, url string, parse func(string) []string) ([]string, error) {
 	return suggestFetchJSON(ctx, url, func(body []byte) []string { return parse(string(body)) })
 }
@@ -424,7 +470,16 @@ func suggestFetchDuckDuckGo(ctx context.Context, url string) ([]string, error) {
 	}()
 	if err != nil {
 		if suggestCtxRemainMs(ctx) >= 1200 {
-			if body2, err2 := suggestFetchViaEngineStrategy(ctx, url, ""); err2 == nil {
+			// Task 83: 重试预算硬帽 2.5s（原透传父 ctx——引擎车道被采集任务占满时
+			// 无策略重试一路烧到整体 8s 预算耗尽，单引擎绑架聚合墙钟；
+			// 紧余量（<2.8s）时保留原透传语义）
+			sub2 := ctx
+			if remain := suggestCtxRemainMs(ctx); remain > 2800 {
+				var cancel context.CancelFunc
+				sub2, cancel = context.WithTimeout(ctx, 2500*time.Millisecond)
+				defer cancel()
+			}
+			if body2, err2 := suggestFetchViaEngineStrategy(sub2, url, ""); err2 == nil {
 				body, err = body2, nil
 			}
 		}

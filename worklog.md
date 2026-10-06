@@ -3903,3 +3903,23 @@ Work Log:
 
 Stage Summary:
 - R82 完成「目录分页」专项：普查 17 规则确认唯一分页源站 xinjianpan（biquge2023 系），引擎 onclick 反混淆 + TocPages 透出 + backend 目录 walker 三件套修复，实战抓出并修复 walker 种子跳过二阶 bug；539 本截断书增量修复启动（100→200/本实证），ixdzs8 532 本 8 章遗留书随任务重发自愈；新增 5 个回归测试文件级用例组，race/E2E/域况全绿；管线快照 3,094 书 / 1,381,948 章 / 15,430 已填（较轮初 +230 书 / +28,860 章 / +2,847 填充）
+
+---
+Task ID: 83
+Agent: main (Z.ai Code)
+Task: R83 迭代——用户指令：检查下拉词获取；书籍页「标签」大多就 2 个，修复完善（第 6 次整机恢复先行）
+
+Work Log:
+- 【第 6 次整机恢复】双服务全灭（.bin/DB/工具链清空，仅 git 幸存至 R82）；按手册快捷路径 15 分钟级恢复：Go 1.22.12 → curl-impersonate 21 二进制 → build-go.sh → recover-r26.sh（空库 DDL+seed）→ create-fleet.py 重建 13 任务舰队
+- 【下拉词获取普查（用户指令 1）】逐引擎实测：baidu sugrec ✓10 词 / bing osjson ✓11 / so360 ✓10 / **sogou sugproxy+suggnew 端点均 404（死端点，HTTP 404 静默 0 词）**、sor.html5.qq.com 空响应 / **duckduckgo 经引擎超时**（3030 车道被 14 采集任务占满，suggest 无策略重试一路烧满 8s）
+- 【标签病根诊断（用户指令 2）】novelPseoTags 三通道中 ③依赖血缘下拉词，而富集循环 12s/种子=300/h ≪ 书目灌入速率 → 队列单调增长，新库实证 164/173 本书未富集（标签长期只有书名+作者两个）
+- 【修复①引擎换血】supportedEngines 下线死端点 sogou（存量配置经白名单过滤自然淘汰），新增 google（suggestqueries client=firefox JSON ~80ms）+ qwant（api.qwant.com v3 ~0.9s 中文长尾优质）；实测 5 引擎在岗、单词聚合 40 词；duckduckgo 无策略重试加 2.5s 硬帽（紧余量 <2.8s 保留原透传）
+- 【修复②富集批量化】enrichBookSeedBatch 三段式：认领 LIMIT 4 → 引擎取词种子级并发 4（引擎聚合内部仍限 3，对齐 pseoBatchConcurrency 先例，~0.33 QPS/域温和不变）→ DB 收尾串行（单写者不变量）；吞吐 300/h→1200/h
+- 【修复③实战抓虫：词池扫荡吞种子（旧潜伏病）】批量重构首测即翻车——generatePendingPages 通用扫荡按 id 吞掉 pending book 种子行置 generated，其引擎富集被永久跳过（旧单种子代码同病，Task 59-R2 重试机制的兄弟行副作用，为「标签大多 2 个」深层根因）。修复：generatePendingPagesFiltered(limit, skipBookSeeds, exclude, onlyKeyword) 统一实现 + SkipBookSeeds/BookSeed 变体；不变量=book 种子行只能由富集链路亲自置 generated；富集循环全部消化分支 + api_pseo 两处管理端点统一切换
+- 【修复④标签衍生词兜底】novelPseoTags 通道③：真实下拉词不足 8 个时以书名/作者词根合成空格分隔搜索长尾（「圣墟 小说」「圣墟 全文阅读」等 5+1 个）——词面经 matchNovels/pseoRealtimeNovels 空格分词 LIKE 必命中本书（Task 47 零 404 契约不破），读路径零写放大；血缘词到位后自然退场（上限 14 不变）
+- 【测试与质量】新增 audit83_test.go 4 组（引擎白名单契约/google+qwant 解析器含畸形态/衍生词兜底三场景/批量冷却离线路径）；测试首跑即抓出扫荡 bug；顺带完成全模块 gofmt 清零（含 R77 漏网的 engineclient.go/worker.go 空格缩进）；双模块 vet + go test -race 全绿
+- 【部署与实证】build-go.sh + recover-r26.sh 滚动重启（保 DB）；resume-paused 复活 13 任务全 running；实测：suggest 5 引擎 ok、未富集书「圣墟」2→8 标签、衍生词聚合页 200 渲染（种子书在列）；70 分钟后 book 种子 1654/1824 已富集（90.7%，仅 170 pending≈一批新到书目）对比修复前 95% 未富集；agent-browser E2E：书籍页 8 chips 渲染、点击「圣墟 小说」聚合页 59 元素零报错
+- 【管线快照】1,827 书 / 种子富集 90.7% / 词库 4,922 行；13 任务 running + 1 partial；E26 舰队自持、封面巡检、pseo 富集、force 长跑、复活链五通道自持在岗
+
+Stage Summary:
+- R83 完成用户指令双项：下拉词获取检查（sogou 死端点下线、google+qwant 补位恢复 5 引擎、duckduckgo 快败硬帽）+ 书籍页标签结构性修复（富集批量化 ×4、词池扫荡吞种子旧病根治、衍生词兜底保底 8 标签）；未富集书标签 2→8、富集覆盖率 5%→90.7%；新增 4 组回归测试，race/E2E/域况全绿

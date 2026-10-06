@@ -294,7 +294,8 @@ func handlePseoGenerate(w http.ResponseWriter, r *http.Request, _ map[string]str
 		lfClamped = 50
 	}
 	limit := int(lfClamped)
-	generated, err := generatePendingPages(limit)
+	// Task 83: SkipBookSeeds——管理端生成不得吞掉未富集 book 种子行（引擎下拉词永久丢失）
+	generated, err := generatePendingPagesSkipBookSeeds(limit)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -474,7 +475,8 @@ func handlePseoBatch(w http.ResponseWriter, r *http.Request, _ map[string]string
 	generated := 0
 	if cfg.AutoGenerate {
 		var gerr error
-		generated, gerr = generatePendingPages(50)
+		// Task 83: SkipBookSeeds——book 种子行只能由富集链路亲自置 generated
+		generated, gerr = generatePendingPagesSkipBookSeeds(50)
 		if gerr != nil {
 			failJSON(w, "服务器错误", firstLineErr(gerr), 500)
 			return

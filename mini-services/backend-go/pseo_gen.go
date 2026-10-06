@@ -609,8 +609,30 @@ func pickPseoTpl(configured string, pool []string, alts []string, keyword string
 	return pool[idx]
 }
 
-// generatePendingPages 为 pending 关键词生成 PSEO 聚合页数据（自动 TDK 模板），返回生成数
+// generatePendingPages 为 pending 关键词生成 PSEO 聚合页数据（自动 TDK 模板），返回生成数。
+// exclude 透传（Task 59-R2 语义：保留指定词 pending 供冷却重试）
 func generatePendingPages(limit int, exclude ...string) (int, error) {
+	return generatePendingPagesFiltered(limit, false, exclude, "")
+}
+
+// generatePendingPagesSkipBookSeeds 跳过未富集 book 种子行的词池消化（Task 83 实战抓虫：
+// 通用扫荡会把 pending book 种子行一并置 generated——其引擎下拉词永久丢失。这是
+// 「书籍页标签大多就 2 个」的深层根因：种子行被词池消化静默吞掉，引擎富集被跳过。
+// 不变量：book 种子行只能由富集链路亲自置 generated（generatePendingPagesBookSeed）
+// 或保留 pending 供冷却重试；所有非富集链路的消化一律走本变体）
+func generatePendingPagesSkipBookSeeds(limit int, exclude ...string) (int, error) {
+	return generatePendingPagesFiltered(limit, true, exclude, "")
+}
+
+// generatePendingPagesBookSeed 仅为指定 book 种子行生成聚合页并置 generated
+// （富集成功收尾专用；行不存在/非 pending 时零操作返回 0）
+func generatePendingPagesBookSeed(keyword string) (int, error) {
+	return generatePendingPagesFiltered(1, false, nil, keyword)
+}
+
+// generatePendingPagesFiltered 统一实现：limit 1-50；skipBookSeeds 过滤 pending book 种子行；
+// exclude 按词排除；onlyKeyword 非空时仅处理该词（需同时满足其余过滤条件）
+func generatePendingPagesFiltered(limit int, skipBookSeeds bool, exclude []string, onlyKeyword string) (int, error) {
 	take := limit
 	if take > 50 {
 		take = 50
@@ -628,7 +650,16 @@ func generatePendingPages(limit int, exclude ...string) (int, error) {
 	// Task 59-R2: exclude 支持种子富集引擎全败重试路径——保留种子 pending 供冷却后再富集，
 	// 其余 pending 词照常消化（variadic 保持既有调用方零改动）
 	pendingSQL := `SELECT "id","keyword","source","seed" FROM "PseoKeyword" WHERE "status" = 'pending'`
-	pendingArgs := make([]any, 0, len(exclude)+1)
+	if skipBookSeeds {
+		pendingSQL += ` AND NOT ("source" = 'book' AND "status" = 'pending')`
+	}
+	if onlyKeyword != "" {
+		pendingSQL += ` AND "keyword" = ? AND "source" = 'book'`
+	}
+	pendingArgs := make([]any, 0, len(exclude)+2)
+	if onlyKeyword != "" {
+		pendingArgs = append(pendingArgs, onlyKeyword)
+	}
 	if len(exclude) > 0 {
 		ph := strings.TrimSuffix(strings.Repeat("?,", len(exclude)), ",")
 		pendingSQL += ` AND "keyword" NOT IN (` + ph + `)`
