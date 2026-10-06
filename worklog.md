@@ -4001,3 +4001,17 @@ Work Log:
 
 Stage Summary:
 - R88 完成渲染层 web.go 逐行深审（零缺陷）——本会话深审累计：rulehealth/coversx核心/api_pseo/api_scrape_rules/affinity/web.go 六模块 + kwreset/pseo_reenrich/失败记忆三项增强落地；系统全自愈稳态运行
+
+---
+Task ID: 89
+Agent: main (Z.ai Code)
+Task: R89 迭代——封面体系终局归因调查（jianpanxs 551 本零破损实锤）+ 填充速率归因
+
+Work Log:
+- 【jianpanxs 图床疑云定论】551 本 coverSrc=jianpanxs.com 的书全部已有本地封面文件（初始采集期图床可达；后期 CDN 不可达仅致 force「刷新失败」，fetchAndStoreCoverOpt force 语义失败保留旧图——零用户可见破损）；代理实测：107.167.18.122 带 Referer 可达图床（200/6179B），但书已有图无重抓需求
+- 【48 token 书终局归因】43 本源站本就无封面（渐变 token=正确终态，无源可循）；~5 本为源站截断垃圾 URL（jjjjxsw "...lt.jp" 缺 g、ixdzs None 已清洗）→ 404 正确行为，不做正则过滤（防误杀 TLD 路径合法形态）
+- 【填充速率归因】6.2K/h vs 历史 10K/h 溯源：xinjianpan 大书灌入期 Phase 1 占比高 + 23qb/jianpanxs 类源站瞬态任务暂停 + 车道混跑，属源站侧构成变化非管线退化；任务 6 done=723/723 等全部健康推进
+- 【巡检链生产态】coversweep 失败记忆前沿推进正常（attempted 11-13→4→0 静默）；pseo-reenrich 首火 23 种子重置并消化；pending 种子=0 全收敛
+
+Stage Summary:
+- R89 封面体系终局定论：全部可修复书均已覆盖（2,515 local + 43 无源渐变 + 5 源站垃圾 URL 404=正确），551 本 jianpanxs 书零破损；封面体系处于实际上限状态，无需进一步增强
