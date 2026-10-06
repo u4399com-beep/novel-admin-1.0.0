@@ -18,6 +18,7 @@ import (
         "fmt"
         "log"
         "os"
+        "path/filepath"
         "sync"
         "time"
 
@@ -30,12 +31,13 @@ var (
         gDBError error
 )
 
-// dbPath 业务库路径（与主站共用一个文件）
+// dbPath 业务库路径（与主站共用一个文件）：DB_PATH env > {repoRoot}/db/custom.db
+// （可执行文件位置推断，任意部署路径自适应）> 沙箱默认（repoRoot 兑底同值）
 func dbPath() string {
         if p := os.Getenv("DB_PATH"); p != "" {
                 return p
         }
-        return "/home/z/my-project/db/custom.db"
+        return filepath.Join(repoRoot(), "db", "custom.db")
 }
 
 // getDB 打开共享连接（惰性；进程内单例）

@@ -4015,3 +4015,22 @@ Work Log:
 
 Stage Summary:
 - R89 封面体系终局定论：全部可修复书均已覆盖（2,515 local + 43 无源渐变 + 5 源站垃圾 URL 404=正确），551 本 jianpanxs 书零破损；封面体系处于实际上限状态，无需进一步增强
+
+---
+Task ID: 90
+Agent: main (Z.ai Code)
+Task: R90 国内服务器 git 一键部署（deploy-cn.sh + 路径自适应改造）
+
+Work Log:
+- 【硬编码路径清零】backend-go 5 处 /home/z/my-project 硬编码改为自适应解析链（env > 可执行文件位置推断 > 沙箱兜底）：db.go dbPath()=DB_PATH>{repoRoot}/db/custom.db；txtdir.go txtNovelsRoot()=TXT_ROOT>{repoRoot}/download/novels；coversx.go coversDir() 候选表插入 repoRoot 项；web.go webRoot/templatesRoot const→var（WEB_ROOT>bin 同级 web>沙箱默认）；runner.go ensureEngine 引擎 spawn 路径动态化
+- 【paths.go 新建】inferRepoRootFromExe/inferWebRootFromExe 纯函数（上2级+mini-services 结构校验，go test 临时二进制恒假自动兜底=测试零回归）+ repoRoot()/resolveWebRoot() 包装
+- 【paths_test.go】7 测试全 PASS：TempDir mock 布局标准命中/无结构拒绝/根保护 + 沙箱语义等价 + env 覆盖契约回归
+- 【脚本三件套改造】ensure-services.sh 路径改脚本自身推断+ENV 显式注入（DB_PATH/TXT_ROOT/COVERS_DIR）；install-curl-impersonate.sh 国内镜像候选链（ghfast.top/gh-proxy.com/ghproxy.net/直连+tar 完整性校验）；build-go.sh Go 定位通用化（/usr/local/go 优先+沙箱兜底）+GOPROXY=goproxy.cn 缺省
+- 【deploy-cn.sh 新建】7 步一键部署：依赖检测(apt/dnf)→Go1.22(阿里云/golang.google.cn/官方三链)→goproxy.cn+GOTOOLCHAIN=local→构建→军火→启动(nohup+watchdog 或 --systemd 单元 Restart=always)→健康检查；幂等=升级路径；--port/--skip-build 参数
+- 【deployment.md §0 新增】国内一键部署章节（命令+加速点表+路径解析链说明）
+- 【沙箱事件实战演练】Go 工具链与 db/、public/、备份再次被沙箱清理——deploy-cn.sh --skip-build 真实部署演练：7/7 全通（ghfast.top 首试即中重装 21 军火二进制；空库 DDL+seed；双服务健康 200）
+- 【演练中修复脚本 2 缺陷】Go 探测漏沙箱布局兜底（补 $HOME/.local/go 与 /home/z/go-sdk）；tar 解压无结果校验（补 go/bin/go 存在性校验+明示重试）
+- 【全量回归】backend-go go test -race 全量 PASS(31.5s)；build/vet 绿；E2E 首页 SSR 完整渲染（新 templatesRoot 解析链下主题模板正常）；13 站采集舰队重建（task #1-13）
+
+Stage Summary:
+- 任意路径 git clone 一键部署能力落地：git clone <repo> && bash scripts/deploy-cn.sh（国内全链路镜像加速）；数据与运行时目录全部相对 repoRoot 自适应，升级=git pull+重跑脚本；沙箱清理事件被转化为真实部署演练并顺带修复部署脚本 2 处健壮性缺陷

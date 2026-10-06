@@ -10,7 +10,18 @@
 # 刻意不管前端进程拓扑（Task 27 起 3000=backend-go 自身）；历史教训：拉起 dev3001 会与 3000
 # 实例竞争 .next 编译缓存导致 crash（14-b 实训教训），绝不恢复该行为。
 # 用法：配合定时任务每分钟执行（self-healing）；也可手动 bash scripts/ensure-services.sh
-cd /home/z/my-project
+# R90：repo 根改由脚本自身位置推断（任意部署路径自适应；deploy-cn.sh watchdog 复用本脚本）。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT" || exit 9
+
+# 启动环境变量（R90：与 backend-go paths.go 解析链同源显式注入，任意部署路径正确）
+BACKEND_DIR="$ROOT/mini-services/backend-go"
+ENGINE_DIR="$ROOT/mini-services/scraper-go"
+BACKEND_ENV=(env BACKEND_PORT=3000 BACKEND_MODE=all
+  DB_PATH="$ROOT/db/custom.db"
+  TXT_ROOT="$ROOT/download/novels"
+  COVERS_DIR="$ROOT/public/covers")
 
 # 业务后端 + 采集 runner（backend-go all 模式 :3000）
 if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/api/health; then
@@ -18,19 +29,19 @@ if ! curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/api/health; then
   pkill -f 'backend-go[.]bin' 2>/dev/null && sleep 1
   # 启动前刷新心跳文件，防其他看护者误判 runner 已死
   touch /tmp/scrape-runner-heartbeat 2>/dev/null
-  cd /home/z/my-project/mini-services/backend-go && \
-    setsid nohup env BACKEND_PORT=3000 BACKEND_MODE=all ./backend-go.bin >> /tmp/backend-go-api.log 2>&1 </dev/null &
+  cd "$BACKEND_DIR" && \
+    setsid nohup "${BACKEND_ENV[@]}" ./backend-go.bin >> /tmp/backend-go-api.log 2>&1 </dev/null &
   echo "[$(date '+%H:%M:%S')] watchdog: backend-go(all) 拉起" >> /tmp/watchdog.log
-  cd /home/z/my-project
+  cd "$ROOT"
 fi
 
 # 采集引擎 :3030（scraper-go；TS 版 scraper-service 仅作回滚备份不再运行）
 curl -s -o /dev/null --max-time 5 http://127.0.0.1:3030/api/strategies || {
   pkill -f 'scraper-[g]o.bin' 2>/dev/null && sleep 1
-  cd /home/z/my-project/mini-services/scraper-go && \
+  cd "$ENGINE_DIR" && \
     setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 </dev/null &
   echo "[$(date '+%H:%M:%S')] watchdog: engine(scraper-go) 拉起" >> /tmp/watchdog.log
-  cd /home/z/my-project
+  cd "$ROOT"
 }
 
 echo "[$(date '+%H:%M:%S')] checked: backend=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/api/health) engine=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3030/api/strategies)" >> /tmp/watchdog.log

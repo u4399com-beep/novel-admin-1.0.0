@@ -17,6 +17,45 @@
 
 ---
 
+## 0. 国内服务器一键部署（最快路径，R90）
+
+> 一条命令完成：系统依赖 → Go 1.22（阿里云镜像）→ Go 模块代理（goproxy.cn）→ 构建双服务 →
+> curl-impersonate 军火（GitHub 镜像候选链）→ 启动 + 看护 → 健康检查。**git clone 到任意路径均可**，
+> 路径由可执行文件位置自动推断（`paths.go` 解析链 + 脚本 `scripts/ensure-services.sh` 自适应）。
+
+### 0.1 一键命令
+
+```bash
+# 标准版（默认 nohup + watchdog 自愈循环）
+git clone https://github.com/<你的用户名>/novel-admin.git /opt/novel-admin \
+  && cd /opt/novel-admin && bash scripts/deploy-cn.sh
+
+# GitHub 直连慢，换代理前缀（镜像失效时换 gh-proxy.com / ghproxy.net）
+git clone https://ghfast.top/https://github.com/<你的用户名>/novel-admin.git /opt/novel-admin \
+  && cd /opt/novel-admin && bash scripts/deploy-cn.sh
+
+# 生产推荐：systemd 托管（Restart=always，开机自启）
+bash scripts/deploy-cn.sh --systemd
+
+# 可选参数：--port 3000（改端口）、--skip-build（跳过构建复用既有二进制）
+```
+
+### 0.2 脚本行为与国内加速点
+
+| 步骤 | 国内加速 | 兜底 |
+|---|---|---|
+| Go 下载 | `mirrors.aliyun.com/golang` | `golang.google.cn` → `go.dev` |
+| Go 模块 | `GOPROXY=https://goproxy.cn,direct` + `GOTOOLCHAIN=local` | direct 直连 |
+| curl-impersonate | `ghfast.top` / `gh-proxy.com` / `ghproxy.net` 镜像链 | GitHub 直连 |
+| git clone | 建议镜像前缀（见上） | 官方直连 |
+
+- **幂等**：重复执行 = 重新构建 + 滚动重启，DB/封面/TXT 数据在 repo 内不受影响。
+- **升级**：`cd /opt/novel-admin && git pull && bash scripts/deploy-cn.sh`。
+- **arm64**：全流程支持；仅 curl-impersonate 官方无 v0.6.1 arm64 构建，该策略自动降级（引擎多车道不受影响）。
+- **路径解析链**（backend-go `paths.go`）：环境变量（`DB_PATH`/`TXT_ROOT`/`COVERS_DIR`/`WEB_ROOT`）> 可执行文件位置推断 > 沙箱默认。与 `scripts/ensure-services.sh` 的注入同源，改端口/路径只需环境变量。
+
+---
+
 ## 目录
 
 1. [架构总览（先看懂要部署什么）](#1-架构总览先看懂要部署什么)
