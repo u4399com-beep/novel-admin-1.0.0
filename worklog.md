@@ -3941,3 +3941,19 @@ Work Log:
 
 Stage Summary:
 - R84 收口用户任务 C（封面全量重取）：force 长跑 id 2030 面推进至 1415+（断点续跑中）、书图对齐 E2E 实证（book/2、book/7 自有封面加载）；任务 D 数据级根治（1,396 种子重富集，67.7% 缺失→标签 13 个）；新增种子重富集自愈巡检+垃圾 coverSrc 双层清洗两项常驻增强；bug 1 复核确认已由 Task 59/67 修复链根治；新增 6 组回归测试，race/E2E/域况全绿
+
+---
+Task ID: 85
+Agent: main (Z.ai Code)
+Task: R85 迭代——持续深审（rulehealth/coversx 核心/api_pseo 三模块）+ 部署后监控与前端实证
+
+Work Log:
+- 【rulehealth.go 逐行深审（301 行，E19）】单飞闸 CAS 语义（61-R8 修复态保持）、E23 联动复活条件更新防竞态、upsert 连击计数 CASE 逻辑、NULL ruleId 不联动、5min 下限防轮堆叠——零缺陷
+- 【coversx.go 下载/落盘核心逐行深审】SSRF 逐跳重定向守卫、x509 insecure 单次重试、确定性失败 vs 网络类失败分类（防代理回退空烧）、CreateTemp O_EXCL+rename 原子落盘、defer Remove 清理——零缺陷（Task 50/51/69-b 多轮审计态保持）
+- 【api_pseo.go 批处理/生成链深审】SkipBookSeeds 已贯通全部管理端点、zombie 锁 TTL 3min 语义、二级挖掘 cap 预算递减口径——零缺陷
+- 【前端实证扩展】book/3 神道丹帝（R84 初血缘=0 的书）现 13 标签（12 真实引擎下拉词+作者词）+ 自有封面 3.jpg 加载——重富集链路前端效果二次实证
+- 【监控面】健康面 ok/db/engine 全绿、规则健康 12/14（2 不健康为限流瞬态）；填充 +1,412/25min（jianpanxs 源站不可达致 Phase 2 失败重试，属源站侧）、书籍 +78、封面重取 id 1502 推进中、重富集累计 1,425 种子
+- 【运行归因】2 paused 任务均为限流瞬态（runner 3min 自愈链+E26+E23 三层管辖，无需人工）
+
+Stage Summary:
+- R85 深审三模块（rulehealth 301 行 + coversx 核心 + api_pseo 批处理链）全部零缺陷——84 轮迭代后代码面高度稳定；重富集/封面重取/填充三通道持续推进，前端实证标签 0→13 与封面自有化效果
