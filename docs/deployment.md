@@ -25,13 +25,28 @@
 
 ### 0.1 一键命令
 
+> **服务器连 git 都没有？**（`-bash: git: command not found`）用下面的「无 git 引导」：
+> curl 下载 GitHub tarball（镜像加速）→ 解压到用户主目录（免 sudo）→ 直接跑部署脚本
+> （脚本第 1 步会自动补装 git 等系统依赖，之后即可改用 git pull 升级）：
+
+```bash
+curl -fsSL -o /tmp/novel-admin.tgz "https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz" \
+  && rm -rf "$HOME/novel-admin" "$HOME/novel-admin-1.0.0-main" \
+  && tar -xzf /tmp/novel-admin.tgz -C "$HOME" \
+  && mv "$HOME/novel-admin-1.0.0-main" "$HOME/novel-admin" \
+  && cd "$HOME/novel-admin" && bash scripts/deploy-cn.sh
+
+# 极精简系统无 curl 只有 wget 时，把第一行换成：
+# wget -qO /tmp/novel-admin.tgz "https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz"
+```
+
 ```bash
 # 标准版（默认 nohup + watchdog 自愈循环）
-git clone https://github.com/<你的用户名>/novel-admin.git /opt/novel-admin \
+git clone https://github.com/u4399com-beep/novel-admin-1.0.0.git /opt/novel-admin \
   && cd /opt/novel-admin && bash scripts/deploy-cn.sh
 
 # GitHub 直连慢，换代理前缀（镜像失效时换 gh-proxy.com / ghproxy.net）
-git clone https://ghfast.top/https://github.com/<你的用户名>/novel-admin.git /opt/novel-admin \
+git clone https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0.git /opt/novel-admin \
   && cd /opt/novel-admin && bash scripts/deploy-cn.sh
 
 # 生产推荐：systemd 托管（Restart=always，开机自启）
