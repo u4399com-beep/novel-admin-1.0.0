@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -676,9 +677,20 @@ type coverBackfillSummary struct {
 // 失败旧图原样保留）；force=false：幂等补抓（已落盘直接复用）。
 // afterID：id 游标；limit：批大小；proxy：主出口代理（空=直连，网络类失败自动
 // 回退规则代理池）。总时长预算 coverBackfillBudget 与 65s 写窗口护栏不变。
+// R86 饥饿修复：非 force 路径改走可见流精确分页（coverBackfillCandidatesVisible：
+// SQL 分块 + 失败记忆过滤 + limit+1 探测）——近期失败的书本批不可见，防早期 id
+// 不可达图床书每轮烧尽 40s 预算饿死其后书目；force 路径不过滤（显式全量重取语义，
+// 用户指令「重新获取所有」必须逐本重下）。
 func runCoverBackfillBatch(force bool, afterID int64, limit int, proxy string) (coverBackfillSummary, error) {
 	sum := coverBackfillSummary{Failures: []coverBackfillItem{}}
-	cands, hasMore, err := coverBackfillCandidatesPaged(afterID, !force, limit)
+	var cands []coverBackfillCand
+	var hasMore bool
+	var err error
+	if !force && limit > 0 {
+		cands, hasMore, err = coverBackfillCandidatesVisible(afterID, limit)
+	} else {
+		cands, hasMore, err = coverBackfillCandidatesPaged(afterID, !force, limit)
+	}
 	if err != nil {
 		return sum, err
 	}
@@ -695,6 +707,7 @@ func runCoverBackfillBatch(force bool, afterID int64, limit int, proxy string) (
 		sum.NextAfterID = c.id
 		stored, reason := fetchCoverWithFallbackOpt(int(c.id), c.coverSrc, proxy, hardDeadline, force)
 		if stored == "" {
+			coverFailMemoryRecord(int64(c.id))
 			sum.Failures = append(sum.Failures, coverBackfillItem{ID: c.id, Title: c.title, Reason: reason})
 			continue
 		}
@@ -703,12 +716,76 @@ func runCoverBackfillBatch(force bool, afterID int64, limit int, proxy string) (
 			sum.Failures = append(sum.Failures, coverBackfillItem{ID: c.id, Title: c.title, Reason: firstLineErr(err)})
 			continue
 		}
+		coverFailMemoryClear(int64(c.id))
 		sum.Fixed++
 	}
 	sum.Failed = len(sum.Failures)
 	sum.Remaining = len(cands) - sum.Attempted
 	sum.HasMore = hasMore
 	return sum, nil
+}
+
+// coverFailMemory 封面补抓失败记忆（R86 饥饿修复）：非 force 路径（30min 巡检）
+// 跳过近期失败的书，防不可达图床书每轮烧尽 40s 预算饿死其后待补书。
+// 进程内态（重启即清——重启后首轮多烧几本属可接受代价），成功率路由语义：
+// 成功即清除，失败记录时间戳，coverFailRetryGap 后重新参选。
+var coverFailMemory sync.Map // int64(novelID) -> int64(failAtMillis)
+
+// coverFailRetryGap 失败记忆有效窗：窗内不重试（30min 巡检 × 6 轮 = 3h 后再试）
+const coverFailRetryGap = 3 * 60 * 60 * 1000
+
+// coverFailMemoryRecentlyFailed 失败记忆谓词：窗口内失败过 = true
+func coverFailMemoryRecentlyFailed(novelID int64) bool {
+	if v, ok := coverFailMemory.Load(novelID); ok {
+		if failAt, _ := v.(int64); nowMillis()-failAt < coverFailRetryGap {
+			return true
+		}
+	}
+	return false
+}
+
+// coverBackfillCandidatesVisible 可见流精确分页（R86 饥饿修复）：SQL 分块扫描 +
+// 失败记忆过滤，返回至多 limit 个可见候选；hasMore = 可见流是否还有更多
+// （limit+1 探测，恒精确——被记忆隐藏的书不产生空页、不虚报 hasMore，
+// 调用方游标翻页至 hasMore=false 即穷尽当前可见面）。
+// 仅非 force 路径使用；limit<=0 回退旧全量扫描语义（当前无此调用方，防御保留）。
+func coverBackfillCandidatesVisible(afterID int64, limit int) ([]coverBackfillCand, bool, error) {
+	if limit <= 0 {
+		cands, _, err := coverBackfillCandidatesPaged(afterID, true, 0)
+		return cands, false, err
+	}
+	visible := make([]coverBackfillCand, 0, limit+1)
+	cursor := afterID
+	const chunk = 50
+	for {
+		rows, more, err := coverBackfillCandidatesPaged(cursor, true, chunk)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, c := range rows {
+			if coverFailMemoryRecentlyFailed(int64(c.id)) {
+				continue // 近期失败：本批不可见，窗口过后自然重新参选
+			}
+			visible = append(visible, c)
+			if len(visible) > limit {
+				return visible[:limit], true, nil
+			}
+		}
+		if !more {
+			return visible, false, nil
+		}
+		cursor = rows[len(rows)-1].id
+	}
+}
+
+// coverFailMemoryRecord 记录失败（时间戳覆盖旧值，滑动窗口语义）
+func coverFailMemoryRecord(novelID int64) {
+	coverFailMemory.Store(novelID, nowMillis())
+}
+
+// coverFailMemoryClear 成功清除记忆
+func coverFailMemoryClear(novelID int64) {
+	coverFailMemory.Delete(novelID)
 }
 
 // handleNovelsBackfillCovers 封面批量补抓（用户指令「很多书没有封面……修复完善，杜绝后患」）：

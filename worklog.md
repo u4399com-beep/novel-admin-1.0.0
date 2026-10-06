@@ -3957,3 +3957,17 @@ Work Log:
 
 Stage Summary:
 - R85 深审三模块（rulehealth 301 行 + coversx 核心 + api_pseo 批处理链）全部零缺陷——84 轮迭代后代码面高度稳定；重富集/封面重取/填充三通道持续推进，前端实证标签 0→13 与封面自有化效果
+
+---
+Task ID: 86
+Agent: main (Z.ai Code)
+Task: R86 迭代——封面巡检饥饿缺陷修复（失败记忆+可见流精确分页）+ 全量回归部署
+
+Work Log:
+- 【实锤缺陷：封面巡检饥饿】startCoverSweepLoop 每轮从 id=0 重扫 + 40s 批预算：不可达图床书（jianpanxs 系，当前实况数百本）每本轮烧 12-17s 直连超时 → 预算仅够 2-3 本，早期 id 不可达书长期饿死其后待补书（巡检收敛性破坏）
+- 【修复：失败记忆 + 可见流精确分页】coverFailMemory（进程内 sync.Map，novelID→failAt）滑动窗口 3h：非 force 路径分页改走 coverBackfillCandidatesVisible（SQL 分块 50 + 记忆过滤 + limit+1 探测）——隐藏书不占页、不产生空页、不虚报 hasMore，游标翻页精确穷尽可见面；成功清记忆、窗口过期重新参选；force 路径不过滤（全量重取语义保持）
+- 【测试】TestCoverFailMemoryStarvation 4 场景（隐藏跳过/force 不过滤/全隐藏空批零空转/窗口过期重参选）；首版朴素过滤破坏分页精确性被既有 TestNovelsBackfillCoversBatchingRemaining 当场拦截（hasMore 语义失真），重构为可见流分页后 47 组用例全绿——回归网价值实证
+- 【部署与续跑】全量 race 测试双模块绿 → build-go.sh + recover-r26.sh 滚动重启 → resume-paused 复活任务（11 running）→ 封面 force 驱动断点 1645 续跑（轮 2 → 1673+）；boot 自愈链（垃圾 coverSrc 清洗/封面缺失自愈）随重启正常在岗
+
+Stage Summary:
+- R86 修复封面巡检通道饥饿缺陷（失败记忆 + 可见流精确分页），回归网当场拦截首版分页语义失真并驱动重构；双模块 race 全绿 + 滚动部署 + 断点续跑；封面 force 长跑推进至 id 1673+

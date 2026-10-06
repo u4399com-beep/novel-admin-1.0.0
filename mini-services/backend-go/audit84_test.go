@@ -176,3 +176,76 @@ func TestSanitizeGarbageCoverSrc(t *testing.T) {
 		t.Fatalf("幂等破坏，got %q", src)
 	}
 }
+
+// TestCoverFailMemoryStarvation R86：失败记忆可见流分页——不可达图床书记录后，
+// 非 force 批不再选中（防 40s 预算被烧尽饿死其后书目）；隐藏书不产生空页/不虚报
+// hasMore；force 批不过滤（显式全量重取语义）；成功清除与窗口过期后重新参选。
+func TestCoverFailMemoryStarvation(t *testing.T) {
+	mustInitBackfillFixtures(t)
+	insertBackfillNovel(t, 95301, "不可达图床书A", "g3", "https://unreachable.example.net/a.jpg")
+	insertBackfillNovel(t, 95302, "不可达图床书B", "g4", "https://unreachable.example.net/b.jpg")
+	insertBackfillNovel(t, 95303, "健康待补书C", "g5", "https://private-blocked.invalid/c.jpg") // SSRF 拒但走下载路径记失败
+	t.Cleanup(func() {
+		coverFailMemory.Delete(95301)
+		coverFailMemory.Delete(95302)
+		coverFailMemory.Delete(95303)
+	})
+
+	// 模拟两本不可达书先失败入记忆
+	coverFailMemoryRecord(95301)
+	coverFailMemoryRecord(95302)
+
+	// 非 force 批：limit=2 应跳过 A/B 只试 C（隐藏书不占页、scanned 反映实际处理面）
+	sum, err := runCoverBackfillBatch(false, 95300, 2, "")
+	if err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	ids := []int64{}
+	for _, f := range sum.Failures {
+		ids = append(ids, f.ID)
+	}
+	if len(ids) != 1 || ids[0] != 95303 {
+		t.Fatalf("非 force 批应跳过已记忆失败书仅试 C，got failures=%v scanned=%d", ids, sum.Scanned)
+	}
+	if sum.HasMore {
+		t.Fatal("可见流耗尽后 hasMore 应为 false（隐藏书不虚报）")
+	}
+
+	// force 批不过滤：A/B 仍参选（显式全量重取语义）
+	sum, err = runCoverBackfillBatch(true, 95300, 50, "")
+	if err != nil {
+		t.Fatalf("force batch: %v", err)
+	}
+	forcedIDs := map[int64]bool{}
+	for _, f := range sum.Failures {
+		forcedIDs[f.ID] = true
+	}
+	if !forcedIDs[95301] || !forcedIDs[95302] {
+		t.Fatalf("force 批不得被失败记忆过滤，got failures=%v", forcedIDs)
+	}
+
+	// 精确分页：C 隐藏后可见流空，limit=1 批 scanned=0 且 hasMore=false（无空页循环）
+	coverFailMemoryRecord(95303)
+	sum, err = runCoverBackfillBatch(false, 95300, 1, "")
+	if err != nil {
+		t.Fatalf("empty visible batch: %v", err)
+	}
+	if sum.Scanned != 0 || sum.Attempted != 0 || sum.HasMore {
+		t.Fatalf("可见流全隐藏时应 scanned=0 attempted=0 hasMore=false，got %d/%d/%v",
+			sum.Scanned, sum.Attempted, sum.HasMore)
+	}
+
+	// 窗口过期后重新参选
+	coverFailMemory.Store(int64(95303), nowMillis()-coverFailRetryGap-1000)
+	if coverFailMemoryRecentlyFailed(95303) {
+		t.Fatal("窗口过期后 recentlyFailed 应为 false")
+	}
+	coverFailMemory.Delete(95303)
+
+	// 成功清除记忆后重新参选
+	coverFailMemoryRecord(95303)
+	coverFailMemoryClear(95303)
+	if coverFailMemoryRecentlyFailed(95303) {
+		t.Fatal("成功清除后 recentlyFailed 应为 false")
+	}
+}
