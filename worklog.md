@@ -4034,3 +4034,16 @@ Work Log:
 
 Stage Summary:
 - 任意路径 git clone 一键部署能力落地：git clone <repo> && bash scripts/deploy-cn.sh（国内全链路镜像加速）；数据与运行时目录全部相对 repoRoot 自适应，升级=git pull+重跑脚本；沙箱清理事件被转化为真实部署演练并顺带修复部署脚本 2 处健壮性缺陷
+
+---
+Task ID: 91
+Agent: main (Z.ai Code)
+Task: R91 推送 GitHub（u4399com-beep/novel-admin-1.0.0）+ 开箱即用终验
+
+Work Log:
+- 【仓库卫生】.watchdog-loop.sh（deploy 运行时生成物）移除跟踪+gitignore；遗留 .env（仅一行过时沙箱 DB 路径、无任何密钥、纯 Go 架构不读取）移除跟踪——推送前敏感文件排查通过
+- 【推送】远程为旧沙箱时期独立历史线（31 commits 含 .env/.task28a/.zscripts 杂物，与本地无共同祖先）：旧历史先备份至 backup-old-main 分支（可回滚）→ 本地 main 强推覆盖 → 终态 f9ca850；two-phase-rescrape 分支保留未动
+- 【开箱即用终验】GitHub 全新 clone → /tmp 全新目录 → bash scripts/deploy-cn.sh 全量现场构建：7/7 全通（Go 沙箱兜底探测/goproxy.cn 构建/军火复用检测/双服务启动/健康 200）+ 首页 title/admin 200 渲染验证；验证后清理测试实例、恢复现役服务（backend+engine 200）
+
+Stage Summary:
+- https://github.com/u4399com-beep/novel-admin-1.0.0 已承载本项目终态（main=f9ca850）；开箱即用链路实证：git clone <repo> && bash scripts/deploy-cn.sh = 从零到可用站点全自动（依赖→Go→模块代理→构建→军火→启动→健康检查），数据目录相对 repoRoot 自适应任意部署路径
