@@ -750,6 +750,10 @@ func handleChapterAuditPost(w http.ResponseWriter, r *http.Request, _ map[string
 		id, idx, wordCount int64
 		title              string
 	}
+	// R101：全程持同书骨架分片锁——与 storeChapterSkeletons / resortApplyReorder 同锁互斥，
+	// 目录修复（去重删除+两段式改号）与采集端骨架并发写同书时不再互踩 idx。
+	unlockNovel := lockNovelSkeleton(int(novelId))
+	defer unlockNovel()
 	rows := make([]row, 0)
 	if err := queryList(`SELECT "id", "idx", "title", "wordCount" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC, "id" ASC`,
 		func(rs *sql.Rows) error {

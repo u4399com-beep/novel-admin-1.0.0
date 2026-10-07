@@ -27,6 +27,7 @@ var proxyCursor atomic.Int64
 
 var allStrategies = []strategyDef{
 	fetchBrowserStrategy,
+	fetchCloakStrategy, // Task 101-a: CloakBrowser 隐身渲染（侧车）——fetch-browser 的加强版，紧随其后
 	fetchUaRotateStrategy,
 	fetchMobileStrategy,
 	fetchSpiderStrategy,
@@ -34,6 +35,7 @@ var allStrategies = []strategyDef{
 	curlPlainStrategy, // Task 25: 普通 curl 诚实客户端策略（针对拦截已知爬虫指纹但放行系统 curl 的 WAF，5165.org 实证）
 	gotScrapingStrategy,
 	browserStrategy,
+	fetchIv8Strategy, // Task 101-a: iv8 V8 环境模拟（侧车）——链尾轻量兜底，专治 JS 计算 cookie/参数的站
 }
 
 // STRATEGY_NAMES 策略名列表（顺序与 TS 版一致）

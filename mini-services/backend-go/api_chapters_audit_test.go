@@ -51,6 +51,9 @@ func mustInitAuditTables(t *testing.T) {
 		_, _ = db.Exec(`DELETE FROM "Chapter"`)
 		_, _ = db.Exec(`DELETE FROM "Novel"`)
 	})
+	// R101: resort/audit 路径读取 Chapter.volume（Task 45-b 落库列）；最小建表无该列，
+	// 幂等补齐（重复执行报 duplicate column 忽略）。
+	_, _ = db.Exec(`ALTER TABLE "Chapter" ADD COLUMN "volume" TEXT NOT NULL DEFAULT ''`)
 }
 
 func insertAuditChapter(t *testing.T, novelID int64, idx int64, title string, wc int) int64 {

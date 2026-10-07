@@ -4226,3 +4226,24 @@ Stage Summary:
 - 章节采集三层提效落地：①突发抑制上界 300ms（域上限 +45%）②饱和感知冻结（boom-bust 震荡根治，车道数随域槽供给自适应）③排队饱和救援重试（shed 好章不再推给下轮重扫）；实测 +48%（4254→6298 章/时），稳态随 consec 爬坡与车道收敛还会继续上探
 - 用户服务器升级：git pull + 重启即生效（无 schema/规则变更）；如需恢复 Task 26-d 原始突发抑制口径设 SCRAPE_POLITENESS_EXTRA_CAP_MS=1000
 - 「多开线程采集不同规则」已是现状（任务级并行+引擎域槽隔离），未来若要再提吞吐只能：多域名镜像规则/提高 CHAPTER_CONCURRENCY 对多分页章的管线收益/压缩章节页内分页（源站形态决定）
+
+---
+Task ID: 101
+Agent: main (Z.ai Code)
+Task: R101 三项：①对比并集成 iv8 + CloakBrowser ②yckceo#7928 书源转系统规则（dwxwc）③完善修复乱序重排
+
+Work Log:
+- 【环境】沙箱重置后重建：Go 1.23.4 重装（golang.google.cn）、双服务重建（发现 setsid 后台实例被沙箱回收 → 改看门狗循环+普通 & 自愈模式；backend 头两次静默死亡同因）、iv8 0.1.4 / cloakbrowser 0.5.12 pip 装入沙箱
+- 【①对比结论】iv8=Python 原生 V8+C++ 模拟 BOM/DOM/CSSOM 运行时（无渲染跑站点 JS 补环境、算 cookie/参数，每 Context 独占 Isolate 多线程 ~4.7x，资源极低；社区版无内置真实网络传输——页内 XHR/fetch 不外发，合规友好）；CloakBrowser=CloakHQ 隐身 Chromium（87 处 C++ 源码级指纹补丁，Playwright 兼容 API，过 Cloudflare Turnstile/FingerprintJS，重但强）。互补定位：JS 加密参数→iv8，整页反爬渲染→CloakBrowser。两者均沙箱实测可用（CloakBrowser 渲染 example.com 0.9s；GoEdge WAF 站被挑战属站点行为非能力缺陷）
+- 【①侧车】mini-services/stealth-service 新建（Python 标准库 ThreadingHTTPServer :3031，零额外依赖）：GET /health 能力位（cloak/cloakBinary/iv8）；POST /cloak（CloakBrowser 整页渲染，浏览器实例按 proxy 缓存复用+page 级异常重建重试一次+池上限 4）；POST /iv8（urllib 取初始 HTML→iv8 page.load 执行脚本→logical 事件循环推进 advanceMs→返回执行后 DOM+document.cookie）；import 失败优雅降级、业务失败 HTTP 200+ok:false；run.sh 崩溃自动重启；实测 health 双能力 true、/iv8 36ms、/cloak 678ms
+- 【①策略集成】scraper-go 新增 sidecar.go（SCRAPE_SIDECAR_URL 默认 :3031；/health TTL 缓存探测 成功60s/失败10s 不永久拉黑；能力位探针；cookie 回存引擎会话桶 recordBridgeCookies——「首访 JS 种 cookie、二访放行」链路闭环）+ strategy_sidecar.go（fetch-cloak 插 fetch-browser 后=加强版浏览器车道；fetch-iv8 链尾=轻量兜底；同口径 acquireDomainSlotBudgeted 域槽限速/assess 挑战判定/亲和记账；unavailable-sidecar 错误前缀命中 isEngineStateNote 不计站点网络连败；selfRetrying 昂贵策略免链层外重试）+ sidecar_test.go（假侧车 httptest 7 测试）——/api/strategies 实测 10 策略全注册，fetch-cloak/fetch-iv8 available=true（侧车在线自动点亮）
+- 【②书源转换】yckceo#7928（🌞大文学无错 dwxwc.com，legado 格式）→ 系统规则 id=29：listRule .bookbox/.bookname a/.author（书源 ruleFind*）、bookRule .booktitle/.booktag a/.bookcover img/.bookintro/.booktag span+og:novel:* 兜底、目录 #list-chapterAll dd a（源 JSON U+2011 连字符归一）+#list dl dd 兜底、正文 #content；封面 src/data-original 双候选+og:image 兜底（R99 lazy 坑防御）
+- 【②WAF 定档】dwxwc.com 全出口实测（直连/共享代理 101.206.186.99:8080/CloakBrowser 隐身渲染）均被 GoEdge WAF「Verify Yourself」图片验证码挑战（连 robots.txt 都挑战）——合规红线不破解验证码，六项实测不可行，按 kelexs/cunshu 草稿先例 enabled=false 落库 + notes 详注启用路径（用户服务器健康巡检→通过后启用；若同被挑战：人工过验码取 GOEDGE cookie 填规则 cookies（R53 底座）或 fetch-cloak 指纹放行）；运行库落库+seed.json 固化（TestSeed 通过）+scripts/add-rules-r101.py 幂等补种（两连跑无重复）
+- 【③乱序重排四修】a) 409 全库闸移除：FleetKeeper 每 5min 建任务使「有任务即 409」在无人值守舰队下永远不可用——resortApplyReorder 全程持同书骨架分片锁 lockNovelSkeleton（与 storeChapterSkeletons 读 existing+INSERT 同锁互斥；phase2 正文按 chapterId UPDATE 不碰 idx；/api/chapters/audit 同款补锁）响应附 activeTasks 展示；b) volume 分段重排：Chapter.volume（Task 45-b detectVolume 落库）此前 chapterorder 注释称「无分卷信息」已过时——reorderChapterRefsVols 新入口：无重复序号走原阈值路径，重复序号（分卷各自编号）先试卷内分段稳定重排（前置：≥2 非空卷/编号≥8/空卷编号<10%/每段≥1 编号/至少一段错乱；未编号锚定段内前一编号章），前置不满足回退 fixLeadingDescendingBlock；force 走 reorderChapterRefsForceVols（threshold=0）；c) 单书快路径：novelId>0 直查该书（旧版全站审计后过滤 O(全库章节)）force/常规统一 resortOneBook，note 回传；d) admin UI：重排卡加「强制」复选框+新响应语义展示+分卷表联动刷新
+- 【回归】backend-go 全量 54.8s 通过 + 新增 audit101c_test.go 7 测试（splitVolumeSegments 4 案/卷内重排/前置护栏 3 案/未编号锚定/在途任务 200/force 低错位 4% 常规不动+强制修复/分卷 API 端到端）；scraper-go 全量 45.8s 通过（sidecar 测试含 /api/strategies 契约）；seed 契约通过；gofmt 已规范本轮触碰文件
+- 【端到端冒烟】SSR 首页 200 正常渲染；活动舰队（activeTasks=5）下对分卷倒序书 POST resort → 200 reordered=1 note=「分卷重复编号（3 卷），已按卷内章节序号重排」，落位逐行校验 PASS，测试数据清理
+
+Stage Summary:
+- 反检测双后端上线：fetch-cloak/fetch-iv8 进策略链（10 策略），侧车可选部署（未装→策略自动跳过零影响）；国内服务器部署 stealth-service：pip install -r requirements.txt（清华源）+ ./run.sh；CloakBrowser 首启自动下 Chromium 二进制
+- dwxwc 规则 id=29 草稿落库（enabled=false，WAF 验证码合规不破解）；用户服务器：跑 scripts/add-rules-r101.py 补种→健康巡检→通过后启用
+- 乱序重排在舰队模式下首次真正可用：409 闸移除（锁保证安全）+ 分卷重复编号书的正确重排 + force 进 UI + 单书快路径

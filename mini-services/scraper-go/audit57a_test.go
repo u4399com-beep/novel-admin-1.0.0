@@ -184,7 +184,8 @@ func TestRouteStrategiesHostHealthContract(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("strategies 响应非法 JSON: %v", err)
 	}
-	if !out.OK || out.Service != "scraper-service" || len(out.Strategies) != 8 {
+	// Task 101-a: 策略链 8→10（fetch-cloak / fetch-iv8 侧车策略入链）
+	if !out.OK || out.Service != "scraper-service" || len(out.Strategies) != 10 {
 		t.Fatalf("strategies 契约漂移: ok=%v n=%d", out.OK, len(out.Strategies))
 	}
 	for _, key := range []string{"affinity", "cookieSession", "hostHealth", "browserSession", "compliance"} {

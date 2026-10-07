@@ -326,6 +326,203 @@ func fixLeadingDescendingBlock(refs []ChapterRef, nums []numOpt) reorderRefsResu
 	}
 }
 
+// reorderChapterRefsVols 带分卷信息的乱序重排主入口（R101 服务端 API 路径专用；
+// 采集管线 TOC 阶段无卷信息，仍走 reorderChapterRefs/reorderRefPairs）。
+//
+// 完善点（R101）：Task 45-b 起 Chapter.volume 由 detectVolume 落库、存量由
+// backfillChapterVolume 幂等回填——「分卷各自编号」书籍（每卷从第1章重计）此前
+// hasDup 时只能保守放弃或仅修头部倒序块；现在可用卷字段分段后做段内稳定重排。
+//
+// 路由语义：
+//   - 无重复序号 → 与 reorderChapterRefsImpl 同路径（阈值 threshold 全局稳定重排）；
+//   - 有重复序号 → 先试卷内分段重排 volumeSegmentReorder（前置不满足回退
+//     fixLeadingDescendingBlock 头部倒序块保守修复）。
+//
+// threshold 传 DISORDER_RATIO 为常规审计口径；传 0 为强制口径（reorderChapterRefsForce
+// 等价语义：位置错乱占比 0 即不动，其余判定不变）。
+func reorderChapterRefsVols(refs []ChapterRef, vols []string, threshold float64) (res reorderRefsResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = reorderRefsResult{refs: refs, reordered: false, note: ""}
+		}
+	}()
+	if len(refs) == 0 || len(refs) != len(vols) {
+		return reorderChapterRefsImpl(refs, threshold)
+	}
+	nums := make([]numOpt, len(refs))
+	for i, r := range refs {
+		nums[i] = parseNumOpt(r.Title)
+	}
+	numbered := 0
+	for i := range nums {
+		if nums[i].ok {
+			numbered++
+		}
+	}
+	if numbered < NUMBERED_MIN {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}
+	}
+	if hasDuplicateNumbering(nums) {
+		if rr, engaged := volumeSegmentReorder(refs, vols, nums); engaged {
+			return rr
+		}
+		return fixLeadingDescendingBlock(refs, nums)
+	}
+	return reorderChapterRefsImpl(refs, threshold)
+}
+
+// hasDuplicateNumbering 编号章节序号是否存在重复（分卷各自编号的标志信号）
+func hasDuplicateNumbering(nums []numOpt) bool {
+	seen := map[int64]bool{}
+	for _, n := range nums {
+		if !n.ok {
+			continue
+		}
+		if seen[n.v] {
+			return true
+		}
+		seen[n.v] = true
+	}
+	return false
+}
+
+// splitVolumeSegments 按 volume 落库值切分连续同卷段：卷值变化即分段边界；
+// 空卷行归属当前段（书首前导空卷行随首个非空卷同段——卷首楔子/未标卷章节）。
+// 全空卷输入返回单段（上层 distinct<2 判定不启用分段重排）。
+func splitVolumeSegments(vols []string) [][]int {
+	segs := [][]int{}
+	cur := []int{}
+	curVol := ""
+	started := false
+	for i, v := range vols {
+		if v != "" && v != curVol {
+			if started && len(cur) > 0 {
+				segs = append(segs, cur)
+				cur = []int{}
+			}
+			curVol = v
+			started = true
+		}
+		cur = append(cur, i)
+	}
+	if len(cur) > 0 {
+		segs = append(segs, cur)
+	}
+	return segs
+}
+
+// volumeSegmentReorder 卷内分段重排（重复序号场景的正确解）：段序保持原样，段内
+// 按章节序号稳定排序（未编号章节锚定段内前一编号章节之后，sortKeys 语义段内独立）。
+//
+// 启用前置（保守，任一不满足即 engaged=false 回退旧路径）：
+//   - refs/vols 等长且非空；
+//   - ≥2 个不同非空卷（真分卷书）；
+//   - 编号章节总数 ≥NUMBERED_MIN，且空卷编号行占比 <10%（卷字段可信度门槛——
+//     大量编号章节无卷归属时分段结果不可信）；
+//   - 每段至少 1 条编号章节；
+//   - 至少一段卷内存在位置错乱（全有序则无事可做，engaged=true reordered=false）。
+//
+// 返回 engaged=false 表示前置不满足/卷信息缺失，调用方应回退保守修复。
+func volumeSegmentReorder(refs []ChapterRef, vols []string, nums []numOpt) (reorderRefsResult, bool) {
+	if len(refs) == 0 || len(refs) != len(vols) || len(refs) != len(nums) {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}, false
+	}
+	distinct := map[string]bool{}
+	for _, v := range vols {
+		if v != "" {
+			distinct[v] = true
+		}
+	}
+	if len(distinct) < 2 {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}, false
+	}
+	totalNumbered, emptyNumbered := 0, 0
+	for i := range nums {
+		if nums[i].ok {
+			totalNumbered++
+			if vols[i] == "" {
+				emptyNumbered++
+			}
+		}
+	}
+	if totalNumbered < NUMBERED_MIN || float64(emptyNumbered) > 0.1*float64(totalNumbered) {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}, false
+	}
+	segs := splitVolumeSegments(vols)
+	if len(segs) < 2 {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}, false
+	}
+	anyDisorder := false
+	for _, seg := range segs {
+		hasNumbered := false
+		for _, i := range seg {
+			if nums[i].ok {
+				hasNumbered = true
+				break
+			}
+		}
+		if !hasNumbered {
+			return reorderRefsResult{refs: refs, reordered: false, note: ""}, false
+		}
+		if !anyDisorder {
+			vals := make([]int64, 0, len(seg))
+			for _, i := range seg {
+				if nums[i].ok {
+					vals = append(vals, nums[i].v)
+				}
+			}
+			if disorderRatio(vals) > 0 {
+				anyDisorder = true
+			}
+		}
+	}
+	if !anyDisorder {
+		return reorderRefsResult{refs: refs, reordered: false, note: ""}, true
+	}
+	out := make([]ChapterRef, len(refs))
+	copy(out, refs)
+	for _, seg := range segs {
+		keys := make([]float64, len(seg))
+		segNums := make([]numOpt, len(seg))
+		for j, i := range seg {
+			segNums[j] = nums[i]
+		}
+		copy(keys, sortKeys(segNums))
+		type pair struct {
+			src int
+			k   float64
+		}
+		ordered := make([]pair, len(seg))
+		for j := range seg {
+			ordered[j] = pair{src: j, k: keys[j]}
+		}
+		sort.SliceStable(ordered, func(a, b int) bool { return ordered[a].k < ordered[b].k })
+		sorted := make([]ChapterRef, len(seg))
+		for j, p := range ordered {
+			sorted[j] = refs[seg[p.src]]
+		}
+		for j, r := range sorted {
+			out[seg[j]] = r
+		}
+	}
+	return reorderRefsResult{
+		refs:      out,
+		reordered: true,
+		note:      "分卷重复编号（" + itoa(len(distinct)) + " 卷），已按卷内章节序号重排",
+	}, true
+}
+
+// reorderChapterRefsForceVols 强制口径 + 卷信息（R101：resort force 单书路径用——
+// 追加式补全残留的 1-2% 错位低于审计阈值、分卷书卷内错乱一并强制修正）。
+func reorderChapterRefsForceVols(refs []ChapterRef, vols []string) (res reorderRefsResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = reorderRefsResult{refs: refs, reordered: false, note: ""}
+		}
+	}()
+	return reorderChapterRefsVols(refs, vols, 0)
+}
+
 // reorderRefPairs refPair 版薄适配（phase1Skeletons 接线点；语义与 reorderChapterRefs
 // 完全一致，note 非空 = 已重排）。ChapterRef/refPair 同构 {Title,URL}，仅在管线侧类型不同。
 func reorderRefPairs(pairs []refPair) ([]refPair, string) {

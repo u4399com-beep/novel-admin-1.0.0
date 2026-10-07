@@ -139,25 +139,31 @@ func handleNovelsRecalcWordsPost(w http.ResponseWriter, r *http.Request, _ map[s
 // ==================== /api/novels/resort-chapters ====================
 
 type resortChapterRow struct {
-	id    int64
-	idx   int64
-	title string
+	id     int64
+	idx    int64
+	title  string
+	volume string
 }
 
-// resortDetectOrder 单本书的重排检测：返回新顺序（nil=无需重排）与审计指标。
+// resortDetectOrder 单本书的重排检测：返回新顺序（nil=无需重排）、审计指标与重排说明。
 // url 复用为章节 id 载体（与 TS detectOrder 一致）。
-func resortDetectOrder(chapters []resortChapterRow) (order []int64, numbered int, disorder float64) {
+// R101：改走 reorderChapterRefsVols（卷字段分段重排）——Chapter.volume 由 Task 45-b
+// detectVolume 落库、存量由 backfillChapterVolume 回填，分卷各自编号书不再只能保守放弃。
+func resortDetectOrder(chapters []resortChapterRow) (order []int64, numbered int, disorder float64, note string) {
 	refs := make([]ChapterRef, len(chapters))
+	vols := make([]string, len(chapters))
 	nums := make([]numOpt, len(chapters))
 	for i, c := range chapters {
 		refs[i] = ChapterRef{Title: c.title, URL: strconv.FormatInt(c.id, 10)}
+		vols[i] = c.volume
 		nums[i] = parseNumOpt(c.title)
 		if nums[i].ok {
 			numbered++
 		}
 	}
-	// 与 reorderChapterRefs 同一套阈值/算法：直接复用其判定
-	rr := reorderChapterRefs(refs)
+	// 与 reorderChapterRefs 同一套阈值/算法：卷口径优先，缺卷信息时行为与旧版一致
+	rr := reorderChapterRefsVols(refs, vols, DISORDER_RATIO)
+	note = rr.note
 	if rr.reordered {
 		order = make([]int64, len(rr.refs))
 		for i, r := range rr.refs {
@@ -186,7 +192,7 @@ func resortDetectOrder(chapters []resortChapterRow) (order []int64, numbered int
 		}
 		disorder = float64(mismatch) / float64(len(vals))
 	}
-	return order, numbered, disorder
+	return order, numbered, disorder, note
 }
 
 // resortAudit 全站审计：返回将触发重排的书清单（不写库）
@@ -209,9 +215,9 @@ func resortAudit() (books int, candidates []map[string]any, err error) {
 	candidates = []map[string]any{}
 	for _, n := range novels {
 		chapters := []resortChapterRow{}
-		if err = queryList(`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`, func(rows *sql.Rows) error {
+		if err = queryList(`SELECT "id","idx","title","volume" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`, func(rows *sql.Rows) error {
 			var c resortChapterRow
-			if err := rows.Scan(&c.id, &c.idx, &c.title); err != nil {
+			if err := rows.Scan(&c.id, &c.idx, &c.title, &c.volume); err != nil {
 				return err
 			}
 			chapters = append(chapters, c)
@@ -222,23 +228,105 @@ func resortAudit() (books int, candidates []map[string]any, err error) {
 		if len(chapters) < 8 {
 			continue
 		}
-		order, numbered, disorder := resortDetectOrder(chapters)
+		order, numbered, disorder, _ := resortDetectOrder(chapters)
 		if order != nil {
-			candidates = append(candidates, map[string]any{
+			cand := map[string]any{
 				"id":       n.id,
 				"title":    n.title,
 				"chapters": len(chapters),
 				"numbered": numbered,
 				"disorder": disorder,
-			})
+			}
+			if vs := countDistinctVolumes(chapters); vs > 0 {
+				cand["volumeSegments"] = vs
+			}
+			candidates = append(candidates, cand)
 		}
 	}
 	books = len(novels)
 	return
 }
 
+// countDistinctVolumes 不同非空卷数（审计展示用：>0 表示分卷书，候选含 volumeSegments）
+func countDistinctVolumes(chapters []resortChapterRow) int {
+	seen := map[string]bool{}
+	for _, c := range chapters {
+		if c.volume != "" {
+			seen[c.volume] = true
+		}
+	}
+	return len(seen)
+}
+
+// loadResortChapters 单书章节加载（id/idx/title/volume 按 idx 升序）
+func loadResortChapters(novelID int64) ([]resortChapterRow, error) {
+	chapters := []resortChapterRow{}
+	err := queryList(`SELECT "id","idx","title","volume" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`, func(rows *sql.Rows) error {
+		var c resortChapterRow
+		if err := rows.Scan(&c.id, &c.idx, &c.title, &c.volume); err != nil {
+			return err
+		}
+		chapters = append(chapters, c)
+		return nil
+	}, novelID)
+	return chapters, err
+}
+
+// resortOneBook 单书重排全流程（R101 统一路径）：审计检测 → 两阶段改号 → TXT 同步。
+// 返回 moved=0 且 note="" 表示无需重排（notNeeded）。
+// 并发安全：resortApplyReorder 内持同书骨架分片锁——与 runner phase1 骨架写入
+// （storeChapterSkeletons 同锁）互斥，采集任务进行中也可安全重排单书（409 全库闸已移除）。
+func resortOneBook(novelID int64, force bool) (title string, moved int, note string, found bool, err error) {
+	chapters, lerr := loadResortChapters(novelID)
+	if lerr != nil {
+		return "", 0, "", true, lerr
+	}
+	if len(chapters) == 0 {
+		return "", 0, "", false, nil
+	}
+	title = resortBookTitle(novelID)
+	refs := make([]ChapterRef, len(chapters))
+	vols := make([]string, len(chapters))
+	for i, ch := range chapters {
+		refs[i] = ChapterRef{Title: ch.title, URL: strconv.FormatInt(ch.id, 10)}
+		vols[i] = ch.volume
+	}
+	var rr reorderRefsResult
+	if force {
+		rr = reorderChapterRefsForceVols(refs, vols)
+	} else {
+		rr = reorderChapterRefsVols(refs, vols, DISORDER_RATIO)
+	}
+	if !rr.reordered {
+		return title, 0, "", true, nil
+	}
+	order := make([]int64, len(rr.refs))
+	for i, rf := range rr.refs {
+		order[i], _ = strconv.ParseInt(rf.URL, 10, 64)
+	}
+	moved, aerr := resortApplyReorder(novelID, order)
+	if aerr != nil {
+		return title, 0, "", true, aerr
+	}
+	reindexChapterTxtFiles(novelID, resortTxtMoves(chapters, order))
+	return title, moved, rr.note, true, nil
+}
+
+// resortBookTitle 书名（取不到返回空串，不阻断重排）
+func resortBookTitle(novelID int64) string {
+	var title sql.NullString
+	if err := queryOne(`SELECT "title" FROM "Novel" WHERE "id" = ?`, []any{&title}, novelID); err != nil {
+		return ""
+	}
+	return title.String
+}
+
 // resortApplyReorder 两阶段事务改号：先整体移入负数区（互不冲突），再按新顺序写回正数 idx。
 // 返回 moved = len(order)。
+// R101：全程持同书骨架分片锁（lockNovelSkeleton）——与 storeChapterSkeletons
+// （读 existing + INSERT 全程同锁）互斥后，采集并发写同书骨架/正文与重排改号不再冲突，
+// P2-9 时代的「有任务一律 409」全库闸得以移除（正文填充 phase2 按 chapterId UPDATE，
+// 不碰 idx，天然无冲突）。
 // Task 42-b: 暂存区取 min(0, 全书最小 idx) - 1 起算的连续负数段——旧版固定 -(i+1)-1_000_000
 // 自 -1_000_001 起算，与存量滞留行（旧二进制 audit 两段式段落位失败遗留的 idx=-1_000_000-k
 // 损伤类）相撞 → UNIQUE 冲突 → 事务回滚 500，该书永久不可重排。压到全书最小 idx 之下后，
@@ -246,6 +334,8 @@ func resortAudit() (books int, candidates []map[string]any, err error) {
 // MIN(idx) 在事务外读取即安全：并发删最小行只会让实际存量 idx 更大（暂存值仍更低）；
 // 并发新插入 idx=MAX(idx)+1 > MAX ≥ MIN > 暂存值，同样无交集。
 func resortApplyReorder(novelID int64, order []int64) (int, error) {
+	unlock := lockNovelSkeleton(int(novelID))
+	defer unlock()
 	db, err := getDB()
 	if err != nil {
 		return 0, err
@@ -320,18 +410,13 @@ func handleNovelsResortChaptersGet(w http.ResponseWriter, r *http.Request, _ map
 }
 
 func handleNovelsResortChaptersPost(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	// P2-9 并发防护：重排两阶段改号期间，采集端骨架 baseIdx 快照失效 → 撞 (novelId,idx)
-	// 唯一约束。ScrapeTask 无 novelId 外键无法按书精确关联，且骨架顺延逻辑全库共享——
-	// 只要有任务在跑/待跑就一律 409 拒绝（重排属低频管理操作）。
+	// R101 并发语义重做：P2-9 时代的「存在 pending/running 任务一律 409」全库闸移除。
+	// 根因：FleetKeeper 每 5 分钟自动建任务、19 站舰队几乎永远有在途任务——全库闸使
+	// 乱序重排在无人值守模式下永远不可用。安全性改由锁保证：resortApplyReorder 全程持
+	// 同书骨架分片锁（与 storeChapterSkeletons 读 existing+INSERT 同锁互斥），正文填充
+	// phase2 按 chapterId UPDATE 不碰 idx。响应附 activeTasks 仅供展示。
 	var activeTasks int64
-	if err := queryOne(`SELECT COUNT(*) FROM "ScrapeTask" WHERE "status" IN ('pending','running')`, []any{&activeTasks}); err != nil {
-		failJSON(w, "目录重排失败", firstLineErr(err), 500)
-		return
-	}
-	if activeTasks > 0 {
-		writeJSON(w, 409, map[string]string{"error": "存在进行中的采集任务，请先取消或等待其完成后再重排目录"})
-		return
-	}
+	_ = queryOne(`SELECT COUNT(*) FROM "ScrapeTask" WHERE "status" IN ('pending','running')`, []any{&activeTasks})
 	// body 解析：空 body/非法 JSON = 全站（对齐 TS try/catch）；novelId 需为正整数。
 	// Task 49-b: 补 2^53 上界（taskRuleIDParam 同族）——旧版 f=1e300 时 int64(f) 为
 	// 实现定义溢出（amd64 得 MinInt64 负值），负值使 novelID>0 判定失效、退化为全站重排
@@ -346,47 +431,27 @@ func handleNovelsResortChaptersPost(w http.ResponseWriter, r *http.Request, _ ma
 			force = b
 		}
 	}
-	// R86 force 分支：指定单书强制重排（忽略 20% 错乱占比审计阈值）。配套「追加式目录
-	// 补全修复截断书」——旧最新章节块残留中间仅 1-2% 错位，审计永不命中；管理员可对
-	// 修复书逐一强制。仍受并发防护（上方 409）与编号下限保护（reorderChapterRefsImpl）。
-	if force && novelID > 0 {
-		chapters := []resortChapterRow{}
-		if err := queryList(`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`, func(rows *sql.Rows) error {
-			var ch resortChapterRow
-			if err := rows.Scan(&ch.id, &ch.idx, &ch.title); err != nil {
-				return err
-			}
-			chapters = append(chapters, ch)
-			return nil
-		}, novelID); err != nil {
-			failJSON(w, "目录重排失败", firstLineErr(err), 500)
-			return
-		}
-		if len(chapters) == 0 {
-			writeJSON(w, 404, map[string]string{"error": "书籍不存在或无章节"})
-			return
-		}
-		refs := make([]ChapterRef, len(chapters))
-		for i, ch := range chapters {
-			refs[i] = ChapterRef{Title: ch.title, URL: strconv.FormatInt(ch.id, 10)}
-		}
-		rr := reorderChapterRefsForce(refs)
-		if !rr.reordered {
-			writeJSON(w, 200, map[string]any{"scanned": 1, "reordered": 0, "results": []map[string]any{}})
-			return
-		}
-		order := make([]int64, len(rr.refs))
-		for i, rf := range rr.refs {
-			order[i], _ = strconv.ParseInt(rf.URL, 10, 64)
-		}
-		moved, aerr := resortApplyReorder(novelID, order)
+	// R101 单书快路径（force 与常规统一走 resortOneBook）：指定 novelId 时直接查该书，
+	// 不再全站审计后过滤（旧版 O(全库章节) 才能重排一本）。force=R86 语义（忽略 20%
+	// 错乱占比阈值，占比 0 即不动）；R101 起 force 同时启用卷字段分段重排
+	//（reorderChapterRefsForceVols），分卷书卷内错乱可一并强制修正。
+	if novelID > 0 {
+		title, moved, note, found, aerr := resortOneBook(novelID, force)
 		if aerr != nil {
 			failJSON(w, "目录重排失败", firstLineErr(aerr), 500)
 			return
 		}
-		reindexChapterTxtFiles(novelID, resortTxtMoves(chapters, order))
-		writeJSON(w, 200, map[string]any{"scanned": 1, "reordered": 1,
-			"results": []map[string]any{{"id": novelID, "moved": moved, "force": true, "note": rr.note}}})
+		if !found {
+			writeJSON(w, 404, map[string]string{"error": "书籍不存在或无章节"})
+			return
+		}
+		if moved == 0 {
+			writeJSON(w, 200, map[string]any{"scanned": 1, "reordered": 0, "activeTasks": activeTasks,
+				"results": []map[string]any{}, "message": "本书未被判定为乱序（序号齐全或编号章节不足），无需重排"})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"scanned": 1, "reordered": 1, "activeTasks": activeTasks,
+			"results": []map[string]any{{"id": novelID, "title": title, "moved": moved, "force": force, "note": note}}})
 		return
 	}
 	_, candidates, err := resortAudit()
@@ -397,39 +462,18 @@ func handleNovelsResortChaptersPost(w http.ResponseWriter, r *http.Request, _ ma
 	results := []map[string]any{}
 	for _, c := range candidates {
 		cid := c["id"].(int64)
-		if novelID > 0 && cid != novelID {
-			continue
-		}
-		title := c["title"].(string)
-		chapters := []resortChapterRow{}
-		if err := queryList(`SELECT "id","idx","title" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" ASC`, func(rows *sql.Rows) error {
-			var ch resortChapterRow
-			if err := rows.Scan(&ch.id, &ch.idx, &ch.title); err != nil {
-				return err
-			}
-			chapters = append(chapters, ch)
-			return nil
-		}, cid); err != nil {
-			failJSON(w, "目录重排失败", firstLineErr(err), 500)
-			return
-		}
-		order, _, _ := resortDetectOrder(chapters)
-		if order == nil {
-			continue
-		}
-		moved, aerr := resortApplyReorder(cid, order)
+		// R101: resortOneBook 统一路径（自带骨架分片锁与 TXT 同步）；重排说明 note 回传
+		title, moved, note, found, aerr := resortOneBook(cid, false)
 		if aerr != nil {
 			failJSON(w, "目录重排失败", firstLineErr(aerr), 500)
 			return
 		}
-		// Task 38-b: 重排落库后同步分章 txt 文件名。旧版遗漏（与 Task 33-b audit 重排
-		// 同形态的姊妹路径）：txt/both 模式书的分章文件名内嵌 idx，DB 重排后文件仍挂旧
-		// idx → readChapterFromTxt 按「新 idx」前缀命中别的章（串章）或读不到
-		//（txt 书正文"丢失"），三级回落读到错误内容。
-		reindexChapterTxtFiles(cid, resortTxtMoves(chapters, order))
-		results = append(results, map[string]any{"id": cid, "title": title, "moved": moved})
+		if !found || moved == 0 {
+			continue
+		}
+		results = append(results, map[string]any{"id": cid, "title": title, "moved": moved, "note": note})
 	}
-	writeJSON(w, 200, map[string]any{"scanned": len(candidates), "reordered": len(results), "results": results})
+	writeJSON(w, 200, map[string]any{"scanned": len(candidates), "reordered": len(results), "activeTasks": activeTasks, "results": results})
 }
 
 // ==================== /api/novels/smart-fill（Task 33 智能补全） ====================

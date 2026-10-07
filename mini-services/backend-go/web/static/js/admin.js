@@ -1885,17 +1885,22 @@
     if (resortBtn) resortBtn.addEventListener('click', withBusy(resortBtn, async function () {
       if (!chToolsNovelId) return toast('请先加载书籍', 'err');
       var msgBox = $('#adm-chtool-resort-msg');
+      var forceBox = $('#adm-chtool-resort-force');
       if (msgBox) msgBox.textContent = '执行中…';
       try {
-        var res = await api('POST', '/api/novels/resort-chapters', { novelId: chToolsNovelId });
+        // R101：resort 与采集并发安全（同书骨架分片锁），不再需要先停采集任务；
+        // force=忽略 20% 错乱阈值（追加式补全残留的 1-2% 错位只有强制能命中）
+        var res = await api('POST', '/api/novels/resort-chapters', { novelId: chToolsNovelId, force: !!(forceBox && forceBox.checked) });
         var rows = (res && res.results) || [];
         var line = rows.length
-          ? ('《' + rows[0].title + '》已重排，移动 ' + rows[0].moved + ' 章')
-          : '本书未被判定为乱序（序号齐全或编号章节不足 8 章），无需重排';
-        if (msgBox) msgBox.textContent = '扫描 ' + res.scanned + ' 本候选 · ' + line;
+          ? ('《' + (rows[0].title || '') + '》已重排，移动 ' + rows[0].moved + ' 章' + (rows[0].note ? '（' + rows[0].note + '）' : ''))
+          : ((res && res.message) || '本书未被判定为乱序（序号齐全或编号章节不足 8 章），无需重排');
+        if (msgBox) msgBox.textContent = line + (typeof res.activeTasks === 'number' && res.activeTasks > 0 ? ' · 采集任务在途 ' + res.activeTasks + ' 个（锁保护下已安全处理）' : '');
         toast('乱序重排完成', 'ok');
+        // 重排改写 idx → 分卷结构表随之刷新
+        try { renderChToolVolumes(await api('GET', '/api/chapters/volumes?novelId=' + chToolsNovelId)); } catch (e2) { /* 刷新失败不阻断 */ }
       } catch (e) {
-        if (msgBox) msgBox.textContent = e.message; // 409 守卫等服务端 message 原样展示
+        if (msgBox) msgBox.textContent = e.message;
         handleErr(e);
       }
     }));

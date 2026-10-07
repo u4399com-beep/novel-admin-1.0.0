@@ -249,6 +249,19 @@
       "bookRule": "{\"titleSelector\": \"#info h1, meta[property=\\\"og:novel:book_name\\\"]@content\", \"authorSelector\": \"#info p:first-of-type, meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro, meta[property=\\\"og:description\\\"]@content\", \"coverSelector\": \"#fmimg img@data-original, #fmimg img@src, meta[property=\\\"og:image\\\"]@content\", \"statusSelector\": \"#info p:contains(状态), meta[property=\\\"og:novel:status\\\"]@content\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content, p.sort\", \"chapterLinkSelector\": \"#newlist dd a, #list dl dd a\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
       "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \"#booktxt, #chaptercontent\", \"nextSelector\": \"a:contains(下一章), a[rel=next]\"}",
       "notes": "2026-10 实测（小原文学网，杰奇变体+混淆 class m6-xxx，稳定 id 骨架不变）：首页 #newscontent .l=「最近更新小说列表」h2+30 条；书页 #info/#intro/#fmimg（lazy 封面必须 @data-original 优先，@src 是 nocover 占位会被引擎拒识回落 og:image），#newlist dd=完整目录单页无分页（1853 章号 1→1853 零缺失实测），p.sort=「类别：」前缀 stripFieldLabel 不认→categorySelector og 优先；章节页 h1+章节内分页 1.html→1_2.html（isSameChapterPagination 命中 _ 形态自动拼接，1_2 下一章→2.html 天然截断），nextSelector=a:contains(下一章)+a[rel=next]，#booktxt 纯 <p> 无广告。沙箱直连 403（US 主机拒机房 IP），实测经共享代理出口全链路通过；用户服务器若直连 403 在 admin 全局代理池填出口。"
+    },
+    {
+      "id": 29,
+      "name": "dwxwc",
+      "siteUrl": "https://www.dwxwc.com/",
+      "enabled": false,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \".bookbox\", \"titleSelector\": \".bookname a\", \"linkSelector\": \".bookname a\", \"authorSelector\": \".author\"}",
+      "bookRule": "{\"titleSelector\": \".booktitle, meta[property=\\\"og:novel:book_name\\\"]@content\", \"authorSelector\": \".booktag a, meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \".bookintro, meta[property=\\\"og:description\\\"]@content\", \"coverSelector\": \".bookcover img@src, .bookcover img@data-original, meta[property=\\\"og:image\\\"]@content\", \"categorySelector\": \".booktag span, meta[property=\\\"og:novel:category\\\"]@content\", \"chapterLinkSelector\": \"#list-chapterAll dd a, #list dl dd a\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
+      "chapterRule": "{\"titleSelector\": \".bookname h1, h1\", \"contentSelector\": \"#content\", \"nextSelector\": \"a:contains(下一章)\"}",
+      "notes": "2026-10 由 legado 书源 yckceo#7928（🌞大文学无错，作者 2026-10-07 更新「纯CSS无内嵌JS」）直译：发现规则 class.bookbox/.bookname a/.author→列表、.booktitle/.booktag/.bookcover/.bookintro→书页、id.list‑chapterAll（源 JSON 的 U+2011 连字符已归一为 #list-chapterAll）+ #list dl dd 兜底→目录、#content→正文。⚠️六项未实测：沙箱全出口（直连/共享代理/隐身浏览器）均被站点 GoEdge WAF「Verify Yourself」图片验证码挑战（连 robots.txt 也挑战），合规红线不破解验证码，故 enabled=false 按 kelexs/cunshu 草稿先例落库。legado 用户直连可用（住宅 IP 不触发挑战），用户国内服务器启用前先跑规则健康巡检验证；若服务器 IP 同被挑战，需人工过一次验证码取得 GOEDGE 会话 cookie 后填入规则 cookies 字段（R53 规则级 cookie 底座），或依赖 fetch-cloak 策略（R101 CloakBrowser 侧车，若指纹放行则免配置）。封面 src/data-original 双候选（R99 lazy 坑防御）+ og:image 兜底；作者前缀「作者：」由引擎 stripAuthorLabel 归一。"
     }
   ],
   "categories": [
