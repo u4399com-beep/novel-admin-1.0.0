@@ -1,0 +1,76 @@
+{{/* ncnd 分类页（克隆 gelin 书库版式）：①分类切换条 ②精选强推（FeaturedBlock
+book-list-1 封面卡）③两栏区（左 .Novels 全量最近更新列表 + 右热门推荐 HotBlock）。 */}}
+{{define "content"}}{{$cn := printf "%v" .Category.name}}
+<div>
+  {{/* ① 分类切换条 */}}
+  <nav class="nc-catbar" aria-label="分类切换">
+    {{range .Nav}}{{if eq .id $.Category.id}}<span data-active="true">{{.name}}</span>{{else}}<a href="{{catURL .id}}">{{.name}}</a>{{end}}{{end}}
+  </nav>
+
+  {{/* ② 精选强推 */}}
+  {{if .FeaturedBlock}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd"><h3 class="nc-panel-title">{{$cn}}精选强推</h3></div>
+    <div class="nc-panel-bd">
+      <div class="nc-grid-1">
+        {{range $i, $n := .FeaturedBlock}}{{if lt $i 6}}
+        <article class="nc-bk">
+          {{if isLocalCover $n.cover}}<a class="nc-bk-cover" href="{{bookURL $n.id}}" title="{{$n.title}}"><img src="{{coverSrc $n.id $n.cover}}" alt="{{$n.title}}封面" loading="lazy"></a>
+          {{else}}<a class="nc-bk-cover {{gcls $n.cover}}" href="{{bookURL $n.id}}" title="{{$n.title}}"><span class="nc-grad" aria-hidden="true">{{title0 $n.title}}</span></a>{{end}}
+          <div class="nc-bk-info">
+            <h4><a href="{{bookURL $n.id}}">{{$n.title}}</a></h4>
+            <p class="nc-bk-author">{{$n.author}} / 著</p>
+            <p class="nc-bk-intro">{{if $n.description}}{{$n.description}}{{else}}暂无简介{{end}}</p>
+            <p class="nc-bk-tags">
+              <span class="nc-badge nc-badge-warning">{{$n.categoryName}}</span>
+              {{if $n.wordCount}}<span class="nc-badge nc-badge-primary">{{wcFmt $n.wordCount}}</span>{{end}}
+              <span class="nc-badge nc-badge-secondary">{{$n.chapterCount}}章</span>
+            </p>
+          </div>
+        </article>
+        {{end}}{{else}}<p class="nc-empty">该分类暂无强推数据</p>{{end}}
+      </div>
+    </div>
+  </section>
+  {{end}}
+
+  {{/* ③ 两栏区：左最近更新 + 右热门推荐 */}}
+  <div class="nc-grid-1">
+    <section class="nc-panel">
+      <div class="nc-panel-hd">
+        <h3 class="nc-panel-title">好看的{{$cn}}最近更新列表<span class="nc-more">共 {{len .Novels}} 部</span></h3>
+      </div>
+      <div class="nc-panel-bd nc-panel-bd-flush">
+        {{if .Novels}}
+        <ul class="nc-list">
+          {{range .Novels}}
+          <li><a class="nc-row" href="{{bookURL .id}}">
+            <span class="nc-row-cat">[{{.categoryName}}]</span>
+            <span class="nc-row-title">{{.title}}</span>
+            <span class="nc-row-chap">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}即将更新…{{end}}</span>
+            <span class="nc-row-author">{{.author}}</span>
+            <span class="nc-row-date">{{dateFmt .updatedAt}}</span>
+          </a></li>
+          {{end}}
+        </ul>
+        {{else}}<p class="nc-empty">该分类下暂无收录小说，换个分类逛逛吧。</p>{{end}}
+      </div>
+    </section>
+    <section class="nc-panel">
+      <div class="nc-panel-hd"><h3 class="nc-panel-title">热门推荐</h3></div>
+      <div class="nc-panel-bd nc-panel-bd-flush">
+        <ul class="nc-list">
+          {{range $i, $n := .HotBlock}}{{if lt $i 10}}
+          <li><a class="nc-row" href="{{bookURL $n.id}}">
+            <i class="nc-rank-i{{if lt $i 3}} top3{{else}} top10{{end}}">{{$i | add 1}}</i>
+            <span class="nc-row-title">{{$n.title}}</span>
+            <span class="nc-row-chap">{{$n.author}}</span>
+            <span class="nc-row-date">{{$n.clicks}}点击</span>
+          </a></li>
+          {{end}}{{else}}<li><p class="nc-empty">该分类下暂无推荐数据。</p></li>{{end}}
+        </ul>
+      </div>
+    </section>
+  </div>
+</div>
+{{end}}

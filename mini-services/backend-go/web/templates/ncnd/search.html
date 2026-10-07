@@ -1,0 +1,40 @@
+{{/* ncnd 搜索页（克隆 gelin 搜索版式）：搜索表单 panel + 高密度结果列表
+（[分类] 书名 最新章节 作者 日期，与 gelin 榜单行同构）。 */}}
+{{define "content"}}
+<div>
+  {{/* 搜索表单 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd"><h3 class="nc-panel-title">站内搜索</h3></div>
+    <div class="nc-panel-bd">
+      <form class="nc-search-form" action="/search" method="get" role="search">
+        <input name="q" value="{{.Q}}" placeholder="搜书名 / 搜作者" aria-label="搜索小说">
+        <button type="submit">搜 索</button>
+      </form>
+    </div>
+  </section>
+
+  {{/* 结果列表 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd">
+      <h3 class="nc-panel-title">{{if .Q}}“{{.Q}}” 的搜索结果<span class="nc-more">共 {{.Total}} 条</span>{{else}}全部小说 · 输入关键词可按书名 / 作者查找{{end}}</h3>
+    </div>
+    <div class="nc-panel-bd nc-panel-bd-flush">
+      {{if .Novels}}
+      <ul class="nc-list">
+        {{range .Novels}}
+        <li><a class="nc-row" href="{{bookURL .id}}">
+          <span class="nc-row-cat">[{{.categoryName}}]</span>
+          <span class="nc-row-title">{{.title}}</span>
+          <span class="nc-row-chap">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}即将更新…{{end}}</span>
+          <span class="nc-row-author">{{.author}}</span>
+          <span class="nc-row-date">{{dateFmt .updatedAt}}</span>
+        </a></li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="nc-empty">{{if .Q}}没有找到与“{{.Q}}”相关的小说，换个关键词试试。{{else}}书库暂时为空，请稍后再来。{{end}}</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

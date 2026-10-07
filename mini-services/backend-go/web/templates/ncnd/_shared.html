@@ -1,0 +1,101 @@
+{{/* ncnd 主题（克隆 ncnd.net「gelin」版式，南瓜小说网）—— 共享骨架。
+结构：<640px 蓝底移动头 + 右侧抽屉菜单（ncnd.js 开合）；>=640px 深色顶栏
+（品牌 + 首页/分类导航 + 内联搜索）；公告条；正文容器；居中灰字页脚。
+章节页用简化顶条（品牌 + 返回首页 + 紧凑搜索）。全部样式自包含 /static/css/ncnd.css。 */}}
+{{define "layout"}}{{$path := .Path}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
+<meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
+<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<link rel="stylesheet" href="/static/css/ncnd.css">
+</head>
+<body class="nc-root">
+{{if ne (printf "%.9s" .Path) "/chapter/"}}
+  {{/* ① 移动端头部（<640px）：返回 / 站名 / 菜单 */}}
+  <header class="nc-m-header" id="nc-m-header">
+    <a class="nc-m-btn nc-m-home" href="/" aria-label="返回首页">‹</a>
+    <a class="nc-m-title" href="/">{{.Site.siteName}}</a>
+    <button type="button" class="nc-m-btn" id="nc-menu-btn" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+  </header>
+
+  {{/* ② 移动端抽屉菜单（右侧推入） */}}
+  <div class="nc-offcanvas" id="nc-offcanvas" hidden>
+    <nav class="nc-oc-panel" aria-label="移动端导航">
+      <h3>{{.Site.siteName}}</h3>
+      <ul class="nc-oc-nav">
+        <li><a href="/">网站首页</a></li>
+        <li>
+          <span>小说书库</span>
+          <ul class="nc-oc-sub">
+            {{range .Nav}}<li><a href="{{catURL .id}}">{{.name}}</a></li>{{end}}
+          </ul>
+        </li>
+        <li><a href="/search">小说搜索</a></li>
+      </ul>
+    </nav>
+  </div>
+
+  {{/* ③ PC 顶栏（>=640px）：深色底 + 品牌 + 导航 + 内联搜索 */}}
+  <div class="nc-topbar">
+    <div class="nc-topbar-inner">
+      <a class="nc-brand" href="/">{{.Site.siteName}}</a>
+      <nav class="nc-topnav" aria-label="主导航">
+        <a data-active="{{if eq .Path "/"}}true{{end}}" href="/">首页</a>
+        {{range .Nav}}<a data-active="{{if eq $path (catURL .id)}}true{{end}}" href="{{catURL .id}}">{{.name}}</a>{{end}}
+        <a data-active="{{if eq $path "/search"}}true{{end}}" href="/search">搜索</a>
+      </nav>
+      <form class="nc-topbar-search" action="/search" method="get" role="search">
+        <input name="q" value="{{.Q}}" placeholder="搜书名 / 搜作者" aria-label="搜索小说">
+        <button type="submit">搜索</button>
+      </form>
+    </div>
+  </div>
+
+  {{/* 公告条 */}}
+  {{if .Site.notice}}
+  <div class="nc-notice"><b>公告：</b>{{.Site.notice}}</div>
+  {{end}}
+{{else}}
+  {{/* 章节页简化顶条：品牌 + 返回首页 + 紧凑搜索 */}}
+  <header class="nc-m-header" id="nc-m-header">
+    <a class="nc-m-btn nc-m-home" href="/" aria-label="返回首页">‹</a>
+    <a class="nc-m-title" href="/">{{.Site.siteName}}</a>
+    <a class="nc-m-btn nc-m-home" href="/" aria-label="网站首页">⌂</a>
+  </header>
+  <div class="nc-topbar">
+    <div class="nc-topbar-inner">
+      <a class="nc-brand" href="/">{{.Site.siteName}}</a>
+      <nav class="nc-topnav" aria-label="主导航"><a href="/">返回首页</a></nav>
+      <form class="nc-topbar-search" action="/search" method="get" role="search">
+        <input name="q" placeholder="搜书名 / 搜作者" aria-label="搜索小说">
+        <button type="submit">搜索</button>
+      </form>
+    </div>
+  </div>
+{{end}}
+
+  {{/* 正文容器 */}}
+  <main class="nc-main nc-container">{{template "content" .}}</main>
+
+  {{/* 页脚（居中灰字，gelin 口径） */}}
+  <footer class="nc-footer">
+    <p>
+      <a href="/">网站首页</a>
+      <a href="/search">站内搜索</a>
+      {{range .Nav}}<a href="{{catURL .id}}">{{.name}}</a>{{end}}
+    </p>
+    {{if or .FriendLinks .WheelLinks}}<p>友情链接：{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.name}}</a>{{end}}{{range .WheelLinks}}<a href="{{.url}}">{{.name}}</a>{{end}}</p>{{end}}
+    {{if .FleetLinks}}<p>站群导航：{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.siteName}}</a>{{end}}</p>{{end}}
+    {{if .Site.footerLinks}}<p>{{range .Site.footerLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.label}}</a>{{end}}</p>{{end}}
+    <p>{{if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}本站为小说站主题演示项目，全部书籍与章节内容仅用于技术学习与界面还原测试。{{end}}</p>
+    <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}Copyright © {{.Site.siteName}} · 主题版式克隆自 ncnd.net（gelin）{{end}}</p>
+  </footer>
+
+<script src="/static/js/app.js" defer></script>
+<script src="/static/js/ncnd.js" defer></script>
+</body>
+</html>{{end}}

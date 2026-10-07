@@ -23,21 +23,31 @@
 > curl-impersonate 军火（GitHub 镜像候选链）→ 启动 + 看护 → 健康检查。**git clone 到任意路径均可**，
 > 路径由可执行文件位置自动推断（`paths.go` 解析链 + 脚本 `scripts/ensure-services.sh` 自适应）。
 
-### 0.1 一键命令
+### 0.1 一键命令（R98 重生成）
 
-> **服务器连 git 都没有？**（`-bash: git: command not found`）用下面的「无 git 引导」：
-> curl 下载 GitHub tarball（镜像加速）→ 解压到用户主目录（免 sudo）→ 直接跑部署脚本
-> （脚本第 1 步会自动补装 git 等系统依赖，之后即可改用 git pull 升级）：
+> **零前提一条命令**（服务器连 git 都没有也行，curl/wget 有了就能跑；幂等：重复执行 = 升级，
+> db/、public/covers/、download/、.env 数据产物永不覆盖）：
+
+```bash
+# ① 推荐：curl 引导（下载 tarball → 安装 ~/novel-admin → 自动进入 deploy-cn.sh 全链）
+bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
+
+# ② wget 变体（极精简系统无 curl）
+bash -c "$(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
+
+# ③ 指定安装目录（默认 ~/novel-admin；/opt 需 root 或先 sudo mkdir + chown）
+BOOTSTRAP_TARGET=/opt/novel-admin bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
+```
+
+> 手动引导（等价于 ①，bootstrap-cn.sh 不可达时备用）：
 
 ```bash
 curl -fsSL -o /tmp/novel-admin.tgz "https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz" \
-  && rm -rf "$HOME/novel-admin" "$HOME/novel-admin-1.0.0-main" \
+  && rm -rf "$HOME/novel-admin-1.0.0-main" \
   && tar -xzf /tmp/novel-admin.tgz -C "$HOME" \
-  && mv "$HOME/novel-admin-1.0.0-main" "$HOME/novel-admin" \
+  && mkdir -p "$HOME/novel-admin" \
+  && tar -C "$HOME/novel-admin-1.0.0-main" --exclude='./db' --exclude='./public/covers' --exclude='./download' --exclude='./.env' -cf - . | tar -C "$HOME/novel-admin" -xf - \
   && cd "$HOME/novel-admin" && bash scripts/deploy-cn.sh
-
-# 极精简系统无 curl 只有 wget 时，把第一行换成：
-# wget -qO /tmp/novel-admin.tgz "https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz"
 ```
 
 ```bash
@@ -65,7 +75,9 @@ bash scripts/deploy-cn.sh --systemd
 | git clone | 建议镜像前缀（见上） | 官方直连 |
 
 - **幂等**：重复执行 = 重新构建 + 滚动重启，DB/封面/TXT 数据在 repo 内不受影响。
-- **升级**：`cd /opt/novel-admin && git pull && bash scripts/deploy-cn.sh`。
+- **升级（推荐，R98 新增）**：`cd /opt/novel-admin && bash scripts/upgrade.sh`
+  （= git fetch/reset 到远程最新 + stash 本地改动 + 重建 + 幂等重启 + 健康检查 + **失败自动回滚**升级前 commit；
+  可指定目标：`bash scripts/upgrade.sh v1.0.1`；无 git 的 tarball 服务器：重跑 §0.1 引导命令，数据目录自动保留）。
 - **arm64**：全流程支持；仅 curl-impersonate 官方无 v0.6.1 arm64 构建，该策略自动降级（引擎多车道不受影响）。
 - **路径解析链**（backend-go `paths.go`）：环境变量（`DB_PATH`/`TXT_ROOT`/`COVERS_DIR`/`WEB_ROOT`）> 可执行文件位置推断 > 沙箱默认。与 `scripts/ensure-services.sh` 的注入同源，改端口/路径只需环境变量。
 

@@ -4162,3 +4162,27 @@ Stage Summary:
 - 用户五项需求全闭环：重排已落地 10 本清零；代理池从「按规则手填」升级为「全局池+管理界面+连通性测试」；TXT/封面目录可在 admin 自定义；trxsw 407 根因（认证死口代理滞留池内+直连不参与）三层修复（引擎兜底/自愈判死/管理界面可视化）；ddyueshu 等首页规则全部对齐「最近更新」语义
 - 用户服务器升级：git pull + 重启即生效；全局代理池建议填入自有付费/凭证出口（proxywatch 不动全局池，避免自动换血毁掉凭证口），免费池仍走规则级自愈
 - 遗留：huangjinwu 修复书 force 重排待任务空闲窗口；封面重取（任务 C）与标签修复（任务 D）待办；GitHub token 轮换仍未执行
+
+---
+Task ID: 98
+Agent: main (Z.ai Code)
+Task: R98 三项需求：①克隆 ncnd.net 主题模板 ②封面图与书籍一一对应检查+命名按书籍 id+前台防错位探讨 ③重新生成一键部署命令+升级命令
+
+Work Log:
+- 【①主题克隆】实抓 ncnd.net 首页 + gelin/app.css（amazeui 版式）：深色顶栏/蓝底移动头/灰头 panel/book-list-1 封面卡（90×120 hover 放大）/三色徽章/榜单排名圆标/阅读页 22px·1.8·缩进 2em/移动端上下 35% 点按翻页区——纯手写 CSS（web/static/css/ncnd.css，nc-* 前缀自包含，零 Tailwind 依赖，不触碰 vendored tw.css 规避类名漂移）；新建 web/templates/ncnd/ 全 8 页面（_shared/home/category/book/toc/chapter/search/pseo）+ web/static/js/ncnd.js（抽屉菜单+点按翻页，章节页复用 app.js 公共契约 fb-chapter-content/fb-font-*/fb-night/fb-resume）；themeNames 注册 ncnd（admin 下拉自动收录）；activeTheme 已切 ncnd
+- 【①浏览器实证】桌面 1366px：首页三榜单（橙 top3/蓝 top10 圆标）、书籍页（真实封面/徽章/按钮/标签）、目录页（最新章节橙标置顶+三列网格）、阅读页（章首章尾双导航+A±/夜间实测 18.7px/#111）、搜索页；移动端 390px：蓝头+无边框 panel+右侧抽屉菜单（遮罩/Esc/链接点击关闭）+点按翻页区 fixed block；页脚 flex 贴底（修 body 默认 margin 8px）
+- 【①CSS 特异性修复】.nc-root a (0,1,1) 压过 .nc-brand (0,1,0) → 基线改 ：where(a) 归零特异性
+- 【②封面对应检查】管线核查：落盘命名本即 {novelId}.jpg（fetchAndStoreCover/storeCoverJPEG 契约），实盘 covers/ 文件 1.jpg/10.jpg/520.jpg… 全部 id 命名；缺口=「文件存在即健康」的缺失自愈对指针脱钩失明（cover='/covers/43.jpg' 挂 id=42 书上长期张冠李戴）+ 孤儿文件无巡检
+- 【②修复三层】coversaudit.go 新建：A) normalizeCoverNames boot 自愈（本地形态 cover 归位 /covers/{id}.jpg；rename 仅在「旧名单书引用+旧文件存在+目标不存在」安全条件下，否则仅改指针；目标缺失交 backfillBrokenCoverLocal 重置渐变补抓）接入 db.go boot 链（先于缺失自愈）；B) GET /api/novels/covers-audit 审计（localCovers/gradientCovers/files/missingFiles/idMismatches/orphanFiles）；C) POST repair（归位）/purge-orphans（孤儿清理，仅顶层 .jpg 不递归）
+- 【②实证】隔离实例（:3005 + 库副本 + 人为脱钩 cover='/covers/520_wrong.jpg'+文件同步改名）：boot 日志「封面命名归位：rename 1 个文件、指针归位 1 行」+ 文件自动回位 520.jpg + 审计零脱钩；孤儿 888.jpg purge=1 精确删除；repair 空跑幂等 {renamed:0,repointed:0}
+- 【②前台防错位探讨→落地】web.go 新增 coverSrc 模板函数：本地封面一律按书籍 id 派生 /covers/{id}.jpg，DB cover 字段即使写坏前台也不可能展示他人封面（ncnd 主题全站已用 coverSrc；渐变 token 原样回落 gcls 渐变块）。结论：命名=id 消除新错位源、boot 归位消化存量、前台派生兜底显示层——三层后唯一残留形态是「文件缺失」（渐变兜底+补抓重建，可自愈）
+- 【②死锁修复】loadCoverLocalRows 初版走 queryList（内部 getDB()）在 boot sync.Once 内递归自锁 → 全量测试 7min 挂死；改直用传入 db.Query 后 54.8s 全绿（R97 dbReady 门闩只救设置层，boot 链内必须直查）
+- 【③部署重生成】deploy-cn.sh 头部重写（真实仓库一键命令：bootstrap 一条命令版/ wget 变体/BOOTSTRAP_TARGET 指定目录/git clone 等价路线，--help 同步）；scripts/bootstrap-cn.sh 新建（tarball 下载 ghfast.top→直连兜底、解压覆盖安装但 db/public/covers/download/.env 数据产物永不覆盖=无 git 也可幂等升级、安装后 exec deploy-cn.sh 全链）；scripts/upgrade.sh 新建（fetch+reset 到 origin 最新/本地改动自动 stash/--ff-only 防分叉/build-go 重建/复用 deploy-cn.sh --skip-build 幂等重启/60s 健康检查/失败自动 git reset 回滚+重建+重启）；docs/deployment.md §0.1 重生成
+- 【回归】backend-go go test 全量 54.8s 通过（themeNames 遍历类测试自动覆盖 ncnd 模板解析+页脚渲染）；bash -n 三脚本语法通过；scraper-go 未改动
+- 【运维】沙箱再清空 → Go 1.22.12 重装（golang.google.cn）→ 双服务重建拉起（ensure-services）→ 13 站舰队重建（create-fleet.py）→ 采集健康（书量 0→869 持续增长）；测试实例已清理
+- 【待办】用户服务器升级：bash scripts/upgrade.sh（或重跑 bootstrap 一键命令）即得 ncnd 主题+封面审计能力；主题切换在 admin → 站点设置 → activeTheme=ncnd
+
+Stage Summary:
+- ncnd 主题全站落地并实机验证（桌面+移动+阅读交互+页脚贴合），第 11 套主题进入 admin 可选清单
+- 封面「命名=id」契约三层闭环（boot 归位+API 审计修复+前台 coverSrc 派生）并有隔离实例实证，错位只剩「文件缺失」可自愈形态
+- 部署三件套（deploy-cn.sh 重生成 / bootstrap-cn.sh 零前提引导 / upgrade.sh 升级+回滚）就绪，零 git 服务器也可一条命令部署/升级

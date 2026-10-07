@@ -1,0 +1,51 @@
+{{/* ncnd 目录页（克隆 gelin 书页版式）：面包屑 + 书籍信息头（返回书页/开始阅读）+
+章节网格三列（最新章节置顶橙标，正文全量正序）。 */}}
+{{define "content"}}
+<div>
+  {{/* 面包屑 */}}
+  <nav class="nc-crumb" aria-label="面包屑">
+    <a href="/">首页</a> &gt; <a href="{{bookURL .Novel.id}}">{{.Novel.title}}</a> &gt; 章节目录
+  </nav>
+
+  {{/* 书籍信息头 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-bd">
+      <div class="nc-book-info">
+        {{if isLocalCover .Novel.cover}}<span class="nc-book-cover"><img src="{{coverSrc .Novel.id .Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+        {{else}}<span class="nc-book-cover {{gcls .Novel.cover}}"><span class="nc-grad" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
+        <div class="nc-book-main">
+          <h1>《{{.Novel.title}}》章节目录</h1>
+          <p class="nc-book-meta">作者：{{.Novel.author}} · {{.Novel.categoryName}} · {{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}{{if .Novel.wordCount}} · {{wcFmt .Novel.wordCount}}{{end}}</p>
+          <p class="nc-book-meta">共 {{len .Chapters}} 章 · 正序排列</p>
+          <div class="nc-book-btns">
+            <a class="nc-btn nc-btn-ghost" href="{{bookURL .Novel.id}}">返回书页</a>
+            {{if .Chapters}}<a class="nc-btn nc-btn-primary" href="{{chapterURL (index .Chapters 0).id}}">开始阅读</a>{{end}}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {{/* 章节网格 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd"><h3 class="nc-panel-title">正文目录</h3></div>
+    <div class="nc-panel-bd nc-panel-bd-flush">
+      {{if .Chapters}}
+      <div class="nc-ch-grid">
+        <div class="nc-ch-head">最新章节</div>
+        {{$total := len .Chapters}}{{$from := sub $total 12}}
+        {{range $i, $c := .Chapters}}{{if ge $i $from}}
+        <a class="nc-latest" href="{{chapterURL $c.id}}">{{$c.title}}</a>
+        {{end}}{{end}}
+        <div class="nc-ch-head">《{{.Novel.title}}》正文</div>
+        {{range .Chapters}}
+        <a href="{{chapterURL .id}}">{{.title}}</a>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="nc-empty">本书暂无章节，先去书库看看别的吧。</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

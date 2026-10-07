@@ -1,0 +1,36 @@
+{{/* ncnd pseo 聚合页（克隆 gelin 版式）：关键词简介 panel + 相关小说列表（与搜索页同构）。 */}}
+{{define "content"}}
+<div>
+  {{/* 关键词简介 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd"><h3 class="nc-panel-title">{{.Keyword}}小说大全</h3></div>
+    <div class="nc-panel-bd">
+      <p style="margin:0;font-size:14px;color:#555;text-align:justify">{{.Description}}</p>
+    </div>
+  </section>
+
+  {{/* 结果列表 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd">
+      <h3 class="nc-panel-title">“{{.Keyword}}” 的相关小说<span class="nc-more">共 {{len .Novels}} 本</span></h3>
+    </div>
+    <div class="nc-panel-bd nc-panel-bd-flush">
+      {{if .Novels}}
+      <ul class="nc-list">
+        {{range .Novels}}
+        <li><a class="nc-row" href="{{bookURL .id}}">
+          <span class="nc-row-cat">[{{.categoryName}}]</span>
+          <span class="nc-row-title">{{.title}}</span>
+          <span class="nc-row-chap">{{if .lastChapterTitle}}{{.lastChapterTitle}}{{else}}即将更新…{{end}}</span>
+          <span class="nc-row-author">{{.author}}</span>
+          <span class="nc-row-date">{{dateFmt .updatedAt}}</span>
+        </a></li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="nc-empty">暂无相关小说，换个关键词试试。</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

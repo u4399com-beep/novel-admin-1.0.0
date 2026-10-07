@@ -1,0 +1,83 @@
+{{/* ncnd 书籍页（克隆 gelin book-info 版式）：面包屑 + 封面信息区（封面 120×160 +
+标题/作者/分类/状态/字数/点击/章节数/最后更新）+ 开始阅读/进入目录按钮（#fb-resume
+继续阅读锚点由 app.js 填充）+ 简介 + 标签 + 最新章节网格（LastChapter 橙标 + 预览 12 章）+
+相关推荐行。封面一律经 coverSrc 按书籍 ID 派生（R98 防张冠李戴）。 */}}
+{{define "content"}}
+<div>
+  {{/* 面包屑 */}}
+  <nav class="nc-crumb" aria-label="面包屑">
+    <a href="/">首页</a> &gt; <a href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a> &gt; {{.Novel.title}}最新章节列表
+  </nav>
+
+  {{/* 信息区 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-bd">
+      <div class="nc-book-info">
+        {{if isLocalCover .Novel.cover}}<span class="nc-book-cover"><img src="{{coverSrc .Novel.id .Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+        {{else}}<span class="nc-book-cover {{gcls .Novel.cover}}"><span class="nc-grad" aria-hidden="true">{{title0 .Novel.title}}</span></span>{{end}}
+        <div class="nc-book-main">
+          <h1>{{.Novel.title}}</h1>
+          <p class="nc-book-meta">作者：<a href="{{searchURL (printf "%v" .Novel.author)}}">{{.Novel.author}}</a> · 分类：<a href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a></p>
+          <p class="nc-book-meta">
+            状态：{{if eq .Novel.status "finished"}}<span class="nc-badge nc-badge-success">已完本</span>{{else}}<span class="nc-badge nc-badge-warning">连载中</span>{{end}}
+            {{if .Novel.wordCount}} · 字数：{{wcFmt .Novel.wordCount}}{{end}}
+            · 点击：{{.Novel.clicks}} · 章节：共 {{.ChaptersTotal}} 章
+          </p>
+          <p class="nc-book-meta">最后更新：{{fullFmt .Novel.updatedAt}}{{if .LastChapter}} · <a href="{{chapterURL .LastChapter.id}}">{{.LastChapter.title}}</a>{{end}}</p>
+          <div class="nc-book-btns">
+            {{if .Chapters}}<a class="nc-btn nc-btn-primary" href="{{chapterURL (index .Chapters 0).id}}">开始阅读</a>
+            {{else}}<span class="nc-btn nc-btn-primary" disabled>开始阅读</span>{{end}}
+            <a class="nc-btn nc-btn-ghost" href="{{tocURL .Novel.id}}">进入目录</a>
+            <span id="fb-resume" data-book-id="{{.Novel.id}}" data-btn-class="nc-btn nc-btn-ghost"></span>
+          </div>
+        </div>
+      </div>
+      <p class="nc-intro">{{if .Novel.description}}{{.Novel.description}}{{else}}暂无简介{{end}}</p>
+      {{if .Tags}}
+      <div class="nc-tags">
+        <span class="nc-muted" style="font-size:12px">相关标签：</span>
+        {{range .Tags}}<a href="{{pseoURL .}}" aria-label="查看标签「{{.}}」相关小说聚合页">{{.}}</a>{{end}}
+      </div>
+      {{end}}
+    </div>
+  </section>
+
+  {{/* 相关推荐 */}}
+  {{if .Related}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd"><h3 class="nc-panel-title">相关推荐</h3></div>
+    <div class="nc-panel-bd nc-panel-bd-flush">
+      <ul class="nc-list">
+        {{range $i, $n := .Related}}{{if lt $i 6}}
+        <li><a class="nc-row" href="{{bookURL $n.id}}">
+          <span class="nc-row-cat">[{{$n.categoryName}}]</span>
+          <span class="nc-row-title">{{$n.title}}</span>
+          <span class="nc-row-chap">{{$n.author}}</span>
+          <span class="nc-row-date">{{dateFmt $n.updatedAt}}</span>
+        </a></li>
+        {{end}}{{end}}
+      </ul>
+    </div>
+  </section>
+  {{end}}
+
+  {{/* 最新章节 + 章节预览 */}}
+  <section class="nc-panel">
+    <div class="nc-panel-hd">
+      <h3 class="nc-panel-title">《{{.Novel.title}}》最新章节<a class="nc-more" href="{{tocURL .Novel.id}}">完整目录 ›</a></h3>
+    </div>
+    <div class="nc-panel-bd nc-panel-bd-flush">
+      {{if or .LastChapter .Chapters}}
+      <div class="nc-ch-grid">
+        <div class="nc-ch-head">最新章节</div>
+        {{if .LastChapter}}<a class="nc-latest" href="{{chapterURL .LastChapter.id}}">{{.LastChapter.title}}</a>{{end}}
+        <div class="nc-ch-head">章节预览</div>
+        {{range .Chapters}}<a href="{{chapterURL .id}}">{{.title}}</a>{{end}}
+      </div>
+      {{else}}
+      <p class="nc-empty">本书暂无章节，先去书库看看别的吧。</p>
+      {{end}}
+    </div>
+  </section>
+</div>
+{{end}}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy-cn.sh —— 国内服务器 git 一键部署（novel-admin 全 Go 架构）
+# deploy-cn.sh —— 国内服务器一键部署（novel-admin 全 Go 架构）R98 重生成
 # =============================================================================
 # 适用：全新 Ubuntu 22.04+/Debian 11+/CentOS Stream 9+/Rocky/Alma 9（x86_64/arm64）
 # 做什么（全程国内镜像加速，可重复执行=幂等升级）：
@@ -14,12 +14,20 @@
 # 数据安全：DB(db/custom.db)、封面(public/covers)、TXT(download/novels) 全在 repo 内，
 #   重复执行 / git pull 升级均不触碰数据。
 #
-# 一键部署命令（git clone 到任意路径均可）：
-#   git clone https://github.com/<你的用户名>/novel-admin.git /opt/novel-admin \
-#     && cd /opt/novel-admin && bash scripts/deploy-cn.sh
-#   （GitHub 慢换代理：git clone https://ghfast.top/https://github.com/<你>/novel-admin.git ...）
+# ★ 一键部署（零前提，服务器连 git 都不用，curl/wget 有了就能跑）：
+#   bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
+#   ★ wget 变体：
+#   bash -c "$(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
+#   ★ 指定安装目录（默认 ~/novel-admin）：
+#   BOOTSTRAP_TARGET=/opt/novel-admin bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
 #
-# 日常升级：cd /opt/novel-admin && git pull && bash scripts/deploy-cn.sh
+# 有 git 时的等价路线（clone 到任意路径均可）：
+#   git clone https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0.git ~/novel-admin \
+#     && cd ~/novel-admin && bash scripts/deploy-cn.sh
+#
+# 日常升级（推荐）：cd ~/novel-admin && bash scripts/upgrade.sh
+#              （= git pull + 重建 + 重启 + 健康检查 + 失败自动回滚）
+#              无 git 的 tarball 服务器：重跑 bootstrap 一键命令（数据目录自动保留）
 # 卸载看护：--systemd 模式 systemctl disable --now novel-backend novel-scraper；
 #           默认模式 pkill -f watchdog-loop.sh
 # =============================================================================
@@ -34,7 +42,7 @@ while [ $# -gt 0 ]; do
     --systemd)   INSTALL_SYSTEMD=1 ;;
     --port)      PORT="${2:?--port 需要端口号}"; shift ;;
     --skip-build) SKIP_BUILD=1 ;;
-    -h|--help)   sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)   sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数: $1（--help 查看用法）" >&2; exit 2 ;;
   esac
   shift
@@ -285,5 +293,5 @@ echo " 健康检查    : curl http://127.0.0.1:$PORT/api/health"
 echo " 数据目录    : $ROOT/db/custom.db（SQLite，升级/迁移整目录拷走即备份）"
 echo " 日志        : /tmp/backend-go-api.log / /tmp/engine.log / /tmp/watchdog.log"
 echo " 对外发布    : 建议前置 Nginx/Caddy 80/443 反代 127.0.0.1:$PORT（见 docs/deployment.md §8）"
-echo " 日常升级    : cd $ROOT && git pull && bash scripts/deploy-cn.sh"
+echo " 日常升级    : cd $ROOT && bash scripts/upgrade.sh（git 拉取+构建+重启+失败回滚）"
 echo "==============================================${C_0}"

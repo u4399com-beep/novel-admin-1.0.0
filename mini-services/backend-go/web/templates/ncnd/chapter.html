@@ -1,0 +1,48 @@
+{{/* ncnd 章节页（克隆 gelin book-read 版式）：章题居中 + 章首/章尾双导航（上一章/目录/
+下一章 + 字号 A±/夜间模式，fb-* 契约由 app.js 绑定）+ 正文 22px/1.8/缩进 2em 两端对齐 +
+移动端上下 35% 点按翻页区（ncnd.js 派发）。公共契约容器 id=fb-chapter-content + data-*。 */}}
+{{define "content"}}
+<div>
+  {{/* 面包屑 */}}
+  <nav class="nc-crumb" aria-label="面包屑">
+    <a href="/">首页</a> &gt; <a href="{{bookURL .Novel.id}}">{{.Novel.title}}</a> &gt; {{.Chapter.title}}
+  </nav>
+
+  {{/* 正文盒 */}}
+  <article class="nc-panel">
+    <div class="nc-panel-bd">
+      <h1 class="nc-read-title">{{.Chapter.title}}</h1>
+      <p class="nc-read-meta">第 {{.Chapter.idx}} 章{{if .Chapter.wordCount}} · 约 {{wcFmt .Chapter.wordCount}}{{end}}</p>
+
+      {{/* 章首导航 */}}
+      <div class="nc-read-nav">
+        {{if .Prev}}<a href="{{chapterURL .Prev.id}}">上一章 ←</a>{{else}}<span class="nc-off">上一章 ←</span>{{end}}
+        <a href="{{tocURL .Novel.id}}">章节目录</a>
+        {{if .Next}}<a href="{{chapterURL .Next.id}}">→ 下一章</a>{{else}}<span class="nc-off">→ 下一章</span>{{end}}
+        <button type="button" id="fb-font-dec" aria-label="减小字号">A-</button>
+        <button type="button" id="fb-font-inc" aria-label="增大字号">A+</button>
+        <button type="button" id="fb-night">夜间模式</button>
+      </div>
+
+      {{/* 正文（公共契约容器） */}}
+      <div id="fb-chapter-content" class="nc-content"
+        data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}" data-chapter-id="{{.Chapter.id}}"
+        {{if .Prev}}data-prev-id="{{.Prev.id}}"{{end}} {{if .Next}}data-next-id="{{.Next.id}}"{{end}}>
+        {{range .Paragraphs}}<p>{{.}}</p>{{else}}<p class="nc-empty">本章内容为空，请返回目录选择其他章节。</p>{{end}}
+      </div>
+
+      {{/* 章尾导航 */}}
+      <div class="nc-read-nav">
+        {{if .Prev}}<a href="{{chapterURL .Prev.id}}">上一章 ←</a>{{else}}<span class="nc-off">上一章 ←</span>{{end}}
+        <a href="{{tocURL .Novel.id}}">章节目录</a>
+        {{if .Next}}<a href="{{chapterURL .Next.id}}">→ 下一章</a>{{else}}<span class="nc-off">→ 下一章</span>{{end}}
+      </div>
+      <p class="nc-read-foot">请记住本站地址：{{.siteName}}</p>
+    </div>
+  </article>
+
+  {{/* 移动端点按翻页区（ncnd.js 派发；CSS 仅 <640px 显示） */}}
+  <div class="nc-tapzone" data-zone="prev" data-url="{{if .Prev}}{{chapterURL .Prev.id}}{{end}}" aria-hidden="true"></div>
+  <div class="nc-tapzone" data-zone="next" data-url="{{if .Next}}{{chapterURL .Next.id}}{{end}}" aria-hidden="true"></div>
+</div>
+{{end}}
