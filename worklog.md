@@ -4120,3 +4120,23 @@ Stage Summary:
 - 分页截断修复战役收官：486 本截断书修复 447 本（92%），总章节 1.10M→1.89M（+72 万），残余 39 本进入多轮自愈轨道
 - 章节阅读顺序纠偏：52 本大错位（at-8 型）audit 修复 + 1 本 force 修复；xinjianpan 型顺序追加天然有序
 - 噪声清洗双模式上线：采集时引擎拦截 + 存量 clean-all，繁简双形态+混淆域名全覆盖
+
+---
+Task ID: 96
+Agent: main (Z.ai Code)
+Task: R96 用户报告《诸天领主》第100章后面直跳第796章——定位并根治目录分页能力回退
+
+Work Log:
+- 【环境重建】沙箱再次清空（Go 工具链/二进制/db/进程全灭）：golang.google.cn 拉 go1.22.12 → 构建双服务 → dev 链路+ensure-services 拉起；run.sh 补 DB 目录自建（SQLite CANTOPEN(14) 防护，部署演练同款修复落地本地）
+- 【根因定位】seed.json 17 条规则全部缺失 chapterListPaginationSelector——R82-R95 的分页修复只落运行时 DB（API PUT），seed/存量库从未同步；沙箱重建库或用户服务器老规则 → TocPages 恒空 → walker 从不运行 → 目录恒为书页内嵌前 100 章 + 最新章节块（796 即最新块首章，与 xinjianpan 100+12 同签名）
+- 【修复①引擎回退】extract.go：规则未配置该键时启用 defaultTocPaginationSelectors 内置机会性发现（R94 xinjianpan/ggd66 实测集超集 + a:contains(下一页/下一頁) 文本锚）；存量库/老部署零配置恢复分页能力；REPLACE/visited/120 页上限保证误锚无实害；警告文案保留「chapterListPaginationSelector」+「发现目录分页」子串契约（后端 pageWarnedTocPagination 重试护栏依赖）
+- 【修复②seed 回写】scripts/seed-pagination-r96.py 幂等回写 16 条 HTML 站规则（ixdzs8 JSON 目录 API 豁免），重建库/新部署不再回退；运行时库重置重播验证 16/17 带键
+- 【回归】audit96a（引擎：回退发现/显式键治理权/零锚零变化/实测形态防删改）+ audit96b（后端：护栏子串契约/退化语义不变）；audit82a「未配置即空」语义翻转；双服务 go test 全量通过
+- 【实证】xinjianpan 复活后舰队新书 6 本 100 章附近全部连续（706/673/691/1021/1011/426 章，无 100→796 型缺口）；全舰队「目录分页跟随生效」16 行 0 失败；101kks 空规则探测零误报；xinjianpan 直测因 IP 限流 502（回退语义由单测+舰队双重覆盖）
+- 【插曲】git checkout 恢复权限位时误回滚 extract.go/audit82a 内容 → 从上下文精确重应用 → 全量测试+重建二进制+重启引擎复核通过
+- 【交付】commit 1d2b422 推送 GitHub（u4399com-beep/novel-admin-1.0.0 main）
+
+Stage Summary:
+- 《诸天领主》100→796 根因闭环：分页能力在 seed/存量库层整体缺失，引擎内置回退让老规则零配置自愈，seed 回写防新部署回退
+- 用户服务器升级路径：git pull + 重启（或重跑 deploy-cn.sh）即生效，无需改库；受影响书随任务重扫周期增量补全（骨架按标题 upsert，存量正文跳过）
+- 遗留：huangjinwu/夜伴书屋站点存活待观察；封面重取（任务 C）与标签修复（任务 D）待办；GitHub token 轮换仍未执行
