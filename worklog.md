@@ -4140,3 +4140,25 @@ Stage Summary:
 - 《诸天领主》100→796 根因闭环：分页能力在 seed/存量库层整体缺失，引擎内置回退让老规则零配置自愈，seed 回写防新部署回退
 - 用户服务器升级路径：git pull + 重启（或重跑 deploy-cn.sh）即生效，无需改库；受影响书随任务重扫周期增量补全（骨架按标题 upsert，存量正文跳过）
 - 遗留：huangjinwu/夜伴书屋站点存活待观察；封面重取（任务 C）与标签修复（任务 D）待办；GitHub token 轮换仍未执行
+
+---
+Task ID: 97
+Agent: main (Z.ai Code)
+Task: R97 五项需求闭环：①乱序重排检查 ②代理池功能设置 ③TXT/封面自定义存储目录 ④trxsw http-407 列表页抓取失败根治 ⑤ddyueshu 首页规则改「最近更新」+全规则普查
+
+Work Log:
+- 【①重排】GET audit 发现 10 本 77%-100% 错乱书（《我的男人》100%、《没钱修什么仙》100% 等）→ 暂停 task11 窗口内 POST 重排（10 本 1062 章迁移）→ 复审计 0 候选；抽验 book375/332 前几章编号连续，txt 文件名同步链路复用既有 reindexChapterTxtFiles
+- 【②代理池】SiteSetting 增 proxyPool 列（新库 schema + 存量 ensureColumn）：语义=规则无自有 proxy 时兜底全局池（规则自有池优先），注入点 loadRule（storex.go pickEgressProxy）覆盖全部抓取路径；10s TTL 缓存+保存端 invalidateScraperSettings 即时生效；admin「站点设置」新增「采集存储与代理池」卡片（textarea+保存+测试按钮+结果表）；POST /api/scrape/proxy-pool/test 逐口并发探测（上限60口/并发12/8s超时，凭证输出脱敏 socks5h://***@host）
+- 【③存储目录】SiteSetting 增 txtDir/coversDir 列：sanitizeStorageDir 白名单（绝对路径/拒..段与控制字符/≤300/空=重置默认）；txtNovelsRoot() 与 coversDir() 配置链改「DB设置 > env > repoRoot 默认」；改目录只影响新写盘、历史文件不迁移（读路径同链回读）
+- 【③死锁修复】dbReady atomic 门闩：boot 链 backfillBrokenCoverLocal→coversDir→storageCoversDirOverride→queryOne→getDB 在 sync.Once 内递归自锁（启动零输出挂死，SIGQUIT 栈实证）——loadSettingColumn 前置 dbReady.Load() 判定，boot 期间返回空回落默认
+- 【④407根治】引擎 hosthealth egressBreaker 增 authStreak（407 整链失败记账/成功清除/非407归零）+ chain allAttemptsProxyAuth 归因（全部带状态尝试均407）；全代理池熔断且全部出口 authStreak≥1 时不再快速失败，追加直连出口兜底（仅本次请求，proxy 字段不动）——trxsw 形态（单认证死口代理→全策略407→规则永久卡死）解除；backend proxywatch probeProxyViaProxy 407 判死（旧口径当「可达」导致认证死口永不换血），10min 周期自动换血
+- 【⑤规则普查】13 站逐一实测（可直连 5 站 curl + 代理 1 站 + 引擎链路复测）：ddyueshu listRule 改 #newscontent .l ul li + span.s2 a（首页「最近更新小说列表」30 条实测提取成功，引擎 /api/test count=30）；x2552 itemSelector 修复 #centerm（死）→ #centeri .update li（块标题「吾爱小说网最近更新」）；aijjxs(ul.lines-books=最新上传)/23uswx(#newscontent .l)/ixdzs8(/new/ 分页)/trxsw(/lastupdate/)/xinjianpan(rank/lastupdate)/cunshu(sort=latest) 原规则已是最近更新型；23qb/huangjinwu/77shuku/夜伴书屋 站点沙箱不可达维持原规则（huangjinwu 首页 book-card 即「最新更新」块）；seed 同步 ddyueshu/x2552 + 清除 10/16/18/19/20 烘焙死代理（黑洞站 13/15 保留原池，audit59d 契约）
+- 【回归】scraper-go audit97a（allAttemptsProxyAuth 表驱动 + authStreak 记账/清除 + 非407保持快速失败）+ 全量并发/58a/57a 等测试签名适配；backend audit97b（httptest 假代理 407 判死/403 可达实证 + settings PATCH→pickEgressProxy 注入 + 存储目录白名单/缓存失效 + 测试端点端到端 + 凭证脱敏）；双服务全量 go test 通过（各 ~45s）
+- 【实证】负向注入：全局池设为死口 127.0.0.1:9 → 规则11（无自有池）健康巡检转 FAIL（证明注入生效）→ 恢复空配置后转 OK；Agent Browser 交互验证：admin 设置页新卡片渲染、测试按钮实抓 3 口（2 可达 111/302ms + 1 凭证死口脱敏显示「死口」）、保存按钮落库复读一致；移动端 390px 视口渲染正常
+- 【运维】双服务重建部署（run.sh 链路）、task11 恢复 running、trxsw 规则健康 OK（3.8s）、首页/admin 200
+- 【交付】commit f257c0c 推送 GitHub（u4399com-beep/novel-admin-1.0.0 main）
+
+Stage Summary:
+- 用户五项需求全闭环：重排已落地 10 本清零；代理池从「按规则手填」升级为「全局池+管理界面+连通性测试」；TXT/封面目录可在 admin 自定义；trxsw 407 根因（认证死口代理滞留池内+直连不参与）三层修复（引擎兜底/自愈判死/管理界面可视化）；ddyueshu 等首页规则全部对齐「最近更新」语义
+- 用户服务器升级：git pull + 重启即生效；全局代理池建议填入自有付费/凭证出口（proxywatch 不动全局池，避免自动换血毁掉凭证口），免费池仍走规则级自愈
+- 遗留：huangjinwu 修复书 force 重排待任务空闲窗口；封面重取（任务 C）与标签修复（任务 D）待办；GitHub token 轮换仍未执行
