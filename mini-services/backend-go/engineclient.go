@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+"sync/atomic"
 )
 
 // SCRAPER_BASE 引擎地址（Task 26-d 起可经环境变量覆盖，修复旧版三处硬编码：
@@ -80,6 +81,10 @@ type engineResult[T any] struct {
 	// 「规则失效/选择器不命中」failed 终态；凭此标记可归入软拦截（isSoftBlockErrText 同族），
 	// 列表/书页阶段撞限流空壳窗口时任务转 paused 可自动恢复而非烧成终态
 	SoftBlock bool
+	// ElapsedMs 引擎侧总耗时（handler 入口到响应出口，含域槽位排队等待）。R99 饱和
+	// 感知车道控制的数据源：引擎响应顶层 elapsedMs；失败路径/旧引擎为 0（调用方必须
+	// 判 >0 才可信）。排队深→值大，backend 据此冻结车道回升防自拥堵（见 worker.go）
+	ElapsedMs int64
 }
 
 // engineIsTimeout 判定是否客户端超时（对齐 TS /timeout|abort/i || name==='TimeoutError'）
@@ -139,6 +144,7 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 		Attempts  []any           `json:"attempts"`
 		Data      json.RawMessage `json:"data"`
 		SoftBlock json.RawMessage `json:"softBlock"` // Task 32-d: 200 空壳档案（对象存在即视为命中）
+		ElapsedMs json.RawMessage `json:"elapsedMs"` // R99: 引擎侧总耗时（含域槽排队，饱和感知信号）
 	}
 	if err := json.Unmarshal(rb, &env); err != nil {
 		return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎响应解析失败(HTTP %d)", res.StatusCode), Warnings: []string{}}
@@ -163,6 +169,8 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 		return engineResult[T]{OK: false, Error: base, Warnings: warnings}
 	}
 
+	elapsedMs := parseElapsedMs(string(env.ElapsedMs))
+
 	// 成功响应必须携带 data 对象（引擎 handlers 成功路径恒有）
 	trimmed := strings.TrimSpace(string(env.Data))
 	if trimmed == "" || trimmed == "null" || trimmed[0] != '{' {
@@ -178,7 +186,7 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
 	// 纵深防御
 	softBlockPresent := len(env.SoftBlock) > 0 &&
 		!bytes.Equal(bytes.TrimSpace(env.SoftBlock), []byte("null"))
-	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: softBlockPresent}
+	out := engineResult[T]{OK: true, Data: data, Warnings: warnings, Strategy: rawJSONString(env.Strategy), SoftBlock: softBlockPresent, ElapsedMs: elapsedMs}
 	if env.Attempts != nil {
 		n := len(env.Attempts)
 		out.Attempts = &n
@@ -551,6 +559,56 @@ func isSameChapterPagination(base, next string) bool {
 	return false
 }
 
+// chapterFetchImpl 章节抓取实现缝（R99）：worker 经此变量调用 fetchChapterPaged，
+// 单测可换注入假实现验证「排队饱和快速失败救援重试」与饱和感知车道控制。
+var chapterFetchImpl = fetchChapterPaged
+
+// queueShedBackoff 排队饱和救援重试前的泄压等待（测试可缩短）
+var queueShedBackoff = 2 * time.Second
+
+// fetchChapterRescued R99: 排队饱和救援包装——非 shed 错误原样透传（不重试）；
+// shed 错误（未发网络请求、源站无辜）歇 queueShedBackoff 让域槽队列泄压后重试一次，
+// 成功则计数 rescued（供任务日志观测救援效果）。
+func fetchChapterRescued(u string, rule LoadedRule, referer string, rescued *atomic.Int64) engineResult[ChapterData] {
+	res := chapterFetchImpl(u, rule, referer)
+	if !res.OK && isQueueShedErr(res.Error) {
+		time.Sleep(queueShedBackoff)
+		if res2 := chapterFetchImpl(u, rule, referer); res2.OK {
+			res = res2
+			rescued.Add(1)
+		}
+	}
+	return res
+}
+
+// parseElapsedMs R99: 引擎响应顶层 elapsedMs 解析（非正整数/缺失/非法一律 0=不可信）。
+func parseElapsedMs(raw string) int64 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// ewmaNext R99: 引擎耗时 EWMA 递推（α=1/4；ms<=0 不可信（失败路径/旧引擎/测试假实现）
+// 原样返回 cur 防拖低均值；cur<=0 视为无历史直接采纳）。
+func ewmaNext(cur, ms int64) int64 {
+	if ms <= 0 {
+		return cur
+	}
+	if cur <= 0 {
+		return ms
+	}
+	return cur + (ms-cur)/4
+}
+
+// laneBumpFrozen R99: 饱和感知回升冻结判定（EWMA 超阈即冻结，见 laneQueueFreezeEWMA）。
+func laneBumpFrozen(ewma int64) bool { return ewma > laneQueueFreezeEWMA }
+
 // fetchChapterPaged 抓取整章（含同章分页拼接）：首版 fetchChapter 后，若引擎返回的
 // nextUrl 是当前章节的下一分页，继续抓取并把正文按段落合并，直至无分页/达上限。
 // 任何一页失败都保留已抓到的部分（partial 内容优于整体失败）。
@@ -559,6 +617,8 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
 	if !first.OK {
 		return first
 	}
+	// R99: 各分页引擎耗时的最大值作为本章饱和信号（任一页排长队都说明域槽饱和）
+	maxElapsed := first.ElapsedMs
 	data := first.Data
 	warnings := append([]string(nil), first.Warnings...)
 	strategy := first.Strategy
@@ -604,5 +664,5 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
 			uniq = append(uniq, w)
 		}
 	}
-	return engineResult[ChapterData]{OK: true, Data: data, Warnings: uniq, Strategy: strategy, Attempts: attempts}
+	return engineResult[ChapterData]{OK: true, Data: data, Warnings: uniq, Strategy: strategy, Attempts: attempts, ElapsedMs: maxElapsed}
 }

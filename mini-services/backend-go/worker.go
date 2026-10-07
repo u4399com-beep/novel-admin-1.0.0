@@ -688,6 +688,18 @@ func isRateLimitErrText(err string) bool {
 		strings.Contains(low, "全部可用策略")
 }
 
+// isQueueShedErr R99: 排队饱和快速失败判定——引擎预算闸 shed（acquireDomainSlotBudgeted
+// 拒绝预约，未发任何网络请求，源站无辜）的两种结构化文案。该形态是 backend 车道过订阅
+// 的产物而非源站故障，值得就地歇 2s 重试一次救援，而非把好章节推给下轮重扫。
+func isQueueShedErr(err string) bool {
+	if err == "" {
+		return false
+	}
+	low := strings.ToLower(err)
+	return strings.Contains(low, "budget-exhausted") &&
+		(strings.Contains(low, "限速排队饱和") || strings.Contains(low, "排队饱和") || strings.Contains(low, "未预约槽位"))
+}
+
 // reRateLimitToken 429/503/rate 词元边界（两侧非同类字符即成词元；low 已小写）
 var reRateLimitToken = regexp.MustCompile(`(?:^|[^0-9])(?:429|503)(?:[^0-9]|$)|(?:^|[^a-z])rate(?:[^a-z]|$)`)
 
@@ -792,6 +804,13 @@ func laneFloorStore(taskID, limit int) {
 // laneRestoreEvery 连续成功多少章回开一档（+2 车道）；软起步日志与 bumpLaneOnSuccess 共用
 const laneRestoreEvery = int64(24)
 
+// laneQueueFreezeEWMA R99 饱和感知回升冻结阈值（ms）：章节引擎耗时 EWMA（含域槽排队）
+// 超过它即判定域槽队列在积压，冻结车道回升。定标依据：域槽零排队时单章引擎耗时
+// ≈1.2-3s（礼貌间隔 + 网络服务时间），越界即过订阅。12 车道对 0.5 req/s 的域槽供给
+// 纯过订阅（实测车道排队 8-17s → 引擎预算闸快速失败 → 车道控制误判限流骤降 →
+// 连捷回升再打满，boom-bust 震荡空转），冻结回升让供需自然收敛到最小稳定车道数。
+const laneQueueFreezeEWMA = int64(3500)
+
 // Phase2Outcome Phase 2 结果
 type Phase2Outcome struct {
 	Filled       int
@@ -870,6 +889,9 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 	}
 	var laneShrinks atomic.Int64
 	var laneOKStreak atomic.Int64
+	// R99: 引擎耗时 EWMA（α=1/4，ms）与回升冻结日志闸——见 laneQueueFreezeEWMA 注释
+	var laneQueueEwma atomic.Int64
+	var laneFreezeLogged atomic.Int64
 
 	isRateLimitErr := func(err string) bool {
 		return isRateLimitErrText(err)
@@ -896,6 +918,15 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 		}
 	}
 	bumpLaneOnSuccess := func() {
+		// R99: 饱和感知冻结——EWMA 超阈说明排队在积压，回升只会加深过订阅；清空连捷
+		// 计数重新观察（失败骤降路径 shrinkLanes 仍生效，两者合围消灭 boom-bust 震荡）
+		if ew := laneQueueEwma.Load(); laneBumpFrozen(ew) {
+			laneOKStreak.Store(0)
+			if laneFreezeLogged.Add(1) <= 3 {
+				run.Log(fmt.Sprintf("[lane-control] 章节引擎耗时 EWMA %dms>%dms（域槽排队积压），车道回升冻结防自拥堵", ew, laneQueueFreezeEWMA))
+			}
+			return
+		}
 		if laneOKStreak.Add(1) >= laneRestoreEvery {
 			laneOKStreak.Store(0)
 			cur := laneLimit.Load()
@@ -934,6 +965,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 	// Task 34: 失败形态统计（仅失败章计数，成功不计）——采样只有前 6 条看不到全貌，
 	// 终态/熔断消息带形态摘要（timeout×N/熔断×N/空壳×N/挑战×N）才能定位主体失败形态
 	var failTimeout, failCircuit, failSoftBlock, failOther atomic.Int64
+	var rescuedCtr atomic.Int64 // R99: 排队饱和救援重试成功数
 	for _, novelID := range ids {
 		if stoppedEarly.Load() || breakerStopped {
 			break
@@ -1002,7 +1034,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 				if referer == "" {
 					referer = safeOrigin(u)
 				}
-				res := fetchChapterPaged(u, rule, referer)
+				res := fetchChapterRescued(u, rule, referer, &rescuedCtr)
+				laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), res.ElapsedMs))
 				if !res.OK {
 					failedCtr.Add(1)
 					bookFailed.Add(1)
@@ -1095,7 +1128,11 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 				break
 			}
 		}
-		run.Log(fmt.Sprintf("书籍 #%d 正文填充完成：成功 %d / 失败 %d", novelID, bookFilled.Load(), bookFailed.Load()))
+		if r := rescuedCtr.Load(); r > 0 {
+			run.Log(fmt.Sprintf("书籍 #%d 正文填充完成：成功 %d / 失败 %d（含排队饱和救援 %d 章）", novelID, bookFilled.Load(), bookFailed.Load(), r))
+		} else {
+			run.Log(fmt.Sprintf("书籍 #%d 正文填充完成：成功 %d / 失败 %d", novelID, bookFilled.Load(), bookFailed.Load()))
+		}
 		delete(fillMap, novelID) // 处理完即释放，长任务内存渐减
 	}
 	// Task 34: 失败形态摘要进日志（仅有失败时；采样 6 条之外的聚合视图）
