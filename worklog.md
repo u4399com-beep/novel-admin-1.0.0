@@ -4206,3 +4206,23 @@ Stage Summary:
 - 舰队 17→19 站：biqutu/minyuan 规则全链路实测可用，用户服务器升级后跑 python3 scripts/add-rules-r99.py 即补种（或重建库走 seed 自动播种）
 - 关键坑沉淀：杰奇系 lazy 封面必须 data-original 优先（src 是 nocover 占位会被引擎拒识）；「类别：」标签前缀 stripFieldLabel 不认，og:novel:category 优先规避；章内 1_N.html 分页零配置由 isSameChapterPagination 兜住
 - 两站沙箱不可达属网络层（规则无恙），用户国内服务器预计 biqutu 直连可达、minyuan 若 403 在 admin 全局代理池填出口即可
+
+---
+Task ID: 100
+Agent: main (Z.ai Code)
+Task: R100 章节采集提效：饱和感知车道控制 + 排队饱和救援重试 + 突发抑制上限调优（并探讨跨规则多线程）
+
+Work Log:
+- 【基线实证】双采样测吞吐：8 任务并发（任务级跨规则并行本就存在——triggerScrapeTask fire-and-forget，每任务独立 goroutine），聚合填充仅 4254 章/时；引擎域槽授权 ~1600-1800/时/站（2.2s 有效间隔），填充仅占授权 27%——瓶颈不在并行度而在「12 车道对 0.5 req/s 域槽供给过订阅」的自拥堵
+- 【根因链】12 车道同时请求同一域 → 域槽（start-to-start ≥1.2s+突发抑制+抖动）只能供 0.45 req/s → 车道排队 8-17s（lastSlotWaitMs 实测）→ 引擎预算闸快速失败（budget-exhausted，链层未预约槽位零副作用设计）→ backend isRateLimitErrText 命中「budget-exhausted」关键词 → 车道控制误判限流 10→4 骤降 → 连捷 24 章 +2 回升再打满 → boom-bust 震荡空转；task12 一轮 103 章失败（熔断快速失败×57、超时/预算×46）全靠下轮重扫兜底；叠加 Task 26-d 突发抑制上界 +1s（consec≥2000 恒满）把间隔推到 2.2s，域上限再砍 45%
+- 【修①引擎侧】ratelimit.go 突发抑制上界 1000→300ms（politenessExtraCapMS，env SCRAPE_POLITENESS_EXTRA_CAP_MS 可恢复 1000 原口径；1.2s 合规保底与「<1 req/s」红线不动，±200ms 双向抖动+300ms 尾差继续承担突发抑制目的）→ 有效间隔 2.4s→1.6s，域上限 +45%；concurrency_test.go TestPolitenessExtraMS 重锁新曲线+覆盖路径+上界 0 分支
+- 【修②backend 饱和感知】engineclient.go：engineResult 增 ElapsedMs（解析引擎响应顶层 elapsedMs=handler 总耗时含域槽排队；parseElapsedMs 纯函数，非正整数/缺失→0 不可信）；fetchChapterPaged 取各分页最大耗时作本章饱和信号；worker.go phase2Fill 增 laneQueueEwma（α=1/4，ewmaNext 纯函数，ms≤0 防拖低）+ bumpLaneOnSuccess 饱和冻结（laneBumpFrozen：EWMA>3500ms 冻结回升+清连捷计数，日志闸≤3 行）——供需自然收敛到最小稳定车道数，失败骤降路径保留，两者合围消灭震荡
+- 【修③救援重试】engineclient.go fetchChapterRescued：isQueueShedErr（budget-exhausted 且含「未预约槽位/排队饱和」——严格区分「限速排队后预算耗尽」=已发请求不救援）命中时歇 queueShedBackoff(2s) 泄压后重试一次（每章至多 1 次，rescuedCtr 计数进书完成日志「含排队饱和救援 N 章」）；chapterFetchImpl 包级缝供单测注入
+- 【回归】backend audit99a_test.go 新建 6 测试（shed 判定 7 案含两陷阱案/EWMA 6 案/冻结阈值边界/救援 4 子案/elapsed 解析 7 案）+ 全量 44.7s 通过；scraper-go 全量 38.6s 通过；gofmt 漂移仅 engineclient.go（已修，coversaudit/db/web 为存量不合规不动）
+- 【实测】双二进制重建+watchdog 接管重启+8 任务恢复入队：库内实测 4254→6298 章/时（+48%）；运行时验证 politenessExtraMs 封顶 300ms（consec≈905，旧曲线此处 400ms）；lane-control 冻结/救援日志待书完成批次后累积出现（机制经单测锁定）；task4/6 处 Phase 1（目录骨架）不产章节属正常
+- 【探讨落答】跨规则多线程=已有能力（runner 每 2s 全量派发 pending，LIMIT 5/轮不设并发上限；8-19 任务天然并行，不同规则=不同域名=独立域槽互不排队）；真正的天花板是每域 1.2s 合规礼貌间隔（红线不可破），本次把「域槽授权→章节落库」的转化率从 27% 提向满值才是正解；同域多任务（如重扫+新增）由引擎域槽天然串行保礼貌
+
+Stage Summary:
+- 章节采集三层提效落地：①突发抑制上界 300ms（域上限 +45%）②饱和感知冻结（boom-bust 震荡根治，车道数随域槽供给自适应）③排队饱和救援重试（shed 好章不再推给下轮重扫）；实测 +48%（4254→6298 章/时），稳态随 consec 爬坡与车道收敛还会继续上探
+- 用户服务器升级：git pull + 重启即生效（无 schema/规则变更）；如需恢复 Task 26-d 原始突发抑制口径设 SCRAPE_POLITENESS_EXTRA_CAP_MS=1000
+- 「多开线程采集不同规则」已是现状（任务级并行+引擎域槽隔离），未来若要再提吞吐只能：多域名镜像规则/提高 CHAPTER_CONCURRENCY 对多分页章的管线收益/压缩章节页内分页（源站形态决定）
