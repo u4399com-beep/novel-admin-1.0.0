@@ -4186,3 +4186,23 @@ Stage Summary:
 - ncnd 主题全站落地并实机验证（桌面+移动+阅读交互+页脚贴合），第 11 套主题进入 admin 可选清单
 - 封面「命名=id」契约三层闭环（boot 归位+API 审计修复+前台 coverSrc 派生）并有隔离实例实证，错位只剩「文件缺失」可自愈形态
 - 部署三件套（deploy-cn.sh 重生成 / bootstrap-cn.sh 零前提引导 / upgrade.sh 升级+回滚）就绪，零 git 服务器也可一条命令部署/升级
+
+---
+Task ID: 99
+Agent: main (Z.ai Code)
+Task: R99 写采集规则 http://www.biqutu.info/（爱笔楼）、https://www.min-yuan.com/（小原文学网）
+
+Work Log:
+- 【结构分析】双站沙箱直连均不可达（biqutu=shilicdn 拒海外机房 TCP 黑洞、minyuan=US 主机 403 机房 IP），经共享代理出口（101.206.186.99:8080）+ 引擎 /api/test includeHtml 实抓全链路页面，逐段解析
+- 【biqutu 定档】标准杰奇 CMS：首页 #newscontent .l=最近更新 30 条（s2 书名/s3 最新章/s4 作者）；书页 #info h1/#intro/#fmimg img + og:novel:* meta 齐全；#list dl dd=全目录单页无分页（212 章 1→212 连续实测，无 chapterListPagination 锚）；章节 .bookname h1 + #content 无章内分页；章尾「章节错误点此报送」广告 div[align=center] 用 chapterRule.excludeSelector 剔除（复测残留=0，wordCount 1175→1149）；末章「下一章」指回书页由 isSameChapterPagination 天然截断
+- 【minyuan 定档】杰奇变体（反爬混淆 class m6-xxx 但稳定 id 骨架不变）：首页「最近更新小说列表」h2+30 条同构；书页 #newlist dd=完整目录单页无分页（1853 章号 1→1853 零缺失实测），#list dl dd=最新 12 条块（置后作备选防重复靠 URL 去重）；lazy 封面坑：#fmimg img@src 是 /static/bxwx/nocover.jpg 占位（会被引擎 rePlaceholderCover 拒识）→ coverSelector @data-original 优先、og:image 兜底，实测取回 /images/vpnm.jpg 真封面；p.sort「类别：」前缀 stripFieldLabel 不认（正则只有 分类|类型|频道|状态）→ categorySelector og 优先规避；章节页 h1 + #booktxt 纯 <p> 无广告 + 章内分页 1.html→1_2.html（bottem1 导航 a[rel=next] 恒文案「下一章」）——isSameChapterPagination 的 _ 形态命中（前缀剥 .html 后首字符 _），引擎返回 nextUrl 由 backend fetchChapterPaged 自动拼接，1_2 的下一章→2.html 天然截断（实测两页 nextUrl 形态均正确）
+- 【规则落地】id=27 biqutu / id=28 minyuan：charset=utf-8、proxy=""（R97 约定：不为未证实黑洞的站点烘焙死代理，用户服务器不可达时走 admin 全局代理池）、enabled=true（规则六项实测全通，区别于 kelexs/cunshu 不可验证草稿）；两站 bookRule 均带 R96 标准 chapterListPaginationSelector 集（本站无分页锚，REPLACE 语义零实害）；chapterListPaginationSelector+og meta 兜底与 13 站规则族同构
+- 【实测矩阵】/api/test 六项全通过：两站列表 count=30 书名/链接/作者齐；两站书页 title/author/cover/category（+minyuan status=连载）+ 章节数 212/1853 + 首尾章连续；两站章节正文标题/字数/首尾段正常；修正后复测 2 项通过（biqutu 提示行残留=0、minyuan category=网游竞技 无前缀）
+- 【分发三件套】①运行库经 POST /api/scrape-rules 落库（返回 id=27/28，复读确认）；②seed/seed.json 追加 27/28（json.dump indent=2 与原格式零冲突，diff 仅 +27/-1 行；TestSeedJSONCookiesChainInvariants 通过——25/26 草稿契约不受影响）；③scripts/add-rules-r99.py 新建（用户存量库幂等补种：seed 仅空表导入、存量库拿不到新规则，脚本走 admin API 按 name 判重——存在带 id 更新/不存在新建，本地实测幂等两连跑无重复）
+- 【回归与运维】backend-go 全量 go test 42.1s 通过（scraper-go 零改动）；py_compile 脚本校验通过；FleetKeeper ≤5min 自动为 27/28 建 list 任务 #15/#16→沙箱直连不可达→按瞬态自动暂停（与 23qb/77shuku/trxsw 同形态，E23 巡检联动冷却自愈循环）；健康巡检两站 FAIL（直连口径，预期内）；健康巡检串联验证：巡检跑满 16 规则 6m47s 完成
+- 【交付】commit 500562b 推送 GitHub（u4399com-beep/novel-admin-1.0.0 main）
+
+Stage Summary:
+- 舰队 17→19 站：biqutu/minyuan 规则全链路实测可用，用户服务器升级后跑 python3 scripts/add-rules-r99.py 即补种（或重建库走 seed 自动播种）
+- 关键坑沉淀：杰奇系 lazy 封面必须 data-original 优先（src 是 nocover 占位会被引擎拒识）；「类别：」标签前缀 stripFieldLabel 不认，og:novel:category 优先规避；章内 1_N.html 分页零配置由 isSameChapterPagination 兜住
+- 两站沙箱不可达属网络层（规则无恙），用户国内服务器预计 biqutu 直连可达、minyuan 若 403 在 admin 全局代理池填出口即可
