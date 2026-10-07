@@ -223,6 +223,32 @@
       "bookRule": "{\"titleSelector\": \"meta[property=\\\"og:novel:book_name\\\"]@content, meta[property=\\\"og:title\\\"]@content, h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content, .author, #info p:first-of-type\", \"descriptionSelector\": \"meta[property=\\\"og:description\\\"]@content, .intro, #intro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content, .pic img@src, #fmimg img@src\", \"statusSelector\": \"meta[property=\\\"og:novel:status\\\"]@content\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a, .chapter-list a, ul.chapter a, #allchapter li a\", \"catalogLinkSelector\": \"a.catalog-more, a.more-btn\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
       "chapterRule": "{\"titleSelector\":\"h1, .bookname h1\",\"contentSelector\":\"#content, #chaptercontent, #txtcontent, #contenttxt, .read-content\",\"nextSelector\":\"a:contains(下一章), a:contains(下一頁), #next_url, #pb_next\"}",
       "notes": "【未实测草稿·WAF 强制人机验证】2026-09 Task 53 实测：与 kelexs 同族 GoEdge WAF（VBWI token 一致，疑同托管商）全域强制人机验证——curl/curl-impersonate(JA3)/代理出口 307 → /WAF/VERIFY/CAPTCHA，headless 403，全路径变体一致；自动采集无解（合规红线禁验证码破解）。\n【启用路径】同 kelexs：人工过验 → 复制 Cookie 头 → 填入「静态 cookie 底座」→ 启用规则（Task 53 引擎能力，6h TTL 自动接管）。\n【选择器依据】未经页面实测，PHP 自建 library 页通用结构 + og:novel:* meta 兜底 + 引擎内置启发式；分页 paginationTemplate=library.php?sort=latest&page={k}（URL 语义明确）。放行后先跑三段实测校准。"
+    },
+    {
+      "id": 27,
+      "name": "biqutu",
+      "siteUrl": "http://www.biqutu.info/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \"#newscontent .l ul li\", \"titleSelector\": \"span.s2 a\", \"linkSelector\": \"span.s2 a\", \"authorSelector\": \"span.s4\"}",
+      "bookRule": "{\"titleSelector\": \"#info h1, meta[property=\\\"og:novel:book_name\\\"]@content\", \"authorSelector\": \"#info p:first-of-type, meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro, meta[property=\\\"og:description\\\"]@content\", \"coverSelector\": \"#fmimg img@src, meta[property=\\\"og:image\\\"]@content\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
+      "chapterRule": "{\"titleSelector\": \".bookname h1, h1\", \"contentSelector\": \"#content\", \"nextSelector\": \"a:contains(下一章)\", \"excludeSelector\": \"div[align=center]\"}",
+      "notes": "2026-10 实测（爱笔楼，杰奇 CMS）：首页 #newscontent .l=「最近更新」30 条（s2=书名/s3=最新章/s4=作者）；书页 #info h1+#intro+#fmimg img，og:novel:* meta 齐全（category 兜底），#list dl dd=全目录单页无分页（212 章 1→212 连续实测）；章节 .bookname h1 + #content，章尾「章节错误点此报送」div[align=center] 用 excludeSelector 剔除；末章 下一章 指回书页由 isSameChapterPagination 天然截断。沙箱直连黑洞（shilicdn 拒海外机房），实测经共享代理出口全链路通过；用户国内服务器预计直连可达，若不通在 admin 全局代理池填出口（R97 能力）。"
+    },
+    {
+      "id": 28,
+      "name": "minyuan",
+      "siteUrl": "https://www.min-yuan.com/",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\": \"#newscontent .l ul li\", \"titleSelector\": \"span.s2 a\", \"linkSelector\": \"span.s2 a\", \"authorSelector\": \"span.s4\"}",
+      "bookRule": "{\"titleSelector\": \"#info h1, meta[property=\\\"og:novel:book_name\\\"]@content\", \"authorSelector\": \"#info p:first-of-type, meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \"#intro, meta[property=\\\"og:description\\\"]@content\", \"coverSelector\": \"#fmimg img@data-original, #fmimg img@src, meta[property=\\\"og:image\\\"]@content\", \"statusSelector\": \"#info p:contains(状态), meta[property=\\\"og:novel:status\\\"]@content\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content, p.sort\", \"chapterLinkSelector\": \"#newlist dd a, #list dl dd a\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
+      "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \"#booktxt, #chaptercontent\", \"nextSelector\": \"a:contains(下一章), a[rel=next]\"}",
+      "notes": "2026-10 实测（小原文学网，杰奇变体+混淆 class m6-xxx，稳定 id 骨架不变）：首页 #newscontent .l=「最近更新小说列表」h2+30 条；书页 #info/#intro/#fmimg（lazy 封面必须 @data-original 优先，@src 是 nocover 占位会被引擎拒识回落 og:image），#newlist dd=完整目录单页无分页（1853 章号 1→1853 零缺失实测），p.sort=「类别：」前缀 stripFieldLabel 不认→categorySelector og 优先；章节页 h1+章节内分页 1.html→1_2.html（isSameChapterPagination 命中 _ 形态自动拼接，1_2 下一章→2.html 天然截断），nextSelector=a:contains(下一章)+a[rel=next]，#booktxt 纯 <p> 无广告。沙箱直连 403（US 主机拒机房 IP），实测经共享代理出口全链路通过；用户服务器若直连 403 在 admin 全局代理池填出口。"
     }
   ],
   "categories": [
