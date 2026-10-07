@@ -4266,3 +4266,24 @@ Stage Summary:
 - 三层架构上线：HTTP（毫秒默认）→ iv8 轻执行（~100ms，V8 补环境算 cookie/参数）→ CloakBrowser 重渲染（秒级指纹兜底），挑战感知跳层按响应形态智能路由（JS 壳→提前 iv8、平台 WAF→提前 cloak），亲和记忆 + 10 策略 tier 全透出；微信实战验证三层价值（CloakBrowser 穿透取证 + 风控壳判定修复 + 蜘蛛 UA 放行）
 - 数据库优化上线：三复合索引（分类页/榜单/最新全零排序，EXPLAIN 实证 COVERING INDEX）+ 冗余索引清理 + ScrapeTaskLog 垂直分表（存量自动迁移、级联清理、JSON 契约不变）+ 任务历史 TTL 治理（30 天 + 上限，舰队模式任务表不再无限膨胀）+ PRAGMA optimize
 - 用户服务器升级：git pull + 重启即生效（boot 自动建表/加索引/迁移存量日志，幂等）；stealth-service 需先跑 pip install -r requirements.txt（venv 的 python3 -m pip）+ CloakBrowser 首启自动下二进制
+---
+Task ID: 103
+Agent: main (Z.ai Code)
+Task: R103 四项：①101kks 规则修复（书页/目录页分离 AJAX 形态）②章节采集继续提速 ③ddyueshu 首页最近更新列表修复 ④推送 GitHub
+
+Work Log:
+- 【运维】僵尸 watchdog 进程（旧版 R102 实验遗留）持有 flock 锁致看门狗失效 + 沙箱周期清后台进程 → 新建 scripts/ensure-services.sh（每工作调用前保障双服务健康，失败自动拉起+15s 就绪轮询）；装回 curl-impersonate v0.6.1（ghfast.top 镜像下载 8 个 curl_chrome* 到 ~/.local/bin，沙箱重置后曾丢失）
+- 【①形态定位】用户实证 101kks 书页 6527.html 与目录页 6527/index.html 分离：书页零章节锚（仅 og:novel:read_url 指目录页），目录页静态 HTML 同样零章节（#allchapter 由 $.ajax GET /ajax_novels/chapterlist/{bookId}.html 返回 <ul><li data-num><a> 片段填充）——旧规则 chapterLinkSelector=#allchapter li a 在两端全空，catalogLink walker 亦拿不到 → 全站书只入库 6 条启发式章节
+- 【①引擎扩展】jsontoc.go 三能力：a) responseType=html 模式（parse 校验 itemSelector 必填 + bookIdSelector/bookIdRegex 至少其一；extractHtmlToc 从片段直接提取锚，effectiveAnchorHref 反混淆兼容）；b) bookIdRegex（书页 URL 正则第一捕获组提取 {bookId}，书页无 id 元素形态）；c) cfg.url 支持 {bookId} 占位符（R103 前仅 body/urlTemplate 支持，url 字面量直传实测 404——抓包定位：引擎请求了 /ajax_novels/chapterlist/{bookId}.html 原样）
+- 【①JA3 伪装传输】Go TLS 指纹被 CF 恒 403 的根治：A/B 实验锁定（同头族系统 curl 200/Go net/http 403，增删 Referer/XHR 头族不变；Referer 是系统 curl 的放行条件但非 Go 的）→ tocFetchImpersonate：detectCurlImpersonates 可用时 curl-impersonate 发送（BoringSSL 指纹 + --resolve 钉死 + Set-Cookie 回存会话桶 + 不跟随重定向同 SSRF 姿态），tocErrNoTransport 哨兵回退 Go 原生；坑：curl-impersonate 预置整套 116 导航头族且 -H/--user-agent/--H K: 均无法覆盖（libcurl 深层 patch，单测实证）——引擎构造头族经「-H K:（移除）+ -H K: v（追加）」对非预置默认头生效，UA 保鲜画像经该机制透传成功（伪装路径预置头族自洽真实画像可接受）
+- 【①实测矩阵】六项全通：列表 10 条/书页 title+author+cover+category+660 章（第1章→第659章序正）/首章 2181 字正文干净（txtinfo 日期块不在 #txtcontent 内，早前误报系测试脚本 rule 传参嵌套错误）/末章 4163 字；亲和记忆正常（fetch-cloak 提链首）
+- 【①回归】audit103a_test.go 5 组：html 模式校验 4 分支/bookIdFromURL 4 案+非法正则/extractHtmlToc 片段 3 锚提取（js: 占位+空锚剔除+外站保留+相对绝对化）/端到端占位符替换（httptest 同源书页+片段端点，3 条胜书页 1 条）/fake curl 二进制注入（参数透传断言 + Set-Cookie 捕获）+ disableImpersonateForTest helper（沙箱装有真二进制后 audit46/50 原生路径测试环境隔离）；scraper-go 全量 45.9s 通过
+- 【②章节写入事务合并】txRetry 原语（busy 200ms 退避重试同 execRetry 口径）：storeChapter（Chapter INSERT + ChapterContent INSERT，删手动 DELETE 补偿）与 persistChapterFill（ChapterContent INSERT + Chapter UPDATE）双写合并单事务——每章写 2 提交降 1 提交 + 消除「正文已写 wordCount 未记」中断中间态（Phase 1 续传按 wordCount=0 误判空骨架重复填充的根因）；persistChapterFill 保留 UPDATE RowsAffected>0 语义（无效 chapterId → false 不误标已填充）；audit103b_test.go 4 测试（原子回滚/双提交/填充语义四子案/唯一冲突顺延），backend 全量 50.3s 通过
+- 【③ddyueshu】首页 GBK 编码实测：无 #newscontent 容器但「最近更新小说列表」块为标准杰奇 s1-s5 行结构 → itemSelector 改「#newscontent .l ul li（标准站保序）+ li:has(span.s2):has(span.s3):has(span.s4)（本站形态）」双候选，title/link=.s2 a、author=.s4，实测 30 条全通（书名/URL/作者齐）；DB+seed 固化
+- 【④交付】commit b684469 推送 GitHub（含 R102 的 2 个 UUID 提交先一步推送 4da82d6）
+
+Stage Summary:
+- 101kks 从「每书 6 章」修复为「660 章全量」：chapterListApi 获得	html 片段+URL 正则 bookId+url 占位符三能力，目录接口获 JA3 伪装传输（CF 系站点通用收益）
+- 章节写入事务化：WAL 提交减半 + 中断中间态消除，与 R100 三层提效叠加
+- ddyueshu 首页规则修复，13 站首页「最近更新」语义统一完成（其余站经 R96-R101 历次校准或为最近更新页入口）
+- 用户服务器升级：git pull + 重启即生效；101kks/ddyueshu 存量书重发书页任务即自动补全章节
