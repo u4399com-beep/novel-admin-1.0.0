@@ -397,6 +397,28 @@
     </div>
 
     <div class="adm-card">
+      <h2 class="adm-h2">采集存储与代理池</h2>
+      <p class="mt-1 text-[11px] leading-4 text-neutral-400">TXT/封面目录留空使用默认（{项目根}/download/novels 与 {项目根}/public/covers）；自定义目录必须是服务器上已存在或可创建的绝对路径，改目录后新文件写入新目录，历史文件不自动迁移。全局代理池：规则未单独配置出口代理时兜底使用（多口英文逗号分隔，支持 socks5h://user:pass@host:port 凭证形态）；规则自有代理优先级更高。</p>
+      <div class="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        <label class="adm-field">TXT 保存目录（绝对路径，留空=默认）<input id="adm-set-txtdir" class="adm-input" placeholder="/data/novel-txt"></label>
+        <label class="adm-field">封面图保存目录（绝对路径，留空=默认）<input id="adm-set-coversdir" class="adm-input" placeholder="/data/novel-covers"></label>
+      </div>
+      <label class="adm-field mt-1 block">全局代理池 proxyPool（逗号分隔，规则无自有代理时兜底）
+        <textarea id="adm-set-proxypool" class="adm-input" rows="2" placeholder="http://1.2.3.4:8080,socks5h://user:pass@5.6.7.8:1080"></textarea>
+      </label>
+      <div class="mt-2 flex items-center justify-end gap-2">
+        <button type="button" id="adm-set-proxypool-test" class="adm-btn">测试连通性</button>
+        <button type="button" id="adm-set-scrape-save" class="adm-btn adm-btn-primary">保存采集设置</button>
+      </div>
+      <div id="adm-set-proxypool-results" class="mt-2 hidden">
+        <div class="adm-table-wrap"><table class="adm-table">
+          <thead><tr><th>代理出口（凭证已脱敏）</th><th>状态</th><th>时延</th><th>说明</th></tr></thead>
+          <tbody id="adm-set-proxypool-rows"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <div class="adm-card">
       <div class="flex items-center justify-between"><h2 class="adm-h2 !mb-0">首页图文区块（homeConfig）</h2>
         <span class="text-[11px] text-neutral-400">最多 8 块；前台按顺序渲染封面图文卡</span>
       </div>

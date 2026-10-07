@@ -58,11 +58,11 @@ func TestEgressBreakerPerEgressIndependence(t *testing.T) {
 	defer clearBreakerForTest(host)
 
 	// 直连出口：连续 2 次纯网络级失败 → 快速熔断（netBreakerStrikes=2）
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
 	if ms := egressCircuitOpenMs(host, ""); ms > 0 {
 		t.Fatalf("直连首败不应熔断，剩 %dms", ms)
 	}
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
 	if ms := egressCircuitOpenMs(host, ""); ms <= 0 {
 		t.Fatal("直连 2 次网络级连败应熔断")
 	}
@@ -74,7 +74,7 @@ func TestEgressBreakerPerEgressIndependence(t *testing.T) {
 	// 代理出口：3 次混合失败 → 熔断；此时两出口均熔断 → 全部熔断成立
 	p := "http://proxy-e17.example:9"
 	for i := 0; i < 3; i++ {
-		noteChainFailure(host, false, []string{p})
+		noteChainFailure(host, false, []string{p}, false)
 	}
 	if ms := egressCircuitOpenMs(host, p); ms <= 0 {
 		t.Fatal("代理出口 3 次混合连败应熔断")
@@ -120,9 +120,9 @@ func TestNoteChainFailureEgressAttribution(t *testing.T) {
 	defer clearBreakerForTest(host)
 
 	// 链 1：p1+p2 均网络级失败（allNetErr）→ 双出口 netStreak=1
-	noteChainFailure(host, true, []string{"p1", "p2"})
+	noteChainFailure(host, true, []string{"p1", "p2"}, false)
 	// 链 2：仅 p1 网络级失败 → p1 netStreak=2 熔断；p2 停在 1 不熔断
-	noteChainFailure(host, true, []string{"p1"})
+	noteChainFailure(host, true, []string{"p1"}, false)
 	if ms := egressCircuitOpenMs(host, "p1"); ms <= 0 {
 		t.Fatal("p1 连续 2 次网络级链失败应熔断")
 	}
@@ -136,13 +136,13 @@ func TestNoteChainFailureEgressAttribution(t *testing.T) {
 
 	// 链 3：p2 混合失败 → p2 netStreak 归零；此时 strikes=2（<3）且 netStreak=0（<2）不熔断，
 	// 验证混合失败对「网络级连败」的归零语义（若不归零，下一次网络级失败即触发网络级熔断）
-	noteChainFailure(host, false, []string{"p2"})
+	noteChainFailure(host, false, []string{"p2"}, false)
 	if ms := egressCircuitOpenMs(host, "p2"); ms != 0 {
 		t.Fatalf("p2 链 3 后 strikes=2/netStreak 归零，不应熔断，剩 %dms", ms)
 	}
 	// 链 4：p2 再 1 次网络级失败 → netStreak=1 不触发网络级熔断，但 strikes=3 达通用阈值 →
 	// 通用连败熔断（by-design：与 E17 前「3 次整链失败熔断」口径一致，netStreak 归零只影响网络级支路）
-	noteChainFailure(host, true, []string{"p2"})
+	noteChainFailure(host, true, []string{"p2"}, false)
 	if ms := egressCircuitOpenMs(host, "p2"); ms <= 0 {
 		t.Fatal("p2 第 3 次链失败应触发通用连败熔断（strikes>=3，与 E17 前口径一致）")
 	}
@@ -158,7 +158,7 @@ func TestEgressMapCapLocked(t *testing.T) {
 	clearBreakerForTest(host)
 	defer clearBreakerForTest(host)
 	for i := 0; i < egressMaxEntries+50; i++ {
-		noteChainFailure(host, false, []string{"http://p" + itoa(i) + ".example:9"})
+		noteChainFailure(host, false, []string{"http://p" + itoa(i) + ".example:9"}, false)
 	}
 	healthMu.Lock()
 	n := len(egressMap)
@@ -203,8 +203,8 @@ func TestFetchPageBreakerScopedToEgress(t *testing.T) {
 	defer jarRemoveHostForTest(host)
 
 	// 预热：直连出口 2 次纯网络级整链失败（模拟 SYN 黑洞）→ 直连熔断
-	noteChainFailure(host, true, nil)
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
+	noteChainFailure(host, true, nil, false)
 	if ms := egressCircuitOpenMs(host, ""); ms <= 0 {
 		t.Fatal("预热直连熔断失败")
 	}
@@ -257,7 +257,7 @@ func TestFetchPagePrefersHealthyEgress(t *testing.T) {
 	// 预热：坏出口（127.0.0.1:1 连接拒绝）3 次混合失败 → 熔断（好出口保持健康）
 	bad := "http://127.0.0.1:1"
 	for i := 0; i < 3; i++ {
-		noteChainFailure(host, false, []string{bad})
+		noteChainFailure(host, false, []string{bad}, false)
 	}
 	if ms := egressCircuitOpenMs(host, bad); ms <= 0 {
 		t.Fatal("预热坏出口熔断失败")

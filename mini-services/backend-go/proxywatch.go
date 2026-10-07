@@ -84,10 +84,14 @@ var proxyWatchHTTPClient = &http.Client{
 	},
 }
 
-// probeProxyViaProxy 单出口可达性探测：经 proxy 访问 targetURL，任何 HTTP 状态（含
-// 403/503 等 WAF 响应）均视为「出口可达」——WAF 拦截是站点行为，出口链路是通的；
-// 只有超时/连接失败/重定向环=死口。E25：返回 (可达, 时延ms)——时延为连接+TLS+首响应
-// 头耗时，供池内快口分选与温和升级置换（不改变可达性判定口径）。
+// probeProxyViaProxy 单出口可达性探测：经 proxy 访问 targetURL。R97 判死口径：
+//   - HTTP 407 → 死口。407=Proxy Authentication Required，只能由代理本体发出（要求认证/
+//     代理认证策略变更/免费代理升级为收费口）——该口对真实抓取永久不可用（引擎请求不带
+//     该口凭证，也不可能为免费口付费）。旧版把 407 当「可达」导致认证死口永久滞留池内
+//     （trxsw 实证：全策略 407、规则卡死、自愈组件却视其为活口不换血）。
+//   - 其余任何 HTTP 状态（含 403/503 WAF）= 可达——WAF 拦截是站点行为，出口链路是通的；
+//   - 超时/连接失败/重定向环=死口。E25：返回 (可达, 时延ms)——时延为连接+TLS+首响应
+//     头耗时，供池内快口分选与温和升级置换（不改变可达性判定口径）。
 func probeProxyViaProxy(proxy, targetURL string) (bool, int64) {
 	u, err := url.Parse(proxy)
 	if err != nil {
@@ -113,6 +117,10 @@ func probeProxyViaProxy(proxy, targetURL string) (bool, int64) {
 		return false, 0
 	}
 	defer resp.Body.Close()
+	// R97：407=代理本体要求认证，判定死口（免费口升级收费/认证策略变更均不可自愈复用）
+	if resp.StatusCode == http.StatusProxyAuthRequired {
+		return false, 0
+	}
 	_, _ = io.CopyN(io.Discard, resp.Body, 4096)
 	return true, time.Since(t0).Milliseconds()
 }

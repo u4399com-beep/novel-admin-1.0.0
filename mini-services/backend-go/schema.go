@@ -83,7 +83,12 @@ CREATE TABLE IF NOT EXISTS "SiteSetting" (
         "notice" TEXT NOT NULL DEFAULT '本站所有小说仅供学习演示使用，请支持正版。',
         "seoConfig" TEXT NOT NULL DEFAULT '{}',
         "footerConfig" TEXT NOT NULL DEFAULT '{}',
-        "homeConfig" TEXT NOT NULL DEFAULT '{}'
+        "homeConfig" TEXT NOT NULL DEFAULT '{}',
+        -- R97: 全局代理池（规则无自有 proxy 时兜底出口，逗号分隔；含凭证形如 socks5h://user:pass@host:port）
+        "proxyPool" TEXT NOT NULL DEFAULT '',
+        -- R97: TXT/封面自定义存储目录（绝对路径；空=默认 {repoRoot}/download/novels 与 {repoRoot}/public/covers）
+        "txtDir" TEXT NOT NULL DEFAULT '',
+        "coversDir" TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS "PseoKeyword" (

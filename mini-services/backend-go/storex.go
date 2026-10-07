@@ -120,15 +120,28 @@ func loadRule(ruleID *int) LoadedRule {
 		return empty
 	}
 	return LoadedRule{
-		Name:        name.String,
-		Charset:     strings.ToLower(charset.String),
-		Proxy:       strings.TrimSpace(proxy.String),
+		Name:    name.String,
+		Charset: strings.ToLower(charset.String),
+		// R97：出口选择——规则有自有 proxy 用自有池；无自有池且全局代理池非空时兜底全局池
+		//（全局池=用户在 admin「站点设置」统一配置的出口集合，语义=「未单独配出口的规则
+		// 全部走全局池」；规则自有池优先级更高，便于单站点覆盖）。全局池 10s TTL 缓存，
+		// 保存端失效钩子 + TTL 兜底，改动即时生效。
+		Proxy:       pickEgressProxy(strings.TrimSpace(proxy.String)),
 		InsecureTLS: insecure,
 		Cookies:     strings.TrimSpace(cookies.String),
 		ListRule:    safeParseRule(listRule.String),
 		BookRule:    safeParseRule(bookRule.String),
 		ChapterRule: safeParseRule(chapterRule.String),
 	}
+}
+
+// pickEgressProxy R97 出口选择：规则自有池非空 → 自有池；否则兜底全局代理池
+// （全局池读取失败/未配置返回 ""=直连，与旧行为一致）。
+func pickEgressProxy(ruleProxy string) string {
+	if ruleProxy != "" {
+		return ruleProxy
+	}
+	return globalProxyPool()
 }
 
 // mapNovelStatus 源站连载状态 → serial|finished。

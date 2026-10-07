@@ -85,7 +85,7 @@ func TestNoteChainFailureStreakEscalation(t *testing.T) {
 	defer noteChainSuccess(host, "")
 	wantPenalty := []int64{1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000} // 1s→2s→4s→8s→15s 封顶
 	for i, want := range wantPenalty {
-		noteChainFailure(host, false, nil)
+		noteChainFailure(host, false, nil, false)
 		healthMu.Lock()
 		h := healthMap[host]
 		gotPenalty, gotStreak := int64(0), 0
@@ -114,14 +114,14 @@ func TestNoteChainFailureStreakEscalation(t *testing.T) {
 func TestNoteChainFailureNetStreakPathUnchanged(t *testing.T) {
 	host := "netstreak35b.test"
 	defer noteChainSuccess(host, "")
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
 	healthMu.Lock()
 	p1 := healthMap[host].penaltyMs
 	healthMu.Unlock()
 	if p1 != netFailPenaltyBaseMS { // 1.5s
 		t.Fatalf("首次网络级连败 penalty = %d, want %d（既有口径）", p1, netFailPenaltyBaseMS)
 	}
-	noteChainFailure(host, true, nil) // netStreak=2 → 3s；同时 netBreakerStrikes=2 熔断
+	noteChainFailure(host, true, nil, false) // netStreak=2 → 3s；同时 netBreakerStrikes=2 熔断
 	healthMu.Lock()
 	p2 := healthMap[host].penaltyMs
 	healthMu.Unlock()

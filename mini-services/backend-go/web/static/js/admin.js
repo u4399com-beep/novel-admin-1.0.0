@@ -888,6 +888,10 @@
       $('#adm-set-name').value = s.siteName || '';
       $('#adm-set-notice').value = s.notice || '';
       if (s.activeTheme) $('#adm-set-theme').value = s.activeTheme;
+      // R97: 采集存储与代理池回显
+      $('#adm-set-txtdir').value = s.txtDir || '';
+      $('#adm-set-coversdir').value = s.coversDir || '';
+      $('#adm-set-proxypool').value = s.proxyPool || '';
       renderFooterForm(s.footer || {}); // Task 30 主线：表单化（告别 JSON）
       renderSeoForm(s.seo || {});
       homeBlocks = (s.home && s.home.blocks) || [];
@@ -1428,6 +1432,52 @@
         });
         toast('基础设置已保存（主题切换后刷新前台生效）', 'ok');
       } catch (e) { handleErr(e); }
+    });
+
+    /* ==================== R97: 采集存储与代理池 ==================== */
+
+    $('#adm-set-scrape-save').addEventListener('click', async function () {
+      try {
+        await api('PATCH', '/api/settings', {
+          txtDir: $('#adm-set-txtdir').value.trim(),
+          coversDir: $('#adm-set-coversdir').value.trim(),
+          proxyPool: $('#adm-set-proxypool').value.trim()
+        });
+        toast('采集设置已保存（全局代理池 10s 内生效，无需重启）', 'ok');
+      } catch (e) { handleErr(e); }
+    });
+
+    $('#adm-set-proxypool-test').addEventListener('click', async function () {
+      var pool = $('#adm-set-proxypool').value.trim();
+      var box = $('#adm-set-proxypool-results');
+      var rows = $('#adm-set-proxypool-rows');
+      var btn = this;
+      try {
+        btn.disabled = true;
+        var old = btn.textContent;
+        btn.textContent = '探测中…（单口最长 8s）';
+        var res = await api('POST', '/api/scrape/proxy-pool/test', pool ? { pool: pool } : {});
+        btn.disabled = false;
+        btn.textContent = old;
+        var items = res.results || [];
+        if (!items.length) {
+          box.classList.add('hidden');
+          return toast(res.message || '代理池为空', 'err');
+        }
+        rows.innerHTML = items.map(function (r) {
+          return '<tr>' +
+            '<td class="adm-cell-url">' + escapeHtml(r.proxy || '—') + '</td>' +
+            '<td>' + (r.ok ? '<span class="text-emerald-600">可达</span>' : '<span class="adm-danger">死口</span>') + '</td>' +
+            '<td>' + (r.ok ? (r.ms + 'ms') : '—') + '</td>' +
+            '<td class="adm-cell-url">' + escapeHtml(r.error || '') + '</td>' +
+            '</tr>';
+        }).join('');
+        box.classList.remove('hidden');
+        toast('探测完成：' + (res.alive || 0) + '/' + (res.total || items.length) + ' 口可达', (res.alive || 0) > 0 ? 'ok' : 'err');
+      } catch (e) {
+        btn.disabled = false;
+        handleErr(e);
+      }
     });
 
     $('#adm-set-footer-save').addEventListener('click', async function () {

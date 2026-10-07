@@ -12,11 +12,11 @@
 package main
 
 import (
-        "regexp"
-        "strconv"
-        "strings"
+	"regexp"
+	"strconv"
+	"strings"
 
-        "github.com/PuerkitoBio/goquery"
+	"github.com/PuerkitoBio/goquery"
 )
 
 const maxListItems = 500
@@ -27,13 +27,13 @@ const maxChapterRefs = 10000
 // 目录页噪声按钮/导航文案（trim 后全等才算）：源站书页顶部常有「立即阅读」等按钮指向第一章 URL、
 // 「第N章」形式的最新章节跳转链接指向末章 URL。只用精确全等不用子串，避免误伤真实章节标题。
 var noiseTocTitles = map[string]bool{
-        "立即阅读": true, "开始阅读": true, "点击阅读": true, "进入阅读": true, "继续阅读": true, "全文阅读": true, "免费阅读": true,
-        "无弹窗阅读": true, "最新章节": true, "最新章节列表": true, "查看目录": true, "章节目录": true, "全部目录": true, "目录": true,
-        "书签": true, "加入书签": true, "上一章": true, "下一章": true, "上一页": true, "下一页": true, "推荐票": true, "投推荐票": true,
+	"立即阅读": true, "开始阅读": true, "点击阅读": true, "进入阅读": true, "继续阅读": true, "全文阅读": true, "免费阅读": true,
+	"无弹窗阅读": true, "最新章节": true, "最新章节列表": true, "查看目录": true, "章节目录": true, "全部目录": true, "目录": true,
+	"书签": true, "加入书签": true, "上一章": true, "下一章": true, "上一页": true, "下一页": true, "推荐票": true, "投推荐票": true,
 }
 
 func isNoiseTocTitle(title string) bool {
-        return noiseTocTitles[trimJSSpace(title)]
+	return noiseTocTitles[trimJSSpace(title)]
 }
 
 // defaultTocPaginationSelectors R96（分页能力防回退）：规则未配置
@@ -43,13 +43,13 @@ func isNoiseTocTitle(title string) bool {
 // biquge 系常见分页容器（.pagelist/#pagelist/.pageNav/.page-nav/.pagebar）+
 // 文本锚兜底（a:contains(下一页)，繁体站点下一頁）。
 // 安全性：命中锚仅为「候选」——worker walker 的 visited 去重/页数上限/REPLACE 语义
-//（walker 结果章节数必须多于书页内嵌才替换）保证误锚与噪声页无实害。
+// （walker 结果章节数必须多于书页内嵌才替换）保证误锚与噪声页无实害。
 var defaultTocPaginationSelectors = []string{
-        "a.morechapter",
-        ".pagelink a", ".pageLink a", ".pagination a", ".pagination-list a",
-        ".pagelist a", "#pages a", "#pagelist a", "#page_bar a", "#pagebar a",
-        ".pageNav a", ".page-nav a", ".pagebar a", ".page_bar a",
-        "a:contains(下一页)", "a:contains(下一頁)",
+	"a.morechapter",
+	".pagelink a", ".pageLink a", ".pagination a", ".pagination-list a",
+	".pagelist a", "#pages a", "#pagelist a", "#page_bar a", "#pagebar a",
+	".pageNav a", ".page-nav a", ".pagebar a", ".page_bar a",
+	"a:contains(下一页)", "a:contains(下一頁)",
 }
 
 // R82（目录分页修复①）：biquge2023 系模板的 JS 混淆锚——目录分页页（list-N.html）
@@ -61,17 +61,17 @@ var reOnclickHref = regexp.MustCompile(`(?i)location(?:\.href)?\s*=\s*['"]([^'"]
 // effectiveAnchorHref 锚点有效 URL：href 为空/#/javascript: 时回退 onclick 内
 // location.href='...' 赋值目标；正常 href 原样返回（不覆盖真实链接）。
 func effectiveAnchorHref(a *goquery.Selection) string {
-        h := strings.TrimSpace(a.AttrOr("href", ""))
-        lh := strings.ToLower(h)
-        if h != "" && lh != "#" && !strings.HasPrefix(lh, "javascript:") {
-                return h
-        }
-        if oc := a.AttrOr("onclick", ""); oc != "" {
-                if m := reOnclickHref.FindStringSubmatch(oc); m != nil {
-                        return strings.TrimSpace(m[1])
-                }
-        }
-        return h
+	h := strings.TrimSpace(a.AttrOr("href", ""))
+	lh := strings.ToLower(h)
+	if h != "" && lh != "#" && !strings.HasPrefix(lh, "javascript:") {
+		return h
+	}
+	if oc := a.AttrOr("onclick", ""); oc != "" {
+		if m := reOnclickHref.FindStringSubmatch(oc); m != nil {
+			return strings.TrimSpace(m[1])
+		}
+	}
+	return h
 }
 
 const maxDescriptionChars = 2000
@@ -82,56 +82,56 @@ var reBoilerplateTitle = regexp.MustCompile(`站内搜索|快速找到你想要�
 
 // pickTitle 标题选择器逐个尝试，跳过命中站标样板的候选
 func pickTitle(s *goquery.Selection, selectors []string) string {
-        for _, raw := range selectors {
-                t := pickText(s, []string{raw})
-                if t != "" && !reBoilerplateTitle.MatchString(t) {
-                        return t
-                }
-        }
-        return ""
+	for _, raw := range selectors {
+		t := pickText(s, []string{raw})
+		if t != "" && !reBoilerplateTitle.MatchString(t) {
+			return t
+		}
+	}
+	return ""
 }
 
 var (
-        reTxtDownload   = regexp.MustCompile(`(?i)txt下载|全本txt|电子书下载`)
-        reStripDownload = regexp.MustCompile(`(?i)txt下载|全本txt|电子书下载|最新章节`)
-        // 杰奇系 h1 样板后缀（整词后缀且剥后仍非空才生效）
-        reSeoSuffix  = regexp.MustCompile(`(?i)(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?阅读|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt))+$`)
-        reAuthorTail = regexp.MustCompile(`(?i)作者[:：][^《》]{1,30}$`)
-        reBookTitle  = regexp.MustCompile(`^《(.+?)》$`)
+	reTxtDownload   = regexp.MustCompile(`(?i)txt下载|全本txt|电子书下载`)
+	reStripDownload = regexp.MustCompile(`(?i)txt下载|全本txt|电子书下载|最新章节`)
+	// 杰奇系 h1 样板后缀（整词后缀且剥后仍非空才生效）
+	reSeoSuffix  = regexp.MustCompile(`(?i)(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?阅读|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt))+$`)
+	reAuthorTail = regexp.MustCompile(`(?i)作者[:：][^《》]{1,30}$`)
+	reBookTitle  = regexp.MustCompile(`^《(.+?)》$`)
 )
 
 // cleanBookTitle 清理书籍标题：剥《》书名号、下载站样板、SEO 后缀、作者尾巴
 func cleanBookTitle(t string) string {
-        s := trimJSSpace(t)
-        if s == "" {
-                return ""
-        }
-        if reTxtDownload.MatchString(s) {
-                // 仅当存在下载站样板词时才按分隔符拆段，避免误伤含「_/-」的正常书名
-                seg := strings.SplitN(s, "_", 2)[0]
-                if idx := strings.IndexAny(seg, "|｜"); idx >= 0 {
-                        seg = seg[:idx]
-                }
-                seg = trimJSSpace(seg)
-                if seg != "" {
-                        s = seg
-                }
-                s = trimJSSpace(reStripDownload.ReplaceAllString(s, ""))
-        }
-        // 剥杰奇系 h1 常见样板后缀（如「葬神棺全文阅读」「XX最新章节列表」）；剥后仍非空才生效
-        stripped := trimJSSpace(reSeoSuffix.ReplaceAllString(s, ""))
-        if stripped != "" && runeLen(stripped) >= 2 {
-                s = stripped
-        }
-        // 新模板 h1 内嵌作者行（如 trxsw：h1.f21h 文本 = 「书名作者:某某」）→ 剥「作者:某某」尾巴
-        noAuthor := trimJSSpace(reAuthorTail.ReplaceAllString(s, ""))
-        if noAuthor != "" && runeLen(noAuthor) >= 2 {
-                s = noAuthor
-        }
-        if m := reBookTitle.FindStringSubmatch(s); m != nil {
-                s = m[1]
-        }
-        return s
+	s := trimJSSpace(t)
+	if s == "" {
+		return ""
+	}
+	if reTxtDownload.MatchString(s) {
+		// 仅当存在下载站样板词时才按分隔符拆段，避免误伤含「_/-」的正常书名
+		seg := strings.SplitN(s, "_", 2)[0]
+		if idx := strings.IndexAny(seg, "|｜"); idx >= 0 {
+			seg = seg[:idx]
+		}
+		seg = trimJSSpace(seg)
+		if seg != "" {
+			s = seg
+		}
+		s = trimJSSpace(reStripDownload.ReplaceAllString(s, ""))
+	}
+	// 剥杰奇系 h1 常见样板后缀（如「葬神棺全文阅读」「XX最新章节列表」）；剥后仍非空才生效
+	stripped := trimJSSpace(reSeoSuffix.ReplaceAllString(s, ""))
+	if stripped != "" && runeLen(stripped) >= 2 {
+		s = stripped
+	}
+	// 新模板 h1 内嵌作者行（如 trxsw：h1.f21h 文本 = 「书名作者:某某」）→ 剥「作者:某某」尾巴
+	noAuthor := trimJSSpace(reAuthorTail.ReplaceAllString(s, ""))
+	if noAuthor != "" && runeLen(noAuthor) >= 2 {
+		s = noAuthor
+	}
+	if m := reBookTitle.FindStringSubmatch(s); m != nil {
+		s = m[1]
+	}
+	return s
 }
 
 // cleanDescription 简介清洗：剥模板前缀「关于《书名》：/内容简介：/简介：」与首尾空白
@@ -155,15 +155,15 @@ var reDescBr = regexp.MustCompile(`(?i)<br\s*/?>`)
 var reDescTag = regexp.MustCompile(`(?i)</?[a-z][^>]{0,80}>`)
 
 func cleanDescription(t string) string {
-        // Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
-        // 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
-        t = reDescEntityFix.ReplaceAllString(t, `&#${1}${2};`)
-        t = decodeResidualEntities(t)
-        t = reDescFFFD.ReplaceAllString(t, "")
-        t = reDescBr.ReplaceAllString(t, " ")
-        t = reDescTag.ReplaceAllString(t, "")
-        t = trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
-        return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
+	// Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
+	// 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
+	t = reDescEntityFix.ReplaceAllString(t, `&#${1}${2};`)
+	t = decodeResidualEntities(t)
+	t = reDescFFFD.ReplaceAllString(t, "")
+	t = reDescBr.ReplaceAllString(t, " ")
+	t = reDescTag.ReplaceAllString(t, "")
+	t = trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
+	return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }
 
 // stripFieldLabel 分类/状态字段清洗：剥「小说分类：/书籍分类：/分类：/类型：/频道：」等标签前缀
@@ -195,22 +195,22 @@ var reGarbageCoverSrc = regexp.MustCompile(`(?i)/(?:none|null|undefined)(?:[?#].
 // 落在这些容器内则跳过，同选择器内取首个干净命中；全部候选被排除 → 返回空串
 // （渐变 token 兜底 + coverSrc 补抓通道可重试），绝不回退到被污染候选——错图比无图更糟。
 var coverNoiseContainers = []string{
-        ".recommend", "#recommend", ".recomm", ".tuijian", "#tuijian",
-        ".rank", ".ranking", "#rank", "#ranking", ".ranklist", ".rank_list", ".rank-list",
-        ".toplist", ".top-list", ".weeks-hot", ".hot-book", ".hotbook", ".hotbooks",
-        ".related", "#related", ".relate", ".xgss", ".xgbooks", ".xg_book",
-        ".rec-book", ".reco-book", ".recbox", ".rec_box",
-        ".sidebar .bookbox", ".aside .bookbox", "#sidebar .bookbox",
+	".recommend", "#recommend", ".recomm", ".tuijian", "#tuijian",
+	".rank", ".ranking", "#rank", "#ranking", ".ranklist", ".rank_list", ".rank-list",
+	".toplist", ".top-list", ".weeks-hot", ".hot-book", ".hotbook", ".hotbooks",
+	".related", "#related", ".relate", ".xgss", ".xgbooks", ".xg_book",
+	".rec-book", ".reco-book", ".recbox", ".rec_box",
+	".sidebar .bookbox", ".aside .bookbox", "#sidebar .bookbox",
 }
 
 // inCoverNoiseContainer 候选节点是否位于封面排除容器（推荐位/排行位）内
 func inCoverNoiseContainer(el *goquery.Selection) bool {
-        for _, sel := range coverNoiseContainers {
-                if el.Closest(sel).Length() > 0 {
-                        return true
-                }
-        }
-        return false
+	for _, sel := range coverNoiseContainers {
+		if el.Closest(sel).Length() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // pickCoverHref 推荐位排除版 pickHref（Task 68 封面错位根修）：与 pickHref 同签名同
@@ -218,147 +218,147 @@ func inCoverNoiseContainer(el *goquery.Selection) bool {
 // 候选，取首个干净命中；自身即命中节点（s.IsMatcher）时同样过排除检查。全部候选被
 // 排除或无命中返回空串。
 func pickCoverHref(s *goquery.Selection, rawSelectors []string, base string) string {
-        for _, raw := range rawSelectors {
-                selector, attr := parseSel(raw)
-                if selector == "" {
-                        continue
-                }
-                m := compileSel(selector)
-                if m == nil {
-                        continue
-                }
-                var node *goquery.Selection
-                s.FindMatcher(m).EachWithBreak(func(_ int, el *goquery.Selection) bool {
-                        if inCoverNoiseContainer(el) {
-                                return true // 推荐位候选，继续找下一个
-                        }
-                        node = el
-                        return false
-                })
-                if node == nil && s.Length() > 0 && s.IsMatcher(m) && !inCoverNoiseContainer(s) {
-                        node = s
-                }
-                if node == nil {
-                        continue
-                }
-                href := node.AttrOr("href", "")
-                if attr != "" {
-                        href = node.AttrOr(attr, "")
-                }
-                if abs := toAbs(href, base); abs != "" {
-                        return abs
-                }
-        }
-        return ""
+	for _, raw := range rawSelectors {
+		selector, attr := parseSel(raw)
+		if selector == "" {
+			continue
+		}
+		m := compileSel(selector)
+		if m == nil {
+			continue
+		}
+		var node *goquery.Selection
+		s.FindMatcher(m).EachWithBreak(func(_ int, el *goquery.Selection) bool {
+			if inCoverNoiseContainer(el) {
+				return true // 推荐位候选，继续找下一个
+			}
+			node = el
+			return false
+		})
+		if node == nil && s.Length() > 0 && s.IsMatcher(m) && !inCoverNoiseContainer(s) {
+			node = s
+		}
+		if node == nil {
+			continue
+		}
+		href := node.AttrOr("href", "")
+		if attr != "" {
+			href = node.AttrOr(attr, "")
+		}
+		if abs := toAbs(href, base); abs != "" {
+			return abs
+		}
+	}
+	return ""
 }
 
 // removeExcluded 规则级排除：提取前从 DOM 移除命中节点（站标/搜索框等全站样板容器），
 // 多备用逗号分隔。extractBook 与 extractChapter 各自的入口只调一次。
 func removeExcluded(root *goquery.Selection, excludeSel string, warnings *[]string) {
-        if excludeSel == "" {
-                return
-        }
-        removed := 0
-        for _, sel := range splitAlternatives(excludeSel) {
-                if m := compileSel(sel); m != nil {
-                        hit := root.FindMatcher(m)
-                        if hit.Length() > 0 {
-                                removed += hit.Length()
-                                hit.Remove()
-                        }
-                } else {
-                        *warnings = append(*warnings, "excludeSelector 含非法选择器已跳过: \""+sel+"\"")
-                }
-        }
-        if removed == 0 {
-                *warnings = append(*warnings, "excludeSelector 无命中: \""+excludeSel+"\"")
-        }
+	if excludeSel == "" {
+		return
+	}
+	removed := 0
+	for _, sel := range splitAlternatives(excludeSel) {
+		if m := compileSel(sel); m != nil {
+			hit := root.FindMatcher(m)
+			if hit.Length() > 0 {
+				removed += hit.Length()
+				hit.Remove()
+			}
+		} else {
+			*warnings = append(*warnings, "excludeSelector 含非法选择器已跳过: \""+sel+"\"")
+		}
+	}
+	if removed == 0 {
+		*warnings = append(*warnings, "excludeSelector 无命中: \""+excludeSel+"\"")
+	}
 }
 
 // ==================== List 提取 ====================
 
 var defaultItemSelectors = []string{
-        ".novel-item", ".book-item", ".bookbox", ".item", ".lirow",
-        "ul.list li", ".book-list li", ".grid li", "table tr", "li",
+	".novel-item", ".book-item", ".bookbox", ".item", ".lirow",
+	"ul.list li", ".book-list li", ".grid li", "table tr", "li",
 }
 
 func extractList(doc *goquery.Document, rule map[string]string, baseURL string, warnings *[]string) ListData {
-        root := doc.Selection
-        itemSel := ""
-        var itemEls *goquery.Selection
+	root := doc.Selection
+	itemSel := ""
+	var itemEls *goquery.Selection
 
-        if sel, ok := rule["itemSelector"]; ok && sel != "" {
-                for _, s := range splitAlternatives(sel) {
-                        if found := findSafe(root, s); found != nil && found.Length() > 0 {
-                                itemSel = s
-                                itemEls = found
-                                break
-                        }
-                }
-                if itemSel == "" {
-                        *warnings = append(*warnings, "itemSelector 在页面中无命中: \""+sel+"\"")
-                }
-        } else {
-                for _, s := range defaultItemSelectors {
-                        if found := findSafe(root, s); found != nil && found.Length() >= 3 {
-                                itemSel = s
-                                itemEls = found
-                                break
-                        }
-                }
-                if itemSel != "" {
-                        *warnings = append(*warnings, "未提供 itemSelector，使用内置候选 \""+itemSel+"\"（建议在规则中显式配置）")
-                }
-        }
+	if sel, ok := rule["itemSelector"]; ok && sel != "" {
+		for _, s := range splitAlternatives(sel) {
+			if found := findSafe(root, s); found != nil && found.Length() > 0 {
+				itemSel = s
+				itemEls = found
+				break
+			}
+		}
+		if itemSel == "" {
+			*warnings = append(*warnings, "itemSelector 在页面中无命中: \""+sel+"\"")
+		}
+	} else {
+		for _, s := range defaultItemSelectors {
+			if found := findSafe(root, s); found != nil && found.Length() >= 3 {
+				itemSel = s
+				itemEls = found
+				break
+			}
+		}
+		if itemSel != "" {
+			*warnings = append(*warnings, "未提供 itemSelector，使用内置候选 \""+itemSel+"\"（建议在规则中显式配置）")
+		}
+	}
 
-        items := []ListItem{}
-        seen := map[string]bool{}
+	items := []ListItem{}
+	seen := map[string]bool{}
 
-        if itemEls != nil {
-                sliceSel(itemEls, maxListItems).Each(func(_ int, it *goquery.Selection) {
-                        linkSels := []string{"a[href]"}
-                        if ls, ok := rule["linkSelector"]; ok && ls != "" {
-                                linkSels = splitAlternatives(ls)
-                        }
-                        linkEl := firstMatch(it, linkSels)
-                        title := ""
-                        if ts, ok := rule["titleSelector"]; ok && ts != "" {
-                                title = pickText(it, splitAlternatives(ts))
-                        }
-                        if title == "" && linkEl != nil {
-                                title = collapse(linkEl.Text())
-                        }
-                        if title == "" {
-                                if _, has := rule["titleSelector"]; !has {
-                                        anyA := it.Find("a").First()
-                                        if anyA.Length() > 0 {
-                                                title = collapse(anyA.Text())
-                                        }
-                                }
-                        }
-                        // 链接统一走 pickHref：支持 linkSelector 的 @attr 后缀与备选语义
-                        url := pickHref(it, linkSels, baseURL)
-                        author := ""
-                        if as, ok := rule["authorSelector"]; ok && as != "" {
-                                author = pickText(it, splitAlternatives(as))
-                        }
-                        category := ""
-                        if cs, ok := rule["categorySelector"]; ok && cs != "" {
-                                category = pickText(it, splitAlternatives(cs))
-                        }
-                        if title == "" && url == "" {
-                                return
-                        }
-                        key := title + "|" + url
-                        if seen[key] {
-                                return
-                        }
-                        seen[key] = true
-                        items = append(items, ListItem{Title: title, Url: strPtr(url), Author: author, Category: category})
-                })
-        }
+	if itemEls != nil {
+		sliceSel(itemEls, maxListItems).Each(func(_ int, it *goquery.Selection) {
+			linkSels := []string{"a[href]"}
+			if ls, ok := rule["linkSelector"]; ok && ls != "" {
+				linkSels = splitAlternatives(ls)
+			}
+			linkEl := firstMatch(it, linkSels)
+			title := ""
+			if ts, ok := rule["titleSelector"]; ok && ts != "" {
+				title = pickText(it, splitAlternatives(ts))
+			}
+			if title == "" && linkEl != nil {
+				title = collapse(linkEl.Text())
+			}
+			if title == "" {
+				if _, has := rule["titleSelector"]; !has {
+					anyA := it.Find("a").First()
+					if anyA.Length() > 0 {
+						title = collapse(anyA.Text())
+					}
+				}
+			}
+			// 链接统一走 pickHref：支持 linkSelector 的 @attr 后缀与备选语义
+			url := pickHref(it, linkSels, baseURL)
+			author := ""
+			if as, ok := rule["authorSelector"]; ok && as != "" {
+				author = pickText(it, splitAlternatives(as))
+			}
+			category := ""
+			if cs, ok := rule["categorySelector"]; ok && cs != "" {
+				category = pickText(it, splitAlternatives(cs))
+			}
+			if title == "" && url == "" {
+				return
+			}
+			key := title + "|" + url
+			if seen[key] {
+				return
+			}
+			seen[key] = true
+			items = append(items, ListItem{Title: title, Url: strPtr(url), Author: author, Category: category})
+		})
+	}
 
-        return ListData{Type: "list", Count: len(items), ItemSelector: itemSel, Items: items}
+	return ListData{Type: "list", Count: len(items), ItemSelector: itemSel, Items: items}
 }
 
 // ==================== Book 提取 ====================
@@ -368,326 +368,326 @@ func extractList(doc *goquery.Document, rule map[string]string, baseURL string, 
 // 多为 SEO 样板（实测 x2552.com 目录页 name=description=「书名最新章节及全本内容…」而
 // og:description 是真实简介）；og:description 走开放图谱协议、内容向，作为回退质量更稳。
 var bookFieldFallbacks = map[string][]string{
-        "title": {"meta[property=\"og:novel:book_name\"]@content", "h1", "#title", ".book-title", ".bookTitle", "title"},
-        "author": {
-                "meta[property=\"og:novel:author\"]@content", "#author", ".author", ".book-author",
-                "#info p:nth-of-type(1)", "span:contains(作者：)", "p:contains(作者：)",
-        },
-        "description": {
-                "meta[property=\"og:novel:description\"]@content", "meta[property=\"og:description\"]@content",
-                "meta[name=\"description\"]@content", "#intro", ".intro", ".book-desc", ".description", "#content dd", ".bookintro",
-        },
-        "cover": {
-                "meta[property=\"og:image\"]@content", "#fmimg img@src", ".book-img img@src",
-                ".cover img@src", ".book-cover img@src", "img.cover@src",
-        },
-        "status":   {"meta[property=\"og:novel:status\"]@content", "#status", ".book-status", ".status", ".book-state"},
-        "category": {"meta[property=\"og:novel:category\"]@content", "#category", ".book-category", ".category", ".book-cat"},
+	"title": {"meta[property=\"og:novel:book_name\"]@content", "h1", "#title", ".book-title", ".bookTitle", "title"},
+	"author": {
+		"meta[property=\"og:novel:author\"]@content", "#author", ".author", ".book-author",
+		"#info p:nth-of-type(1)", "span:contains(作者：)", "p:contains(作者：)",
+	},
+	"description": {
+		"meta[property=\"og:novel:description\"]@content", "meta[property=\"og:description\"]@content",
+		"meta[name=\"description\"]@content", "#intro", ".intro", ".book-desc", ".description", "#content dd", ".bookintro",
+	},
+	"cover": {
+		"meta[property=\"og:image\"]@content", "#fmimg img@src", ".book-img img@src",
+		".cover img@src", ".book-cover img@src", "img.cover@src",
+	},
+	"status":   {"meta[property=\"og:novel:status\"]@content", "#status", ".book-status", ".status", ".book-state"},
+	"category": {"meta[property=\"og:novel:category\"]@content", "#category", ".book-category", ".category", ".book-cat"},
 }
 
 var (
-        reChapterText = regexp.MustCompile(`^第\s*[0-9〇零一二两三四五六七八九十百千万]+\s*[章节卷回（(]`)
-        reChapterURL  = regexp.MustCompile(`(?i)/\d+[_\d]*\.html?$`)
+	reChapterText = regexp.MustCompile(`^第\s*[0-9〇零一二两三四五六七八九十百千万]+\s*[章节卷回（(]`)
+	reChapterURL  = regexp.MustCompile(`(?i)/\d+[_\d]*\.html?$`)
 )
 
 // chapterLike 判断一个链接是否"章节样式"（标题正则或 /123.html 型 URL）
 func chapterLike(a *goquery.Selection) bool {
-        t := collapse(a.Text())
-        if t == "" || runeLen(t) > 60 {
-                return false
-        }
-        return reChapterText.MatchString(t) || reChapterURL.MatchString(a.AttrOr("href", ""))
+	t := collapse(a.Text())
+	if t == "" || runeLen(t) > 60 {
+		return false
+	}
+	return reChapterText.MatchString(t) || reChapterURL.MatchString(a.AttrOr("href", ""))
 }
 
 func extractChapterRefs(doc *goquery.Document, rule map[string]string, baseURL string, warnings *[]string) []BookChapterRef {
-        // chapterLinkSelector=none：显式跳过章节列表提取（元数据站/下载站，避免误判串书）
-        if cls, ok := rule["chapterLinkSelector"]; ok && strings.ToLower(strings.TrimSpace(cls)) == "none" {
-                *warnings = append(*warnings, "chapterLinkSelector=none：按配置跳过章节列表提取（元数据/下载站）")
-                return []BookChapterRef{}
-        }
-        root := doc.Selection
-        var linkEls *goquery.Selection
-        usedRule := false
+	// chapterLinkSelector=none：显式跳过章节列表提取（元数据站/下载站，避免误判串书）
+	if cls, ok := rule["chapterLinkSelector"]; ok && strings.ToLower(strings.TrimSpace(cls)) == "none" {
+		*warnings = append(*warnings, "chapterLinkSelector=none：按配置跳过章节列表提取（元数据/下载站）")
+		return []BookChapterRef{}
+	}
+	root := doc.Selection
+	var linkEls *goquery.Selection
+	usedRule := false
 
-        if cls, ok := rule["chapterLinkSelector"]; ok && cls != "" {
-                for _, sel := range splitAlternatives(cls) {
-                        if found := findSafe(root, sel); found != nil && found.Length() > 0 {
-                                linkEls = found
-                                usedRule = true
-                                break
-                        }
-                }
-                if linkEls == nil {
-                        *warnings = append(*warnings, "chapterLinkSelector 在页面中无命中: \""+cls+"\"")
-                }
-        }
+	if cls, ok := rule["chapterLinkSelector"]; ok && cls != "" {
+		for _, sel := range splitAlternatives(cls) {
+			if found := findSafe(root, sel); found != nil && found.Length() > 0 {
+				linkEls = found
+				usedRule = true
+				break
+			}
+		}
+		if linkEls == nil {
+			*warnings = append(*warnings, "chapterLinkSelector 在页面中无命中: \""+cls+"\"")
+		}
+	}
 
-        if linkEls == nil {
-                // 启发式：在常见目录容器中挑选"章节样式链接"最多者；全局兜底按标题正则筛
-                containerSelectors := []string{"#list", ".listmain", "#chapterList", ".chapter-list", "#chapters", ".catalog", ".book-list", "dl"}
-                var best *goquery.Selection
-                bestCount := 0
-                bestSel := ""
-                for _, sel := range containerSelectors {
-                        container := findSafe(root, sel)
-                        if container == nil || container.Length() == 0 {
-                                continue
-                        }
-                        container = container.First() // 与 TS 一致：只统计首个命中容器
-                        n := container.FindMatcher(compileSel("a[href]")).FilterFunction(func(_ int, a *goquery.Selection) bool {
-                                return chapterLike(a)
-                        }).Length()
-                        if n > bestCount {
-                                bestCount = n
-                                best = container
-                                bestSel = sel
-                        }
-                }
-                if best != nil && bestCount > 0 {
-                        // 启发式路径只保留"章节样式"链接，避免容器内导航/推荐链接混入
-                        linkEls = best.Find("a[href]").FilterFunction(func(_ int, a *goquery.Selection) bool {
-                                return chapterLike(a)
-                        })
-                        *warnings = append(*warnings, "章节链接由内置启发式获得（容器 \""+bestSel+"\"，命中 "+strconv.Itoa(bestCount)+" 条章节样式链接），建议在规则中显式配置 chapterLinkSelector")
-                } else {
-                        global := root.Find("a[href]").FilterFunction(func(_ int, a *goquery.Selection) bool {
-                                t := collapse(a.Text())
-                                return t != "" && runeLen(t) <= 60 && reChapterText.MatchString(t)
-                        })
-                        if global.Length() > 0 {
-                                linkEls = global
-                                *warnings = append(*warnings, "章节链接由全局\"第N章\"标题正则启发式获得")
-                        }
-                }
-        }
+	if linkEls == nil {
+		// 启发式：在常见目录容器中挑选"章节样式链接"最多者；全局兜底按标题正则筛
+		containerSelectors := []string{"#list", ".listmain", "#chapterList", ".chapter-list", "#chapters", ".catalog", ".book-list", "dl"}
+		var best *goquery.Selection
+		bestCount := 0
+		bestSel := ""
+		for _, sel := range containerSelectors {
+			container := findSafe(root, sel)
+			if container == nil || container.Length() == 0 {
+				continue
+			}
+			container = container.First() // 与 TS 一致：只统计首个命中容器
+			n := container.FindMatcher(compileSel("a[href]")).FilterFunction(func(_ int, a *goquery.Selection) bool {
+				return chapterLike(a)
+			}).Length()
+			if n > bestCount {
+				bestCount = n
+				best = container
+				bestSel = sel
+			}
+		}
+		if best != nil && bestCount > 0 {
+			// 启发式路径只保留"章节样式"链接，避免容器内导航/推荐链接混入
+			linkEls = best.Find("a[href]").FilterFunction(func(_ int, a *goquery.Selection) bool {
+				return chapterLike(a)
+			})
+			*warnings = append(*warnings, "章节链接由内置启发式获得（容器 \""+bestSel+"\"，命中 "+strconv.Itoa(bestCount)+" 条章节样式链接），建议在规则中显式配置 chapterLinkSelector")
+		} else {
+			global := root.Find("a[href]").FilterFunction(func(_ int, a *goquery.Selection) bool {
+				t := collapse(a.Text())
+				return t != "" && runeLen(t) <= 60 && reChapterText.MatchString(t)
+			})
+			if global.Length() > 0 {
+				linkEls = global
+				*warnings = append(*warnings, "章节链接由全局\"第N章\"标题正则启发式获得")
+			}
+		}
+	}
 
-        refs := []BookChapterRef{}
-        // URL → refs 数组下标；同 URL 重复时保留后出现者（删除前位再追加）
-        seen := map[string]int{}
-        selfURL := toAbs(baseURL, baseURL)
-        stripHash := func(u string) string {
-                if idx := strings.Index(u, "#"); idx >= 0 {
-                        return u[:idx]
-                }
-                return u
-        }
-        selfURLNoHash := ""
-        if selfURL != "" {
-                selfURLNoHash = stripHash(selfURL)
-        }
-        if linkEls != nil {
-                sliceSel(linkEls, maxChapterRefs).Each(func(_ int, a *goquery.Selection) {
-                        title := ""
-                        if usedRule {
-                                if cts, ok := rule["chapterTitleSelector"]; ok && cts != "" {
-                                        title = pickText(a, splitAlternatives(cts))
-                                }
-                        }
-                        if title == "" {
-                                title = collapse(a.Text())
-                        }
-                        // R82：effectiveAnchorHref——href=javascript:; 的混淆锚回退 onclick 提取
-                        url := toAbs(effectiveAnchorHref(a), baseURL)
-                        // 无 URL 的引用无法被采集（下游 worker 也会过滤），直接跳过
-                        if url == "" {
-                                return
-                        }
-                        if isNoiseTocTitle(title) {
-                                return // 目录页按钮/导航文案（立即阅读/最新章节跳转等）
-                        }
-                        if title != "" && runeLen(title) > 80 {
-                                return // 明显不是章节链接
-                        }
-                        if stripHash(url) == selfURLNoHash {
-                                return // 跳过指向当前页的自链接（含锚点变体）
-                        }
-                        key := stripHash(url) // 去重忽略锚点，避免同章多锚点重复
-                        if prevIdx, exists := seen[key]; exists {
-                                // 同 URL 重复：后出现者胜（更可能来自真实目录列表），原位删除后按当前 DOM 顺序追加
-                                refs = append(refs[:prevIdx], refs[prevIdx+1:]...)
-                                for k, idx := range seen {
-                                        if idx > prevIdx {
-                                                seen[k] = idx - 1
-                                        }
-                                }
-                        }
-                        seen[key] = len(refs)
-                        refs = append(refs, BookChapterRef{Title: title, Url: strPtr(url)})
-                })
-        }
+	refs := []BookChapterRef{}
+	// URL → refs 数组下标；同 URL 重复时保留后出现者（删除前位再追加）
+	seen := map[string]int{}
+	selfURL := toAbs(baseURL, baseURL)
+	stripHash := func(u string) string {
+		if idx := strings.Index(u, "#"); idx >= 0 {
+			return u[:idx]
+		}
+		return u
+	}
+	selfURLNoHash := ""
+	if selfURL != "" {
+		selfURLNoHash = stripHash(selfURL)
+	}
+	if linkEls != nil {
+		sliceSel(linkEls, maxChapterRefs).Each(func(_ int, a *goquery.Selection) {
+			title := ""
+			if usedRule {
+				if cts, ok := rule["chapterTitleSelector"]; ok && cts != "" {
+					title = pickText(a, splitAlternatives(cts))
+				}
+			}
+			if title == "" {
+				title = collapse(a.Text())
+			}
+			// R82：effectiveAnchorHref——href=javascript:; 的混淆锚回退 onclick 提取
+			url := toAbs(effectiveAnchorHref(a), baseURL)
+			// 无 URL 的引用无法被采集（下游 worker 也会过滤），直接跳过
+			if url == "" {
+				return
+			}
+			if isNoiseTocTitle(title) {
+				return // 目录页按钮/导航文案（立即阅读/最新章节跳转等）
+			}
+			if title != "" && runeLen(title) > 80 {
+				return // 明显不是章节链接
+			}
+			if stripHash(url) == selfURLNoHash {
+				return // 跳过指向当前页的自链接（含锚点变体）
+			}
+			key := stripHash(url) // 去重忽略锚点，避免同章多锚点重复
+			if prevIdx, exists := seen[key]; exists {
+				// 同 URL 重复：后出现者胜（更可能来自真实目录列表），原位删除后按当前 DOM 顺序追加
+				refs = append(refs[:prevIdx], refs[prevIdx+1:]...)
+				for k, idx := range seen {
+					if idx > prevIdx {
+						seen[k] = idx - 1
+					}
+				}
+			}
+			seen[key] = len(refs)
+			refs = append(refs, BookChapterRef{Title: title, Url: strPtr(url)})
+		})
+	}
 
-        // 最后兜底：杰奇 meta 最新章（噪声文案过滤后才启用）
-        if len(refs) == 0 {
-                url := pickHref(root, []string{"meta[property=\"og:novel:latest_chapter_url\"]@content"}, baseURL)
-                latestTitle := pickText(root, []string{"meta[property=\"og:novel:latest_chapter_name\"]@content"})
-                if url != "" && latestTitle != "" && !isNoiseTocTitle(latestTitle) {
-                        refs = append(refs, BookChapterRef{Title: latestTitle, Url: strPtr(url)})
-                        *warnings = append(*warnings, "未找到章节列表，回退 og:novel:latest_chapter_* meta（仅最新一章）")
-                }
-        }
-        return refs
+	// 最后兜底：杰奇 meta 最新章（噪声文案过滤后才启用）
+	if len(refs) == 0 {
+		url := pickHref(root, []string{"meta[property=\"og:novel:latest_chapter_url\"]@content"}, baseURL)
+		latestTitle := pickText(root, []string{"meta[property=\"og:novel:latest_chapter_name\"]@content"})
+		if url != "" && latestTitle != "" && !isNoiseTocTitle(latestTitle) {
+			refs = append(refs, BookChapterRef{Title: latestTitle, Url: strPtr(url)})
+			*warnings = append(*warnings, "未找到章节列表，回退 og:novel:latest_chapter_* meta（仅最新一章）")
+		}
+	}
+	return refs
 }
 
 func extractBook(doc *goquery.Document, rule map[string]string, baseURL string, warnings *[]string) BookData {
-        return extractBookBudgeted(doc, rule, baseURL, warnings, 0)
+	return extractBookBudgeted(doc, rule, baseURL, warnings, 0)
 }
 
 // extractBookBudgeted 带剩余消费预算版 extractBook（R86）：
 // tocRemainingMs = 消费方超时预算剩余毫秒（<=0 = 未知，走旧 5s 固定档）。
 // 唯一消费方是 bookRule.chapterListApi 的取槽排队预算（见 jsontoc.go tocSlotBudget）——
 // 该请求在链预算之外排队，必须计入消费方 60s 超时的剩余量才既能放大队列容忍度
-//（多书并发下旧 5s 档必 shed → 目录截断），又不至突破总超时。
+// （多书并发下旧 5s 档必 shed → 目录截断），又不至突破总超时。
 func extractBookBudgeted(doc *goquery.Document, rule map[string]string, baseURL string, warnings *[]string, tocRemainingMs int64) BookData {
-        root := doc.Selection
-        removeExcluded(root, rule["excludeSelector"], warnings)
+	root := doc.Selection
+	removeExcluded(root, rule["excludeSelector"], warnings)
 
-        field := func(ruleKey string, fallbacks []string) string {
-                sels := []string{}
-                if v, ok := rule[ruleKey]; ok && v != "" {
-                        sels = append(sels, splitAlternatives(v)...)
-                }
-                sels = append(sels, fallbacks...)
-                return pickText(root, sels)
-        }
+	field := func(ruleKey string, fallbacks []string) string {
+		sels := []string{}
+		if v, ok := rule[ruleKey]; ok && v != "" {
+			sels = append(sels, splitAlternatives(v)...)
+		}
+		sels = append(sels, fallbacks...)
+		return pickText(root, sels)
+	}
 
-        titleSels := []string{}
-        if ts, ok := rule["titleSelector"]; ok && ts != "" {
-                titleSels = append(titleSels, splitAlternatives(ts)...)
-        }
-        titleSels = append(titleSels, bookFieldFallbacks["title"]...)
-        title := cleanBookTitle(truncateStr(pickTitle(root, titleSels), maxTitleChars))
-        author := stripAuthorLabel(truncateStr(field("authorSelector", bookFieldFallbacks["author"]), maxTitleChars))
-        description := cleanDescription(truncateStr(field("descriptionSelector", bookFieldFallbacks["description"]), maxDescriptionChars))
-        status := stripFieldLabel(truncateStr(field("statusSelector", bookFieldFallbacks["status"]), 50))
-        category := stripFieldLabel(truncateStr(field("categorySelector", bookFieldFallbacks["category"]), 50))
+	titleSels := []string{}
+	if ts, ok := rule["titleSelector"]; ok && ts != "" {
+		titleSels = append(titleSels, splitAlternatives(ts)...)
+	}
+	titleSels = append(titleSels, bookFieldFallbacks["title"]...)
+	title := cleanBookTitle(truncateStr(pickTitle(root, titleSels), maxTitleChars))
+	author := stripAuthorLabel(truncateStr(field("authorSelector", bookFieldFallbacks["author"]), maxTitleChars))
+	description := cleanDescription(truncateStr(field("descriptionSelector", bookFieldFallbacks["description"]), maxDescriptionChars))
+	status := stripFieldLabel(truncateStr(field("statusSelector", bookFieldFallbacks["status"]), 50))
+	category := stripFieldLabel(truncateStr(field("categorySelector", bookFieldFallbacks["category"]), 50))
 
-        coverSels := []string{}
-        if cs, ok := rule["coverSelector"]; ok && cs != "" {
-                coverSels = append(coverSels, splitAlternatives(cs)...)
-        }
-        coverSels = append(coverSels, bookFieldFallbacks["cover"]...)
-        // Task 28-a: 占位封面过滤——部分站点给所有无封面的书统一返回 nocover.svg 类占位图
-        // （实测 huangjinwu.org /public/nocover.svg）。照单全收会把占位图当真封面入库；
-        // 逐候选跳过占位 URL，全部占位时返回空串，由主站落「确定性渐变封面」兜底。
-        cover := ""
-        for _, sel := range coverSels {
-                // Task 68: pickCoverHref——推荐位容器内候选先排除（封面-书籍错位根修）
-                // R84: 垃圾 URL 双重拒绝——占位特征 + None/null 字面量末段
-                if u := pickCoverHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) && !reGarbageCoverSrc.MatchString(u) {
-                        cover = u
-                        break
-                }
-        }
+	coverSels := []string{}
+	if cs, ok := rule["coverSelector"]; ok && cs != "" {
+		coverSels = append(coverSels, splitAlternatives(cs)...)
+	}
+	coverSels = append(coverSels, bookFieldFallbacks["cover"]...)
+	// Task 28-a: 占位封面过滤——部分站点给所有无封面的书统一返回 nocover.svg 类占位图
+	// （实测 huangjinwu.org /public/nocover.svg）。照单全收会把占位图当真封面入库；
+	// 逐候选跳过占位 URL，全部占位时返回空串，由主站落「确定性渐变封面」兜底。
+	cover := ""
+	for _, sel := range coverSels {
+		// Task 68: pickCoverHref——推荐位容器内候选先排除（封面-书籍错位根修）
+		// R84: 垃圾 URL 双重拒绝——占位特征 + None/null 字面量末段
+		if u := pickCoverHref(root, []string{sel}, baseURL); u != "" && !rePlaceholderCover.MatchString(u) && !reGarbageCoverSrc.MatchString(u) {
+			cover = u
+			break
+		}
+	}
 
-        chapters := extractChapterRefs(doc, rule, baseURL, warnings)
+	chapters := extractChapterRefs(doc, rule, baseURL, warnings)
 
-        // JSON 目录接口（bookRule.chapterListApi）：书页无完整 HTML 目录、完整目录由同源 AJAX
-        // 端点提供的现代 CMS（实测 ixdzs8.com POST /novel/clist/）。
-        // 仅当解析出的条目多于书页 HTML 内嵌章节时才采用（避免接口异常时反而丢失已有目录）。
-        if api, ok := rule["chapterListApi"]; ok && api != "" {
-                cfg, cfgErr := parseChapterListApi(api)
-                if cfgErr != "" {
-                        *warnings = append(*warnings, "chapterListApi 配置无效："+cfgErr)
-                } else {
-                        apiRefs := extractJsonTocBudgeted(root, cfg, baseURL, warnings, tocRemainingMs)
-                        if len(apiRefs) > len(chapters) {
-                                *warnings = append(*warnings, "chapterListApi：JSON 目录 "+strconv.Itoa(len(apiRefs))+" 条优于书页内嵌 "+strconv.Itoa(len(chapters))+" 条，已采用")
-                                chapters = apiRefs
-                        }
-                }
-        }
+	// JSON 目录接口（bookRule.chapterListApi）：书页无完整 HTML 目录、完整目录由同源 AJAX
+	// 端点提供的现代 CMS（实测 ixdzs8.com POST /novel/clist/）。
+	// 仅当解析出的条目多于书页 HTML 内嵌章节时才采用（避免接口异常时反而丢失已有目录）。
+	if api, ok := rule["chapterListApi"]; ok && api != "" {
+		cfg, cfgErr := parseChapterListApi(api)
+		if cfgErr != "" {
+			*warnings = append(*warnings, "chapterListApi 配置无效："+cfgErr)
+		} else {
+			apiRefs := extractJsonTocBudgeted(root, cfg, baseURL, warnings, tocRemainingMs)
+			if len(apiRefs) > len(chapters) {
+				*warnings = append(*warnings, "chapterListApi：JSON 目录 "+strconv.Itoa(len(apiRefs))+" 条优于书页内嵌 "+strconv.Itoa(len(chapters))+" 条，已采用")
+				chapters = apiRefs
+			}
+		}
+	}
 
-        // 目录页链接（可选）：书页仅含最新几章时指向完整目录页，供 worker 二次抓取
-        var catalogURL *string
-        if cls, ok := rule["catalogLinkSelector"]; ok && cls != "" {
-                if u := pickHref(root, splitAlternatives(cls), baseURL); u != "" {
-                        catalogURL = &u
-                }
-        }
+	// 目录页链接（可选）：书页仅含最新几章时指向完整目录页，供 worker 二次抓取
+	var catalogURL *string
+	if cls, ok := rule["catalogLinkSelector"]; ok && cls != "" {
+		if u := pickHref(root, splitAlternatives(cls), baseURL); u != "" {
+			catalogURL = &u
+		}
+	}
 
-        // R82（目录分页修复②）：目录分页链接（可选规则键 chapterListPaginationSelector）。
-        // 分页目录站（biquge2023 系实测 xinjianpan：书页 .all 块服务端只渲染前 100 章）
-        // 在目录块尾部放「更多章节列表」锚组（a.morechapter → list-1.html…list-N.html，
-        // 每页 100 章且导航全列出）。命中锚的 href（含 onclick 混淆）转绝对 URL 作 tocPages
-        // 返回，供 worker 目录 walker 逐页跟随。去重保序；自页剔除；上限 200 防异常页。
-        //
-        // R96（分页能力防回退）：R82-R95 的分页规则修复只落了运行时 DB（API PUT），
-        // seed.json/存量库规则全部缺失该键 → TocPages 恒空 → walker 从不运行 → 目录恒为
-        // 书页内嵌前 100 章 + 最新章节块（用户实证《诸天领主》1-100 后直跳 796）。
-        // 现规则键未配置时启用内置机会性选择器组（R94 xinjianpan/ggd66 实测集合的超集）：
-        // 存量库/老部署零配置即恢复分页能力；REPLACE 语义（walker 结果仅在内嵌更多时替换）
-        // + visited 去重 + 页数上限保证误锚无实害。
-        tocPages := []string{}
-        ps := strings.TrimSpace(rule["chapterListPaginationSelector"])
-        paginationFallback := ps == ""
-        if paginationFallback {
-                ps = strings.Join(defaultTocPaginationSelectors, ",")
-        }
-        {
-                seenPage := map[string]bool{}
-                selfPage := ""
-                if u := toAbs(baseURL, baseURL); u != "" {
-                        if idx := strings.Index(u, "#"); idx >= 0 {
-                                u = u[:idx]
-                        }
-                        selfPage = u
-                }
-                for _, sel := range splitAlternatives(ps) {
-                        els := findSafe(root, sel)
-                        if els == nil || els.Length() == 0 {
-                                continue
-                        }
-                        sliceSel(els, 200).Each(func(_ int, a *goquery.Selection) {
-                                u := toAbs(effectiveAnchorHref(a), baseURL)
-                                if u == "" {
-                                        return
-                                }
-                                if idx := strings.Index(u, "#"); idx >= 0 {
-                                        u = u[:idx]
-                                }
-                                if u == selfPage || seenPage[u] {
-                                        return
-                                }
-                                seenPage[u] = true
-                                tocPages = append(tocPages, u)
-                        })
-                }
-                if len(tocPages) > 0 {
-                        // 警告文案必须同时含「chapterListPaginationSelector」「发现目录分页」
-                        // 两个子串——后端 pageWarnedTocPagination 重试护栏按子串匹配（勿改）
-                        msg := "chapterListPaginationSelector"
-                        if paginationFallback {
-                                msg += "（内置机会性回退）"
-                        }
-                        *warnings = append(*warnings, msg+"：发现目录分页 "+strconv.Itoa(len(tocPages))+" 页，由 worker 逐页跟随")
-                }
-        }
+	// R82（目录分页修复②）：目录分页链接（可选规则键 chapterListPaginationSelector）。
+	// 分页目录站（biquge2023 系实测 xinjianpan：书页 .all 块服务端只渲染前 100 章）
+	// 在目录块尾部放「更多章节列表」锚组（a.morechapter → list-1.html…list-N.html，
+	// 每页 100 章且导航全列出）。命中锚的 href（含 onclick 混淆）转绝对 URL 作 tocPages
+	// 返回，供 worker 目录 walker 逐页跟随。去重保序；自页剔除；上限 200 防异常页。
+	//
+	// R96（分页能力防回退）：R82-R95 的分页规则修复只落了运行时 DB（API PUT），
+	// seed.json/存量库规则全部缺失该键 → TocPages 恒空 → walker 从不运行 → 目录恒为
+	// 书页内嵌前 100 章 + 最新章节块（用户实证《诸天领主》1-100 后直跳 796）。
+	// 现规则键未配置时启用内置机会性选择器组（R94 xinjianpan/ggd66 实测集合的超集）：
+	// 存量库/老部署零配置即恢复分页能力；REPLACE 语义（walker 结果仅在内嵌更多时替换）
+	// + visited 去重 + 页数上限保证误锚无实害。
+	tocPages := []string{}
+	ps := strings.TrimSpace(rule["chapterListPaginationSelector"])
+	paginationFallback := ps == ""
+	if paginationFallback {
+		ps = strings.Join(defaultTocPaginationSelectors, ",")
+	}
+	{
+		seenPage := map[string]bool{}
+		selfPage := ""
+		if u := toAbs(baseURL, baseURL); u != "" {
+			if idx := strings.Index(u, "#"); idx >= 0 {
+				u = u[:idx]
+			}
+			selfPage = u
+		}
+		for _, sel := range splitAlternatives(ps) {
+			els := findSafe(root, sel)
+			if els == nil || els.Length() == 0 {
+				continue
+			}
+			sliceSel(els, 200).Each(func(_ int, a *goquery.Selection) {
+				u := toAbs(effectiveAnchorHref(a), baseURL)
+				if u == "" {
+					return
+				}
+				if idx := strings.Index(u, "#"); idx >= 0 {
+					u = u[:idx]
+				}
+				if u == selfPage || seenPage[u] {
+					return
+				}
+				seenPage[u] = true
+				tocPages = append(tocPages, u)
+			})
+		}
+		if len(tocPages) > 0 {
+			// 警告文案必须同时含「chapterListPaginationSelector」「发现目录分页」
+			// 两个子串——后端 pageWarnedTocPagination 重试护栏按子串匹配（勿改）
+			msg := "chapterListPaginationSelector"
+			if paginationFallback {
+				msg += "（内置机会性回退）"
+			}
+			*warnings = append(*warnings, msg+"：发现目录分页 "+strconv.Itoa(len(tocPages))+" 页，由 worker 逐页跟随")
+		}
+	}
 
-        if title == "" {
-                *warnings = append(*warnings, "书籍标题未提取到（规则与内置回退均未命中）")
-        }
+	if title == "" {
+		*warnings = append(*warnings, "书籍标题未提取到（规则与内置回退均未命中）")
+	}
 
-        return BookData{
-                Type: "book", Title: title, Author: author, Description: description,
-                Cover: strPtr(cover), Status: status, Category: category,
-                ChapterCount: len(chapters), Chapters: chapters, CatalogUrl: catalogURL,
-                TocPages: tocPages,
-        }
+	return BookData{
+		Type: "book", Title: title, Author: author, Description: description,
+		Cover: strPtr(cover), Status: status, Category: category,
+		ChapterCount: len(chapters), Chapters: chapters, CatalogUrl: catalogURL,
+		TocPages: tocPages,
+	}
 }
 
 // ==================== Chapter 提取 ====================
 
 var defaultContentSelectors = []string{
-        "#contenttxt", "#content", "#booktxt", "#htmlContent", "#chaptercontent",
-        "#txtContent", "#txtcontent", "#nr1", "#nr", "#conts", "#contents",
-        ".showtxt", ".read-content", ".readcontent", "#BookText", "#book_text",
-        ".txtnav", "article", ".article-content", ".content", "#txt", "#text",
+	"#contenttxt", "#content", "#booktxt", "#htmlContent", "#chaptercontent",
+	"#txtContent", "#txtcontent", "#nr1", "#nr", "#conts", "#contents",
+	".showtxt", ".read-content", ".readcontent", "#BookText", "#book_text",
+	".txtnav", "article", ".article-content", ".content", "#txt", "#text",
 }
 
 var defaultChapterTitleSelectors = []string{"h1", ".bookname h1", "#nr_title", ".read-title", ".title", "h2"}
 
 var heuristicNextSelectors = []string{
-        "a[rel=\"next\"]", "a:contains(下一页)", "a:contains(下一章)", "a:contains(下一頁)", "a:contains(下页)",
+	"a[rel=\"next\"]", "a:contains(下一页)", "a:contains(下一章)", "a:contains(下一頁)", "a:contains(下页)",
 }
 
 // 上一页/上一章链接文本：部分站点把上一章锚点误标 rel="next"（实测 huangjinwu.org），
@@ -699,186 +699,186 @@ var rePrevLinkText = regexp.MustCompile(`(?i)上一[页章頁]|前一[页章頁]
 var reNextPageVar = regexp.MustCompile(`(?i)(?:var|const|let)\s+(?:next_?page|next_?url|nextChapterUrl|nextChapter)\s*=\s*["']([^"']+)["']|["']?(?:next_?page|next_?url)["']?\s*:\s*["']([^"']+)["']`)
 
 func nextUrlFromScripts(doc *goquery.Document, baseURL string) string {
-        var texts []string
-        doc.Find("script").Each(func(_ int, el *goquery.Selection) {
-                t := el.Text()
-                if t != "" && runeLen(t) < 20_000 {
-                        texts = append(texts, t)
-                }
-        })
-        for _, text := range texts {
-                for _, m := range reNextPageVar.FindAllStringSubmatch(text, -1) {
-                        v := m[1]
-                        if v == "" {
-                                v = m[2]
-                        }
-                        if abs := toAbs(v, baseURL); abs != "" {
-                                return abs
-                        }
-                }
-        }
-        return ""
+	var texts []string
+	doc.Find("script").Each(func(_ int, el *goquery.Selection) {
+		t := el.Text()
+		if t != "" && runeLen(t) < 20_000 {
+			texts = append(texts, t)
+		}
+	})
+	for _, text := range texts {
+		for _, m := range reNextPageVar.FindAllStringSubmatch(text, -1) {
+			v := m[1]
+			if v == "" {
+				v = m[2]
+			}
+			if abs := toAbs(v, baseURL); abs != "" {
+				return abs
+			}
+		}
+	}
+	return ""
 }
 
 // 剥 CMS 分页样式后缀（如「第1章 合欢宗(第1/2页)」「（3/5）」）
 var reDePage = regexp.MustCompile(`\s*[（(]\s*第?\s*\d+\s*/\s*\d+\s*[页頁]?\s*[)）]\s*$`)
 
 func extractChapter(doc *goquery.Document, rule map[string]string, baseURL string, warnings *[]string) ChapterData {
-        root := doc.Selection
-        removeExcluded(root, rule["excludeSelector"], warnings)
+	root := doc.Selection
+	removeExcluded(root, rule["excludeSelector"], warnings)
 
-        // ---- 标题 ----
-        titleSels := []string{}
-        if ts, ok := rule["titleSelector"]; ok && ts != "" {
-                titleSels = append(titleSels, splitAlternatives(ts)...)
-        }
-        titleSels = append(titleSels, defaultChapterTitleSelectors...)
-        title := truncateStr(pickTitle(root, titleSels), maxTitleChars)
-        if title != "" {
-                // 剥分页样式后缀：分页信息属元数据，翻页由 nextSelector/worker 负责
-                dePaged := trimJSSpace(reDePage.ReplaceAllString(title, ""))
-                if dePaged != "" && runeLen(dePaged) >= 2 {
-                        title = dePaged
-                }
-        }
-        if title == "" {
-                t := truncateStr(collapse(doc.Find("title").First().Text()), maxTitleChars)
-                // <title> 兜底同样要过站标样板过滤
-                if t != "" && !reBoilerplateTitle.MatchString(t) {
-                        title = t
-                        *warnings = append(*warnings, "章节标题未命中规则选择器，回退 <title> 标签（可能含站名后缀，建议显式配置 titleSelector）")
-                }
-        }
+	// ---- 标题 ----
+	titleSels := []string{}
+	if ts, ok := rule["titleSelector"]; ok && ts != "" {
+		titleSels = append(titleSels, splitAlternatives(ts)...)
+	}
+	titleSels = append(titleSels, defaultChapterTitleSelectors...)
+	title := truncateStr(pickTitle(root, titleSels), maxTitleChars)
+	if title != "" {
+		// 剥分页样式后缀：分页信息属元数据，翻页由 nextSelector/worker 负责
+		dePaged := trimJSSpace(reDePage.ReplaceAllString(title, ""))
+		if dePaged != "" && runeLen(dePaged) >= 2 {
+			title = dePaged
+		}
+	}
+	if title == "" {
+		t := truncateStr(collapse(doc.Find("title").First().Text()), maxTitleChars)
+		// <title> 兜底同样要过站标样板过滤
+		if t != "" && !reBoilerplateTitle.MatchString(t) {
+			title = t
+			*warnings = append(*warnings, "章节标题未命中规则选择器，回退 <title> 标签（可能含站名后缀，建议显式配置 titleSelector）")
+		}
+	}
 
-        // ---- 正文 ----
-        contentSels := defaultContentSelectors
-        if cs, ok := rule["contentSelector"]; ok && cs != "" {
-                contentSels = splitAlternatives(cs)
-        } else {
-                *warnings = append(*warnings, "未提供 contentSelector，使用内置候选选择器匹配正文（结果仅供参考）")
-        }
+	// ---- 正文 ----
+	contentSels := defaultContentSelectors
+	if cs, ok := rule["contentSelector"]; ok && cs != "" {
+		contentSels = splitAlternatives(cs)
+	} else {
+		*warnings = append(*warnings, "未提供 contentSelector，使用内置候选选择器匹配正文（结果仅供参考）")
+	}
 
-        var best cleanedContent
-        bestLen := -1
-        for _, raw := range contentSels {
-                selector, _ := parseSel(raw)
-                if selector == "" {
-                        continue
-                }
-                m := compileSel(selector)
-                if m == nil {
-                        continue
-                }
-                el := root.FindMatcher(m).First()
-                if el.Length() == 0 {
-                        continue
-                }
-                cleaned := cleanContainer(el)
-                if len(cleaned.text) > bestLen {
-                        bestLen = len(cleaned.text)
-                        best = cleaned
-                }
-                // 规则选择器按备选顺序取第一个"足够长"的命中（>=80 字），避免被小预览框截胡
-                if _, hasRule := rule["contentSelector"]; hasRule && runeLen(cleaned.text) >= 80 { // Task 34 (P3-20): rune 计（字节计对 CJK 宽 3 倍，首个备选易截胡）
-                        break
-                }
-        }
+	var best cleanedContent
+	bestLen := -1
+	for _, raw := range contentSels {
+		selector, _ := parseSel(raw)
+		if selector == "" {
+			continue
+		}
+		m := compileSel(selector)
+		if m == nil {
+			continue
+		}
+		el := root.FindMatcher(m).First()
+		if el.Length() == 0 {
+			continue
+		}
+		cleaned := cleanContainer(el)
+		if len(cleaned.text) > bestLen {
+			bestLen = len(cleaned.text)
+			best = cleaned
+		}
+		// 规则选择器按备选顺序取第一个"足够长"的命中（>=80 字），避免被小预览框截胡
+		if _, hasRule := rule["contentSelector"]; hasRule && runeLen(cleaned.text) >= 80 { // Task 34 (P3-20): rune 计（字节计对 CJK 宽 3 倍，首个备选易截胡）
+			break
+		}
+	}
 
-        if bestLen <= 0 {
-                // 词锚「正文提取为空」为 backend isSoftBlockErrText 消费契约（不得改动）；
-                // 61-R3-b 澄清：配置 contentSelector 时仅尝试规则候选（573-578 替换语义），
-                // 内置候选并未参与，旧文案「含内置候选均未命中」在规则路径下与事实不符误导排障。
-                *warnings = append(*warnings, "正文提取为空：所有选择器均未命中或内容为空（配置 contentSelector 时仅尝试规则候选，不回退内置候选）")
-                best = cleanedContent{paragraphs: []string{}, text: ""}
-        }
+	if bestLen <= 0 {
+		// 词锚「正文提取为空」为 backend isSoftBlockErrText 消费契约（不得改动）；
+		// 61-R3-b 澄清：配置 contentSelector 时仅尝试规则候选（573-578 替换语义），
+		// 内置候选并未参与，旧文案「含内置候选均未命中」在规则路径下与事实不符误导排障。
+		*warnings = append(*warnings, "正文提取为空：所有选择器均未命中或内容为空（配置 contentSelector 时仅尝试规则候选，不回退内置候选）")
+		best = cleanedContent{paragraphs: []string{}, text: ""}
+	}
 
-        // ---- 行级噪声统一清洗（cleanx.go 与主应用 src/lib/content-clean.ts 同源）----
-        if best.text != "" {
-                stats := cleanChapterText(best.text)
-                if stats.Removed > 0 && stats.Total >= 10 && float64(stats.Removed)/float64(stats.Total) > 0.5 {
-                        *warnings = append(*warnings, "清洗移除了 "+strconv.Itoa(stats.Removed)+"/"+strconv.Itoa(stats.Total)+" 行，请检查 contentSelector 是否命中了导航/广告容器")
-                }
-                if stats.Text != "" {
-                        best = cleanedContent{paragraphs: splitLines(stats.Text), text: stats.Text}
-                } else {
-                        best = cleanedContent{paragraphs: []string{}, text: ""}
-                }
-        }
+	// ---- 行级噪声统一清洗（cleanx.go 与主应用 src/lib/content-clean.ts 同源）----
+	if best.text != "" {
+		stats := cleanChapterText(best.text)
+		if stats.Removed > 0 && stats.Total >= 10 && float64(stats.Removed)/float64(stats.Total) > 0.5 {
+			*warnings = append(*warnings, "清洗移除了 "+strconv.Itoa(stats.Removed)+"/"+strconv.Itoa(stats.Total)+" 行，请检查 contentSelector 是否命中了导航/广告容器")
+		}
+		if stats.Text != "" {
+			best = cleanedContent{paragraphs: splitLines(stats.Text), text: stats.Text}
+		} else {
+			best = cleanedContent{paragraphs: []string{}, text: ""}
+		}
+	}
 
-        // Task 28-a: 首段=章题去重——部分 CMS（实测 ggd66.com / 101kks.com）把章节标题
-        // 作为正文第一段重复输出（#rtext 内首行 <p>第N章 标题</p>）。与标题去空白后全等、
-        // 且段落多于 1 段（防止单段章节被清空）时丢弃首段。
-        if title != "" && len(best.paragraphs) > 1 {
-                compactTitle := reJSWhitespace.ReplaceAllString(title, "")
-                first := reJSWhitespace.ReplaceAllString(best.paragraphs[0], "")
-                if first != "" && first == compactTitle {
-                        best.paragraphs = best.paragraphs[1:]
-                        best.text = joinLines(best.paragraphs)
-                }
-        }
+	// Task 28-a: 首段=章题去重——部分 CMS（实测 ggd66.com / 101kks.com）把章节标题
+	// 作为正文第一段重复输出（#rtext 内首行 <p>第N章 标题</p>）。与标题去空白后全等、
+	// 且段落多于 1 段（防止单段章节被清空）时丢弃首段。
+	if title != "" && len(best.paragraphs) > 1 {
+		compactTitle := reJSWhitespace.ReplaceAllString(title, "")
+		first := reJSWhitespace.ReplaceAllString(best.paragraphs[0], "")
+		if first != "" && first == compactTitle {
+			best.paragraphs = best.paragraphs[1:]
+			best.text = joinLines(best.paragraphs)
+		}
+	}
 
-        // ---- 下一页 ----
-        nextURL := ""
-        if ns, ok := rule["nextSelector"]; ok && ns != "" {
-                nextURL = pickHref(root, splitAlternatives(ns), baseURL)
-                if nextURL == "" {
-                        *warnings = append(*warnings, "nextSelector 无命中: \""+ns+"\"")
-                }
-        }
-        if nextURL == "" {
-                // 启发式逐个候选尝试：跳过文本呈「上一页/上一章」的锚点（站点误标 rel="next" 场景）
-                for _, raw := range heuristicNextSelectors {
-                        selector, _ := parseSel(raw)
-                        if selector == "" {
-                                continue
-                        }
-                        m := compileSel(selector)
-                        if m == nil {
-                                continue
-                        }
-                        el := root.FindMatcher(m).First()
-                        if el.Length() == 0 {
-                                continue
-                        }
-                        if rePrevLinkText.MatchString(collapse(el.Text())) {
-                                continue
-                        }
-                        if abs := toAbs(el.AttrOr("href", ""), baseURL); abs != "" {
-                                nextURL = abs
-                                break
-                        }
-                }
-                if nextURL != "" && nextURL == toAbs(baseURL, baseURL) {
-                        nextURL = "" // 启发式命中自链接视为无下一页
-                }
-                if nextURL != "" {
-                        *warnings = append(*warnings, "nextUrl 由启发式匹配（\"下一页/下一章\"链接）获得")
-                }
-        }
-        if nextURL == "" {
-                // 锚点启发式全部落空：尝试内联脚本翻页变量（锚点为 javascript:; 的站点）
-                nextURL = nextUrlFromScripts(doc, baseURL)
-                if nextURL != "" && nextURL == toAbs(baseURL, baseURL) {
-                        nextURL = ""
-                }
-                if nextURL != "" {
-                        *warnings = append(*warnings, "nextUrl 由内联脚本翻页变量兜底获得（可见锚点为 JS 跳转）")
-                }
-        }
+	// ---- 下一页 ----
+	nextURL := ""
+	if ns, ok := rule["nextSelector"]; ok && ns != "" {
+		nextURL = pickHref(root, splitAlternatives(ns), baseURL)
+		if nextURL == "" {
+			*warnings = append(*warnings, "nextSelector 无命中: \""+ns+"\"")
+		}
+	}
+	if nextURL == "" {
+		// 启发式逐个候选尝试：跳过文本呈「上一页/上一章」的锚点（站点误标 rel="next" 场景）
+		for _, raw := range heuristicNextSelectors {
+			selector, _ := parseSel(raw)
+			if selector == "" {
+				continue
+			}
+			m := compileSel(selector)
+			if m == nil {
+				continue
+			}
+			el := root.FindMatcher(m).First()
+			if el.Length() == 0 {
+				continue
+			}
+			if rePrevLinkText.MatchString(collapse(el.Text())) {
+				continue
+			}
+			if abs := toAbs(el.AttrOr("href", ""), baseURL); abs != "" {
+				nextURL = abs
+				break
+			}
+		}
+		if nextURL != "" && nextURL == toAbs(baseURL, baseURL) {
+			nextURL = "" // 启发式命中自链接视为无下一页
+		}
+		if nextURL != "" {
+			*warnings = append(*warnings, "nextUrl 由启发式匹配（\"下一页/下一章\"链接）获得")
+		}
+	}
+	if nextURL == "" {
+		// 锚点启发式全部落空：尝试内联脚本翻页变量（锚点为 javascript:; 的站点）
+		nextURL = nextUrlFromScripts(doc, baseURL)
+		if nextURL != "" && nextURL == toAbs(baseURL, baseURL) {
+			nextURL = ""
+		}
+		if nextURL != "" {
+			*warnings = append(*warnings, "nextUrl 由内联脚本翻页变量兜底获得（可见锚点为 JS 跳转）")
+		}
+	}
 
-        // wordCount：去空白后字符数（对齐 TS text.replace(/\s/g,'').length）
-        compact := reJSWhitespace.ReplaceAllString(best.text, "")
-        // TS 的 \s 不含全角空格？实际 JS \s 含 \u3000；reJSWhitespace 已覆盖
-        wordCount := runeLen(compact)
-        var nextPtr *string
-        if nextURL != "" {
-                nextPtr = &nextURL
-        }
-        if best.paragraphs == nil {
-                best.paragraphs = []string{}
-        }
-        return ChapterData{
-                Type: "chapter", Title: title, Content: best.text,
-                Paragraphs: best.paragraphs, WordCount: wordCount, NextUrl: nextPtr,
-        }
+	// wordCount：去空白后字符数（对齐 TS text.replace(/\s/g,'').length）
+	compact := reJSWhitespace.ReplaceAllString(best.text, "")
+	// TS 的 \s 不含全角空格？实际 JS \s 含 \u3000；reJSWhitespace 已覆盖
+	wordCount := runeLen(compact)
+	var nextPtr *string
+	if nextURL != "" {
+		nextPtr = &nextURL
+	}
+	if best.paragraphs == nil {
+		best.paragraphs = []string{}
+	}
+	return ChapterData{
+		Type: "chapter", Title: title, Content: best.text,
+		Paragraphs: best.paragraphs, WordCount: wordCount, NextUrl: nextPtr,
+	}
 }

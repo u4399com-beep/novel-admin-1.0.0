@@ -107,7 +107,7 @@ func TestHostHealthConcurrent(t *testing.T) {
 			for i := 0; i < 300; i++ {
 				noteRateLimited(host, 429, nil)
 				_ = hostPenaltyMs(host)
-				noteChainFailure(host, i%2 == 0, nil)
+				noteChainFailure(host, i%2 == 0, nil, false)
 				_ = hostCircuitOpenMs(host)
 				noteChainSuccess(host, "")
 			}
@@ -121,11 +121,11 @@ func TestHostHealthConcurrent(t *testing.T) {
 func TestHostHealthNetStreakFastTrip(t *testing.T) {
 	host := "nettrip.test"
 	noteChainSuccess(host, "") // 清零
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
 	if ms := hostCircuitOpenMs(host); ms > 0 {
 		t.Fatalf("首次网络级失败不应熔断（剩 %dms）", ms)
 	}
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
 	if ms := hostCircuitOpenMs(host); ms <= 0 {
 		t.Fatalf("连续 2 次纯网络级失败应立即熔断")
 	}
@@ -134,12 +134,12 @@ func TestHostHealthNetStreakFastTrip(t *testing.T) {
 		t.Fatalf("成功后应完全复位")
 	}
 	// 混合失败（有 HTTP 状态/挑战页）仍走 3 次阈值
-	noteChainFailure(host, false, nil)
-	noteChainFailure(host, false, nil)
+	noteChainFailure(host, false, nil, false)
+	noteChainFailure(host, false, nil, false)
 	if ms := hostCircuitOpenMs(host); ms > 0 {
 		t.Fatalf("混合失败 2 次不应熔断")
 	}
-	noteChainFailure(host, false, nil)
+	noteChainFailure(host, false, nil, false)
 	if ms := hostCircuitOpenMs(host); ms <= 0 {
 		t.Fatalf("混合失败 3 次应熔断")
 	}
@@ -149,7 +149,7 @@ func TestHostHealthNetStreakFastTrip(t *testing.T) {
 func TestHostHealthNetFailPenalty(t *testing.T) {
 	host := "netpenalty.test"
 	noteChainSuccess(host, "")
-	noteChainFailure(host, true, nil)
+	noteChainFailure(host, true, nil, false)
 	if ms := hostPenaltyMs(host); ms < 1000 {
 		t.Fatalf("失败后应有温和退避记忆，got %dms", ms)
 	}

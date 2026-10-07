@@ -312,8 +312,9 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 	}
 	var siteName, activeTheme, notice string
 	var seoConfig, footerConfig, homeConfig sql.NullString
-	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig" FROM "SiteSetting" WHERE "id" = 1`,
-		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig})
+	var proxyPool, txtDir, coversDir sql.NullString
+	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir" FROM "SiteSetting" WHERE "id" = 1`,
+		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir})
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -329,6 +330,10 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 		"seo":         seo,
 		"footer":      footer,
 		"home":        home,
+		// R97: 采集全局设置（全局代理池 + TXT/封面自定义存储目录；空=默认）
+		"proxyPool": proxyPool.String,
+		"txtDir":    txtDir.String,
+		"coversDir": coversDir.String,
 	})
 }
 
@@ -385,6 +390,41 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 		}
 	}
 
+	// R97: 采集全局设置 PATCH（宽松语义与 TDK 一致：键缺失=不动；非法值拒绝该键不报整单错，
+	// 但目录校验失败直接 400——写错路径会静默写进默认目录，用户无感知，宁可报错）
+	if v, exists := body["proxyPool"]; exists {
+		s, isStr := v.(string)
+		if !isStr {
+			writeJSON(w, 400, map[string]string{"error": "proxyPool 必须是字符串"})
+			return
+		}
+		pf := parseProxyField(s)
+		if pf.err != "" {
+			writeJSON(w, 400, map[string]string{"error": "proxyPool " + pf.err})
+			return
+		}
+		sets = append(sets, `"proxyPool" = ?`)
+		args = append(args, pf.value)
+	}
+	if v, exists := body["txtDir"]; exists {
+		d, err := sanitizeStorageDir(v, "txtDir")
+		if err != "" {
+			writeJSON(w, 400, map[string]string{"error": err})
+			return
+		}
+		sets = append(sets, `"txtDir" = ?`)
+		args = append(args, d)
+	}
+	if v, exists := body["coversDir"]; exists {
+		d, err := sanitizeStorageDir(v, "coversDir")
+		if err != "" {
+			writeJSON(w, 400, map[string]string{"error": err})
+			return
+		}
+		sets = append(sets, `"coversDir" = ?`)
+		args = append(args, d)
+	}
+
 	// seoConfig 为「读旧 JSON → 合并 → 写回」的读改写，与 PSEO 配置共用一行存储，
 	// 统一经进程内串行锁执行（serializeSettingsWrite 语义）
 	patchSeo, hasPatchSeo := body["seo"].(map[string]any)
@@ -425,7 +465,9 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 				updateErr = err
 			}
 		}
-		if updateErr == nil {
+		if updateErr == nil && len(sets) > 0 {
+			// R97: 全局池/存储目录保存成功后失效读取缓存（loadRule/coversDir/txtdir 下一跳重查库）
+			invalidateScraperSettings()
 			_ = queryOne(`SELECT "siteName","activeTheme" FROM "SiteSetting" WHERE "id" = 1`, []any{&siteName, &activeTheme})
 		}
 	})
@@ -527,4 +569,47 @@ func parseHomeConfig(blob sql.NullString) map[string]any {
 		return map[string]any{"blocks": []any{}}
 	}
 	return sanitizeHomeConfig(parsed)
+}
+
+// ==================== R97: 存储目录校验 ====================
+
+// storageDirMaxLen 目录路径长度上限
+const storageDirMaxLen = 300
+
+// sanitizeStorageDir 存储目录白名单：字符串 → Trim → 空=重置默认（返回 ""）→
+// 必须绝对路径（/ 开头；Windows 部署不在支持范围）→ 拒控制字符/路径穿越等价形态
+// （.. 本身在绝对路径中合法（/data/a/../b 规范化后即 /data/b），此处拒绝含 .. 的段
+// 以免 os.MkdirAll 前后语义漂移）→ 长度 ≤300。返回 (清洗值, 错误消息)；错误非空时清洗值为 ""。
+func sanitizeStorageDir(raw any, field string) (string, string) {
+	s, ok := raw.(string)
+	if !ok {
+		return "", field + " 必须是字符串"
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", "" // 重置为默认目录
+	}
+	if len(s) > storageDirMaxLen {
+		return "", field + " 过长（上限 300 字符）"
+	}
+	if !strings.HasPrefix(s, "/") {
+		return "", field + " 必须是绝对路径（以 / 开头），留空使用默认目录"
+	}
+	for _, r := range s {
+		if r < 0x20 || r == 0x7F {
+			return "", field + " 含非法控制字符"
+		}
+	}
+	for _, seg := range strings.Split(s, "/") {
+		if seg == ".." {
+			return "", field + " 不允许包含 .. 路径段"
+		}
+	}
+	if strings.HasSuffix(s, "/") {
+		s = strings.TrimRight(s, "/")
+		if s == "" {
+			return "", field + " 非法"
+		}
+	}
+	return s, ""
 }

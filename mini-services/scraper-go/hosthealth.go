@@ -42,11 +42,12 @@ const (
 // strikes/netStreak/openUntil 的语义与拆分前完全一致，只是记账粒度从裸 host 变为
 // (host, egress)：egress 为 "" 时是直连出口，否则是规则配置的某个代理 URL。
 type egressBreaker struct {
-	host      string // 冗余存储：hostCircuitOpenMs 观测面按 host 扫描（避免字符串前缀碰撞歧义）
-	egress    string
-	strikes   int
-	netStreak int // 连续「纯网络级错误」整链失败计数（连接层被拒/EOF）
-	openUntil int64
+	host       string // 冗余存储：hostCircuitOpenMs 观测面按 host 扫描（避免字符串前缀碰撞歧义）
+	egress     string
+	strikes    int
+	netStreak  int // 连续「纯网络级错误」整链失败计数（连接层被拒/EOF）
+	authStreak int // R97：连续「代理认证失败（HTTP 407）」整链失败计数——407 是代理本体的拒绝（要求认证/代理已改认证策略），与站点封锁无关；链层据此在全代理出口熔断时追加直连兜底，proxywatch 探测把 407 判死换血
+	openUntil  int64
 }
 
 type hostHealth struct {
@@ -208,6 +209,25 @@ func hostCircuitOpenMs(host string) int64 {
 	return worst
 }
 
+// egressAllAuthBroken 候选出口是否全部带有未过期的代理认证失败记忆（R97）：任一出口
+// authStreak≥1 即视为「该出口近期整链 407」（成功即随出口条目删除清零）。仅当列表非空
+// 且全部出口命中时返回 true——链层据此在全代理池熔断时追加直连出口兜底（407 说明是
+// 代理本体坏了而非站点封锁我们，直连大概率可用）。字段读取必须在锁内。
+func egressAllAuthBroken(host string, egresses []string) bool {
+	if len(egresses) == 0 {
+		return false
+	}
+	healthMu.Lock()
+	defer healthMu.Unlock()
+	for _, e := range egresses {
+		b, ok := egressMap[egressKey(host, e)]
+		if !ok || b.authStreak < 1 {
+			return false
+		}
+	}
+	return true
+}
+
 // hostFailStreak Task 35-b: 当前连续整链失败计数（0 = 无记忆/已成功复位）。
 // /api/host-health?host= 观测面消费，供运维/后续 backend 车道感知判断软拦截深度。
 func hostFailStreak(host string) int {
@@ -270,7 +290,9 @@ func noteRateLimited(host string, status int, retryAfterMs *int64) {
 // 是最接近的保守重建）；混合失败链（部分出口网络错误、部分出口 HTTP 级失败）按链级
 // allNetErr=false 归类，各出口 netStreak 归零——对单出口归因的常见形态（全网错误封锁/
 // 全挑战）语义与拆分前一致，对混合链仅轻度低估网络级深度（熔断更慢、无过激方向）。
-func noteChainFailure(host string, allNetErr bool, egresses []string) {
+// R97：allProxyAuth=本次链上所有带 HTTP 状态的尝试均为 407（代理要求认证）——每出口
+// authStreak 累加（非 407 失败归零）；egressAllAuthBroken 消费该记忆供链层直连兜底。
+func noteChainFailure(host string, allNetErr bool, egresses []string, allProxyAuth bool) {
 	if host == "" {
 		return
 	}
@@ -281,11 +303,16 @@ func noteChainFailure(host string, allNetErr bool, egresses []string) {
 	defer healthMu.Unlock()
 	h := touchHealth(host)
 	h.failStreak++
-	// 出口维度熔断记账（E17）：每出口独立 strikes/netStreak/熔断冷却
+	// 出口维度熔断记账（E17）：每出口独立 strikes/netStreak/authStreak/熔断冷却
 	maxNetStreak := 0
 	for _, e := range egresses {
 		b := touchEgressLocked(host, e)
 		b.strikes++
+		if allProxyAuth {
+			b.authStreak++
+		} else {
+			b.authStreak = 0
+		}
 		if allNetErr {
 			b.netStreak++
 		} else {

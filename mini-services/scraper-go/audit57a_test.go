@@ -437,9 +437,9 @@ func TestApiCircuitOpen502EnvelopeContract(t *testing.T) {
 		hostSlotsMu.Unlock()
 	}()
 	// 混合失败 3 次 → 熔断（与 TestHostHealthNetStreakFastTrip 口径一致）
-	noteChainFailure(host, false, nil)
-	noteChainFailure(host, false, nil)
-	noteChainFailure(host, false, nil)
+	noteChainFailure(host, false, nil, false)
+	noteChainFailure(host, false, nil, false)
+	noteChainFailure(host, false, nil, false)
 	if hostCircuitOpenMs(host) <= 0 {
 		t.Fatalf("前置：3 次连败应触发熔断")
 	}

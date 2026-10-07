@@ -26,7 +26,10 @@ func mustInitSiteSettingTable(t *testing.T) {
                 "notice" TEXT NOT NULL DEFAULT '',
                 "seoConfig" TEXT NOT NULL DEFAULT '{}',
                 "footerConfig" TEXT NOT NULL DEFAULT '{}',
-                "homeConfig" TEXT NOT NULL DEFAULT '{}'
+                "homeConfig" TEXT NOT NULL DEFAULT '{}',
+                "proxyPool" TEXT NOT NULL DEFAULT '',
+                "txtDir" TEXT NOT NULL DEFAULT '',
+                "coversDir" TEXT NOT NULL DEFAULT ''
         )`); err != nil {
 		t.Fatalf("create SiteSetting: %v", err)
 	}

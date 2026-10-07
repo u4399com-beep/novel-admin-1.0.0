@@ -207,21 +207,33 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	// pickProxy 优先跳过熔断出口（临时降权不删除）。
 	if opts.requestedStrategy == "" {
 		if circuitMs, allOpen := egressCircuitsAllOpen(host, egresses); allOpen {
-			detail := "主机 " + host + " 连续整链失败已达熔断阈值，剩余冷却 " +
-				strconv.Itoa(int((circuitMs+999)/1000)) + "s 后自动恢复尝试（一次成功即复位）"
-			if len(egresses) > 1 {
-				detail += "；当前规则 " + itoa(len(egresses)) + " 个出口全部熔断（熔断按出口独立记账，更换/新增代理出口后立即重试）"
-			} else if egresses[0] != "" {
-				detail += "；当前出口 " + reProxyCred.ReplaceAllString(egresses[0], "//***@") + " 熔断（熔断按出口独立记账，更换代理出口后立即重试）"
+			// R97（代理池 407 直连兑底）：全部代理出口熔断且每个出口近期都因 HTTP 407
+			//（代理要求认证/已改认证策略）失败——407 是代理本体的拒绝而非站点封锁，
+			// 直连大概率可用。此时不再快速失败，而是把直连出口追加进本轮候选集合
+			//（仅本次请求生效，规则 proxy 字段不动，待出口池自愈把 407 死口换血）。
+			// trxsw 实证：规则只挂了一个需要认证的免费代理，全策略 407 → 全池熔断 →
+			// 直连不参与 → 规则永久卡死。追加直连后引擎立刻恢复产出。
+			if len(proxyPool) > 0 && egressAllAuthBroken(host, egresses) {
+				warnings = append(warnings, "[chain] 全部代理出口因 HTTP 407（代理要求认证或已失效）熔断，本次追加直连出口兑底（代理池将由出口池自愈清洗死口）")
+				proxyPool = append(append([]string{}, proxyPool...), "")
+				egresses = append(append([]string{}, egresses...), "")
 			} else {
-				detail += "；直连出口熔断（熔断按出口独立记账）"
-			}
-			return fetchPageResult{
-				ok: false, html: "", encoding: "", strategy: opts.requestedStrategy, status: 0, warnings: warnings,
-				attempts: attempts, robots: RobotsSummary{CrawlDelayMs: nil},
-				elapsedMs: nowMs() - t0,
-				err:       "目标主机熔断中（近期连续整链失败，暂停请求以防刺激反爬/空耗预算）",
-				detail:    detail,
+				detail := "主机 " + host + " 连续整链失败已达熔断阈值，剩余冷却 " +
+					strconv.Itoa(int((circuitMs+999)/1000)) + "s 后自动恢复尝试（一次成功即复位）"
+				if len(egresses) > 1 {
+					detail += "；当前规则 " + itoa(len(egresses)) + " 个出口全部熔断（熔断按出口独立记账，更换/新增代理出口后立即重试）"
+				} else if egresses[0] != "" {
+					detail += "；当前出口 " + reProxyCred.ReplaceAllString(egresses[0], "//***@") + " 熔断（熔断按出口独立记账，更换代理出口后立即重试）"
+				} else {
+					detail += "；直连出口熔断（熔断按出口独立记账）"
+				}
+				return fetchPageResult{
+					ok: false, html: "", encoding: "", strategy: opts.requestedStrategy, status: 0, warnings: warnings,
+					attempts: attempts, robots: RobotsSummary{CrawlDelayMs: nil},
+					elapsedMs: nowMs() - t0,
+					err:       "目标主机熔断中（近期连续整链失败，暂停请求以防刺激反爬/空耗预算）",
+					detail:    detail,
+				}
 			}
 		}
 	}
@@ -544,7 +556,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		if len(list) == 0 {
 			list = []string{""}
 		}
-		noteChainFailure(host, allAttemptsNetErr(attempts), list)
+		noteChainFailure(host, allAttemptsNetErr(attempts), list, allAttemptsProxyAuth(attempts))
 	}
 	// E20: 整链失败计数（挑战/断网分类与 hosthealth 同口径；纯引擎自状态不进站点桶）。
 	// 61-R9: 真实流量闸改传 hasRealNetworkAttempt(attempts)——与上方 noteChainFailure 的
@@ -679,6 +691,24 @@ func allAttemptsNetErr(attempts []AttemptSummary) bool {
 		}
 	}
 	return true
+}
+
+// allAttemptsProxyAuth 本次链上所有带 HTTP 状态的失败尝试是否全部为 407（代理认证失败）
+// 且至少存在一条——R97 链层直连兜底的归因信号：407 只能由代理本体发出（要求认证/代理
+// 已改认证策略），与目标站行为无关。挑战页（Blocked）不计入（403/挑战与代理无关也可能
+// 被 Blocked 标记）；引擎自状态（status=0）不参与判定。纯函数，表驱动测试见 audit97a_test.go。
+func allAttemptsProxyAuth(attempts []AttemptSummary) bool {
+	sawHTTP := false
+	for _, a := range attempts {
+		if a.Status == 0 || a.Blocked || isEngineStateNote(a.Note) {
+			continue
+		}
+		sawHTTP = true
+		if a.Status != 407 {
+			return false
+		}
+	}
+	return sawHTTP
 }
 
 func containsStr(arr []string, v string) bool {
