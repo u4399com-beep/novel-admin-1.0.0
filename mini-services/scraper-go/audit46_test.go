@@ -169,6 +169,7 @@ func TestHeaderLinesParity(t *testing.T) {
 // ---- F3：chapterListApi AJAX 端点 UA 指纹 ----
 
 func TestExtractJsonTocSendsBrowserUA(t *testing.T) {
+	disableImpersonateForTest(t)
 	var gotUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUA = r.Header.Get("User-Agent")
@@ -360,6 +361,7 @@ func TestAimdNoteMixedConcurrentSmoke(t *testing.T) {
 // 关联矛盾可被 WAF 画像检测识别。锁定：POST 请求五类头齐备且取值与书页同源口径一致。
 
 func TestExtractJsonTocXhrHeaderConsistency(t *testing.T) {
+	disableImpersonateForTest(t)
 	var gotReferer, gotOrigin, gotAcceptLang, gotFetchDest, gotFetchMode, gotFetchSite, gotMethod string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotReferer = r.Header.Get("Referer")

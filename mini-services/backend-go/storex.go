@@ -18,130 +18,161 @@
 package main
 
 import (
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"regexp"
-	"strings"
-	"sync"
-	"time"
+        "database/sql"
+        "encoding/json"
+        "fmt"
+        "regexp"
+        "strings"
+        "sync"
+        "time"
 )
 
 // ==================== SQLITE_BUSY 容忍封装 ====================
 
 // isBusyErr 判定 SQLite 锁忙（modernc 驱动消息含 database is locked / busy）
 func isBusyErr(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return containsFoldStr(msg, "locked") || containsFoldStr(msg, "busy")
+        if err == nil {
+                return false
+        }
+        msg := err.Error()
+        return containsFoldStr(msg, "locked") || containsFoldStr(msg, "busy")
 }
 
 // execRetry 执行写语句；busy/locked 时 200ms 退避重试一次
 func execRetry(query string, args ...any) (sql.Result, error) {
-	res, err := exec(query, args...)
-	if err != nil && isBusyErr(err) {
-		time.Sleep(200 * time.Millisecond)
-		res, err = exec(query, args...)
-	}
-	return res, err
+        res, err := exec(query, args...)
+        if err != nil && isBusyErr(err) {
+                time.Sleep(200 * time.Millisecond)
+                res, err = exec(query, args...)
+        }
+        return res, err
 }
 
 // execRetryReturningID 执行 INSERT 并返回 last_insert_rowid（busy 退避重试）
 func execRetryReturningID(query string, args ...any) (int64, error) {
-	res, err := execRetry(query, args...)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
+        res, err := execRetry(query, args...)
+        if err != nil {
+                return 0, err
+        }
+        return res.LastInsertId()
+}
+
+// txRetry 显式事务执行（busy/locked 时 200ms 退避重试一次，与 execRetry 同口径）：
+// R103 章节写入合并——正文填充/单章入库原为两条 autocommit 语句（ChapterContent INSERT +
+// Chapter UPDATE/INSERT），WAL+NORMAL 下每次独立提交各走一轮 WAL 追加+锁升级；
+// 合并单事务后每章写从 2 次提交降为 1 次，且「正文已写、字数未记」的中断中间态不再存在
+//（原序列中断后 chapterId 有正文但 wordCount=0，Phase 1 续传按 wordCount=0 误判为空骨架
+// 重复填充——INSERT OR REPLACE 幂等兜底，但仍是多余重写）。
+// fn 收到 *sql.Tx 自行执行语句；返回错误触发 Rollback。fn panic 时 defer 链回滚后继续上抛。
+func txRetry(fn func(tx *sql.Tx) error) error {
+        doOnce := func() error {
+                db, err := getDB()
+                if err != nil {
+                        return err
+                }
+                tx, err := db.Begin()
+                if err != nil {
+                        return err
+                }
+                if ferr := fn(tx); ferr != nil {
+                        _ = tx.Rollback()
+                        return ferr
+                }
+                return tx.Commit()
+        }
+        err := doOnce()
+        if err != nil && isBusyErr(err) {
+                time.Sleep(200 * time.Millisecond)
+                err = doOnce()
+        }
+        return err
 }
 
 // ==================== 规则 ====================
 
 // 单条规则映射的键数与键长上限（引擎只读取固定键名，防止畸形输入撑爆规则 JSON 存储）
 const (
-	MAX_RULE_KEYS   = 60
-	MAX_RULE_KEYLEN = 100
+        MAX_RULE_KEYS   = 60
+        MAX_RULE_KEYLEN = 100
 )
 
 // sanitizeRuleMap 运行时清洗规则对象：仅保留非空字符串值并限长（API 输入与 DB 读出共用）
 func sanitizeRuleMap(raw any) RuleMap {
-	out := RuleMap{}
-	m, ok := raw.(map[string]any)
-	if !ok || m == nil {
-		return out
-	}
-	for k, v := range m {
-		s, ok := v.(string)
-		if !ok {
-			continue
-		}
-		if trimSpaceStr(s) == "" {
-			continue
-		}
-		// chapterListApi 为 JSON 目录接口配置字符串（与引擎白名单同步：普通选择器 300、配置串 1200）
-		capLen := 300
-		if k == "chapterListApi" {
-			capLen = 1200
-		}
-		out[truncateRunes(k, MAX_RULE_KEYLEN)] = truncateRunes(trimSpaceStr(s), capLen)
-		if len(out) >= MAX_RULE_KEYS {
-			break
-		}
-	}
-	return out
+        out := RuleMap{}
+        m, ok := raw.(map[string]any)
+        if !ok || m == nil {
+                return out
+        }
+        for k, v := range m {
+                s, ok := v.(string)
+                if !ok {
+                        continue
+                }
+                if trimSpaceStr(s) == "" {
+                        continue
+                }
+                // chapterListApi 为 JSON 目录接口配置字符串（与引擎白名单同步：普通选择器 300、配置串 1200）
+                capLen := 300
+                if k == "chapterListApi" {
+                        capLen = 1200
+                }
+                out[truncateRunes(k, MAX_RULE_KEYLEN)] = truncateRunes(trimSpaceStr(s), capLen)
+                if len(out) >= MAX_RULE_KEYS {
+                        break
+                }
+        }
+        return out
 }
 
 // safeParseRule 安全解析 DB 中的规则 JSON（历史数据可能损坏）
 func safeParseRule(s string) RuleMap {
-	if s == "" {
-		return RuleMap{}
-	}
-	var raw any
-	if err := json.Unmarshal([]byte(s), &raw); err != nil {
-		return RuleMap{}
-	}
-	return sanitizeRuleMap(raw)
+        if s == "" {
+                return RuleMap{}
+        }
+        var raw any
+        if err := json.Unmarshal([]byte(s), &raw); err != nil {
+                return RuleMap{}
+        }
+        return sanitizeRuleMap(raw)
 }
 
 // loadRule 加载 ScrapeRule → LoadedRule（未配置/加载失败 → 全空规则，走引擎内置启发式）
 func loadRule(ruleID *int) LoadedRule {
-	empty := LoadedRule{ListRule: RuleMap{}, BookRule: RuleMap{}, ChapterRule: RuleMap{}}
-	if ruleID == nil || *ruleID == 0 {
-		return empty
-	}
-	var name, charset, proxy, cookies, listRule, bookRule, chapterRule sql.NullString
-	var insecure bool
-	err := queryOne(
-		"SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule FROM ScrapeRule WHERE id = ?",
-		[]any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule}, *ruleID)
-	if err != nil {
-		return empty
-	}
-	return LoadedRule{
-		Name:    name.String,
-		Charset: strings.ToLower(charset.String),
-		// R97：出口选择——规则有自有 proxy 用自有池；无自有池且全局代理池非空时兜底全局池
-		//（全局池=用户在 admin「站点设置」统一配置的出口集合，语义=「未单独配出口的规则
-		// 全部走全局池」；规则自有池优先级更高，便于单站点覆盖）。全局池 10s TTL 缓存，
-		// 保存端失效钩子 + TTL 兜底，改动即时生效。
-		Proxy:       pickEgressProxy(strings.TrimSpace(proxy.String)),
-		InsecureTLS: insecure,
-		Cookies:     strings.TrimSpace(cookies.String),
-		ListRule:    safeParseRule(listRule.String),
-		BookRule:    safeParseRule(bookRule.String),
-		ChapterRule: safeParseRule(chapterRule.String),
-	}
+        empty := LoadedRule{ListRule: RuleMap{}, BookRule: RuleMap{}, ChapterRule: RuleMap{}}
+        if ruleID == nil || *ruleID == 0 {
+                return empty
+        }
+        var name, charset, proxy, cookies, listRule, bookRule, chapterRule sql.NullString
+        var insecure bool
+        err := queryOne(
+                "SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule FROM ScrapeRule WHERE id = ?",
+                []any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule}, *ruleID)
+        if err != nil {
+                return empty
+        }
+        return LoadedRule{
+                Name:    name.String,
+                Charset: strings.ToLower(charset.String),
+                // R97：出口选择——规则有自有 proxy 用自有池；无自有池且全局代理池非空时兜底全局池
+                //（全局池=用户在 admin「站点设置」统一配置的出口集合，语义=「未单独配出口的规则
+                // 全部走全局池」；规则自有池优先级更高，便于单站点覆盖）。全局池 10s TTL 缓存，
+                // 保存端失效钩子 + TTL 兜底，改动即时生效。
+                Proxy:       pickEgressProxy(strings.TrimSpace(proxy.String)),
+                InsecureTLS: insecure,
+                Cookies:     strings.TrimSpace(cookies.String),
+                ListRule:    safeParseRule(listRule.String),
+                BookRule:    safeParseRule(bookRule.String),
+                ChapterRule: safeParseRule(chapterRule.String),
+        }
 }
 
 // pickEgressProxy R97 出口选择：规则自有池非空 → 自有池；否则兜底全局代理池
 // （全局池读取失败/未配置返回 ""=直连，与旧行为一致）。
 func pickEgressProxy(ruleProxy string) string {
-	if ruleProxy != "" {
-		return ruleProxy
-	}
-	return globalProxyPool()
+        if ruleProxy != "" {
+                return ruleProxy
+        }
+        return globalProxyPool()
 }
 
 // mapNovelStatus 源站连载状态 → serial|finished。
@@ -157,13 +188,13 @@ var novelStatusOngoingRE = regexp.MustCompile(`(?i)未完|暂停|停更|断更|�
 var novelStatusFinishedRE = regexp.MustCompile(`(?i)完|fin|compl|大[结結]局|终章|終章|全本|the\s*end`)
 
 func mapNovelStatus(raw string) string {
-	if novelStatusOngoingRE.MatchString(raw) {
-		return "serial"
-	}
-	if novelStatusFinishedRE.MatchString(raw) {
-		return "finished"
-	}
-	return "serial"
+        if novelStatusOngoingRE.MatchString(raw) {
+                return "serial"
+        }
+        if novelStatusFinishedRE.MatchString(raw) {
+                return "finished"
+        }
+        return "serial"
 }
 
 // httpsURLRE 远程封面 URL 判定（^https?:\/\//）
@@ -177,23 +208,23 @@ var httpsURLRE = regexp.MustCompile(`^https?://`)
 
 // t2sModeOf 单个规则映射的 convertT2S 解析（白名单外视为 auto）
 func t2sModeOf(m RuleMap) string {
-	switch m["convertT2S"] {
-	case "on", "off":
-		return m["convertT2S"]
-	default:
-		return "auto"
-	}
+        switch m["convertT2S"] {
+        case "on", "off":
+                return m["convertT2S"]
+        default:
+                return "auto"
+        }
 }
 
 // t2sModeFromRule 组合 LoadedRule 三映射的 convertT2S（book 优先，chapter/list 依次兜底）
 func t2sModeFromRule(rule LoadedRule) string {
-	if m := t2sModeOf(rule.BookRule); m != "auto" {
-		return m
-	}
-	if m := t2sModeOf(rule.ChapterRule); m != "auto" {
-		return m
-	}
-	return t2sModeOf(rule.ListRule)
+        if m := t2sModeOf(rule.BookRule); m != "auto" {
+                return m
+        }
+        if m := t2sModeOf(rule.ChapterRule); m != "auto" {
+                return m
+        }
+        return t2sModeOf(rule.ListRule)
 }
 
 // t2sField 按模式转换单个入库字段（书名/作者/简介/章题/正文/存量回填统一入口）：
@@ -210,30 +241,30 @@ func t2sModeFromRule(rule LoadedRule) string {
 // 迭代只收敛「无歧义残留」（拚→拼 为正确简化形），两用字残留（乾仪）由 ≥2 阈值自然保留
 // ——zhconv 词级校订语义（萧乾/乾县 人名地名）不被二次转换破坏。
 func t2sField(mode, s string) string {
-	if s == "" || mode == "off" {
-		return s
-	}
-	if mode == "on" {
-		return t2sForce(s)
-	}
-	// Task 47-a 深审修复：收敛循环（≤4 次有界）。t2sPhrases 有 127 条词条映射的 VALUE
-	// 本身含繁体特征字（词级校订有意保留——「蕭乾→萧乾」人名不得被字表 乾→干 破坏、
-	// 「拚自盡」词级映射后残留 拚），单遍实现下 f(f(x))≠f(x)：存量回填重扫会有二次写、
-	// 重采标题去重词面漂移。循环内保持两路计数口径（无歧义残留如 拚 迭代转净；两用字
-	// 残留如 萧乾 的 乾 由 ≥2 阈值保护不重扫），正常文本 1-2 轮收敛，幂等断言锁定
-	for i := 0; i < 4; i++ {
-		if needsT2S(s, 0) {
-			s = t2sForce(s)
-			continue
-		}
-		// Task 47: 特征字两路计数（见函数头注）——无歧义单繁字即转，两用字维持 ≥2 阈值
-		if amb, unamb := countTradSplit(s); unamb >= 1 || amb >= 2 {
-			s = t2sForce(s)
-			continue
-		}
-		return s
-	}
-	return s
+        if s == "" || mode == "off" {
+                return s
+        }
+        if mode == "on" {
+                return t2sForce(s)
+        }
+        // Task 47-a 深审修复：收敛循环（≤4 次有界）。t2sPhrases 有 127 条词条映射的 VALUE
+        // 本身含繁体特征字（词级校订有意保留——「蕭乾→萧乾」人名不得被字表 乾→干 破坏、
+        // 「拚自盡」词级映射后残留 拚），单遍实现下 f(f(x))≠f(x)：存量回填重扫会有二次写、
+        // 重采标题去重词面漂移。循环内保持两路计数口径（无歧义残留如 拚 迭代转净；两用字
+        // 残留如 萧乾 的 乾 由 ≥2 阈值保护不重扫），正常文本 1-2 轮收敛，幂等断言锁定
+        for i := 0; i < 4; i++ {
+                if needsT2S(s, 0) {
+                        s = t2sForce(s)
+                        continue
+                }
+                // Task 47: 特征字两路计数（见函数头注）——无歧义单繁字即转，两用字维持 ≥2 阈值
+                if amb, unamb := countTradSplit(s); unamb >= 1 || amb >= 2 {
+                        s = t2sForce(s)
+                        continue
+                }
+                return s
+        }
+        return s
 }
 
 // ==================== 智能填充：作者（Task 32-b） ====================
@@ -241,48 +272,48 @@ func t2sField(mode, s string) string {
 // junkAuthorSet 来源作者的占位/无效值（用户指令「智能填充 author」；小写比对，
 // anonymous/Unknown 等英文形态归一后命中）
 var junkAuthorSet = map[string]bool{
-	"佚名": true, "佚名者": true, "未知": true, "未知作者": true, "未知作家": true,
-	"无": true, "无作者": true, "匿名": true, "不详": true, "佚": true,
-	"anonymous": true, "unknown": true, "unknow": true, "none": true, "null": true,
+        "佚名": true, "佚名者": true, "未知": true, "未知作者": true, "未知作家": true,
+        "无": true, "无作者": true, "匿名": true, "不详": true, "佚": true,
+        "anonymous": true, "unknown": true, "unknow": true, "none": true, "null": true,
 }
 
 // authorIsJunk 作者占位值判定（空串/占位值均视为缺失）
 func authorIsJunk(a string) bool {
-	if trimSpaceStr(a) == "" {
-		return true
-	}
-	return junkAuthorSet[strings.ToLower(trimSpaceStr(a))]
+        if trimSpaceStr(a) == "" {
+                return true
+        }
+        return junkAuthorSet[strings.ToLower(trimSpaceStr(a))]
 }
 
 // resolveAuthor 作者智能填充链：来源作者 → 列表页条目作者兜底 →（新书且仍缺失时）
 // LLM 推断（5s 超时+静默降级，llm.go）→「佚名」。绝不因 author 缺失丢书：返回值恒非空，
 // upsertBook 的入库中止条件仍只有「标题为空」。
 func resolveAuthor(bookAuthor, fallbackAuthor, title, description, t2sMode string, allowLLM bool) string {
-	for _, cand := range [2]string{bookAuthor, fallbackAuthor} {
-		a := trimSpaceStr(cand)
-		if authorIsJunk(a) {
-			continue
-		}
-		return truncateRunes(t2sField(t2sMode, a), novelAuthorMax)
-	}
-	if allowLLM && trimSpaceStr(title) != "" {
-		if a := trimSpaceStr(llmGuessAuthor(title, description)); !authorIsJunk(a) {
-			return truncateRunes(t2sField(t2sMode, a), novelAuthorMax)
-		}
-	}
-	return "佚名"
+        for _, cand := range [2]string{bookAuthor, fallbackAuthor} {
+                a := trimSpaceStr(cand)
+                if authorIsJunk(a) {
+                        continue
+                }
+                return truncateRunes(t2sField(t2sMode, a), novelAuthorMax)
+        }
+        if allowLLM && trimSpaceStr(title) != "" {
+                if a := trimSpaceStr(llmGuessAuthor(title, description)); !authorIsJunk(a) {
+                        return truncateRunes(t2sField(t2sMode, a), novelAuthorMax)
+                }
+        }
+        return "佚名"
 }
 
 // ==================== 书籍 upsert ====================
 
 // UpsertOutcome 书籍 upsert 结果
 type UpsertOutcome struct {
-	OK         bool
-	Canceled   bool // 记录级失败（入库/更新失败、并发冲突后找不到记录）为 true
-	NovelID    int
-	CreatedNew bool
-	Title      string
-	Message    string
+        OK         bool
+        Canceled   bool // 记录级失败（入库/更新失败、并发冲突后找不到记录）为 true
+        NovelID    int
+        CreatedNew bool
+        Title      string
+        Message    string
 }
 
 // upsertBook 书籍 upsert（title+author 查重，先 trim 规范化再截断；DB 层
@@ -293,164 +324,164 @@ type UpsertOutcome struct {
 // 作者占位值经 resolveAuthor 智能填充（来源作者→列表作者→LLM→佚名），且 title-only
 // 兜底收编存量占位作者行（防同书双行），绝不因 author 缺失丢书。
 func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, t2sMode string) UpsertOutcome {
-	fail := func(message string, canceled bool) UpsertOutcome {
-		return UpsertOutcome{OK: false, Canceled: canceled, Message: message}
-	}
+        fail := func(message string, canceled bool) UpsertOutcome {
+                return UpsertOutcome{OK: false, Canceled: canceled, Message: message}
+        }
 
-	title := truncateRunes(trimSpaceStr(t2sField(t2sMode, book.Title)), novelTitleMax)
-	if title == "" {
-		return fail("书籍标题为空，入库中止", false)
-	}
-	author := resolveAuthor(book.Author, fallbackAuthor, title, book.Description, t2sMode, true)
-	// Task 41: 简介噪声清洗 + 「相关小说」长尾词提取（用户指令：洗掉或转换；词转 pSEO）。
-	// 清洗在 t2s 之后（规则面向简体词面）、截断之前（噪声词块可能占简介大半，先截断会把
-	// 噪声留在库内）。清洗幂等，引擎侧已清的文本零改动
-	cleanDesc, introWords := cleanNovelIntro(t2sField(t2sMode, book.Description))
-	description := truncateRunes(cleanDesc, novelDescriptionMax)
+        title := truncateRunes(trimSpaceStr(t2sField(t2sMode, book.Title)), novelTitleMax)
+        if title == "" {
+                return fail("书籍标题为空，入库中止", false)
+        }
+        author := resolveAuthor(book.Author, fallbackAuthor, title, book.Description, t2sMode, true)
+        // Task 41: 简介噪声清洗 + 「相关小说」长尾词提取（用户指令：洗掉或转换；词转 pSEO）。
+        // 清洗在 t2s 之后（规则面向简体词面）、截断之前（噪声词块可能占简介大半，先截断会把
+        // 噪声留在库内）。清洗幂等，引擎侧已清的文本零改动
+        cleanDesc, introWords := cleanNovelIntro(t2sField(t2sMode, book.Description))
+        description := truncateRunes(cleanDesc, novelDescriptionMax)
 
-	var novelID int64
-	createdNew := false
-	hasExisting := false
-	existingCover := ""
-	existingStatus := "" // Task 35-a: 存量行状态（降级保护判定用；仅 hasExisting/冲突回读命中时有效）
+        var novelID int64
+        createdNew := false
+        hasExisting := false
+        existingCover := ""
+        existingStatus := "" // Task 35-a: 存量行状态（降级保护判定用；仅 hasExisting/冲突回读命中时有效）
 
-	// Task 32-b: 智能完结——源站状态缺失/不可判时，用简介关键词兜底判定（简介含
-	// 「完本/大结局/全书完」等 → finished；「连载中/未完」等负向词先行）。有明确源站
-	// 状态时源站优先，不额外推测（避免连载书简介提「大结局即将到来」误判）
-	status := mapNovelStatus(book.Status)
-	if trimSpaceStr(book.Status) == "" && description != "" {
-		status = mapNovelStatus(description)
-	}
+        // Task 32-b: 智能完结——源站状态缺失/不可判时，用简介关键词兜底判定（简介含
+        // 「完本/大结局/全书完」等 → finished；「连载中/未完」等负向词先行）。有明确源站
+        // 状态时源站优先，不额外推测（避免连载书简介提「大结局即将到来」误判）
+        status := mapNovelStatus(book.Status)
+        if trimSpaceStr(book.Status) == "" && description != "" {
+                status = mapNovelStatus(description)
+        }
 
-	var id int64
-	var cov string
-	var st string
-	err := queryOne("SELECT id, cover, status FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&id, &cov, &st}, title, author)
-	if err == nil {
-		novelID, existingCover, hasExisting, existingStatus = id, cov, true, st
-	} else if isNoRows(err) {
-		// Task 32-b: 作者智能填充后口径可能与存量占位行不同（存量「《X》/佚名」vs 新解析
-		// 「《X》/金庸」）——title-only 收编存量占位作者行，防同书双行（反向场景：存量行
-		// 作者真实、本次占位 → 照旧走新建，与历史行为一致不回归）
-		var jcov string
-		var jst string
-		if qerr := queryOne(
-			"SELECT id, cover, status FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
-			[]any{&id, &jcov, &jst}, title); qerr == nil {
-			novelID, existingCover, hasExisting, existingStatus = id, jcov, true, jst
-			run.Log("作者口径与存量占位行不一致，收编已有书籍（title-only 兜底）")
-		}
-	} else {
-		// 查询瞬时失败：按「无既有记录」继续 create，唯一约束兜底并发
-	}
+        var id int64
+        var cov string
+        var st string
+        err := queryOne("SELECT id, cover, status FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&id, &cov, &st}, title, author)
+        if err == nil {
+                novelID, existingCover, hasExisting, existingStatus = id, cov, true, st
+        } else if isNoRows(err) {
+                // Task 32-b: 作者智能填充后口径可能与存量占位行不同（存量「《X》/佚名」vs 新解析
+                // 「《X》/金庸」）——title-only 收编存量占位作者行，防同书双行（反向场景：存量行
+                // 作者真实、本次占位 → 照旧走新建，与历史行为一致不回归）
+                var jcov string
+                var jst string
+                if qerr := queryOne(
+                        "SELECT id, cover, status FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
+                        []any{&id, &jcov, &jst}, title); qerr == nil {
+                        novelID, existingCover, hasExisting, existingStatus = id, jcov, true, jst
+                        run.Log("作者口径与存量占位行不一致，收编已有书籍（title-only 兜底）")
+                }
+        } else {
+                // 查询瞬时失败：按「无既有记录」继续 create，唯一约束兜底并发
+        }
 
-	if !hasExisting {
-		newID, ierr := execRetryReturningID(
-			"INSERT INTO Novel (title, author, description, cover, categoryId, status, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)",
-			title, author, description,
-			gradientTokenFor(title, author), // 无封面时的确定性渐变 token；抓到封面后立即覆写为 /covers/*.jpg
-			categoryID, status, nowMillis(), nowMillis(),
-		)
-		if ierr == nil {
-			novelID = newID
-			createdNew = true
-		} else if isUniqueConflict(ierr) {
-			// 并发另一任务已抢先创建同一本书（撞 @@unique([title,author])）→ 回读命中查重，走更新路径。
-			// Task 32-b: 先按 (title,author) 回读；未命中再按 title+占位作者兜底收编
-			//（冲突行作者口径可能不同），仍不命中才判失败——绝不因 author 口径丢书
-			var wid int64
-			var wcov string
-			var wst string
-			if err2 := queryOne("SELECT id, cover, status FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&wid, &wcov, &wst}, title, author); err2 == nil {
-				novelID = wid
-				existingStatus = wst
-				run.Log(fmt.Sprintf("并发入库冲突，命中已有书籍 #%d", novelID))
-			} else if err3 := queryOne(
-				"SELECT id, cover, status FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
-				[]any{&wid, &wcov, &wst}, title); err3 == nil {
-				novelID = wid
-				existingStatus = wst
-				run.Log(fmt.Sprintf("并发入库冲突，按 title+占位作者收编已有书籍 #%d", novelID))
-			} else {
-				return fail("书籍入库失败（并发冲突后未找到记录）", true)
-			}
-		} else {
-			run.Log("书籍入库失败: " + truncateRunes(ierr.Error(), 120))
-			return fail("书籍入库失败", true)
-		}
-	}
+        if !hasExisting {
+                newID, ierr := execRetryReturningID(
+                        "INSERT INTO Novel (title, author, description, cover, categoryId, status, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)",
+                        title, author, description,
+                        gradientTokenFor(title, author), // 无封面时的确定性渐变 token；抓到封面后立即覆写为 /covers/*.jpg
+                        categoryID, status, nowMillis(), nowMillis(),
+                )
+                if ierr == nil {
+                        novelID = newID
+                        createdNew = true
+                } else if isUniqueConflict(ierr) {
+                        // 并发另一任务已抢先创建同一本书（撞 @@unique([title,author])）→ 回读命中查重，走更新路径。
+                        // Task 32-b: 先按 (title,author) 回读；未命中再按 title+占位作者兜底收编
+                        //（冲突行作者口径可能不同），仍不命中才判失败——绝不因 author 口径丢书
+                        var wid int64
+                        var wcov string
+                        var wst string
+                        if err2 := queryOne("SELECT id, cover, status FROM Novel WHERE title = ? AND author = ? LIMIT 1", []any{&wid, &wcov, &wst}, title, author); err2 == nil {
+                                novelID = wid
+                                existingStatus = wst
+                                run.Log(fmt.Sprintf("并发入库冲突，命中已有书籍 #%d", novelID))
+                        } else if err3 := queryOne(
+                                "SELECT id, cover, status FROM Novel WHERE title = ? AND author IN ('佚名','佚名者','未知','未知作者','未知作家','无','无作者','匿名','不详','anonymous','unknown','unknow','none','null') LIMIT 1",
+                                []any{&wid, &wcov, &wst}, title); err3 == nil {
+                                novelID = wid
+                                existingStatus = wst
+                                run.Log(fmt.Sprintf("并发入库冲突，按 title+占位作者收编已有书籍 #%d", novelID))
+                        } else {
+                                return fail("书籍入库失败（并发冲突后未找到记录）", true)
+                        }
+                } else {
+                        run.Log("书籍入库失败: " + truncateRunes(ierr.Error(), 120))
+                        return fail("书籍入库失败", true)
+                }
+        }
 
-	// ---- 封面采集落盘（下载远程封面 → 解码 → public/covers/{id}.jpg）----
-	// 触发条件：引擎提取到远程封面 URL，且（新书 或 已有书仍是渐变 token 可升级）；
-	// 并发冲突回读路径（winner）与 TS 一致不触发封面升级（existing 仍为 null）
-	remoteCover := ""
-	if httpsURLRE.MatchString(book.Cover) {
-		remoteCover = book.Cover
-	}
-	if remoteCover != "" {
-		// Task 50: 远程封面 URL 落库 coverSrc（无论本次下载成败）——补抓通道有源可循
-		//（旧版失败后 URL 只在日志里，存量 token 书无从补抓）
-		_, _ = execRetry("UPDATE Novel SET coverSrc = ? WHERE id = ? AND (coverSrc IS NULL OR coverSrc = '')", remoteCover, novelID)
-	}
-	if remoteCover != "" && (createdNew || (hasExisting && !isLocalCoverPath(existingCover))) {
-		// 封面与目标站常同域同封锁策略：经规则代理出口下载（图床直连不可达时必须走代理）；
-		// Task 51：网络类失败自动回退规则代理池（图床被网络封锁而规则未配代理时兜底，
-		// 详见 coversx.go fetchCoverWithFallback；零值 deadline=采集通道不限额）
-		stored, failReason := fetchCoverWithFallback(int(novelID), remoteCover, proxy, time.Time{})
-		if stored != "" {
-			_, _ = execRetry("UPDATE Novel SET cover = ?, updatedAt = ? WHERE id = ?", stored, nowMillis(), novelID)
-			run.Log("封面已保存 " + truncateRunes(stored, 40) + "（jpg）")
-		} else {
-			run.Log("封面下载失败（" + truncateRunes(failReason, 100) + "），保留渐变封面（" + truncateRunes(remoteCover, 80) + "）")
-		}
-	}
+        // ---- 封面采集落盘（下载远程封面 → 解码 → public/covers/{id}.jpg）----
+        // 触发条件：引擎提取到远程封面 URL，且（新书 或 已有书仍是渐变 token 可升级）；
+        // 并发冲突回读路径（winner）与 TS 一致不触发封面升级（existing 仍为 null）
+        remoteCover := ""
+        if httpsURLRE.MatchString(book.Cover) {
+                remoteCover = book.Cover
+        }
+        if remoteCover != "" {
+                // Task 50: 远程封面 URL 落库 coverSrc（无论本次下载成败）——补抓通道有源可循
+                //（旧版失败后 URL 只在日志里，存量 token 书无从补抓）
+                _, _ = execRetry("UPDATE Novel SET coverSrc = ? WHERE id = ? AND (coverSrc IS NULL OR coverSrc = '')", remoteCover, novelID)
+        }
+        if remoteCover != "" && (createdNew || (hasExisting && !isLocalCoverPath(existingCover))) {
+                // 封面与目标站常同域同封锁策略：经规则代理出口下载（图床直连不可达时必须走代理）；
+                // Task 51：网络类失败自动回退规则代理池（图床被网络封锁而规则未配代理时兜底，
+                // 详见 coversx.go fetchCoverWithFallback；零值 deadline=采集通道不限额）
+                stored, failReason := fetchCoverWithFallback(int(novelID), remoteCover, proxy, time.Time{})
+                if stored != "" {
+                        _, _ = execRetry("UPDATE Novel SET cover = ?, updatedAt = ? WHERE id = ?", stored, nowMillis(), novelID)
+                        run.Log("封面已保存 " + truncateRunes(stored, 40) + "（jpg）")
+                } else {
+                        run.Log("封面下载失败（" + truncateRunes(failReason, 100) + "），保留渐变封面（" + truncateRunes(remoteCover, 80) + "）")
+                }
+        }
 
-	if createdNew {
-		run.IncCreated()
-		run.Log(fmt.Sprintf("新建书籍 #%d《%s》", novelID, truncateRunes(title, 30)))
-	} else {
-		// Task 35-a: 状态单向升级保护——源站未给状态且简介兜底也判不出完结时，
-		// 不得把存量 finished 降级回 serial（与 smartCompleteStatus「绝不降级」同哲学；
-		// 源站明确给出连载中状态时源站优先，照常写 serial）
-		if status == "serial" && trimSpaceStr(book.Status) == "" && existingStatus == "finished" {
-			status = "finished"
-		}
-		// Task 35-a: 空简介不覆写——重采时书页简介提取失败（空串）不再清空既有简介
-		//（旧版无条件 SET description 会把历史好数据抹掉，重发任务即触发）
-		uq := "UPDATE Novel SET categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
-		uargs := []any{categoryID, status, nowMillis(), novelID}
-		if description != "" {
-			uq = "UPDATE Novel SET description = ?, categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
-			uargs = []any{description, categoryID, status, nowMillis(), novelID}
-		}
-		res, uerr := execRetry(uq, uargs...)
-		if uerr != nil || rowCountOf(res) == 0 {
-			return fail("书籍更新失败（记录可能已被删除）", true)
-		}
-		run.IncUpdated()
-		run.Log(fmt.Sprintf("书籍已存在，更新信息（#%d）", novelID))
-	}
-	// PSEO 书名种子：每本书入库（新建或更新）即登记书名关键词（source=book，pending），
-	// runner 的 pseoEnrichLoop 异步取下拉词并生成聚合页（网络调用不阻塞采集热路径）
-	enqueuePseoBookSeed(title)
-	// Task 41: 简介提取的「相关小说」长尾词转 pSEO（source=intro、seed=书名；
-	// pending → generatePendingPages 自动消化为聚合页）。best-effort，失败已记日志
-	if n := insertIntroKeywords(title, introWords); n > 0 {
-		run.Log(fmt.Sprintf("简介提取相关长尾词 +%d（已入 pSEO 词池）", n))
-	}
-	return UpsertOutcome{OK: true, Canceled: false, NovelID: int(novelID), CreatedNew: createdNew, Title: title}
+        if createdNew {
+                run.IncCreated()
+                run.Log(fmt.Sprintf("新建书籍 #%d《%s》", novelID, truncateRunes(title, 30)))
+        } else {
+                // Task 35-a: 状态单向升级保护——源站未给状态且简介兜底也判不出完结时，
+                // 不得把存量 finished 降级回 serial（与 smartCompleteStatus「绝不降级」同哲学；
+                // 源站明确给出连载中状态时源站优先，照常写 serial）
+                if status == "serial" && trimSpaceStr(book.Status) == "" && existingStatus == "finished" {
+                        status = "finished"
+                }
+                // Task 35-a: 空简介不覆写——重采时书页简介提取失败（空串）不再清空既有简介
+                //（旧版无条件 SET description 会把历史好数据抹掉，重发任务即触发）
+                uq := "UPDATE Novel SET categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
+                uargs := []any{categoryID, status, nowMillis(), novelID}
+                if description != "" {
+                        uq = "UPDATE Novel SET description = ?, categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
+                        uargs = []any{description, categoryID, status, nowMillis(), novelID}
+                }
+                res, uerr := execRetry(uq, uargs...)
+                if uerr != nil || rowCountOf(res) == 0 {
+                        return fail("书籍更新失败（记录可能已被删除）", true)
+                }
+                run.IncUpdated()
+                run.Log(fmt.Sprintf("书籍已存在，更新信息（#%d）", novelID))
+        }
+        // PSEO 书名种子：每本书入库（新建或更新）即登记书名关键词（source=book，pending），
+        // runner 的 pseoEnrichLoop 异步取下拉词并生成聚合页（网络调用不阻塞采集热路径）
+        enqueuePseoBookSeed(title)
+        // Task 41: 简介提取的「相关小说」长尾词转 pSEO（source=intro、seed=书名；
+        // pending → generatePendingPages 自动消化为聚合页）。best-effort，失败已记日志
+        if n := insertIntroKeywords(title, introWords); n > 0 {
+                run.Log(fmt.Sprintf("简介提取相关长尾词 +%d（已入 pSEO 词池）", n))
+        }
+        return UpsertOutcome{OK: true, Canceled: false, NovelID: int(novelID), CreatedNew: createdNew, Title: title}
 }
 
 // ==================== 章节入库与字数 ====================
 
 // ChapterRow 章节入库行
 type ChapterRow struct {
-	Title     string
-	Content   string
-	WordCount int
-	// Volume 分卷名（Task 45-b）：调用方已在原始标题上识别时直接传入（骨架链路）；
-	// 留空则 storeChapter 内对标题调 detectVolume 兜底识别（直连调用方零改造）
-	Volume string
+        Title     string
+        Content   string
+        WordCount int
+        // Volume 分卷名（Task 45-b）：调用方已在原始标题上识别时直接传入（骨架链路）；
+        // 留空则 storeChapter 内对标题调 detectVolume 兜底识别（直连调用方零改造）
+        Volume string
 }
 
 // MAX_IDX_BUMPS 首次尝试外最多顺延 4 次（共 5 次尝试）
@@ -469,36 +500,42 @@ const MAX_IDX_BUMPS = 4
 // 前缀剥离之前的原始标题上做（detectVolume 自身即剥卷前缀者，幂等：剥后二次识别不再
 // 命中）；vol 非空才存，rest 作 title（纯卷标题行 rest==原标题，标题原样保留防空题）。
 func storeChapter(run *Run, novelID, idx int, row ChapterRow) (usedIdx int, ok bool, message string) {
-	vol, chTitle := row.Volume, row.Title
-	if vol == "" {
-		vol, chTitle = detectVolume(row.Title)
-	}
-	attempt := func(idxVal int) error {
-		chID, err := execRetryReturningID(
-			"INSERT INTO Chapter (novelId, idx, title, volume, content, wordCount, createdAt) VALUES (?,?,?,?, '',?,?)",
-			novelID, idxVal, chTitle, vol, row.WordCount, nowMillis())
-		if err != nil {
-			return err
-		}
-		if row.Content != "" {
-			if _, err := execRetry(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`,
-				chID, row.Content); err != nil {
-				_, _ = execRetry("DELETE FROM Chapter WHERE id = ?", chID)
-				return err
-			}
-		}
-		return nil
-	}
-	err := attempt(idx)
-	for bumps := 0; err != nil && isUniqueConflict(err) && bumps < MAX_IDX_BUMPS; bumps++ {
-		run.Log(fmt.Sprintf("章节序号 %d 已被占用，顺延重试", idx))
-		idx++
-		err = attempt(idx)
-	}
-	if err == nil {
-		return idx, true, ""
-	}
-	return idx, false, err.Error()
+        vol, chTitle := row.Volume, row.Title
+        if vol == "" {
+                vol, chTitle = detectVolume(row.Title)
+        }
+        // R103: 骨架行 + 正文双写合并单事务（txRetry 语义见函数注释）——原两段 autocommit
+        // 中断时可留下「无正文骨架行」与「孤儿正文」二态之一，事务化后原子。
+        attempt := func(idxVal int) error {
+                return txRetry(func(tx *sql.Tx) error {
+                        res, err := tx.Exec("INSERT INTO Chapter (novelId, idx, title, volume, content, wordCount, createdAt) VALUES (?,?,?,?, '',?,?)",
+                                novelID, idxVal, chTitle, vol, row.WordCount, nowMillis())
+                        if err != nil {
+                                return err
+                        }
+                        chID, err := res.LastInsertId()
+                        if err != nil {
+                                return err
+                        }
+                        if row.Content != "" {
+                                if _, err := tx.Exec(`INSERT OR REPLACE INTO "ChapterContent" ("chapterId","content") VALUES (?,?)`,
+                                        chID, row.Content); err != nil {
+                                        return err
+                                }
+                        }
+                        return nil
+                })
+        }
+        err := attempt(idx)
+        for bumps := 0; err != nil && isUniqueConflict(err) && bumps < MAX_IDX_BUMPS; bumps++ {
+                run.Log(fmt.Sprintf("章节序号 %d 已被占用，顺延重试", idx))
+                idx++
+                err = attempt(idx)
+        }
+        if err == nil {
+                return idx, true, ""
+        }
+        return idx, false, err.Error()
 }
 
 // ==================== 正文统一读路径（Task 32-b 垂直分表） ====================
@@ -510,36 +547,36 @@ func storeChapter(run *Run, novelID, idx int, row ChapterRow) (usedIdx int, ok b
 //
 // 三级全空返回 ""（章节页/章节 API 呈现空正文，与既有空章语义一致）。
 func loadChapterContent(chapterID, novelID, idx int64, legacyContent string, wordCount int64) string {
-	if legacyContent != "" {
-		return legacyContent
-	}
-	var cc string
-	if err := queryOne(`SELECT "content" FROM "ChapterContent" WHERE "chapterId" = ?`, []any{&cc}, chapterID); err == nil && cc != "" {
-		return cc
-	}
-	if wordCount > 0 {
-		if txt, err := readChapterFromTxt(int(novelID), int(idx)); err == nil && txt != "" {
-			return txt
-		}
-	}
-	return ""
+        if legacyContent != "" {
+                return legacyContent
+        }
+        var cc string
+        if err := queryOne(`SELECT "content" FROM "ChapterContent" WHERE "chapterId" = ?`, []any{&cc}, chapterID); err == nil && cc != "" {
+                return cc
+        }
+        if wordCount > 0 {
+                if txt, err := readChapterFromTxt(int(novelID), int(idx)); err == nil && txt != "" {
+                        return txt
+                }
+        }
+        return ""
 }
 
 // ==================== 两阶段采集：骨架批量入库 ====================
 
 // SkeletonOutcome Phase 1 骨架批量入库结果
 type SkeletonOutcome struct {
-	// Stored 新入库骨架数
-	Stored int
-	// SkippedFilled 已有正文而跳过数（同名标题且 wordCount>0）
-	SkippedFilled int
-	// Total 有效章节链接总数（stored + fillRows + skippedFilled，single 模式进度分母）
-	Total int
-	// Capped 是否因单本章节数上限截断
-	Capped bool
-	// FillRows 待填充行（title→URL）：新建骨架 + 已存在但 wordCount=0 的空骨架（续传）。
-	// URL 仅驻留内存，任务中断后重发即自动续传（Phase 1 重新匹配空骨架）。
-	FillRows []refPair
+        // Stored 新入库骨架数
+        Stored int
+        // SkippedFilled 已有正文而跳过数（同名标题且 wordCount>0）
+        SkippedFilled int
+        // Total 有效章节链接总数（stored + fillRows + skippedFilled，single 模式进度分母）
+        Total int
+        // Capped 是否因单本章节数上限截断
+        Capped bool
+        // FillRows 待填充行（title→URL）：新建骨架 + 已存在但 wordCount=0 的空骨架（续传）。
+        // URL 仅驻留内存，任务中断后重发即自动续传（Phase 1 重新匹配空骨架）。
+        FillRows []refPair
 }
 
 // skeletonChunk 多值 INSERT 每条语句行数（SQLite 变量参数上限兜底；TS Prisma createMany
@@ -556,9 +593,9 @@ const skeletonChunk = 500
 var skeletonLocks [64]sync.Mutex
 
 func lockNovelSkeleton(novelID int) func() {
-	m := &skeletonLocks[novelID%len(skeletonLocks)]
-	m.Lock()
-	return m.Unlock
+        m := &skeletonLocks[novelID%len(skeletonLocks)]
+        m.Lock()
+        return m.Unlock
 }
 
 // storeChapterSkeletons Phase 1 骨架批量入库：按标题去重（批内 + 与既有章节），
@@ -575,167 +612,167 @@ func lockNovelSkeleton(novelID int) func() {
 // 重采去重必然 miss → 重复骨架行（Phase 2 再填充即重复章节）；转换必须先于
 // detectVolume（繁体「第X捲」前缀先归一才能被卷识别命中，与 db.go 存量回填同口径）。
 func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int, t2sMode string) (SkeletonOutcome, error) {
-	// Task 27-c: 同书骨架入库全程持分片锁（见 skeletonLocks 注释）；defer 兑底释放
-	unlock := lockNovelSkeleton(novelID)
-	defer unlock()
+        // Task 27-c: 同书骨架入库全程持分片锁（见 skeletonLocks 注释）；defer 兑底释放
+        unlock := lockNovelSkeleton(novelID)
+        defer unlock()
 
-	// 批内按标题去重（同书同名章只保留首个 URL；保持首次出现顺序——idx 分配与 TS Map 序一致）。
-	// Task 45-b: 分卷识别在原始 TOC 标题上先行（必须在任何前缀剥离之前；detectVolume 幂等：
-	// 剥前缀后二次识别不再命中）——vol 非空时 rest 作归一标题参与去重/入库/续传（fillRows
-	// 标题与 DB 行标题双侧一致，Phase 2 按标题匹配空骨架才不 miss）；纯卷标题行 rest==原标题
-	// 原样保留。存量库旧前缀标题由 db.go backfillChapterVolume 同口径归一，续传不受影响
-	var order []string
-	urlByTitle := map[string]string{}
-	volByTitle := map[string]string{}
-	for _, r := range refs {
-		// Task 47: 繁转简先于分卷识别（见函数头注）
-		t := trimSpaceStr(t2sField(t2sMode, r.Title))
-		if v, rest := detectVolume(t); v != "" {
-			volByTitle[rest] = v
-			t = rest
-		}
-		if _, ok := urlByTitle[t]; !ok {
-			urlByTitle[t] = r.URL
-			order = append(order, t)
-		}
-	}
+        // 批内按标题去重（同书同名章只保留首个 URL；保持首次出现顺序——idx 分配与 TS Map 序一致）。
+        // Task 45-b: 分卷识别在原始 TOC 标题上先行（必须在任何前缀剥离之前；detectVolume 幂等：
+        // 剥前缀后二次识别不再命中）——vol 非空时 rest 作归一标题参与去重/入库/续传（fillRows
+        // 标题与 DB 行标题双侧一致，Phase 2 按标题匹配空骨架才不 miss）；纯卷标题行 rest==原标题
+        // 原样保留。存量库旧前缀标题由 db.go backfillChapterVolume 同口径归一，续传不受影响
+        var order []string
+        urlByTitle := map[string]string{}
+        volByTitle := map[string]string{}
+        for _, r := range refs {
+                // Task 47: 繁转简先于分卷识别（见函数头注）
+                t := trimSpaceStr(t2sField(t2sMode, r.Title))
+                if v, rest := detectVolume(t); v != "" {
+                        volByTitle[rest] = v
+                        t = rest
+                }
+                if _, ok := urlByTitle[t]; !ok {
+                        urlByTitle[t] = r.URL
+                        order = append(order, t)
+                }
+        }
 
-	// 与既有章节对齐：区分「已填充跳过」与「空骨架续传」（查询失败视为全新目录，与 TS catch 一致）
-	type existingRow struct {
-		title string
-		wc    int
-	}
-	var existing []existingRow
-	_ = queryList("SELECT title, wordCount FROM Chapter WHERE novelId = ?", func(rows *sql.Rows) error {
-		var e existingRow
-		if err := rows.Scan(&e.title, &e.wc); err != nil {
-			return err
-		}
-		existing = append(existing, e)
-		return nil
-	}, novelID)
-	filledTitles := map[string]bool{}
-	emptyTitles := map[string]bool{}
-	for _, e := range existing {
-		if e.wc > 0 {
-			filledTitles[e.title] = true
-		} else {
-			emptyTitles[e.title] = true
-		}
-	}
+        // 与既有章节对齐：区分「已填充跳过」与「空骨架续传」（查询失败视为全新目录，与 TS catch 一致）
+        type existingRow struct {
+                title string
+                wc    int
+        }
+        var existing []existingRow
+        _ = queryList("SELECT title, wordCount FROM Chapter WHERE novelId = ?", func(rows *sql.Rows) error {
+                var e existingRow
+                if err := rows.Scan(&e.title, &e.wc); err != nil {
+                        return err
+                }
+                existing = append(existing, e)
+                return nil
+        }, novelID)
+        filledTitles := map[string]bool{}
+        emptyTitles := map[string]bool{}
+        for _, e := range existing {
+                if e.wc > 0 {
+                        filledTitles[e.title] = true
+                } else {
+                        emptyTitles[e.title] = true
+                }
+        }
 
-	fresh := []refPair{}
-	resume := []refPair{}
-	skippedFilled := 0
-	for _, t := range order {
-		switch {
-		case filledTitles[t]:
-			skippedFilled++
-		case emptyTitles[t]:
-			resume = append(resume, refPair{Title: t, URL: urlByTitle[t]})
-		default:
-			fresh = append(fresh, refPair{Title: t, URL: urlByTitle[t]})
-		}
-	}
+        fresh := []refPair{}
+        resume := []refPair{}
+        skippedFilled := 0
+        for _, t := range order {
+                switch {
+                case filledTitles[t]:
+                        skippedFilled++
+                case emptyTitles[t]:
+                        resume = append(resume, refPair{Title: t, URL: urlByTitle[t]})
+                default:
+                        fresh = append(fresh, refPair{Title: t, URL: urlByTitle[t]})
+                }
+        }
 
-	capped := false
-	if len(fresh) > capLimit {
-		fresh = fresh[:capLimit]
-		capped = true
-	}
-	total := len(order)
-	if len(fresh) == 0 {
-		return SkeletonOutcome{Stored: 0, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: resume}, nil
-	}
+        capped := false
+        if len(fresh) > capLimit {
+                fresh = fresh[:capLimit]
+                capped = true
+        }
+        total := len(order)
+        if len(fresh) == 0 {
+                return SkeletonOutcome{Stored: 0, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: resume}, nil
+        }
 
-	// idx 从现有最大值+1 连续分配
-	var maxIdx sql.NullInt64
-	_ = queryOne("SELECT MAX(idx) FROM Chapter WHERE novelId = ?", []any{&maxIdx}, novelID)
-	idx := 1
-	if maxIdx.Valid {
-		idx = int(maxIdx.Int64) + 1
-	}
-	type skelRow struct {
-		idx    int
-		title  string
-		volume string
-		url    string
-	}
-	data := make([]skelRow, 0, len(fresh))
-	for _, r := range fresh {
-		t := r.Title
-		if t == "" {
-			t = "第" + itoa(idx) + "章"
-		}
-		data = append(data, skelRow{idx: idx, title: t, volume: volByTitle[t], url: r.URL})
-		idx++
-	}
+        // idx 从现有最大值+1 连续分配
+        var maxIdx sql.NullInt64
+        _ = queryOne("SELECT MAX(idx) FROM Chapter WHERE novelId = ?", []any{&maxIdx}, novelID)
+        idx := 1
+        if maxIdx.Valid {
+                idx = int(maxIdx.Int64) + 1
+        }
+        type skelRow struct {
+                idx    int
+                title  string
+                volume string
+                url    string
+        }
+        data := make([]skelRow, 0, len(fresh))
+        for _, r := range fresh {
+                t := r.Title
+                if t == "" {
+                        t = "第" + itoa(idx) + "章"
+                }
+                data = append(data, skelRow{idx: idx, title: t, volume: volByTitle[t], url: r.URL})
+                idx++
+        }
 
-	// 快路径：多值 INSERT 分块落库（纯本地 SQLite，远快于逐行 INSERT）
-	stored := 0
-	var lastErr error
-	for i := 0; i < len(data); i += skeletonChunk {
-		end := min(i+skeletonChunk, len(data))
-		chunk := data[i:end]
-		var sb strings.Builder
-		sb.WriteString("INSERT INTO Chapter (novelId, idx, title, volume, content, wordCount, createdAt) VALUES ")
-		args := make([]any, 0, len(chunk)*5)
-		for j, r := range chunk {
-			if j > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString("(?,?,?,?, '',0,?)")
-			args = append(args, novelID, r.idx, r.title, r.volume, nowMillis())
-		}
-		res, err := execRetry(sb.String(), args...)
-		if err != nil {
-			lastErr = err
-			break
-		}
-		stored += int(rowCountOf(res))
-	}
-	if lastErr == nil {
-		fillRows := make([]refPair, 0, len(data)+len(resume))
-		for _, r := range data {
-			fillRows = append(fillRows, refPair{Title: r.title, URL: r.url})
-		}
-		fillRows = append(fillRows, resume...)
-		return SkeletonOutcome{Stored: stored, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: fillRows}, nil
-	}
-	// 并发任务同书建骨架撞唯一约束 → 逐条入库（storeChapter 自带 idx 顺延重试）
-	if !isUniqueConflict(lastErr) {
-		return SkeletonOutcome{}, lastErr // 与 TS throw 语义一致，由任务级异常收尾
-	}
-	run.Log("骨架批量入库冲突，退化为逐条写入")
-	fillRows := []refPair{}
-	okStored := 0
-	for _, row := range data {
-		// Task 27-c（25-a 遗留 a 收尾）：逐条路径先按标题查重——行可能已被另一任务
-		//（持锁前提交）以不同 idx 入库；直接走 (novelId,idx) 顺延重试会在空序号上
-		// 再造同名重复行。已存在即照常计入填充计划（同下方失败回查语义）
-		var existID0 int64
-		if qerr := queryOne("SELECT id FROM Chapter WHERE novelId = ? AND title = ? LIMIT 1",
-			[]any{&existID0}, novelID, row.title); qerr == nil {
-			fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
-			continue
-		}
-		_, ok, msg := storeChapter(run, novelID, row.idx, ChapterRow{Title: row.title, Volume: row.volume, Content: "", WordCount: 0})
-		if ok {
-			okStored++
-			fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
-		} else {
-			// 冲突失败 ≠ 行不在库：批量路径可能在**更早的分块已插入**部分行（多值 INSERT
-			// 逐块提交，后续块撞唯一约束才退化），这些行逐条重写必撞 (novelId,idx)。
-			// 旧版直接记失败 → 早块行漏进 fillRows → 本轮 Phase 2 不填充（只剩重跑自愈）。
-			// 此处回查 (novelId,title)：行已在库（空骨架）则照常计入填充计划，本轮即补正文。
-			var existID int64
-			if qerr := queryOne("SELECT id FROM Chapter WHERE novelId = ? AND title = ? LIMIT 1",
-				[]any{&existID}, novelID, row.title); qerr == nil {
-				fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
-			} else {
-				run.Log("骨架入库失败(" + truncateRunes(row.title, 30) + "): " + truncateRunes(msg, 100))
-			}
-		}
-	}
-	return SkeletonOutcome{Stored: okStored, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: append(fillRows, resume...)}, nil
+        // 快路径：多值 INSERT 分块落库（纯本地 SQLite，远快于逐行 INSERT）
+        stored := 0
+        var lastErr error
+        for i := 0; i < len(data); i += skeletonChunk {
+                end := min(i+skeletonChunk, len(data))
+                chunk := data[i:end]
+                var sb strings.Builder
+                sb.WriteString("INSERT INTO Chapter (novelId, idx, title, volume, content, wordCount, createdAt) VALUES ")
+                args := make([]any, 0, len(chunk)*5)
+                for j, r := range chunk {
+                        if j > 0 {
+                                sb.WriteByte(',')
+                        }
+                        sb.WriteString("(?,?,?,?, '',0,?)")
+                        args = append(args, novelID, r.idx, r.title, r.volume, nowMillis())
+                }
+                res, err := execRetry(sb.String(), args...)
+                if err != nil {
+                        lastErr = err
+                        break
+                }
+                stored += int(rowCountOf(res))
+        }
+        if lastErr == nil {
+                fillRows := make([]refPair, 0, len(data)+len(resume))
+                for _, r := range data {
+                        fillRows = append(fillRows, refPair{Title: r.title, URL: r.url})
+                }
+                fillRows = append(fillRows, resume...)
+                return SkeletonOutcome{Stored: stored, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: fillRows}, nil
+        }
+        // 并发任务同书建骨架撞唯一约束 → 逐条入库（storeChapter 自带 idx 顺延重试）
+        if !isUniqueConflict(lastErr) {
+                return SkeletonOutcome{}, lastErr // 与 TS throw 语义一致，由任务级异常收尾
+        }
+        run.Log("骨架批量入库冲突，退化为逐条写入")
+        fillRows := []refPair{}
+        okStored := 0
+        for _, row := range data {
+                // Task 27-c（25-a 遗留 a 收尾）：逐条路径先按标题查重——行可能已被另一任务
+                //（持锁前提交）以不同 idx 入库；直接走 (novelId,idx) 顺延重试会在空序号上
+                // 再造同名重复行。已存在即照常计入填充计划（同下方失败回查语义）
+                var existID0 int64
+                if qerr := queryOne("SELECT id FROM Chapter WHERE novelId = ? AND title = ? LIMIT 1",
+                        []any{&existID0}, novelID, row.title); qerr == nil {
+                        fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
+                        continue
+                }
+                _, ok, msg := storeChapter(run, novelID, row.idx, ChapterRow{Title: row.title, Volume: row.volume, Content: "", WordCount: 0})
+                if ok {
+                        okStored++
+                        fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
+                } else {
+                        // 冲突失败 ≠ 行不在库：批量路径可能在**更早的分块已插入**部分行（多值 INSERT
+                        // 逐块提交，后续块撞唯一约束才退化），这些行逐条重写必撞 (novelId,idx)。
+                        // 旧版直接记失败 → 早块行漏进 fillRows → 本轮 Phase 2 不填充（只剩重跑自愈）。
+                        // 此处回查 (novelId,title)：行已在库（空骨架）则照常计入填充计划，本轮即补正文。
+                        var existID int64
+                        if qerr := queryOne("SELECT id FROM Chapter WHERE novelId = ? AND title = ? LIMIT 1",
+                                []any{&existID}, novelID, row.title); qerr == nil {
+                                fillRows = append(fillRows, refPair{Title: row.title, URL: row.url})
+                        } else {
+                                run.Log("骨架入库失败(" + truncateRunes(row.title, 30) + "): " + truncateRunes(msg, 100))
+                        }
+                }
+        }
+        return SkeletonOutcome{Stored: okStored, SkippedFilled: skippedFilled, Total: total, Capped: capped, FillRows: append(fillRows, resume...)}, nil
 }

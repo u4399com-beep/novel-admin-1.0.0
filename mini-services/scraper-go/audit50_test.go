@@ -201,6 +201,7 @@ func TestFetchLaneAcceptEncodingAndGzipEndToEnd(t *testing.T) {
 
 // 端到端（jsontoc 车道）：AJAX 显式 accept-encoding + gzip JSON 响应正确解包解析
 func TestExtractJsonTocGzipEndToEnd(t *testing.T) {
+	disableImpersonateForTest(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ae := r.Header.Get("Accept-Encoding"); ae != "gzip, deflate" {
 			t.Errorf("AJAX 应显式声明 accept-encoding, got %q", ae)
