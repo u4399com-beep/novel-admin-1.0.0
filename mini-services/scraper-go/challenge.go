@@ -49,6 +49,11 @@ var (
 	// 近空正文 + 「需要启用 JavaScript」壳（所有分支都必须带 JS 语境）
 	reJSRequiredShell = regexp.MustCompile(
 		`(?i)enable.{0,20}javascript|javascript.{0,20}(?:is\s+)?(?:required|disabled|not\s+supported|needs?)|(?:请开启|请打开|请启用|启用|开启).{0,6}(?:javascript|js\b|脚本)|浏览器不支持.{0,10}javascript|不支持.{0,6}javascript`)
+	reRiskControlShell = regexp.MustCompile(`环境异常|访问异常|操作异常|完成验证后|异常访问`)
+	// Task 102-a（三层架构实战缺口）：通用风控验证壳词表——此类壳用 CSS/JS 把体积
+	// 撑到几十 KB 绕过极小页闸，但可见正文仅一句提示（「当前环境异常，完成验证后
+	// 即可继续访问」）。命中本词表 + 近空正文（<80 字，与下方壳判定同守卫）即判挑战页，
+	// 任意体积生效。词表取窄义风控词；正常内容页（列表/书页/章节正文远超 80 字）不误伤。
 )
 
 var gb18030Encoding, _ = charset.Lookup("gb18030")
@@ -151,6 +156,10 @@ func looksLikeChallenge(b []byte) bool {
 		if reJSRequiredShell.MatchString(text) {
 			return true
 		}
+		// Task 102-a: 通用风控验证壳（「环境异常」型）——近空正文 + 风控词，任意体积
+		if reRiskControlShell.MatchString(text) {
+			return true
+		}
 	}
 	if len(b) >= 3072 {
 		return false
@@ -189,6 +198,54 @@ var reCaptchaShell = regexp.MustCompile(
 
 // reTitleTag 提取 <title> 文本（软拦截标题特征用；限 200 字防超长异常标签）
 var reTitleTag = regexp.MustCompile(`(?i)<title[^>]*>([\s\S]{0,200}?)</title>`)
+
+// recommendTierForChallenge（Task 102-a·三层架构挑战感知跳层）：
+// 分析失败响应体形态，输出「建议下一跳策略层」——0=无推荐（按链序自然走），
+// tierStrategyIv8(2)=建议跳过剩余 HTTP 层直接试 iv8 轻执行，
+// tierStrategyBrowser(3)=建议跳过轻手段直接上隐身 Chromium。
+//
+// 分类依据（复用挑战检测四层的正则，不改判定只读特征）：
+//   - 平台级 WAF 强特征（Cloudflare/DDoS-Guard/acw_sc__v2/__jsl_clearance/yunsuo/wzws/
+//     btwaf/GoEdge 验证码等）→ Tier 3：这类 WAF 的对抗面是浏览器指纹/TLS 指纹/验证码，
+//     纯 HTTP 换 UA/换协议大概率无效；隐身 Chromium（源码级指纹伪装）是对位手段。
+//     注意 acw_sc__v2 同时是「JS 计算 cookie」的代名词，但它通常与真实 WAF 挑战页同在
+//     （瑞数/阿里 WAF 生态），放 Tier 3 保守正确——跳层只影响尝试顺序，链序兜底仍在。
+//   - JS 计算 cookie + 原地 reload 壳（js-cookie-shell）→ Tier 2：iv8 专治——页内脚本
+//     在 V8 里算出 document.cookie 后回存引擎 jar，重放即放行（R101「首访 JS 种 cookie、
+//     二访放行」链路），比真浏览器便宜百倍。
+//   - 近空正文 JS 跳转壳（js-redirect-shell）→ Tier 2：跳转目标计算逻辑在脚本里，
+//     HTTP 层无法执行；iv8 补环境跑脚本可算出真实落地页/参数。
+//
+// 只扫描前 32KB（与 looksLikeChallenge 同口径）；纯函数无 IO，表驱动测试见 tier_test.go。
+func recommendTierForChallenge(b []byte) int {
+	if len(b) == 0 {
+		return 0
+	}
+	end := len(b)
+	if end > 32768 {
+		end = 32768
+	}
+	head := b[:end]
+	scan := bytesToLatin1String(head)
+	// 平台级 WAF 强特征 → Tier 3（指纹级对抗，直接上隐身 Chromium）
+	if reChallengePlatform.MatchString(scan) {
+		return tierStrategyBrowser
+	}
+	// 壳/跳板形态 → Tier 2（轻执行层可解）
+	text := string(head)
+	if reJSCookieSet.MatchString(text) && reJSReload.MatchString(text) {
+		return tierStrategyIv8
+	}
+	if reJSRedirectShell.MatchString(text) && runeLen(visibleBodyText(scan)) < 80 {
+		return tierStrategyIv8
+	}
+	// 通用风控验证壳（「环境异常」型）→ Tier 3：此类风控（指纹/验证码门槛）需真浏览器
+	// 对位，iv8 补环境算不出人机验证结果；近空正文守卫与 looksLikeChallenge 同口径
+	if runeLen(visibleBodyText(scan)) < 80 && reRiskControlShell.MatchString(text) {
+		return tierStrategyBrowser
+	}
+	return 0
+}
 
 // challengeFeatureSummary Task 32-d: 200 空壳软拦截页的特征摘要（handlers 的 softBlock 档案用）。
 // 背景：ixdzs8 形态——HTTP 200/19KB、挑战检测四层均未判死（looksLikeChallenge=false）、

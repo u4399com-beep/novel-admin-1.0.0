@@ -25,17 +25,38 @@ const debugHTMLCapBytes = 20 * 1024
 // 游标必须原子递增（Go race detector 实证竞态点）；原子递增取模语义与 TS 版一致。
 var proxyCursor atomic.Int64
 
+// allStrategies 策略链（Task 102-a 三层架构重排，依据微信文章《实测 iv8 vs CloakBrowser》
+// 的核心论点：「真实浏览器可能根本不应该成为爬虫系统的默认执行环境；HTTP、iv8、CloakBrowser
+// 三者组合，才更接近大规模 Web 数据采集的合理架构」）：
+//
+//	Tier 1 HTTP 层（毫秒级，默认）：fetch-browser → fetch-ua-rotate → fetch-mobile →
+//	                              fetch-spider → curl-impersonate → fetch-curl → got-scraping
+//	Tier 2 iv8 轻执行层（~100ms）：fetch-iv8（V8 补环境跑页内 JS 算 cookie/参数/补 DOM，
+//	                              不启动 Chromium；文章实测纯脚本吞吐 ~100 倍于真实浏览器）
+//	Tier 3 重渲染层（秒级+）：    fetch-cloak（隐身 Chromium，源码级指纹伪装）→ browser
+//	                              （Playwright 桥接）——深度 SPA/WAF 指纹挑战兜底
+//
+// 与 R101 链序的差异：fetch-cloak 从 fetch-browser 之后（第 2 位）移至 Tier 3——
+// 单页 ~3.4s + ~1GB 进程树的成本不为新站点默认承担；fetch-iv8 从链尾移至 Tier 2——
+// 所有纯 HTTP 手段失败后先试百倍轻的脚本执行层（专治 JS 种 cookie/计算参数站），
+// 真浏览器只在轻手段也失败后才出手。运行时两个机制把「真需要的站点」路由到高成本层：
+//   - 亲和记忆：recordStrategySuccess 按 host 记住攻克策略，后续请求直接提位链首；
+//   - 挑战感知跳层：失败响应若呈 JS-cookie/JS-跳转形态 → 把 fetch-iv8 提前（跳过剩余
+//     Tier 1）；平台级 WAF 强特征 → 把 fetch-cloak 提前（指纹对抗轻手段大概率无效）。
 var allStrategies = []strategyDef{
+	// ---- Tier 1：HTTP 层（毫秒级，默认执行环境） ----
 	fetchBrowserStrategy,
-	fetchCloakStrategy, // Task 101-a: CloakBrowser 隐身渲染（侧车）——fetch-browser 的加强版，紧随其后
 	fetchUaRotateStrategy,
 	fetchMobileStrategy,
 	fetchSpiderStrategy,
 	curlImpersonateStrategy,
 	curlPlainStrategy, // Task 25: 普通 curl 诚实客户端策略（针对拦截已知爬虫指纹但放行系统 curl 的 WAF，5165.org 实证）
 	gotScrapingStrategy,
+	// ---- Tier 2：iv8 轻执行层（~100ms 级，V8 补环境执行页内 JS） ----
+	fetchIv8Strategy, // Task 102-a: 从链尾上移——Tier 1 全灭后的第一跳升，成本 ~1/100 于真浏览器
+	// ---- Tier 3：重渲染层（秒级+，真浏览器兜底） ----
+	fetchCloakStrategy, // Task 102-a: 从链首后第 2 位下移——重渲染只服务深度 SPA/指纹挑战站点
 	browserStrategy,
-	fetchIv8Strategy, // Task 101-a: iv8 V8 环境模拟（侧车）——链尾轻量兜底，专治 JS 计算 cookie/参数的站
 }
 
 // STRATEGY_NAMES 策略名列表（顺序与 TS 版一致）
@@ -77,7 +98,7 @@ type fetchPageResult struct {
 	debugHTML string
 }
 
-// listStrategies 可用抓取策略及状态
+// listStrategies 可用抓取策略及状态（Task 102-a：含三层架构层级标注）
 func listStrategies() []StrategyInfo {
 	out := make([]StrategyInfo, 0, len(allStrategies))
 	for i := range allStrategies {
@@ -87,7 +108,7 @@ func listStrategies() []StrategyInfo {
 			defer func() { _ = recover() }()
 			avail = s.probe()
 		}()
-		out = append(out, StrategyInfo{Name: s.name, Description: s.description, Available: avail})
+		out = append(out, StrategyInfo{Name: s.name, Description: s.description, Available: avail, Tier: s.tier})
 	}
 	return out
 }
@@ -299,6 +320,8 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 	// Task 32-d: 失败尝试响应体快照（debugHTML 注入用，见 fetchPageResult.debugHTML 注释）
 	var lastFailBytes []byte
 	lastFailCT := ""
+	// Task 102-a（三层架构·挑战感知跳层）：最近一次失败策略的完整结果（挑战分类跳层用）
+	var lastFailRes *attemptResult
 	// Task 58-a（E17）：本次链上真实网络尝试的出口归因集合（首次使用序），供整链失败
 	// 时按出口记账熔断。纯引擎自状态尝试（排队饱和/预算耗尽/硬闸）不入集合——
 	// 引擎自拥堵不惩罚站点/出口（Task 35-b 语义在出口维度延续）。
@@ -465,6 +488,9 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 			if lastNote == "challenge-page" || lastNote == "challenge-loop" {
 				sawChallenge = true
 			}
+			if !res.ok {
+				lastFailRes = &res
+			}
 			// Task 32-d（挑战循环终止）：JS token 跳转跟随后仍命中挑战特征（challenge-loop）
 			// 说明该站挑战无法经此路径通过——继续换策略只会重复烧穿预算。
 			// 直接终止整链，错误消息带「挑战循环」（backend isSoftBlockErr 按「挑战」命中软拦截分类）
@@ -489,6 +515,21 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		// Task 32-d: challenge-loop 属站点级挑战循环（换策略同因失败），终止整条策略链
 		if lastNote == "challenge-loop" {
 			break
+		}
+
+		// Task 102-a（三层架构·挑战感知跳层）：刚失败策略的响应呈挑战形态时，按
+		// recommendTierForChallenge 推荐把对应层首个策略提前到下一跳（成本递增架构下
+		// 智能跳层，避免在已知无效的层里烧穿预算）：
+		//   - JS 计算 cookie/JS 跳转壳 → 把 fetch-iv8（Tier 2）提前，跳过剩余 Tier 1；
+		//   - 平台级 WAF 强特征 → 把 fetch-cloak（Tier 3）提前，指纹对抗轻手段大概率无效。
+		// 显式指定策略时是单策略链（长度 1），本分支天然不触发。
+		if lastFailRes != nil && len(lastFailRes.bytes) > 0 && si < len(order)-1 {
+			if tier := recommendTierForChallenge(lastFailRes.bytes); tier > 0 {
+				if newOrder, promoted := promoteTierAfter(order, si, tier); promoted != "" {
+					order = newOrder
+					warnings = append(warnings, "[tier] 挑战形态推荐 Tier "+itoa(tier)+"（"+tierName(tier)+"），已把策略 "+promoted+" 提前至下一跳")
+				}
+			}
 		}
 
 		// 策略间退避：429/5xx/网络错误 → 进入下一策略前显式指数退避+jitter。
@@ -625,6 +666,47 @@ func chainSlotDeadline(chainDeadline, timeoutMs, now int64) int64 {
 		return cap
 	}
 	return chainDeadline
+}
+
+// promoteTierAfter（Task 102-a·挑战感知跳层）纯函数：在 order[si+1:] 里找第一个
+// tier 匹配的策略并移动到 si+1 位置（原 si+1..j-1 依次后移，其余保序）。
+//   - 目标已在 si+1 → 原切片原样返回，无提升；
+//   - 后续无该层策略（或全部探测不可用不可知）→ 原样返回；
+//   - 返回值第二参为被提前的策略名（空串=未动）。
+//
+// 必须 copy-on-write：order 可能直接引用 allStrategies 共享底层数组（pickOrder 默认路径），
+// 原地交换会污染进程级全局链序（与亲和提位同款约束）。
+func promoteTierAfter(order []strategyDef, si int, tier int) ([]strategyDef, string) {
+	for j := si + 1; j < len(order); j++ {
+		if order[j].tier != tier {
+			continue
+		}
+		if j == si+1 {
+			return order, "" // 已在下一跳位置
+		}
+		picked := order[j]
+		out := make([]strategyDef, 0, len(order))
+		out = append(out, order[:si+1]...)
+		out = append(out, picked)
+		out = append(out, order[si+1:j]...)
+		out = append(out, order[j+1:]...)
+		return out, picked.name
+	}
+	return order, ""
+}
+
+// tierName 层级中文名（警告文案/观测透出用）
+func tierName(tier int) string {
+	switch tier {
+	case tierStrategyHTTP:
+		return "HTTP 层"
+	case tierStrategyIv8:
+		return "iv8 轻执行层"
+	case tierStrategyBrowser:
+		return "重渲染层"
+	default:
+		return "未知层"
+	}
 }
 
 // safeStrategyRun 策略运行 + panic 兜底（TS 版以 try/catch 转 internal-error，语义对齐）

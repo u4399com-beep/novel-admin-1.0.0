@@ -290,17 +290,37 @@ func TestSidecarFailureSemantics(t *testing.T) {
 	})
 }
 
-// TestSidecarChainOrder 链序契约：fetch-cloak 紧随 fetch-browser，fetch-iv8 恒为链尾
+// TestSidecarChainOrder 链序契约（Task 102-a 三层架构重排）：
+// Tier 1 HTTP 层在前，fetch-iv8 独立占 Tier 2，fetch-cloak/browser 收尾 Tier 3；
+// R101 的「cloak 紧随 browser、iv8 链尾」旧契约已按成本递增架构升级
 func TestSidecarChainOrder(t *testing.T) {
 	names := strategyNames
 	if len(names) != 10 {
-		t.Fatalf("策略链应 10 条（Task 101-a 8→10），got %d: %v", len(names), names)
+		t.Fatalf("策略链应 10 条，got %d: %v", len(names), names)
 	}
-	if names[0] != "fetch-browser" || names[1] != "fetch-cloak" {
-		t.Fatalf("fetch-cloak 应插在 fetch-browser 之后，got %v", names)
+	if names[0] != "fetch-browser" {
+		t.Fatalf("fetch-browser 应为链首，got %v", names)
 	}
-	if names[len(names)-1] != "fetch-iv8" {
-		t.Fatalf("fetch-iv8 应为链尾，got %v", names)
+	// Tier 2：fetch-iv8 位于全部 Tier 1 之后、Tier 3 之前
+	idxIv8, idxCloak, idxBrowser := -1, -1, -1
+	for i, n := range names {
+		switch n {
+		case "fetch-iv8":
+			idxIv8 = i
+		case "fetch-cloak":
+			idxCloak = i
+		case "browser":
+			idxBrowser = i
+		}
+	}
+	if idxIv8 < 0 || idxCloak < 0 || idxBrowser < 0 {
+		t.Fatalf("三侧车/桥接策略应全部在链上，got %v", names)
+	}
+	if idxIv8 < 7 {
+		t.Fatalf("fetch-iv8 应在全部 7 个 Tier 1 策略之后，got idx=%d", idxIv8)
+	}
+	if !(idxIv8 < idxCloak && idxCloak < idxBrowser) {
+		t.Fatalf("Tier 2/3 顺序应 iv8→cloak→browser，got %v", names)
 	}
 }
 
@@ -400,8 +420,12 @@ func TestSidecarStrategiesContract(t *testing.T) {
 	if !strings.Contains(cloak.Description, "CloakBrowser") || !strings.Contains(cloak.Description, "侧车") {
 		t.Fatalf("fetch-cloak 描述不符契约: %q", cloak.Description)
 	}
-	if !strings.Contains(iv8.Description, "iv8") || !strings.Contains(iv8.Description, "轻量") {
+	if !strings.Contains(iv8.Description, "iv8") || !strings.Contains(iv8.Description, "Tier 2") {
 		t.Fatalf("fetch-iv8 描述不符契约: %q", iv8.Description)
+	}
+	// Task 102-a: tier 分层标注必须与链序一致
+	if cloak.Tier != tierStrategyBrowser || iv8.Tier != tierStrategyIv8 {
+		t.Fatalf("tier 标注不符：cloak=%d iv8=%d", cloak.Tier, iv8.Tier)
 	}
 	// 本测试进程基线已把侧车指向死口（TestMain）→ available 应为 false（探测失败=链跳过）
 	if cloak.Available || iv8.Available {

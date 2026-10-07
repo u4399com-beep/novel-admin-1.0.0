@@ -81,6 +81,7 @@ type StrategyInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Available   bool   `json:"available"`
+	Tier        int    `json:"tier"` // Task 102-a 三层架构：1=HTTP 层 2=iv8 轻执行层 3=重渲染层
 }
 
 // ==================== 提取结果 DTO ====================

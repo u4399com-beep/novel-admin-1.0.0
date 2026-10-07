@@ -24,7 +24,7 @@ func insertOrphanTask(t *testing.T, status, targetURL string) int64 {
 	}
 	res, err := db.Exec(
 		`INSERT INTO "ScrapeTask" ("mode","targetUrl","pages","storageMode","status","createdAt","updatedAt")
-		 VALUES ('single', ?, 1, 'db', ?, ?, ?)`,
+                 VALUES ('single', ?, 1, 'db', ?, ?, ?)`,
 		targetURL, status, nowMillis(), nowMillis())
 	if err != nil {
 		t.Fatalf("insert task: %v", err)
@@ -35,10 +35,12 @@ func insertOrphanTask(t *testing.T, status, targetURL string) int64 {
 
 func orphanTaskRow(t *testing.T, id int64) (status, message, logv string) {
 	t.Helper()
-	if err := queryOne(`SELECT "status","message","log" FROM "ScrapeTask" WHERE "id" = ?`,
-		[]any{&status, &message, &logv}, id); err != nil {
+	// R102-b（日志拆表）：主行只查小字段，日志走 readTaskLog（拆表行 + 旧列回退）
+	if err := queryOne(`SELECT "status","message" FROM "ScrapeTask" WHERE "id" = ?`,
+		[]any{&status, &message}, id); err != nil {
 		t.Fatalf("query task %d: %v", id, err)
 	}
+	logv = readTaskLog(id)
 	return
 }
 

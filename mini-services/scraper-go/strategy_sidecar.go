@@ -135,10 +135,14 @@ func probeSidecarIv8() bool {
 
 var fetchCloakStrategy = strategyDef{
 	name: "fetch-cloak",
-	// Task 101-a 描述（管理面 /api/strategies 透出）
-	description:  "CloakBrowser 隐身 Chromium 渲染（侧车 :3031）——源码级指纹伪装，过 Cloudflare/指纹检测；重但强",
+	// Task 101-a 描述（管理面 /api/strategies 透出）；102-a 重定位为 Tier 3 重渲染层：
+	// R101 曾放链首 fetch-browser 之后「能过盾时后面的梯子都省了」，但单页 ~3.4s + ~1GB
+	// 进程树的成本不该为每个新站点默认承担（文章实证：真实浏览器不应是默认执行环境）；
+	// 新链序按成本递增，亲和/挑战跳层负责把真需要的站点路由到本层
+	description:  "CloakBrowser 隐身 Chromium 渲染（侧车 :3031，Tier 3 重渲染）——源码级指纹伪装，过 Cloudflare/指纹检测；重但强",
 	probe:        probeSidecarCloak,
 	selfRetrying: true, // 昂贵策略不做链层外层重试（与 browser 策略同口径）
+	tier:         tierStrategyBrowser,
 	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
 		return sidecarStrategyRun("cloak", targetURL, timeoutMs, ctx)
 	},
@@ -146,9 +150,10 @@ var fetchCloakStrategy = strategyDef{
 
 var fetchIv8Strategy = strategyDef{
 	name:         "fetch-iv8",
-	description:  "iv8 V8 环境模拟（侧车 :3031）——无头执行站点 JS 算 cookie/参数，轻量高并发",
+	description:  "iv8 V8 环境模拟（侧车 :3031，Tier 2 轻执行）——无头执行站点 JS 算 cookie/参数，不启动 Chromium，纯脚本吞吐 ~100 倍于真实浏览器",
 	probe:        probeSidecarIv8,
 	selfRetrying: true,
+	tier:         tierStrategyIv8,
 	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
 		return sidecarStrategyRun("iv8", targetURL, timeoutMs, ctx)
 	},

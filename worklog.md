@@ -4247,3 +4247,22 @@ Stage Summary:
 - 反检测双后端上线：fetch-cloak/fetch-iv8 进策略链（10 策略），侧车可选部署（未装→策略自动跳过零影响）；国内服务器部署 stealth-service：pip install -r requirements.txt（清华源）+ ./run.sh；CloakBrowser 首启自动下 Chromium 二进制
 - dwxwc 规则 id=29 草稿落库（enabled=false，WAF 验证码合规不破解）；用户服务器：跑 scripts/add-rules-r101.py 补种→健康巡检→通过后启用
 - 乱序重排在舰队模式下首次真正可用：409 闸移除（锁保证安全）+ 分卷重复编号书的正确重排 + force 进 UI + 单书快路径
+---
+Task ID: 102
+Agent: main (Z.ai Code)
+Task: R102 双线：①依据微信公众号文章《实测 iv8 vs CloakBrowser》落地 HTTP + iv8 + CloakBrowser 三层架构 ②数据库结构优化（分表 + 索引）
+
+Work Log:
+- 【环境重建】沙箱重置后三全灭重建：Go 1.23.4（golang.google.cn）→ 双服务构建 → stealth-service 依赖（venv pip = /home/z/.venv/bin/python3 -m pip，系统 pip 指向 3.13 不匹配）→ CloakBrowser 补丁版 Chromium v146 下载（ensure_binary → ~/.cloakbrowser/chromium-146.0.7680.177.5/chrome）；沙箱周期性清后台进程 → scripts/watchdog-services.sh 看门狗（首版双实例互护因 pgrep 误判互拉重复实例抢端口 → 改 flock 独占单实例，restart 判定 curl+rg 健康口径）
+- 【文章抓取实证】mp.weixin.qq.com 文章（hopB2KR0AyCDbO4iref6aQ）四层手段实测：直接 curl → 环境异常验证页；web-reader skill → 同样被拦；CloakBrowser 侧车 /cloak 一击穿透（4.4MB 真实 DOM，标题《100倍于浏览器？实测 iv8 vs CloakBrowser》）——三层架构最高层价值当场实证；文章正文在第三部分标题处自然截断（预取版与 DOM 版一致），核心论点完整：iv8 纯脚本吞吐 ~100 倍于真浏览器（81 页/s vs 3.4s/页）、冷启动 0.1s vs 2.5-6.7s、工作集 270MB vs 1.1GB；「真实浏览器不应是爬虫默认执行环境；HTTP、iv8、CloakBrowser 三者组合才是大规模采集合理架构」
+- 【①三层架构落地】a) 策略分层常量 tierStrategyHTTP=1/tierStrategyIv8=2/tierStrategyBrowser=3（strategies.go），10 策略全标注 tier（fetch 系/curl 系/got=T1，fetch-iv8=T2，fetch-cloak/browser=T3）；b) 链序重排（chain.go allStrategies）：R101 旧序「cloak 紧随 browser 第 2 位、iv8 链尾」→ 三层成本递增「7×T1 → iv8 → cloak → browser」，重浏览器成本不再为新站点默认承担、轻执行层先于真浏览器出手；c) 挑战感知跳层：challenge.go 新增 recommendTierForChallenge（纯函数，复用挑战正则只读特征：平台级 WAF 强特征→T3，JS 算 cookie 壳/JS 跳转壳→T2，近空正文守卫）+ chain.go promoteTierAfter（copy-on-write 提层纯函数——order 可能引用 allStrategies 共享底层数组，与亲和提位同款约束）+ fetchPage 失败路径接线（challenge-loop 终止语义在前，跳层不破坏）；d) 观测透出：StrategyInfo.tier 字段 → GET /api/strategies 每策略带层级
+- 【①实战缺口补】微信「环境异常」验证壳（18KB CSS/JS 撑体积绕极小页闸、可见正文仅 65 字）此前被 assess 误判 ok=true——challenge.go 补通用风控壳词表 reRiskControlShell（环境异常/访问异常/操作异常/完成验证后/异常访问）+ 近空正文（<80 可见字）任意体积判定（与壳判定同守卫，正常内容页正文远超 80 字不误伤）+ recommendTierForChallenge 联动推荐 T3；复测：微信壳全部判 challenge-page（此前误判 ok），链最终 Tier1 内 fetch-spider（蜘蛛 UA）被微信放行 status=200 拿到真实文章
+- 【①回归】scraper-go 新增 tier_test.go 5 测试（三层链序断言/挑战分类 9 案含风控壳与不误杀案/promoteTierAfter 4 案含 copy-on-write 断言/全链不被污染/API tier 契约）+ sidecar_test.go 链序契约升级为三层语义（iv8 在 7 个 T1 后、iv8→cloak→browser 序）；全量 44.8s 通过；/api/strategies 实测 T1×7→T2 iv8→T3 cloak/browser 全表点亮（cloakBinary 探测 bug 一并修复：cloakbrowser 0.5.12 binary_info() 实际字段是 binary_path/installed，R101 旧代码误写 path/exists → fetch-cloak 恒不可用）
+- 【②数据库优化】a) 索引优化（schema.go）：三复合索引取代单列索引（Novel_updatedAt_id_idx、Novel_categoryId_updatedAt_id_idx、Novel_clicks_id_idx——最新/分类页/热门完本榜全部索引序直出零 Sort，旧单列索引 DROP 省写放大）+ Chapter_novelId_idx 删除（被 UNIQUE(novelId,idx) 最左前缀覆盖纯冗余）+ boot PRAGMA optimize（SQLite 官方统计刷新口径）；b) 垂直分表：ScrapeTaskLog（taskId PK + FK 级联，ChapterContent/Task 32-b 同构）——任务日志（≤100行×500字，长跑 ~50KB/任务）高频重写从主行剥离，主表回归全小字段紧凑行；c) 存量迁移 migrateTaskLogSplitDB（once 回调内局部 db 直入防 Task 30 P1 死锁；INSERT SELECT + ON CONFLICT DO NOTHING 幂等 + 主表 log 清零释放体积；主表旧列保留作 readTaskLog 回退保险）；d) 写读点全切换（runlog.Flush 主径/worker 终态四分支+僵尸恢复/runner 限流恢复/rulehealth 巡检复活/api 详情+resume+restart 共 10 处——外部 JSON log 字段契约不变经 readTaskLog 拼回）；e) 水平清理 tasklogx.go：终态任务 30 天 TTL（partial/running/pending 保护）+ 5000 条上限 + boot 一轮/6h 周期循环（main.go 挂载，once 外无死锁）
+- 【②回归】tasklogx_test.go 3 测试（索引在位+冗余已删/迁移幂等+UPSERT+级联/TTL 语义含 partial running 保护；shared-memory 库单连接防文件残留污染——首版 /tmp 文件库跨运行残留致全量误报）+ schema_test 索引断言更新 + audit58b/worker_orphan 日志留痕断言切 readTaskLog；方案中裁剪：部分索引三枚（isHot/isFeatured/finished）与全量复合索引在十万书级收益相近，删两份写放大简化结构；backend-go 全量 43.2s 通过 + gofmt 全触碰文件规范化
+- 【端到端实证】boot 日志（runner 自动建任务/限流恢复/编辑推荐自愈 601 本全正常）；sqlite 实测：ScrapeTaskLog 行存在（task14 5714 字节日log）且主表 log 全部 0；EXPLAIN QUERY PLAN 分类页查询 = 「SEARCH Novel USING COVERING INDEX Novel_categoryId_updatedAt_id_idx」覆盖索引零排序；详情 API task14 返回 5714 字节日志（拆表读契约不变）；SSR 首页 200/0.06s；三服务健康全绿、/api/strategies 三层全表点亮
+
+Stage Summary:
+- 三层架构上线：HTTP（毫秒默认）→ iv8 轻执行（~100ms，V8 补环境算 cookie/参数）→ CloakBrowser 重渲染（秒级指纹兜底），挑战感知跳层按响应形态智能路由（JS 壳→提前 iv8、平台 WAF→提前 cloak），亲和记忆 + 10 策略 tier 全透出；微信实战验证三层价值（CloakBrowser 穿透取证 + 风控壳判定修复 + 蜘蛛 UA 放行）
+- 数据库优化上线：三复合索引（分类页/榜单/最新全零排序，EXPLAIN 实证 COVERING INDEX）+ 冗余索引清理 + ScrapeTaskLog 垂直分表（存量自动迁移、级联清理、JSON 契约不变）+ 任务历史 TTL 治理（30 天 + 上限，舰队模式任务表不再无限膨胀）+ PRAGMA optimize
+- 用户服务器升级：git pull + 重启即生效（boot 自动建表/加索引/迁移存量日志，幂等）；stealth-service 需先跑 pip install -r requirements.txt（venv 的 python3 -m pip）+ CloakBrowser 首启自动下二进制

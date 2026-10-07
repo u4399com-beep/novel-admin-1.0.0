@@ -54,10 +54,19 @@ CREATE TABLE IF NOT EXISTS "Novel" (
         "updatedAt" INTEGER NOT NULL DEFAULT 0,
         CONSTRAINT "Novel_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
-CREATE INDEX IF NOT EXISTS "Novel_categoryId_idx" ON "Novel" ("categoryId");
-CREATE INDEX IF NOT EXISTS "Novel_updatedAt_idx" ON "Novel" ("updatedAt");
-CREATE INDEX IF NOT EXISTS "Novel_clicks_idx" ON "Novel" ("clicks");
+CREATE INDEX IF NOT EXISTS "Novel_updatedAt_id_idx" ON "Novel" ("updatedAt" DESC, "id" DESC);
+CREATE INDEX IF NOT EXISTS "Novel_categoryId_updatedAt_id_idx" ON "Novel" ("categoryId", "updatedAt" DESC, "id" DESC);
+CREATE INDEX IF NOT EXISTS "Novel_clicks_id_idx" ON "Novel" ("clicks" DESC, "id" DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS "Novel_title_author_key" ON "Novel" ("title", "author");
+-- R102-b 索引优化：上述三个复合索引取代旧单列索引（categoryId/updatedAt/clicks）——
+-- 「ORDER BY updatedAt DESC, id DESC」（最新/书库默认序）、「WHERE categoryId=? ORDER BY
+-- updatedAt DESC, id DESC」（分类页/分类榜）、「ORDER BY clicks DESC, id DESC」（热门/完本榜）
+-- 全部变为索引序直出（零 Sort 成本）；旧单列索引被复合最左前缀覆盖，删除省写放大。
+-- 低基数谓词（isHot/isFeatured/status）无需额外部分索引：全量复合索引在十万书级下
+-- 索引序扫描已足够快，且少两份索引写放大（简化胜于微优化）。
+DROP INDEX IF EXISTS "Novel_updatedAt_idx";
+DROP INDEX IF EXISTS "Novel_categoryId_idx";
+DROP INDEX IF EXISTS "Novel_clicks_idx";
 
 CREATE TABLE IF NOT EXISTS "Chapter" (
         "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +83,9 @@ CREATE TABLE IF NOT EXISTS "Chapter" (
         CONSTRAINT "Chapter_novelId_fkey" FOREIGN KEY ("novelId") REFERENCES "Novel" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "Chapter_novelId_idx_key" ON "Chapter" ("novelId", "idx");
-CREATE INDEX IF NOT EXISTS "Chapter_novelId_idx" ON "Chapter" ("novelId");
+-- R102-b 索引优化：单列 Chapter_novelId_idx 被 UNIQUE(novelId,idx) 最左前缀完全覆盖
+--（TOC/上一章/下一章全部走复合索引），删除纯冗余的写放大
+DROP INDEX IF EXISTS "Chapter_novelId_idx";
 
 CREATE TABLE IF NOT EXISTS "SiteSetting" (
         "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -163,6 +174,19 @@ CREATE TABLE IF NOT EXISTS "RuleHealth" (
         "failStreak" INTEGER NOT NULL DEFAULT 0,
         "lastNote" TEXT NOT NULL DEFAULT '',
         "updatedAt" INTEGER NOT NULL DEFAULT 0
+);
+
+-- R102-b 分表：ScrapeTaskLog —— 任务运行日志垂直拆表（ChapterContent/Task 32-b 同构）。
+-- 背景：任务日志（≤100 行 × 500 字/行，长跑任务 ~50KB）在 ScrapeTask 行内高频重写
+--（worker 每 书批次 Flush 一次），SQLite 行存储下大 TEXT 把任务行挤进溢出页，
+-- 任务列表/详情查询与主行小字段更新全部受累；拆表后主表回归全小字段紧凑行。
+-- 主键设计：taskId 单列主键（1:1 与 ScrapeTask.id），级联 ON DELETE CASCADE 随任务
+-- 删除自动清理（含 cleanupFinishedTasks 历史清理）。主表 log 旧列保留（存量行迁移
+-- 保险，读路径 readTaskLog 空值回退），新写入一律走 writeTaskLog（主表列不再增长）。
+CREATE TABLE IF NOT EXISTS "ScrapeTaskLog" (
+        "taskId" INTEGER NOT NULL PRIMARY KEY,
+        "log" TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY ("taskId") REFERENCES "ScrapeTask" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 `
 

@@ -106,9 +106,13 @@ func rowCountOf(res sql.Result) int64 {
 // 其他错误（如 SQLite 瞬时锁）由 execRetry 短暂退避后重试一次，仍失败不视为删除。
 // Task 26-d：显式触碰 updatedAt（TS 版 Prisma @updatedAt 自动维护；Go 裸 SQL 需手动，
 // 否则列表页「更新时间」对长跑任务永远冻结在创建时刻）。
+// R102-b（日志拆表）：log 从主行 UPDATE 剥离，经 writeTaskLog UPSERT 到 ScrapeTaskLog
+// 拆表行（schema.go R102-b DDL；ChapterContent 同构）——主行回归全小字段紧凑行，
+// 每书批次一次的大 TEXT 重写不再挤占任务行页密度。两语句非事务，最坏情形日志落后
+// 进度一个 flush 周期，下一次 flush 全量重写自愈（日志无强一致需求）。
 func (r *Run) Flush(extra *TaskFlushFields) bool {
-	sets := []string{"log = ?", "updatedAt = ?"}
-	args := []any{r.LogText(), nowMillis()}
+	sets := []string{"updatedAt = ?"}
+	args := []any{nowMillis()}
 	if extra != nil {
 		if extra.Done != nil {
 			sets = append(sets, "done = ?")
@@ -145,5 +149,7 @@ func (r *Run) Flush(extra *TaskFlushFields) bool {
 		// 非 P2025 类错误（SQLite 无该码）：乐观返回 true，日志行留驻内存等待下次 flush
 		return true
 	}
+	// 日志拆表写入（失败忽略：留驻内存，下次 flush 重写自愈）
+	_ = writeTaskLog(int64(r.TaskID), r.LogText())
 	return rowCountOf(res) > 0
 }

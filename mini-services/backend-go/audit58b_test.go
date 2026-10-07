@@ -86,11 +86,8 @@ func taskProgressRow(t *testing.T, id int64) (status string, total, done, chapte
 // taskLogOf 读任务日志（断言 restart/resume 的留痕行）
 func taskLogOf(t *testing.T, id int64) string {
 	t.Helper()
-	var logv string
-	if err := queryOne(`SELECT "log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&logv}, id); err != nil {
-		t.Fatalf("query log: %v", err)
-	}
-	return logv
+	// R102-b: 日志拆表后经 readTaskLog（拆表行 + 主表旧列回退）断言
+	return readTaskLog(id)
 }
 
 // ---------- ① 规则装载时序（真实 runTask 全链） ----------

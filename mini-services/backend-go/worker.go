@@ -143,15 +143,15 @@ func lastLines(s string, n int) string {
 func recoverStaleTasks() {
 	type staleRow struct {
 		id        int
-		logv      string
 		createdAt any // integer ms / float / TEXT（ historic 工具写入），由 normalizeMillis 归一
 	}
 	var stale []staleRow
+	// R102-b（日志拆表）：主表查询不再拖 log 列，日志按需 readTaskLog（拆表行 + 旧列回退）
 	err := queryList(
-		"SELECT id, log, createdAt FROM ScrapeTask WHERE status = 'running' ORDER BY id ASC",
+		"SELECT id, createdAt FROM ScrapeTask WHERE status = 'running' ORDER BY id ASC",
 		func(rows *sql.Rows) error {
 			var r staleRow
-			if err := rows.Scan(&r.id, &r.logv, &r.createdAt); err != nil {
+			if err := rows.Scan(&r.id, &r.createdAt); err != nil {
 				return err
 			}
 			stale = append(stale, r)
@@ -171,15 +171,16 @@ func recoverStaleTasks() {
 			continue // 本进程启动之后创建：非僵尸
 		}
 		line := "[" + time.Now().Format("15:04:05") + "] 服务重启，任务中断自动暂停（已采进度保留，可恢复继续采集）"
-		logv := t.logv
+		logv := readTaskLog(int64(t.id)) // R102-b: 日志拆表读（含主表旧列回退）
 		if logv != "" {
 			logv += "\n"
 		}
 		logv = lastLines(logv+line, MAX_LOG_LINES)
 		res, err := execRetry(
-			"UPDATE ScrapeTask SET status = 'paused', message = '服务重启，任务自动暂停（可恢复继续采集）', log = ?, updatedAt = ? WHERE id = ? AND status = 'running'",
-			logv, nowMillis(), t.id)
+			"UPDATE ScrapeTask SET status = 'paused', message = '服务重启，任务自动暂停（可恢复继续采集）', updatedAt = ? WHERE id = ? AND status = 'running'",
+			nowMillis(), t.id)
 		if err == nil && rowCountOf(res) > 0 {
+			_ = writeTaskLog(int64(t.id), logv) // R102-b: 日志落拆表（主行不再携带大 TEXT）
 			paused++
 			createdDesc := "<无法解析>"
 			if ms, ok := normalizeMillis(t.createdAt); ok {
@@ -1710,10 +1711,13 @@ func finalize(run *Run, status, message string) {
 		return
 	}
 	msg := truncateRunes(message, 500)
+	// R102-b（日志拆表）：各分支的 log 全部经 writeTaskLog 落拆表行，主行 UPDATE 只写
+	// 小字段；日志写入失败不重试（Flush 下轮重写自愈）
 	switch {
 	case cur == "running":
-		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'running'",
-			status, msg, run.LogText(), nowMillis(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, updatedAt = ? WHERE id = ? AND status = 'running'",
+			status, msg, nowMillis(), run.TaskID)
+		_ = writeTaskLog(int64(run.TaskID), run.LogText())
 	case cur == "pending" && (status == "success" || status == "partial" || status == "failed"):
 		// Task 27-c（重新应用 25-a 修复①，合并时丢失）：快速 pause→resume 竞态——
 		// 两 API 调用落在 worker 相邻 stopState 检查之间，worker 未感知暂停跑完全程，
@@ -1721,14 +1725,17 @@ func finalize(run *Run, status, message string) {
 		// 2s 轮询二次分发全量重跑。条件领取（WHERE status='pending'，gRunning 防重
 		// 保证无第二 worker）把实际已跑完的任务落到真终态；canceled 刻意不领取
 		// = 兑现「取消收尾中点重启」重跑语义
-		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'pending'",
-			status, msg, run.LogText(), nowMillis(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET status = ?, message = ?, updatedAt = ? WHERE id = ? AND status = 'pending'",
+			status, msg, nowMillis(), run.TaskID)
+		_ = writeTaskLog(int64(run.TaskID), run.LogText())
 	case cur == "paused" && status == "paused":
 		// 暂停确认：不触碰 status/进度字段 → 恢复后 Phase 1/2 依骨架自动续传
-		_, _ = execRetry("UPDATE ScrapeTask SET message = ?, log = ?, updatedAt = ? WHERE id = ? AND status = 'paused'",
-			msg, run.LogText(), nowMillis(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET message = ?, updatedAt = ? WHERE id = ? AND status = 'paused'",
+			msg, nowMillis(), run.TaskID)
+		_ = writeTaskLog(int64(run.TaskID), run.LogText())
 	default:
-		_, _ = execRetry("UPDATE ScrapeTask SET log = ?, updatedAt = ? WHERE id = ?", run.LogText(), nowMillis(), run.TaskID)
+		_, _ = execRetry("UPDATE ScrapeTask SET updatedAt = ? WHERE id = ?", nowMillis(), run.TaskID)
+		_ = writeTaskLog(int64(run.TaskID), run.LogText())
 	}
 }
 

@@ -57,14 +57,21 @@ func main() {
 	startSeedIfEmpty() // 初始库种子固化（Task 27）：空表自动播种 15 规则/9 分类/homeConfig
 	log.Printf("[backend-go] mode=%s port=%d db=%s", mode, port, dbPath())
 
+	// R102-b: 任务历史清理（boot 一轮 + 6h 周期循环，runner/all 模式挂载；
+	// getDB once 已完成，此处走常规助手无死锁风险——Task 30 P1 口径）
+	if n := cleanupFinishedTasks(); n > 0 {
+		log.Printf("[task-history] boot 清理完成，删除历史任务 %d 条", n)
+	}
+
 	if mode == "runner" || mode == "all" {
 		go startRunner()
-		go startPseoEnrichLoop()    // PSEO 书名种子后台富集（12s/种子，见 pseo_book.go）
-		go startProxyWatch()        // E18 出口池自愈（10min/轮，PROXYWATCH_OFF=1 停用，见 proxywatch.go）
-		go startRuleHealthLoop()    // E19 规则健康巡检（45min/轮，RULEHEALTH_OFF=1 停用，见 rulehealth.go）
-		go startFleetKeeper()       // E26 舰队自持（5min/轮，FLEETKEEPER_OFF=1 停用，见 fleetkeeper.go）
-		go startCoverSweepLoop()    // 封面巡检自愈（30min/轮，COVERSWEEP_OFF=1 停用，见 api_noveltools.go）
-		go startPseoReenrichSweep() // 种子重富集自愈（60min/轮，PSEO_REENRICH_OFF=1 停用，见 pseo_reenrich.go）
+		go startPseoEnrichLoop()      // PSEO 书名种子后台富集（12s/种子，见 pseo_book.go）
+		go startProxyWatch()          // E18 出口池自愈（10min/轮，PROXYWATCH_OFF=1 停用，见 proxywatch.go）
+		go startRuleHealthLoop()      // E19 规则健康巡检（45min/轮，RULEHEALTH_OFF=1 停用，见 rulehealth.go）
+		go startFleetKeeper()         // E26 舰队自持（5min/轮，FLEETKEEPER_OFF=1 停用，见 fleetkeeper.go）
+		go startCoverSweepLoop()      // 封面巡检自愈（30min/轮，COVERSWEEP_OFF=1 停用，见 api_noveltools.go）
+		go startPseoReenrichSweep()   // 种子重富集自愈（60min/轮，PSEO_REENRICH_OFF=1 停用，见 pseo_reenrich.go）
+		go cleanupFinishedTasksLoop() // R102-b 任务历史清理（6h/轮，见 tasklogx.go）
 	}
 	// startDevWatcher 已随 Next.js 退役（Task 27）：3000 端口由本进程直接承载，
 	// 看护职责归沙箱 dev 链路 / systemd（见 scripts/dev-go.sh 与 deployment.md）。

@@ -16,6 +16,22 @@ import (
 	"time"
 )
 
+// 策略分层（Task 102-a，微信文章《实测 iv8 vs CloakBrowser》三层架构落地）：
+//
+//	tierStrategyHTTP    = 1：纯 HTTP 层（毫秒级，默认执行环境——文章核心论点：
+//	                       「真实浏览器不应是爬虫系统的默认执行环境」）；
+//	tierStrategyIv8     = 2：iv8 轻执行层（~100ms，V8 补环境跑页内 JS 算 cookie/参数/补 DOM，
+//	                       不启动 Chromium，纯脚本吞吐是真实浏览器的 ~100 倍）；
+//	tierStrategyBrowser = 3：重渲染层（秒级+，隐身 Chromium/浏览器桥接，深度 SPA/WAF 指纹对抗兑底）。
+//
+// 链序按成本递增排列；亲和记忆（recordStrategySuccess）按 host 记住「哪层攻克」自动提位，
+// 挑战感知跳层（recommendTierForChallenge → promoteTierAfter）按响应形态智能跳层。
+const (
+	tierStrategyHTTP    = 1
+	tierStrategyIv8     = 2
+	tierStrategyBrowser = 3
+)
+
 // strategyDef 策略定义（对齐 TS StrategyDef）
 type strategyDef struct {
 	name         string
@@ -23,6 +39,7 @@ type strategyDef struct {
 	probe        func() bool
 	run          func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult
 	selfRetrying bool
+	tier         int // 策略分层（1=HTTP 2=iv8 轻执行 3=重渲染；/api/strategies 透出）
 }
 
 // strategyRunCtx 策略 run 的可选上下文。
@@ -50,12 +67,14 @@ type attemptResult struct {
 }
 
 // makeFetchStrategy fetch 系策略工厂：同一执行骨架 × 不同请求头画像梯子（selfRetrying=true）
+// fetch 系全部属 Tier 1 HTTP 层（毫秒级默认执行环境，三层架构见 tierStrategyHTTP 注）
 func makeFetchStrategy(name, description string, profiles []headerProfile) strategyDef {
 	return strategyDef{
 		name:         name,
 		description:  description,
 		probe:        func() bool { return true }, // Go 原生 HTTP 客户端恒可用
 		selfRetrying: true,                        // 内部画像梯子即是重试路径
+		tier:         tierStrategyHTTP,
 		run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
 			warnings := []string{}
 			subAttempts := []SubAttempt{}
@@ -403,6 +422,7 @@ var gotScrapingStrategy = strategyDef{
 	probe:        func() bool { return true },
 	selfRetrying: true,
 	run:          gotStrategyRun,
+	tier:         tierStrategyHTTP,
 }
 
 // urlParseHost 取 origin+"/"（Referer 缺省值）

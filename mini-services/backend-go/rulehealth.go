@@ -163,22 +163,21 @@ func patrolReviveTasks() {
 	type revival struct {
 		id   int64
 		rule int64
-		logv string
 	}
 	revs := []revival{}
+	// R102-b（日志拆表）：巡检查询不再拖主表 log 列，日志按需 readTaskLog（拆表行 + 旧列回退）
 	err := queryList(
-		`SELECT t."id", COALESCE(t."ruleId",0), COALESCE(t."log",'') FROM "ScrapeTask" t
-		 JOIN "RuleHealth" h ON h."ruleId" = t."ruleId"
-		 WHERE t."status" = 'paused' AND h."lastOK" = 1
-		   AND (t."message" LIKE '%限流%软拦截%' OR t."message" LIKE '%封禁或站点不可达%')
-		   AND t."updatedAt" <= ?`,
+		`SELECT t."id", COALESCE(t."ruleId",0) FROM "ScrapeTask" t
+                 JOIN "RuleHealth" h ON h."ruleId" = t."ruleId"
+                 WHERE t."status" = 'paused' AND h."lastOK" = 1
+                   AND (t."message" LIKE '%限流%软拦截%' OR t."message" LIKE '%封禁或站点不可达%')
+                   AND t."updatedAt" <= ?`,
 		func(rs *sql.Rows) error {
 			var id, ruleID int64
-			var logv string
-			if err := rs.Scan(&id, &ruleID, &logv); err != nil {
+			if err := rs.Scan(&id, &ruleID); err != nil {
 				return nil // 单行脏数据跳过
 			}
-			revs = append(revs, revival{id: id, rule: ruleID, logv: logv})
+			revs = append(revs, revival{id: id, rule: ruleID})
 			return nil
 		}, nowMillis()-patrolReviveSilentMs)
 	if err != nil || len(revs) == 0 {
@@ -187,16 +186,17 @@ func patrolReviveTasks() {
 	revived := 0
 	for _, rv := range revs {
 		line := "[" + runTs() + "] 巡检联动恢复（E23：规则健康实测通过，限流熔断自动出坑）"
-		logv := rv.logv
+		logv := readTaskLog(rv.id) // R102-b: 日志拆表读（含主表旧列回退）
 		if logv != "" {
 			logv += "\n"
 		}
 		logv = lastLines(logv+line, MAX_LOG_LINES)
 		res, err := execRetry(
-			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '巡检联动恢复（规则健康实测通过），等待 runner 领取继续采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
-			logv, nowMillis(), rv.id)
+			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '巡检联动恢复（规则健康实测通过），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+			nowMillis(), rv.id)
 		if err == nil {
 			if cnt, _ := res.RowsAffected(); cnt > 0 {
+				_ = writeTaskLog(rv.id, logv) // R102-b: 日志落拆表
 				revived++
 				log.Printf("[rulehealth] 任务 #%d（规则 #%d）巡检联动恢复（E23）", rv.id, rv.rule)
 			}

@@ -222,17 +222,18 @@ func autoResumePausedTasks() {
 		autoResumeAttempts[id]++
 		n := autoResumeAttempts[id]
 		var logv string
-		_ = queryOne(`SELECT "log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&logv}, id)
+		logv = readTaskLog(int64(id)) // R102-b: 日志拆表读（含主表旧列回退）
 		line := "[" + runTs() + "] 自动恢复（限流冷却结束）：第 " + itoa(n) + "/" + itoa(autoResumeMaxPerTask) + " 次重新入队（车道降档经验已延续，缺失正文自动续传）"
 		if logv != "" {
 			logv += "\n"
 		}
 		logv = lastLines(logv+line, MAX_LOG_LINES)
 		res, err := exec(
-			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（限流冷却结束），等待 runner 领取继续采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
-			logv, nowMillis(), id)
+			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（限流冷却结束），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+			nowMillis(), id)
 		if err == nil {
 			if cnt, _ := res.RowsAffected(); cnt > 0 {
+				_ = writeTaskLog(int64(id), logv) // R102-b: 日志落拆表
 				log.Printf("[backend-go-runner] task %d 限流熔断自动恢复（第 %d 次）", id, n)
 			}
 		}

@@ -392,16 +392,17 @@ func handleScrapeTaskDetail(w http.ResponseWriter, r *http.Request, ps map[strin
 	}
 	var idv, pages, total, done, created, updated, chapters, chaptersDone, chaptersTotal int64
 	var ruleID sql.NullInt64
-	var mode, targetURL, status, message, logv string
+	var mode, targetURL, status, message string
 	var createdAtRaw, updatedAtRaw any
 	var storageMode string
 	var ruleRowID sql.NullInt64
 	var ruleName, ruleCharset sql.NullString
+	// R102-b（日志拆表）：详情查询不再拖主表 log 列，日志 readTaskLog（拆表行 + 旧列回退）
 	err := queryOne(
-		`SELECT t."id", t."ruleId", t."mode", t."targetUrl", t."pages", t."status", t."total", t."done", t."created", t."updated", t."chapters", t."message", t."log", t."createdAt", t."updatedAt", t."chaptersDone", t."chaptersTotal", t."storageMode", r."id", r."name", r."charset"
+		`SELECT t."id", t."ruleId", t."mode", t."targetUrl", t."pages", t."status", t."total", t."done", t."created", t."updated", t."chapters", t."message", t."createdAt", t."updatedAt", t."chaptersDone", t."chaptersTotal", t."storageMode", r."id", r."name", r."charset"
                  FROM "ScrapeTask" t LEFT JOIN "ScrapeRule" r ON r."id" = t."ruleId" WHERE t."id" = ?`,
 		[]any{&idv, &ruleID, &mode, &targetURL, &pages, &status, &total, &done, &created, &updated,
-			&chapters, &message, &logv, &createdAtRaw, &updatedAtRaw, &chaptersDone, &chaptersTotal, &storageMode,
+			&chapters, &message, &createdAtRaw, &updatedAtRaw, &chaptersDone, &chaptersTotal, &storageMode,
 			&ruleRowID, &ruleName, &ruleCharset},
 		id,
 	)
@@ -435,6 +436,7 @@ func handleScrapeTaskDetail(w http.ResponseWriter, r *http.Request, ps map[strin
 	if ruleRowID.Valid {
 		rule = map[string]any{"id": ruleRowID.Int64, "name": ruleName.String, "charset": ruleCharset.String}
 	}
+	logv := readTaskLog(idv) // R102-b: 拆表日志（外部 JSON 契约不变）
 	writeJSON(w, 200, map[string]any{
 		"task": map[string]any{
 			"id":            idv,
@@ -698,33 +700,35 @@ func scrapeTaskResume(w http.ResponseWriter, id int64) {
 // 61-R5（E21）自 scrapeTaskResume 抽出：单任务 PATCH 与批量复活端点共用同一状态
 // 迁移与日志语义，防两路行为漂移。返回 (成功, 错误码, 错误文案)。
 func resumeTaskCore(id int64) (bool, int, string) {
-	var status, logv string
-	if err := queryOne(`SELECT "status","log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status, &logv}, id); err != nil {
+	var status string
+	if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status}, id); err != nil {
 		return false, 404, "任务不存在"
 	}
 	if status != "paused" {
 		return false, 400, "当前状态 " + status + " 不可恢复（仅已暂停可恢复）"
 	}
+	logv := readTaskLog(id) // R102-b: 日志拆表读（含主表旧列回退）
 	line := "[" + runTs() + "] 手动恢复，任务重新入队（已采进度保留，缺失正文自动续传）"
 	if logv != "" {
 		logv += "\n"
 	}
 	logv = lastLines(logv+line, MAX_LOG_LINES)
 	res, err := execRetry(
-		`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '手动恢复，等待 runner 领取继续采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
-		logv, nowMillis(), id,
+		`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '手动恢复，等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+		nowMillis(), id,
 	)
 	if err != nil {
 		return false, 500, firstLineErr(err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		var fresh string
-		if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); err != nil {
-			return false, 404, "任务不存在"
-		}
-		return false, 400, "当前状态 " + fresh + " 不可恢复"
+	if n, _ := res.RowsAffected(); n > 0 {
+		_ = writeTaskLog(id, logv) // R102-b: 日志落拆表
+		return true, 0, ""
 	}
-	return true, 0, ""
+	var fresh string
+	if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&fresh}, id); err != nil {
+		return false, 404, "任务不存在"
+	}
+	return false, 400, "当前状态 " + fresh + " 不可恢复"
 }
 
 // ==================== POST /api/scrape-tasks/resume-paused（E21） ====================
@@ -765,8 +769,8 @@ func handleScrapeTasksResumeAll(w http.ResponseWriter, r *http.Request, _ map[st
 // - 进度字段（total/done/chaptersDone/chaptersTotal/chapters）清零，由新一轮执行重新累计；
 // - log 追加重启记录；runner 2s 轮询领取（pending 不受 recoverStaleTasks 影响，见 worker.go）。
 func scrapeTaskRestart(w http.ResponseWriter, id int64) {
-	var status, logv string
-	if err := queryOne(`SELECT "status","log" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status, &logv}, id); err != nil {
+	var status string
+	if err := queryOne(`SELECT "status" FROM "ScrapeTask" WHERE "id" = ?`, []any{&status}, id); err != nil {
 		writeJSON(w, 404, map[string]string{"error": "任务不存在"})
 		return
 	}
@@ -774,6 +778,7 @@ func scrapeTaskRestart(w http.ResponseWriter, id int64) {
 		writeJSON(w, 400, map[string]string{"error": "当前状态 " + status + " 不可重启（仅已结束任务可重启；执行中请先暂停）"})
 		return
 	}
+	logv := readTaskLog(id) // R102-b: 日志拆表读（含主表旧列回退）
 	line := "[" + runTs() + "] 手动重启，任务重新入队（进度已清零，书目与缺失正文将重新采集；已入库章节骨架自动续传）"
 	if logv != "" {
 		logv += "\n"
@@ -782,12 +787,15 @@ func scrapeTaskRestart(w http.ResponseWriter, id int64) {
 	// 条件更新：仅终态可重启；count=0 时回读如实反馈（防与 worker 终态写入竞态）。
 	// Task 49-b: execRetry（busy 退避重试一次，写路径统一口径）
 	res, err := execRetry(
-		`UPDATE "ScrapeTask" SET "status" = 'pending', "total" = 0, "done" = 0, "chaptersDone" = 0, "chaptersTotal" = 0, "chapters" = 0, "message" = '手动重启，等待 runner 领取重新采集', "log" = ?, "updatedAt" = ? WHERE "id" = ? AND "status" IN ('failed','partial','canceled','success')`,
-		logv, nowMillis(), id,
+		`UPDATE "ScrapeTask" SET "status" = 'pending', "total" = 0, "done" = 0, "chaptersDone" = 0, "chaptersTotal" = 0, "chapters" = 0, "message" = '手动重启，等待 runner 领取重新采集', "updatedAt" = ? WHERE "id" = ? AND "status" IN ('failed','partial','canceled','success')`,
+		nowMillis(), id,
 	)
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		_ = writeTaskLog(id, logv) // R102-b: 日志落拆表
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		var fresh string

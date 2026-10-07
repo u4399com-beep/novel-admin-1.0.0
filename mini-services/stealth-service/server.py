@@ -72,7 +72,11 @@ def _cloak_binary_ready() -> bool:
         return False
     try:
         info = _cloakbrowser.binary_info() or {}
-        return bool(info.get("path") or info.get("exists"))
+        # R102 修复：cloakbrowser 0.5.12 实际字段是 binary_path/installed（R101 旧代码
+        # 误写 path/exists → cloakBinary 恒 false → 引擎 fetch-cloak 探测恒不可用）；
+        # 旧字段名保留兜底兼容
+        return bool(info.get("binary_path") or info.get("installed")
+                    or info.get("path") or info.get("exists"))
     except Exception:
         return False
 
