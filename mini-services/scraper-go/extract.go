@@ -36,6 +36,22 @@ func isNoiseTocTitle(title string) bool {
         return noiseTocTitles[trimJSSpace(title)]
 }
 
+// defaultTocPaginationSelectors R96（分页能力防回退）：规则未配置
+// chapterListPaginationSelector 时内置机会性目录分页发现集合。
+// 来源：R94 xinjianpan/ggd66 实测修复集（.pagelink a/.pagination a/.pagination-list a/
+// a.morechapter/#pages a/.pageLink a）+ huangjinwu 实测（.pagination-list a）+
+// biquge 系常见分页容器（.pagelist/#pagelist/.pageNav/.page-nav/.pagebar）+
+// 文本锚兜底（a:contains(下一页)，繁体站点下一頁）。
+// 安全性：命中锚仅为「候选」——worker walker 的 visited 去重/页数上限/REPLACE 语义
+//（walker 结果章节数必须多于书页内嵌才替换）保证误锚与噪声页无实害。
+var defaultTocPaginationSelectors = []string{
+        "a.morechapter",
+        ".pagelink a", ".pageLink a", ".pagination a", ".pagination-list a",
+        ".pagelist a", "#pages a", "#pagelist a", "#page_bar a", "#pagebar a",
+        ".pageNav a", ".page-nav a", ".pagebar a", ".page_bar a",
+        "a:contains(下一页)", "a:contains(下一頁)",
+}
+
 // R82（目录分页修复①）：biquge2023 系模板的 JS 混淆锚——目录分页页（list-N.html）
 // 章节锚形如 <a href="javascript:;" onclick="location.href='/txt/xx/ab7.html'" title=..>，
 // 仅看 href 会整页提 0 章（实测 xinjianpan list-2.html 99 条全混淆）。
@@ -594,8 +610,20 @@ func extractBookBudgeted(doc *goquery.Document, rule map[string]string, baseURL 
         // 在目录块尾部放「更多章节列表」锚组（a.morechapter → list-1.html…list-N.html，
         // 每页 100 章且导航全列出）。命中锚的 href（含 onclick 混淆）转绝对 URL 作 tocPages
         // 返回，供 worker 目录 walker 逐页跟随。去重保序；自页剔除；上限 200 防异常页。
+        //
+        // R96（分页能力防回退）：R82-R95 的分页规则修复只落了运行时 DB（API PUT），
+        // seed.json/存量库规则全部缺失该键 → TocPages 恒空 → walker 从不运行 → 目录恒为
+        // 书页内嵌前 100 章 + 最新章节块（用户实证《诸天领主》1-100 后直跳 796）。
+        // 现规则键未配置时启用内置机会性选择器组（R94 xinjianpan/ggd66 实测集合的超集）：
+        // 存量库/老部署零配置即恢复分页能力；REPLACE 语义（walker 结果仅在内嵌更多时替换）
+        // + visited 去重 + 页数上限保证误锚无实害。
         tocPages := []string{}
-        if ps, ok := rule["chapterListPaginationSelector"]; ok && ps != "" {
+        ps := strings.TrimSpace(rule["chapterListPaginationSelector"])
+        paginationFallback := ps == ""
+        if paginationFallback {
+                ps = strings.Join(defaultTocPaginationSelectors, ",")
+        }
+        {
                 seenPage := map[string]bool{}
                 selfPage := ""
                 if u := toAbs(baseURL, baseURL); u != "" {
@@ -625,7 +653,13 @@ func extractBookBudgeted(doc *goquery.Document, rule map[string]string, baseURL 
                         })
                 }
                 if len(tocPages) > 0 {
-                        *warnings = append(*warnings, "chapterListPaginationSelector：发现目录分页 "+strconv.Itoa(len(tocPages))+" 页，由 worker 逐页跟随")
+                        // 警告文案必须同时含「chapterListPaginationSelector」「发现目录分页」
+                        // 两个子串——后端 pageWarnedTocPagination 重试护栏按子串匹配（勿改）
+                        msg := "chapterListPaginationSelector"
+                        if paginationFallback {
+                                msg += "（内置机会性回退）"
+                        }
+                        *warnings = append(*warnings, msg+"：发现目录分页 "+strconv.Itoa(len(tocPages))+" 页，由 worker 逐页跟随")
                 }
         }
 

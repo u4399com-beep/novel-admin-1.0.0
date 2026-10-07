@@ -14,4 +14,11 @@ else
   echo "[backend-go] go 工具链缺失，使用已有二进制" >&2
 fi
 
+# SQLite CANTOPEN(14) 防护：DB_PATH 所在目录必须存在（R95 部署演练同款修复，本地 run.sh 也落地）
+if [ -n "${DB_PATH:-}" ]; then
+  mkdir -p "$(dirname "$DB_PATH")"
+else
+  mkdir -p ../db
+fi
+
 exec ./backend-go.bin
