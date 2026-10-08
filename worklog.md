@@ -4410,3 +4410,21 @@ Work Log:
 Stage Summary:
 - 远程/本地两线 R103 工作完整合并并推送（1787d6e..29312df + 双产物修复待推）
 - 服务布局统一：bin/ 双产物防版本漂移；补种成果：trxsw/biqutu/77shuku/minyuan 4 条规则自动获得代理出口，仅 23qb 黑洞待续
+
+---
+Task ID: R104-1
+Agent: Z.ai Code（主代理）
+Task: 写一个章节填充的任务（沙箱环境重建 + 创建 mode=single 章节填充任务并验证跑通）
+
+Work Log:
+- 沙箱被重置（custom.db 0 字节、服务全停、go 工具链不在原路径）→ mkdir -p db/ 修复 SQLite 打开失败（error 14=目录不存在），ensure-services.sh 拉起双服务全绿；seed 自动恢复 14+ 规则
+- 复核 api_scrape_tasks.go 创建契约：POST /api/scrape-tasks {mode, targetUrl, ruleId, pages, storageMode}；mode=single=Phase1 骨架+Phase2 填充；runner 2s 轮询领取
+- 创建章节填充任务 #1：mode=single, targetUrl=https://101kks.com/book/6527.html（用户此前验证过的书页）, ruleId=16, storageMode=db → ok:true
+- 实测进度：23:15 创建 → 8/663 → 19/663（早期 3 章全策略失败：101kks 对沙箱 IP 出挑战页，fetch-cloak unavailable，affinity 将 browser 策略提至链首 1-5s/章）→ lane-control 限流降道 4→2 → 稳态 82/663（约 2.4s/章），失败章节自动跳过不阻塞
+- 舰队自组织验证：fleet-keeper 自动建 list 任务 #7-#16（每规则一条），5 条 running 填充中（x2552 35/159018、23uswx 37/36252、夜伴书屋 10/1254、ixdzs8 0/64100、5165 0/11448），5 条 paused（minyuan/biqutu/77shuku/trxsw/xinjianpan，代理/失败保护）；Novel 表 316 本骨架入库
+- Agent Browser 端到端验证与一键升级命令交付顺延至下轮（本轮聚焦任务创建跑通）
+
+Stage Summary:
+- 章节填充任务创建跑通：API 一句话创建（curl -X POST /api/scrape-tasks -d '{"mode":"single","targetUrl":"<书页URL>","ruleId":<规则ID>}'），admin UI 同等效
+- 沙箱重建后全链路自愈：seed 规则恢复 → fleet-keeper 自动建任务 → 多任务并行填充 → 316 本骨架入库
+- 101kks 沙箱 IP 被挑战页软拦截属环境性（browser 策略可穿但 1-5s/章），服务器出口 IP 直连表现应更好
