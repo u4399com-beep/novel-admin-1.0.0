@@ -1,5 +1,5 @@
-{{/* 101kks 目录页（移植 TocView）：单列白卡 + 蓝竖条节标题 + 最新章节（尾 12，JS 反转新→舊）
-+ 三栏章节列表（正序/倒序 JS 切换）+ 我的書籤（101kks.bookmarks，101kks.js 填充）。 */}}
+{{/* 101kks 目录页（移植 TocView）：单列白卡 + 蓝竖条节标题 + 三栏章节列表（正序/倒序 JS 切换）
++ 我的書籤（101kks.bookmarks，101kks.js 填充）。（R103：最新章节区块迁至书籍页简介下方） */}}
 {{define "content"}}
 <div class="mx-auto w-full max-w-[1112px] px-3 py-4 sm:px-4">
   <section class="min-h-[50vh] rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
@@ -26,22 +26,6 @@
         <span class="shrink-0 text-xs text-[#888]">繼續閱讀 →</span>
       </a>
     </div>
-
-    {{/* 最新章節（全书倒数 12 章，服务端正序，JS 反转新→舊） */}}
-    {{if .Chapters}}
-    <h3 class="mt-5 flex items-center gap-2 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]">
-      最新章節
-      <span class="text-xs font-normal text-[#888]">最近更新 12 章 · 新→舊</span>
-    </h3>
-    <div id="kks-toc-latest" data-reverse="1" class="grid gap-x-6 md:grid-cols-2 lg:grid-cols-3">
-      {{$total := len .Chapters}}{{$from := sub $total 12}}
-      {{range $i, $c := .Chapters}}{{if ge $i $from}}
-      <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="flex min-w-0 cursor-pointer items-center gap-2 border-b border-black/5 py-[15px] text-left text-base text-[#333] transition-colors hover:text-[#06c]">
-        <span class="truncate">{{$c.title}}</span>
-      </a>
-      {{end}}{{end}}
-    </div>
-    {{end}}
 
     {{/* 全部章节：蓝竖条节标题 + 三栏列表 */}}
     <h3 class="mt-5 flex items-center gap-2 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]">

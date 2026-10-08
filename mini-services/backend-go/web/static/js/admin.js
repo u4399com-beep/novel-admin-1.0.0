@@ -245,7 +245,33 @@
       rulesCache = await api('GET', '/api/scrape-rules') || [];
       renderRules(rulesCache);
       rebuildRuleSelects();
+      refreshProxyPool(true); // R103: 代理池统计与规则健康同源刷新
     } catch (e) { if (!silent) handleErr(e); }
+  }
+
+  // R103: 全局代理池观测（GET /api/proxypool）+ 手动收割（POST /api/proxypool/harvest）
+  async function refreshProxyPool(silent) {
+    try {
+      var st = await api('GET', '/api/proxypool');
+      if (!st) return;
+      $('#adm-pool-total').textContent = st.total || 0;
+      $('#adm-pool-alive').textContent = st.alive || 0;
+      $('#adm-pool-dead').textContent = st.dead || 0;
+      $('#adm-pool-waiting').textContent = st.rulesWaiting || 0;
+      $('#adm-pool-last').textContent = st.lastHarvestAt ? fmtTs(st.lastHarvestAt) : '尚未收割';
+      var top = st.top || [];
+      $('#adm-pool-top').innerHTML = top.length
+        ? top.map(function (t) {
+            return '<span class="mr-4 inline-block">[' + escapeHtml(t.ms) + 'ms·✓' + escapeHtml(t.okN) + '] ' + escapeHtml(t.proxy) + '</span>';
+          }).join('')
+        : '<span class="text-neutral-300">暂无可用快口（等待收割轮询，可点「手动收割一轮」）</span>';
+    } catch (e) { if (!silent) handleErr(e); }
+  }
+
+  async function harvestProxyPool(btn) {
+    await api('POST', '/api/proxypool/harvest');
+    toast('收割已启动：拉候选→连通性测试→筛选补种约需 1-3 分钟，稍后自动刷新');
+    setTimeout(function () { refreshProxyPool(true); }, 120000);
   }
 
   function rebuildRuleSelects() {
@@ -1732,6 +1758,12 @@
         toast(res && res.message ? res.message : '已批量恢复暂停任务', 'ok');
         refreshTasks();
       } catch (e) { handleErr(e); }
+    }));
+
+    // R103: 全局代理池手动收割
+    var poolHarvest = $('#adm-pool-harvest');
+    if (poolHarvest) poolHarvest.addEventListener('click', withBusy(poolHarvest, async function () {
+      try { await harvestProxyPool(poolHarvest); } catch (e) { handleErr(e); }
     }));
 
     var catAdd = $('#adm-cat-add');

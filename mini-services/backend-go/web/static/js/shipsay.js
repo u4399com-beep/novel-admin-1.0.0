@@ -123,10 +123,8 @@
       }
     });
   }
-  Array.prototype.forEach.call(document.querySelectorAll('[data-reverse="1"]'), function (box) {
-    var items = Array.prototype.slice.call(box.children);
-    items.reverse().forEach(function (el) { box.appendChild(el); });
-  });
+  /* R103：最新章节区块迁至书籍页并以 .LatestChapters 服务端新→旧直出，
+     模板已无 data-reverse="1" 元素（ss-toc-latest / ss-book-latest 均移除），通用反转循环删除 */
 
   /* ---------- 7) 章节页 ---------- */
   var reader = document.getElementById('ss-reader');

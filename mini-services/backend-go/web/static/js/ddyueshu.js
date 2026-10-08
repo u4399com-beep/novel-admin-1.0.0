@@ -73,12 +73,7 @@
     });
   }
 
-  /* ---------- 3) 目录页：最新章节组反转 ---------- */
-  var latest = document.getElementById('dd-toc-latest');
-  if (latest && latest.getAttribute('data-reverse')) {
-    var items = Array.prototype.slice.call(latest.children);
-    items.reverse().forEach(function (el) { latest.appendChild(el); });
-  }
+  /* R103：最新章节区块迁至书籍页并以 .LatestChapters 服务端新→旧直出，dd-toc-latest 反转已移除 */
 
   /* ---------- 4) 章节页 ---------- */
   var reader = document.getElementById('dd-reader');

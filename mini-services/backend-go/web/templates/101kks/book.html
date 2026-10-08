@@ -120,6 +120,23 @@
           </div>
         </div>
       </section>
+
+      {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页） */}}
+      {{if .LatestChapters}}
+      <section class="rounded-[3px] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,.12),0_1px_2px_rgba(0,0,0,.24)] sm:p-5">
+        <h3 class="flex items-center gap-2 border-l-4 border-[#1f6cb2] bg-[#f5f6f7] px-3 py-2 font-bold text-[#1f6cb2]">
+          最新章節
+          <span class="text-xs font-normal text-[#888]">最近更新 12 章 · 新→舊</span>
+        </h3>
+        <div class="grid gap-x-6 md:grid-cols-2 lg:grid-cols-3">
+          {{range $c := .LatestChapters}}
+          <a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="flex min-w-0 cursor-pointer items-center gap-2 border-b border-black/5 py-[15px] text-left text-base text-[#333] transition-colors hover:text-[#06c]">
+            <span class="truncate">{{$c.title}}</span>
+          </a>
+          {{end}}
+        </div>
+      </section>
+      {{end}}
     </div>
 
     {{/* 右侧栏：本週最強（熱門/完本 切换） */}}

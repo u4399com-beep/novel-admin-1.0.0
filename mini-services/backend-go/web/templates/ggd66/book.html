@@ -46,9 +46,17 @@ Go 契约书页仅带 12 章预览（TSX 内嵌全部章节目录），完整目
     </div>
   </section>
 
-  {{/* 最新章节（4 列虚线行，Go 契约 12 章预览） */}}
+  {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页） */}}
+  {{if .LatestChapters}}<section class="mt-3 rounded-[4px] border border-[#ccc] bg-white p-3">
+    <h3 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">最新章节<span class="ml-2 text-[13px] font-normal text-[#999]">最近更新 12 章</span></h3>
+    <div class="grid grid-cols-1 gap-x-3 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      {{range .LatestChapters}}<a href="{{chapterURL .id}}" title="{{.title}}" class="h-[28px] cursor-pointer truncate border-b border-dashed border-[#ccc] px-1 text-left text-[13px] leading-[28px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>{{end}}
+    </div>
+  </section>{{end}}
+
+  {{/* 章节预览（4 列虚线行，Go 契约 12 章预览；最新章节已迁至简介下方 R103） */}}
   <section class="mt-3 rounded-[4px] border border-[#ccc] bg-white p-3">
-    <h2 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">最新章节<span class="ml-2 text-[13px] font-normal text-[#999]">共 {{.ChaptersTotal}} 章 · 前往目录页查看全部</span></h2>
+    <h2 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">章节预览<span class="ml-2 text-[13px] font-normal text-[#999]">共 {{.ChaptersTotal}} 章 · 前往目录页查看全部</span></h2>
     <div class="grid grid-cols-1 gap-x-3 min-[468px]:grid-cols-2 md:grid-cols-4">
       {{range .Chapters}}<a href="{{chapterURL .id}}" class="h-[28px] cursor-pointer truncate border-b border-dashed border-[#ccc] px-1 text-left text-[13px] leading-[28px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{.title}}</a>{{else}}<div class="col-span-full rounded-[4px] border border-dashed border-[#ccc] bg-white p-10 text-center text-[14px] text-[#999]">暂无章节</div>{{end}}
     </div>

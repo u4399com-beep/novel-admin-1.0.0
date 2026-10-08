@@ -1,5 +1,5 @@
-{{/* ggd66 目录页 —— 移植 Toc：面包屑 + 白盒（标题行 + 返回书页 + 最新章节 + 4 列全量列表）。
-最新章节用 len/sub 取全量末 12 段（模板无 reverse，区间内为旧→新）。 */}}
+{{/* ggd66 目录页 —— 移植 Toc：面包屑 + 白盒（标题行 + 返回书页 + 4 列全量列表）。
+「最新章节」区块 R103 迁至书籍页简介下方（书籍页用 .LatestChapters 服务端新→旧序）。 */}}
 {{define "content"}}
 <div class="mx-auto mt-1 w-[90%] max-w-[1200px]">
 
@@ -15,14 +15,6 @@
       <h2 class="mb-0 flex-1 border-b-0 pb-0 text-[18px] font-medium text-[#333]">{{.Novel.title}} · 全部章节目录<span class="ml-2 text-[13px] font-normal text-[#999]">共 {{len .Chapters}} 章</span></h2>
       <a href="{{bookURL .Novel.id}}" class="cursor-pointer rounded-[4px] border border-[#ccc] bg-white px-4 py-1.5 text-[13px] text-[#333] transition-colors duration-200 hover:border-[#56ccb5] hover:text-[#56ccb5]">返回书页</a>
     </div>
-
-    {{/* 最新章节（最近更新 12 章，区间内旧→新） */}}
-    {{$total := len .Chapters}}{{if gt $total 0}}<div class="mb-2 mt-2 border-b border-[#ccc] pb-3">
-      <h3 class="mb-2 border-b border-[#ccc] pb-[6px] text-[18px] font-medium text-[#333]">最新章节<span class="ml-2 text-[13px] font-normal text-[#999]">最近更新 12 章</span></h3>
-      <div class="grid grid-cols-1 gap-x-3 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {{range $i, $c := .Chapters}}{{if ge $i (sub $total 12)}}<a href="{{chapterURL $c.id}}" title="{{$c.title}}" class="h-[28px] cursor-pointer truncate border-b border-dashed border-[#ccc] px-1 text-left text-[13px] leading-[28px] text-[#00886d] transition-colors duration-200 hover:text-[#f50]">{{$c.title}}</a>{{end}}{{end}}
-      </div>
-    </div>{{end}}
 
     <div class="mt-2">
       <div class="grid grid-cols-1 gap-x-3 min-[468px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">

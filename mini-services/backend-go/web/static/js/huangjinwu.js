@@ -73,11 +73,7 @@
     });
   }
 
-  var latest = document.getElementById('hj-latest-pills');
-  if (latest && latest.getAttribute('data-reverse')) {
-    var items = Array.prototype.slice.call(latest.children);
-    items.reverse().forEach(function (el) { latest.appendChild(el); });
-  }
+  /* R103：最新章节区块以 .LatestChapters 服务端新→旧直出，hj-latest-pills 反转已移除 */
 
   /* ---------- 3) 阅读页 ---------- */
   var head = document.getElementById('hj-reader-head');

@@ -2,10 +2,10 @@
  * x2552.js —— 杰奇经典模板主题私有交互（vanilla JS，零依赖）。
  * 移植自 src/themes/x2552 React 状态交互：
  *  1) 阅读记录浮层（localStorage reader.history，写入方为公共 app.js）
- *  2) 目录页：最新章节组反转（新→旧）
- *  3) 章节页：阅读偏好（字号/行距/字体/字色/五场景，localStorage reader-prefs-v1，
+ *  2) 章节页：阅读偏好（字号/行距/字体/字色/五场景，localStorage reader-prefs-v1，
  *     与 React 版 use-reader-prefs 同 key 同形状）+ 键盘 ← → 翻章
- *  4) 加入收藏提示（Ctrl+D）
+ *  3) 加入收藏提示（Ctrl+D）
+ * （目录页最新章节组反转已随 R103 区块迁移移除：书页 .LatestChapters 服务端新→旧序，免 JS）
  */
 (function () {
   'use strict';
@@ -64,14 +64,7 @@
     });
   });
 
-  /* ---------- 3) 目录页：最新章节组反转 ---------- */
-  var latest = document.getElementById('x25-toc-latest');
-  if (latest && latest.getAttribute('data-reverse')) {
-    var items = Array.prototype.slice.call(latest.children);
-    items.reverse().forEach(function (el) { latest.appendChild(el); });
-  }
-
-  /* ---------- 4) 章节页：阅读偏好（同 React use-reader-prefs 契约） ---------- */
+  /* ---------- 3) 章节页：阅读偏好（同 React use-reader-prefs 契约） ---------- */
   var reader = document.getElementById('x25-reader');
   var content = document.getElementById('fb-chapter-content');
   if (reader && content) {

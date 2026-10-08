@@ -83,6 +83,24 @@
   <section id="tab-rules" class="adm-panel hidden space-y-4">
     <div class="adm-card">
       <div class="mb-3 flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">全局代理池（R103 自动收割）</h2>
+        <div class="flex items-center gap-2">
+          <button type="button" id="adm-pool-harvest" class="adm-btn">手动收割一轮</button>
+        </div>
+      </div>
+      <p class="mb-2 text-[11px] text-neutral-400">每 5 分钟自动去多源搜代理 → 并发连通性测试（204 探测 + 407 判死）→ 筛选沉淀；直连不健康且无代理的规则自动补种站点实测通过的快口（黑洞站/407 站自动突破）。PROXYPOOL_OFF=1 可停用。</p>
+      <div id="adm-pool-stats" class="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
+        <span>候选总数：<b id="adm-pool-total">—</b></span>
+        <span>活口：<b id="adm-pool-alive" class="text-emerald-600">—</b></span>
+        <span>死口：<b id="adm-pool-dead" class="text-red-600">—</b></span>
+        <span>待补种规则：<b id="adm-pool-waiting" class="text-amber-600">—</b></span>
+        <span>最近收割：<span id="adm-pool-last" class="text-neutral-500">—</span></span>
+      </div>
+      <div id="adm-pool-top" class="adm-cell-url text-[12px] leading-6 text-neutral-500">加载中…</div>
+    </div>
+
+    <div class="adm-card">
+      <div class="mb-3 flex items-center justify-between">
         <h2 class="adm-h2 !mb-0">采集规则（<span id="adm-rule-count">{{len .Rules}}</span>）</h2>
         <div class="flex items-center gap-2">
           <button type="button" id="adm-rule-healthcheck" class="adm-btn">立即巡检（E19）</button>

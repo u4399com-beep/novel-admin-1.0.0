@@ -246,7 +246,9 @@ UNIT
 else
   # 默认模式：setsid 托孤 + watchdog 自愈循环（60s/轮，复用 ensure-services.sh）
   cd "$ROOT/mini-services/backend-go"
-  setsid nohup "${ENV_LINES[@]}" ./backend-go.bin >> /tmp/backend-go-api.log 2>&1 </dev/null &
+  # 注意：必须用 env 前缀传递环境变量——nohup 会把 "VAR=value" 当成命令名
+  # （历史 bug: nohup: failed to run command 'BACKEND_PORT=3000': No such file or directory）
+  setsid nohup env "${ENV_LINES[@]}" ./backend-go.bin >> /tmp/backend-go-api.log 2>&1 </dev/null &
   cd "$ROOT/mini-services/scraper-go"
   setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 </dev/null &
   cd "$ROOT"

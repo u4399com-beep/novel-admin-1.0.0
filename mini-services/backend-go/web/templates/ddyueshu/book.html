@@ -1,5 +1,5 @@
 {{/* ddyueshu 书籍页（移植 Book.tsx）：面包屑 + 封面信息区 + 简介/标签 + 推荐阅读行 + 最新章节 dl。
-适配：React latest6（客户端全量章节尾 6）→ Go 契约以 .LastChapter 单条 + .Chapters[12] 预览呈现；
+适配：R103 起最新章节区块以服务端 .LatestChapters（12 章新→旧）直出（迁自目录页，零 JS 反转）；
 推荐阅读行复用同分类 .Related。开始阅读=预览首章。 */}}
 {{define "content"}}
 <div>
@@ -68,20 +68,16 @@
   </p>
   {{end}}
 
-  {{/* 最新章节：dl 卷头 + dd 三栏（33%） */}}
+  {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页；原〔最新〕单条+章节预览混合组由真实最新 12 章替代） */}}
   <section class="dd-box dd-box-mid mt-2">
     <div class="dd-box-title flex items-center justify-between bg-[#f6f8fe]">
       <span>最新章节</span>
       <a class="dd-greenlink text-[12px]" href="{{tocURL .Novel.id}}">完整目录 &gt;&gt;</a>
     </div>
-    {{if or .LastChapter .Chapters}}
+    {{if .LatestChapters}}
     <dl class="dd-dd-grid px-2 pb-2 pt-1">
       <dt class="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">《{{.Novel.title}}》最新章节</dt>
-      {{if .LastChapter}}
-      <dd class="dd-dd-item"><a class="block" href="{{chapterURL .LastChapter.id}}">〔最新〕{{.LastChapter.title}}</a></dd>
-      {{end}}
-      <dt class="dd-hei col-span-full mt-2 bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">《{{.Novel.title}}》章节预览</dt>
-      {{range .Chapters}}
+      {{range .LatestChapters}}
       <dd class="dd-dd-item"><a class="block" href="{{chapterURL .id}}">{{.title}}</a></dd>
       {{end}}
     </dl>

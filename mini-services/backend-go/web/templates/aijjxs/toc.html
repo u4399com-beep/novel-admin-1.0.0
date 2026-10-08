@@ -1,6 +1,6 @@
-{{/* aijjxs 目录页（移植 Toc.tsx）：暖纸卡片 + meta 行 + 简介框 + 最新章节（尾 12 章）+ 全量章节 3 列网格。
-适配：React「最新章节 新→旧」的倒序由 aijjxs.js 对 #aj-toc-latest 反转（禁 JS 时仍正序可用）；
-正/倒序切换与已读置灰由 aijjxs.js（localStorage aj-read）。 */}}
+{{/* aijjxs 目录页（移植 Toc.tsx）：暖纸卡片 + meta 行 + 简介框 + 全量章节 3 列网格。
+适配：正/倒序切换与已读置灰由 aijjxs.js（localStorage aj-read）。
+（R103：最新章节区块迁至书籍页简介下方，服务端 .LatestChapters 新→旧直出，无需 JS 反转） */}}
 {{define "content"}}
 <div class="mx-auto w-full max-w-[1200px] rounded-[12px] border border-[#e5dccd] bg-[#fffdf8] p-4 shadow-[0_12px_32px_-22px_rgba(31,41,55,0.35)] sm:p-6">
   <div class="flex flex-wrap items-end justify-between gap-2 border-b border-[#e5dccd] pb-3">
@@ -22,22 +22,6 @@
   <div class="mt-3 rounded-[8px] bg-[#f4efe2] p-3 text-[13px] leading-[1.8] text-[#6b7280]">
     <p class="line-clamp-3">{{if .Novel.description}}{{.Novel.description}}{{else}}暂无简介{{end}}</p>
   </div>
-
-  {{/* 最新章节：尾 12 章（服务端正序，JS 反转为新→旧） */}}
-  {{if .Chapters}}
-  <div class="mt-4">
-    <p class="mb-2 text-[14px] font-bold text-[#1f3f3a]">
-      最新章节
-      <span class="ml-2 text-[12px] font-normal text-[#9ca3af]">最近更新 12 章 · 新→旧</span>
-    </p>
-    <div id="aj-toc-latest" data-reverse="1" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      {{$total := len .Chapters}}{{$from := sub $total 12}}
-      {{range $i, $c := .Chapters}}{{if ge $i $from}}
-      <a class="block truncate rounded-[8px] border border-[#e5dccd] bg-[#fbf7ee] px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]" href="{{chapterURL $c.id}}" title="{{$c.title}}">{{$c.title}}</a>
-      {{end}}{{end}}
-    </div>
-  </div>
-  {{end}}
 
   {{/* 全量章节网格 */}}
   {{if .Chapters}}

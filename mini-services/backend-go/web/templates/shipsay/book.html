@@ -1,6 +1,6 @@
 {{/* shipsay 书籍页（移植 Book.tsx）：信息头 + Tab 卡片（作品信息 / 完整目录）。
-适配：React 最新 12 章（客户端全量尾 12 倒序）→ Go 以 .LastChapter + .Chapters[12] 预览呈现
-（预览组由 shipsay.js 反转为新→旧）；Tab 由 shipsay.js 切换，完整目录 Tab 内置跳转目录页入口。 */}}
+适配：R103 起 Tab1 内最新章节组以服务端 .LatestChapters（12 章新→旧）直出（迁自目录页，零 JS 反转）；
+Tab 由 shipsay.js 切换，完整目录 Tab 内置跳转目录页入口。 */}}
 {{define "content"}}
 <div class="mx-auto w-full max-w-[960px] px-2 pb-6 pt-[10px]">
   <div class="space-y-[10px]">
@@ -52,10 +52,10 @@
       </section>
       <section class="bg-white">
         <div class="border-b border-[#DDD] py-2.5 text-center text-[15px] font-bold text-[#3E3D43]">最新章节</div>
-        {{if .Chapters}}
+        {{if .LatestChapters}}
         <div class="px-2 py-2">
-          <div id="ss-book-latest" data-reverse="1" class="grid grid-cols-3 max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
-            {{range .Chapters}}
+          <div class="grid grid-cols-3 max-[959px]:grid-cols-2 max-[639px]:grid-cols-1">
+            {{range .LatestChapters}}
             <a class="flex h-[50px] items-center gap-2 border-b border-dotted border-[#E6E6E6] px-2" href="{{chapterURL .id}}">
               <span class="w-8 shrink-0 text-right text-[11px] text-[#C0C4CC]">{{.idx}}</span>
               <span class="min-w-0 flex-1 truncate text-[14px] text-[#1A1A1A] transition-colors hover:text-[#ED4259]">{{.title}}</span>

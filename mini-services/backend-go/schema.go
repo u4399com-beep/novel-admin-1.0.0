@@ -188,12 +188,33 @@ CREATE TABLE IF NOT EXISTS "ScrapeTaskLog" (
         "log" TEXT NOT NULL DEFAULT '',
         FOREIGN KEY ("taskId") REFERENCES "ScrapeTask" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+-- R103: 全局代理出口池 —— miniproxypool.go 收割循环写入（自动搜代理 + 连通性测试 +
+-- 筛选沉淀 + 规则补种）。proxy 唯一；ms=最近探测时延；failStreak 连败达阈值判死；
+-- 死口保留 7 天供低频复活探测，过期由治理清理。
+CREATE TABLE IF NOT EXISTS "ProxyExit" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "proxy" TEXT NOT NULL,
+        "ms" INTEGER NOT NULL DEFAULT 0,
+        "okN" INTEGER NOT NULL DEFAULT 0,
+        "failN" INTEGER NOT NULL DEFAULT 0,
+        "failStreak" INTEGER NOT NULL DEFAULT 0,
+        "dead" INTEGER NOT NULL DEFAULT 0,
+        "source" TEXT NOT NULL DEFAULT '',
+        "lastOkAt" INTEGER NOT NULL DEFAULT 0,
+        "lastFailAt" INTEGER NOT NULL DEFAULT 0,
+        "lastProbeAt" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" INTEGER NOT NULL DEFAULT 0,
+        "updatedAt" INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "ProxyExit_proxy_key" ON "ProxyExit" ("proxy");
+CREATE INDEX IF NOT EXISTS "ProxyExit_dead_ms_idx" ON "ProxyExit" ("dead", "ms");
 `
 
 // ensureBaseSchema 全量基础 schema 幂等引导（全新库建表，存量库空操作）。
 // ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训：
 // 严禁 once 外经 exec/query 助手再入 getDB）。
 func ensureBaseSchema(db *sql.DB) error {
-	_, err := db.Exec(baseSchemaDDL)
-	return err
+        _, err := db.Exec(baseSchemaDDL)
+        return err
 }

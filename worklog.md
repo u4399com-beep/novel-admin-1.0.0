@@ -4330,3 +4330,67 @@ Stage Summary:
 - R103 两大主线并存互补：responseType=html（书页提取直取，JA3 伪装过 CF）+ chapterListHtmlApiTemplate（walker 跟随，适配分批/LoadMore 站）；101kks 实测 850 章/本全量
 - 引擎抓取时乱序排序（sortChapterRefsByNo）为远端会话没有的独立增量，5165 形态页面乱序源头根治
 - 一键升级命令（用户服务器）：cd /opt/novel-admin && bash scripts/upgrade.sh
+
+
+---
+Task ID: 2-a
+Agent: subagent (模板改造专家 · 前端模板 2-a)
+Task: R103 Task 2-a 将「最新章节（最近更新 12 章）」区块从目录页(toc.html)迁移到书籍页(book.html)简介区块下方——负责 6 主题：23qb、ggd66、ncnd、pilishuwu、trxsw、x2552
+
+Work Log:
+- 【迁移规则】6 主题统一按既定规则改造：toc.html 整块删除「最新章节」区块（含仅服务该区块的 {{$total := len .Chapters}}{{if gt $total 0}} 区间判断；ncnd 的 {{if .Chapters}} 被正文网格共用故只删内层）；book.html 简介所在 section/panel 之后插入同款区块；循环改 {{range .LatestChapters}}（服务端 idx 降序新→旧，零反转），外层 {{if .LatestChapters}} 包裹，注释统一为「R103 迁自目录页」；chapterURL/wcFmt 与 {{if $c.wordCount}}（Task 28-c）判断保留；各主题 HTML 结构/类名/SVG 图标照抄原 toc 区块
+- 【23qb】toc.html 删 L15-26（独立 section，连同 $total 判断整块移除）；book.html 简介白盒 section 之后（新 L48-59）插入，区块类名/SVG 逐字照抄；JS 无 latest 代码（grep 验证）
+- 【ggd66】toc.html 删 L19-25（白盒内嵌 div+h3+4 列网格）；book.html 头部信息卡 section 之后（新 L49-55）插入，原区块外层 div（mb-2 mt-2 border-b pb-3，系目录页白盒内分隔用途）升级为书页独立 section（mt-3 rounded-[4px] border bg-white p-3，与相邻区块同构），h3+网格逐字保留
+- 【ncnd】toc.html 删章节网格内「最新章节」头 + 12 条 nc-latest 橙标行（L35-39，$total/$from 随删，{{if .Chapters}} 共用判断保留）；book.html 信息区 panel 之后（新 L45-55）插入 nc-panel + nc-panel-bd-flush + nc-ch-grid（nc-ch-head + nc-latest 链接照抄 toc 版式）
+- 【pilishuwu】toc.html 删 L27-40（独立 section 整块）；book.html 内容简介 section 之后（新 L53-66）插入，header 条+三列网格+wordCount 判断逐字照抄；JS 无 latest 代码
+- 【trxsw】toc.html 删 L28-38（独立 section 整块）；book.html 内容简介 section 之后（新 L52-62）插入，灰底标题条+4 列网格逐字照抄；JS 无 latest 代码
+- 【x2552】toc.html 删 L43-60（独立白盒整块，含 #x25-toc-latest/data-reverse；书籍信息头里的「最新章节」导航按钮系 LastChapter 链接非区块，保留）；book.html 内容简介 .pl 盒之后、书评区之前（新 L75-91）插入，蓝顶条/标题条/4 列 ul 照抄（去 id/data-reverse，外层 mt-2 适配为书页同层 mx-2 mb-2 与简介/书评区对齐）；x2552.js 删除 L67-72 反转代码块（getElementById('x25-toc-latest')+data-reverse 分支），文件头与分段注释同步重编号（4→3），node --check 通过
+- 【JS 普查】grep 全量核查 6 主题 static/js：仅 x2552.js 存在 *-toc-latest/data-reverse 反转代码（已删）；23qb/ggd66/ncnd/pilishuwu/trxsw.js 均无
+- 【验证】临时 Go 测试（跑完即删）对 6 主题 _shared+toc/book 用 webFuncMap 全量解析（define/range/if/end 配平）+渲染断言：书页渲染 .LatestChapters 且顺序=服务端新→旧、空数组零渲染、目录页区块特征串清零、目录页全量章节列表完好、wordCount=0 不显示「0字」——全部 PASS；backend-go 全量 go test 51.2s 通过（含 themeNames 遍历模板解析/页脚渲染类测试）；仅触碰 6 主题的 toc/book/x2552.js，其他主题与 Go 代码零改动
+- 【异常上报】①ggd66 book.html 在插入点正下方原有一个标题同为「最新章节」的 .Chapters 12 章预览区块（Go 契约前 12 章正序），按硬约束未动——现书页出现两个相邻「最新章节」区块（新=真实最近更新新→旧 / 旧=最早 12 章预览），建议父任务跟进：将旧预览块更名「章节预览」或移除；②ncnd book.html 下半部原有《书名》最新章节 panel（LastChapter+章节预览网格）同样保留未动，同类重复现象；③ncnd 主题按任务说明直接在其未提交工作区版本上叠加修改，git diff 中混有其先前改动
+
+Stage Summary:
+- 6 主题（23qb/ggd66/ncnd/pilishuwu/trxsw/x2552）「最新章节」区块完成 toc→book 迁移：目录页减重（不再渲染尾 12 切片），书籍页简介下方新增真实「最近更新 12 章」（.LatestChapters 服务端新→旧，零 JS 依赖，空数据零渲染）；x2552.js 反转代码同步清理
+- 模板语法配平经 html/template 实解析验证 + backend-go 全量测试通过；改动严格限定在负责主题的 toc.html/book.html/x2552.js
+- 遗留提示：ggd66/ncnd 书页原有「最新章节」命名的前 12 章预览区块未动（硬约束），与新区块并存待父任务决策去留
+
+---
+Task ID: 2-b
+Agent: sub-agent (general-purpose, R103 模板迁移 5 主题批次二)
+Task: 将「最新章节（最近更新 12 章）」区块从目录页(toc.html)迁移到书籍页(book.html)简介区块下方——101kks / aijjxs / ddyueshu / huangjinwu / shipsay（Go 端 web_data.go 的 .LatestChapters 已由前置工作提供，本任务纯模板层）
+
+Work Log:
+- 【101kks】toc.html 原 30-44 行整块删除（{{if .Chapters}} 内层 if 仅服务该块，连同 if/end 一并移除；書籤块与「全部章節」列表不动）；book.html 在「盒二（标签+选项卡，简介页签所在 section）」之后新增独立白卡 section（124-139 行）：h3 蓝竖条节标题+「最近更新 12 章 · 新→舊」副标照抄原 toc 结构（繁体文案保留，唯去 mt-5——新卡首元素与盒一/盒二留白一致），range .LatestChapters 直出，无 id/data-reverse；101kks.js 166-170 行 kks-toc-latest 反转块删除
+- 【aijjxs】toc.html 原 26-40 行整块删除（独占 if）；book.html 在「② 内容简介」section 之后插入新区块（73-89 行）：包 aj-card + aj-panel-head（书籍页所有区块均为卡片流，裸 div 会破坏视觉，标题行沿用主题面板语言、内部胶囊网格/类名照抄 toc 原块）；aijjxs.js 213-217 行 aj-toc-latest 反转块删除 + 193 行节注释去掉「最新反转」字样；**168 行 pseo sorted.reverse() 未动**（grep 复核）
+- 【ddyueshu】toc.html 的 if .Chapters 为 dl 全局共用（else 暂无章节），仅删内层：原 33-39 行「最新章节」dt + #dd-toc-latest div(contents) 删除，「《书名》正文」dt 及全量列表原样保留；book.html 书籍页本就有「最新章节」section（简介区之后、推荐阅读行之后，旧内容=〔最新〕LastChapter 单条+章节预览混合组）——**原位改造**为迁移目标而非重复插入：保留 section/dd-box-title 头/暂无章节 else，内层 dl 改 {{if .LatestChapters}} + range .LatestChapters（dd-dd-item 类名与 toc 原块完全一致），〔最新〕单条+章节预览混合组随之退役（LastChapter 行在信息区仍有，信息零损失）
+- 【huangjinwu】toc.html 原 13-27 行整块删除（独占 if，含返回书页按钮的头卡一并移除——该头卡仅服务最新章节块）；book.html 简介区块正下方本就有同 id 的最新章节 section——**原位改造**：注释更新、{{if .Chapters}}→{{if .LatestChapters}}、删 id="hj-latest-pills"/data-reverse/len-sub 尾 12 切片、range .LatestChapters（保留书籍页原有的 idx. 前缀与「共 N 章」副标及暂无章节 else）；huangjinwu.js 76-80 行反转块删除
+- 【shipsay】toc.html 的 if .Chapters 亦为全局共用（else 暂无章节），仅删内层原 18-32 行最新章节置顶组（含居中标题行）；book.html Tab1（作品简介+最新章节）内本就有最新章节 section——**原位改造**：{{if .LatestChapters}} + range .LatestChapters，删 id="ss-book-latest"/data-reverse（idx 序号 span 保留）；shipsay.js 的反转是**通用选择器** `querySelectorAll('[data-reverse="1"]')`（非 id 定位）——grep 确认两处模板钩子删除后全主题无 data-reverse 残留，126-129 行通用反转循环整块删除
+- 【JS 清理总账】5 个主题 JS 各删 1 处反转（101kks/aijjxs/ddyueshu/huangjinwu 为 id 定位块、shipsay 为 data-reverse 通用循环），删除前逐一 grep 确认对应 id/属性在负责主题模板中零引用；均留一行 R103 说明注释；node --check 五文件全过
+- 【验证】①html/template 解析：5 主题 × 7 页面（复刻 loadPageTemplate 的 [_shared.html,{page}.html] ParseFiles + webFuncMap 全 17 函数签名）全部 OK 且 define "content" 存在；②执行级冒烟：book/toc 页以 mock 数据（Chapters 30 章 + LatestChapters 12 章新→旧）渲染，空态（LatestChapters=[]）区块不渲染（/chapter/1030 出现次数较满态减少断言通过）、满态最新章节链接正确输出且 toc 全量列表完好；③顺序断言：5 主题 book 页 LatestChapters 段渲染序均为 1030→1019 严格新→旧（模板零反转，101kks/huangjinwu/shipsay 页面其余 .Chapters 升序段不受影响）
+- 【边界】未触碰其他 6 主题（23qb/ggd66/ncnd/pilishuwu/trxsw/x2552 为并行代理 2-a 的改动，git status 可见其文件未由本代理修改）、未碰 Go 代码/_fallback；本批次无「book.html 无简介区块」的例外情况（5 主题均有）；101kks 简介在隐藏页签内，故新区块插在简介所在整个 section（盒二）之后而非隐藏 panel 内
+
+Stage Summary:
+- 5 主题「最新章节」区块完成 toc→book 迁移：目录页删块（共享 if 主题只删内层）、书籍页简介下方落位（101kks/aijjxs 新增卡片、ddyueshu/huangjinwu/shipsay 原位改造既有块避免双「最新章节」标题）、数据全部改 .LatestChapters 服务端新→旧直出、data-reverse/反转 JS 五处清零
+- 解析+执行双级验证通过（35 页面解析、10 页 book/toc 执行冒烟、新→旧序断言）；模板花括号/define-end/range-if 配平无恙，其余区块（章节预览/推荐/面包屑/书籤/正序切换等）零改动
+
+---
+Task ID: 1,2,3,4（主代理收尾）
+Agent: Z.ai Code（主代理）
+Task: R103——①升级回滚根因修复（nohup env bug）②最新章节区块目录页→书籍页迁移（11 主题）③全局代理池改造 ④章节填充提速（书间并行）
+
+Work Log:
+- 诊断升级回滚根因：deploy-cn.sh L249 `setsid nohup "${ENV_LINES[@]}"` 把 BACKEND_PORT=3000 当命令名 → 改 `setsid nohup env "${ENV_LINES[@]}"`，沙箱端到端重跑 deploy-cn.sh --skip-build 全绿（backend 200/engine 200）
+- 恢复 36 个被误 chmod 755 的文件为 644；沙箱重建后重装 Go 1.22.12（~/.local/go）
+- web_data.go chapterMetaBlock 新增 LatestChapters（idx DESC LIMIT 12，服务端新→旧），book/聚合页数据契约同步更新
+- 派 2 个并行子代理（Task 2-a: 23qb/ggd66/ncnd/pilishuwu/trxsw/x2552；Task 2-b: 101kks/aijjxs/ddyueshu/huangjinwu/shipsay）完成 11 主题 toc.html 区块删除 + book.html 简介下方插入 + 5 个 JS 反转块清理；主代理收尾 ggd66/ncnd 书页双「最新章节」区块（旧块改名「章节预览」）
+- worker.go phase2Fill 书间并行：SCRAPE_BOOK_PARALLEL（默认 2，=1 退回串行）；breakerStopped 改 atomic.Bool；fillMap 读写加 fillMu；车道池/引擎 per-host AIMD 全局共享总并发不变；go test 全量通过（48.6s）
+- 新建 miniproxypool.go 全局代理池：ProxyExit 表（schema.go）+ 收割循环（5min：多源搜代理→INSERT OR IGNORE→160 口/轮并发连通性测试→分层筛选写回→超容淘汰→死口 GC→规则补种）+ GET /api/proxypool + POST /api/proxypool/harvest + admin 采集规则页观测卡片
+- 修复两个代理池 bug：①housekeeping 淘汰 ORDER BY 语义写反（DELETE IN 子查询是删除排序，快口整批误删——两轮实证 60/28 快口全灭）改 tier DESC（先删已探慢口→新口→快口最后）；②assignNeededRuleProxies 站测串行最坏 13min → 复用 proxyProbeAll 并发（47s/轮实测）
+- 补种闭环实测：trxsw(407 站)/biqutu/77shuku 三条直连不健康规则自动获得站测通过代理口；23qb/minyuan 黑洞免费代理不可穿（预期内，逐轮重试）
+- Agent Browser 端到端验证：book/84 简介下最新章节严格新→旧（306836→306825）、toc 页区块已移除且 12552 章全量列表完好、admin 代理池卡片数据实时、移动端 390px 首页/书籍页渲染正常、无 console 错误
+
+Stage Summary:
+- 升级命令恢复可用：cd ~/novel-admin && bash scripts/upgrade.sh（根因已修，回滚分支同样受益）
+- 目录页「最新章节」区块全站迁移至书籍页简介下方，11 主题 + _fallback 全覆盖，服务端新→旧零 JS
+- phase2 书间并行（默认 2），list 任务（几十本书）填充消除书间空泡；总并发与限流保护不变
+- 全局代理池上线：自动搜代理+连通性测试+筛选沉淀+规则自动补种四合一；PROXYPOOL_OFF=1 可停用；admin 可观测

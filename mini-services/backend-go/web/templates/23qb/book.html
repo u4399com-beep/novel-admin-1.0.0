@@ -45,6 +45,19 @@ Go 契约 .Chapters 为最早 12 章预览，标题按数据语义标注为「�
     </div>
   </section>
 
+  {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页） */}}
+  {{if .LatestChapters}}<section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
+    <h2 class="text-[22px] font-bold text-[#282828] md:text-[26px]">最新章节</h2>
+    <p class="mt-1 text-sm text-black/45">全书最近更新 12 章</p>
+    <div class="mt-4 grid gap-x-8 md:grid-cols-2">
+      {{range .LatestChapters}}<a href="{{chapterURL .id}}" class="flex h-10 w-full cursor-pointer items-center gap-2 rounded-[10px] px-3 text-left text-sm text-[#282828] transition-colors even:bg-[#f7f8f9] hover:text-[#ff2a14]">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-[#34a853]"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+        <span class="flex-1 truncate">{{.title}}</span>
+        {{if .wordCount}}<span class="shrink-0 text-xs text-black/35">{{wcFmt .wordCount}}</span>{{end}}{{/* Task 28-c: 骨架章节不显示「0字」 */}}
+      </a>{{end}}
+    </div>
+  </section>{{end}}
+
   {{/* 章节预览盒 */}}
   <section class="rounded-[18px] bg-white p-6 shadow-[0_7px_21px_rgba(149,157,165,.22)] md:p-8">
     <div class="flex items-baseline justify-between gap-3">

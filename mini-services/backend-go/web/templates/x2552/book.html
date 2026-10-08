@@ -72,6 +72,24 @@ h1 全文阅读 → 属性表格+封面 → 按钮排（.btnlinks）→ 内容�
         </div>
       </div>
 
+      {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页） */}}
+      {{if .LatestChapters}}
+      <div class="mx-2 mb-2 border border-[#E4E4E4] bg-white">
+        <div class="h-[2px] border-b border-[#33CCFF] bg-[#D9EDFF]"></div>
+        <div class="flex h-[26px] items-center justify-between border-b border-[#E4E4E4] bg-gradient-to-b from-[#FDFDFD] to-[#E4E4E4] pl-2 pr-2 text-[12px] font-bold text-[#333]">
+          <span>最新章节</span>
+          <span class="text-[11px] font-normal text-[#999]">最近更新 12 章 · 新→旧</span>
+        </div>
+        <ul class="grid grid-cols-1 gap-x-6 px-3 py-1 sm:grid-cols-2 lg:grid-cols-4">
+          {{range .LatestChapters}}
+          <li class="flex h-[26px] items-center border-b border-dotted border-[#F2F2F2] text-[12px]">
+            <a href="{{chapterURL .id}}" title="{{.title}}" class="ml-1 inline-block min-w-0 flex-1 cursor-pointer truncate text-[#2F468F] hover:translate-x-px hover:translate-y-px hover:text-[#FF6600]">{{.title}}</a>
+          </li>
+          {{end}}
+        </ul>
+      </div>
+      {{end}}
+
       {{/* 书评区：评论链接行 + 发表评论表单（静态演示） */}}
       <div class="mx-2 mb-3 border border-[#E4E4E4]">
         <div class="bg-[#F2F2F2] px-[10px] text-[12px] font-bold leading-[26px] text-[#333]">书评区</div>

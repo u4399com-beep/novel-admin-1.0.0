@@ -70,6 +70,24 @@
       </div>
     </section>
 
+    {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页） */}}
+    {{if .LatestChapters}}
+    <section class="aj-card overflow-hidden">
+      <header class="aj-panel-head">
+        <span class="aj-panel-bar" aria-hidden="true"></span>
+        <h2 class="aj-panel-title">最新章节</h2>
+        <span class="text-[12px] font-normal text-[#9ca3af]">最近更新 12 章 · 新→旧</span>
+      </header>
+      <div class="p-3 sm:p-4">
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {{range $c := .LatestChapters}}
+          <a class="block truncate rounded-[8px] border border-[#e5dccd] bg-[#fbf7ee] px-3 py-2 text-left text-[13px] text-[#1f2937] transition-colors hover:border-[#0f766e] hover:text-[#0f766e]" href="{{chapterURL $c.id}}" title="{{$c.title}}">{{$c.title}}</a>
+          {{end}}
+        </div>
+      </div>
+    </section>
+    {{end}}
+
     {{/* ③ 下载与在线阅读 */}}
     <section class="aj-card overflow-hidden">
       <header class="aj-panel-head">

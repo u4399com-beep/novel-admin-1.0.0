@@ -1,5 +1,5 @@
 {{/* ncnd 目录页（克隆 gelin 书页版式）：面包屑 + 书籍信息头（返回书页/开始阅读）+
-章节网格三列（最新章节置顶橙标，正文全量正序）。 */}}
+章节网格三列（正文全量正序；「最新章节」区块 R103 迁至书籍页简介下方）。 */}}
 {{define "content"}}
 <div>
   {{/* 面包屑 */}}
@@ -32,11 +32,6 @@
     <div class="nc-panel-bd nc-panel-bd-flush">
       {{if .Chapters}}
       <div class="nc-ch-grid">
-        <div class="nc-ch-head">最新章节</div>
-        {{$total := len .Chapters}}{{$from := sub $total 12}}
-        {{range $i, $c := .Chapters}}{{if ge $i $from}}
-        <a class="nc-latest" href="{{chapterURL $c.id}}">{{$c.title}}</a>
-        {{end}}{{end}}
         <div class="nc-ch-head">《{{.Novel.title}}》正文</div>
         {{range .Chapters}}
         <a href="{{chapterURL .id}}">{{.title}}</a>

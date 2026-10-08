@@ -42,6 +42,18 @@
     </div>
   </section>
 
+  {{/* 最新章节（最近更新 12 章，服务端新→旧，R103 迁自目录页） */}}
+  {{if .LatestChapters}}
+  <section class="nc-panel">
+    <div class="nc-panel-bd nc-panel-bd-flush">
+      <div class="nc-ch-grid">
+        <div class="nc-ch-head">最新章节</div>
+        {{range .LatestChapters}}<a class="nc-latest" href="{{chapterURL .id}}">{{.title}}</a>{{end}}
+      </div>
+    </div>
+  </section>
+  {{end}}
+
   {{/* 相关推荐 */}}
   {{if .Related}}
   <section class="nc-panel">
@@ -61,16 +73,14 @@
   </section>
   {{end}}
 
-  {{/* 最新章节 + 章节预览 */}}
+  {{/* 章节预览（最新章节区块已迁至简介下方，R103；此处保留前 12 章预览） */}}
   <section class="nc-panel">
     <div class="nc-panel-hd">
-      <h3 class="nc-panel-title">《{{.Novel.title}}》最新章节<a class="nc-more" href="{{tocURL .Novel.id}}">完整目录 ›</a></h3>
+      <h3 class="nc-panel-title">《{{.Novel.title}}》章节预览<a class="nc-more" href="{{tocURL .Novel.id}}">完整目录 ›</a></h3>
     </div>
     <div class="nc-panel-bd nc-panel-bd-flush">
-      {{if or .LastChapter .Chapters}}
+      {{if .Chapters}}
       <div class="nc-ch-grid">
-        <div class="nc-ch-head">最新章节</div>
-        {{if .LastChapter}}<a class="nc-latest" href="{{chapterURL .LastChapter.id}}">{{.LastChapter.title}}</a>{{end}}
         <div class="nc-ch-head">章节预览</div>
         {{range .Chapters}}<a href="{{chapterURL .id}}">{{.title}}</a>{{end}}
       </div>

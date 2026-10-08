@@ -190,7 +190,7 @@
     }
   }
 
-  /* ---------- 6) 目录页：倒序 / 最新反转 / 已读置灰 ---------- */
+  /* ---------- 6) 目录页：倒序 / 已读置灰 ---------- */
   var tocList = document.getElementById('aj-toc-list');
   var orderBtn = document.getElementById('aj-toc-order');
   if (tocList) {
@@ -210,11 +210,7 @@
       });
     }
   }
-  var latest = document.getElementById('aj-toc-latest');
-  if (latest && latest.getAttribute('data-reverse')) {
-    var items = Array.prototype.slice.call(latest.children);
-    items.reverse().forEach(function (el) { latest.appendChild(el); });
-  }
+  /* R103：最新章节区块迁至书籍页并以 .LatestChapters 服务端新→旧直出，aj-toc-latest 反转已移除 */
 
   /* ---------- 7) 章节页：暖纸阅读器 ---------- */
   var reader = document.getElementById('aj-reader');

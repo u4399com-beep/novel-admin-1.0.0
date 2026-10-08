@@ -1,5 +1,5 @@
-{{/* ddyueshu 目录页（移植 Toc.tsx）：dl 三栏目录，最新章节（尾 12 章）置顶 + 正文全量正序。
-适配：React「最新章节 新→旧」由 ddyueshu.js 反转 #dd-toc-latest（禁 JS 仍正序可用）。 */}}
+{{/* ddyueshu 目录页（移植 Toc.tsx）：dl 三栏目录，全量正序。
+适配：（R103：原最新章节（尾 12 章）置顶组迁至书籍页简介下方，服务端 .LatestChapters 新→旧直出，#dd-toc-latest 反转钩子随之移除） */}}
 {{define "content"}}
 <div>
   {{/* 面包屑条 */}}
@@ -30,13 +30,6 @@
   <section class="dd-box dd-box-strong mt-2">
     {{if .Chapters}}
     <dl class="dd-dd-grid px-2 py-2">
-      <dt class="dd-hei col-span-full bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">最新章节</dt>
-      <div id="dd-toc-latest" data-reverse="1" class="contents">
-        {{$total := len .Chapters}}{{$from := sub $total 12}}
-        {{range $i, $c := .Chapters}}{{if ge $i $from}}
-        <dd class="dd-dd-item"><a class="block" href="{{chapterURL $c.id}}">{{$c.title}}</a></dd>
-        {{end}}{{end}}
-      </div>
       <dt class="dd-hei col-span-full mt-2 bg-[#c3dfea] text-center text-[14px] font-bold leading-[28px] text-[#333]">《{{.Novel.title}}》正文</dt>
       {{range .Chapters}}
       <dd class="dd-dd-item"><a class="block" href="{{chapterURL .id}}">{{.title}}</a></dd>
