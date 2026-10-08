@@ -4287,3 +4287,29 @@ Stage Summary:
 - 章节写入事务化：WAL 提交减半 + 中断中间态消除，与 R100 三层提效叠加
 - ddyueshu 首页规则修复，13 站首页「最近更新」语义统一完成（其余站经 R96-R101 历次校准或为最近更新页入口）
 - 用户服务器升级：git pull + 重启即生效；101kks/ddyueshu 存量书重发书页任务即自动补全章节
+
+
+---
+Task ID: 103-parallel
+Agent: parallel session
+Task: [远端并行会话] R103：101kks AJAX 目录 html 片段模式 + JA3 伪装传输 + 章节事务合并（HTTP+iv8+CloakBrowser）全在库规则测试/突破/提速 ②待办清理 ③一键升级命令
+
+Work Log:
+- 【环境重建】沙箱重置致 Go 工具链/二进制/pip 依赖/db 目录全丢：Go 1.23.4 重装（golang.google.cn）→ iv8 0.1.4 + cloakbrowser 0.5.12 重装（清华源 403 改阿里源）→ build-go.sh 重建双服务 → db/ 目录重建 + seed 自动播种 20 规则 → curl-impersonate 21 二进制重装（ghfast.top）
+- 【看门狗演进】stealth-service 无循环看护反复被沙箱回收 → scripts/watchdog-services.sh 新建入库（flock 单例 + 15s 轮询：backend:3000/引擎:3030 复用 ensure-services.sh + stealth:3031 ensure_stealth）——本轮三次拉回侧车
+- 【全规则矩阵】20 站 /api/test 列表页实测（data.list 是 {count,items} 对象非数组——初版矩阵脚本误判已修正）：PASS 8（aijjxs 59/ddyueshu 30/ggd66 10/101kks 10/x2552 35/5165 262/23uswx 30/ixdzs8 15）+ 失败 12
+- 【失败分层】curl 定性：10 站 TCP 黑洞（23qb/huangjinwu/xinjianpan/trxsw/77shuku/夜伴/biqutu 等——xinjianpan 本轮新掉线）= 沙箱 IP 被拒，任何策略无解需代理出口；5 站 HTTP 层拒绝有突破空间：pilishuwu/minyuan 403（IP 级，chrome116 TLS 指纹亦 403）、kelexs/cunshu/dwxwc 307→VBWI WAF 验证码挑战
+- 【101kks 突破】用户上轮情报（书页/目录页分离）实证：书页仅最新 6 章 + more-btn→目录页 index.html 首屏仅 36 条 + LoadMore 全量接口 /ajax_novels/chapterlist/{id}.html（CF 盾后、无页面锚、index_N 404、?page 被忽略）；旧规则致全站书只抓 36 章（任务7 success 359 本×36 章）。新能力 bookRule.chapterListHtmlApiTemplate（{bookId} 占位符取书页 URL path 末段数字、同源校验复用 jsonTocSameOrigin、展开并入 TocPages 交 walker）——沙箱实测接口一次返回全量 850 条（/api/test 显示 500 是 maxListItems 截断、目录链路 maxChapterRefs=10000）；建 pages=1 验证任务 #17：10 本 9361 章（原 360）、夜無疆 36→842 章
+- 【踩坑】bookKeys sanitizeRule 白名单漏新键致引擎收不到模板（模板警告缺失/tocPages 空定位到 handlers.go:219）——补入 util.go bookKeys；urlParse 容错致 "not a url"→EscapedPath 含 %20 误提 bookId="20"——改用未转义 u.Path
+- 【乱序根治】5165 长篇实证目录页章节随机序（没钱修什么仙 第381章在首/第225章在尾；庆余年分卷 746 锚）→ 存量 resort 仅修 16 本（100 本 problem 因卷章撞名重复编号/畸形中文数字前置不满足）→ 引擎抓取时排序 sortChapterRefsByNo：标题「第N章」阿拉伯编号（含全角）解析率≥80% 且无重复才启用、未编号行 +0.5 锚定前编号行、SliceStable 升序站零实害、重复编号交后端 vols 重排——新抓书源头有序
+- 【回归】scraper-go 全量 45s 通过 + audit103_test.go 7 测试（bookIdFromURL 7 案/expandTocHtmlApi 5 案/模板进 TocPages+警告/跨源拒绝/sanitize 白名单/排序 6 案含倒序翻转/全角数字解析）；backend-go 全量 43s 通过；gofmt 本轮触碰文件清零
+- 【提速】 fleetkeeper 自动建 16 任务；吞吐 18646 章/时（骨架期）→稳定段 10261 章/时（budget-exhausted=0，R100 饱和车道控制生效）；任务 17 Phase2 撞 101kks 正文页 CF 盾连败自动 paused（进度保留）→ resume 恢复
+- 【交付】升级三件套确认就绪（scripts/upgrade.sh 一键升级+回滚/bootstrap-cn.sh 零 git 引导/deploy-cn.sh）+ 本轮 commit 推送
+
+Stage Summary:
+- 101kks 独立目录页形态完全突破：chapterListHtmlApiTemplate 引擎新能力（HTML 片段全量目录接口模板）+ walker 闭环，36 章/本 → 850 章/本；aijjxs（67 章即全书）与 5165（32/453/746 章单页全目录但随机序）双双排除定档
+- 乱序重排补完第二层：引擎抓取时按编号排序（页面乱序源头根治）+ 后端 resort（存量修复）双保险
+- 网络分层结论固化：沙箱黑洞 10 站仅代理出口可解（admin 全局代理池待用户填自有出口）；VBWI 三站留 fetch-cloak 一线（cloakBinary 需下载完成）；pilishuwu/minyuan IP 级 403 需用户服务器侧验证
+- 一键升级命令：cd /opt/novel-admin && bash scripts/upgrade.sh（可指定 tag：bash scripts/upgrade.sh v1.0.1）
+
+

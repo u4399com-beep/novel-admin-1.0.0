@@ -123,6 +123,9 @@ var bookKeys = []string{
 	"catalogLinkSelector", "excludeSelector", "chapterListApi",
 	// R82：目录分页链接选择器（a.morechapter 等），命中锚的 URL 作 BookData.TocPages 透出
 	"chapterListPaginationSelector",
+	// R103：HTML 片段全量目录接口模板（/ajax_novels/chapterlist/{bookId}.html 形态），
+	// 展开后并入 TocPages 交目录 walker 跟随（extract.go expandTocHtmlApi）
+	"chapterListHtmlApiTemplate",
 }
 var chapterKeys = []string{"titleSelector", "contentSelector", "nextSelector", "excludeSelector"}
 

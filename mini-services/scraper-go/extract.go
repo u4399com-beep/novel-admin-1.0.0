@@ -580,6 +580,14 @@ func extractBookBudgeted(doc *goquery.Document, rule map[string]string, baseURL 
 	}
 
 	chapters := extractChapterRefs(doc, rule, baseURL, warnings)
+	// R103 页面乱序源站根治：部分源站目录页章节随机序展示（实测 5165.org《没钱修什么仙》
+	// 第381章在首、第225章在尾；后端入库 idx 按页面 DOM 顺序 → 全书乱序，事后 resort
+	// 受「卷章撞名重复编号/畸形中文数字」前置限制修复率低）。在抓取源头按标题「第N章」
+	// 阿拉伯编号稳定排序：解析率 ≥80% 且无重复编号才启用（有重复=分卷各自编号或站源
+	// 卷章撞名，语义复杂，交给后端 reorderChapterRefsVols 分卷重排；解析率低=倒序/中文
+	// 数字形态，同样不动）。未编号行（序章/番外/公告）锚定前一编号行之后（sortKeys 同
+	// 款 +0.5 语义）。正常升序站排序后保持原相对顺序（SliceStable），零实害。
+	chapters = sortChapterRefsByNo(chapters)
 
 	// JSON 目录接口（bookRule.chapterListApi）：书页无完整 HTML 目录、完整目录由同源 AJAX
 	// 端点提供的现代 CMS（实测 ixdzs8.com POST /novel/clist/）。
@@ -622,6 +630,23 @@ func extractBookBudgeted(doc *goquery.Document, rule map[string]string, baseURL 
 	paginationFallback := ps == ""
 	if paginationFallback {
 		ps = strings.Join(defaultTocPaginationSelectors, ",")
+	}
+
+	// HTML 片段目录接口模板（bookRule.chapterListHtmlApiTemplate，R103）：
+	// 部分 CMS 的完整目录由同源 AJAX 端点返回 HTML 片段（li[data-num]>a 形态，非 JSON），
+	// 页面只有 LoadMore 按钮点击后注入，且端点 URL 不出现在任何锚里（jsontoc.go 的
+	// chapterListApi 只吃 JSON 响应，不适用；实测 101kks.com /ajax_novels/chapterlist/{id}.html，
+	// 目录页 #allchapter 首屏仅渲染 36 条，端点一次返回全量 839 条）。规则配置模板
+	// （相对/绝对 URL），{bookId} 占位符取书页 URL path 最后一段数字替换；展开结果
+	// 并入 TocPages 交目录 walker 逐页跟随——walker 的 visited 去重/页数上限/REPLACE
+	// 合并语义原样生效；展开 URL 强制与书页同源（复用 jsonTocSameOrigin，SSRF 防护）。
+	if tpl := strings.TrimSpace(rule["chapterListHtmlApiTemplate"]); tpl != "" {
+		if u, ok := expandTocHtmlApi(tpl, baseURL); ok {
+			tocPages = append(tocPages, u)
+			*warnings = append(*warnings, "chapterListHtmlApiTemplate：全量目录接口已展开并入目录跟随")
+		} else {
+			*warnings = append(*warnings, "chapterListHtmlApiTemplate：书页 URL 无数字 id 或模板展开后非同源，已跳过")
+		}
 	}
 	{
 		seenPage := map[string]bool{}
