@@ -4313,3 +4313,20 @@ Stage Summary:
 - 一键升级命令：cd /opt/novel-admin && bash scripts/upgrade.sh（可指定 tag：bash scripts/upgrade.sh v1.0.1）
 
 
+
+---
+Task ID: 103-final
+Agent: main (Z.ai Code)
+Task: R103 收尾：并行会话合并 + 双通道规则固化
+
+Work Log:
+- 【合并冲突】发现远端已有并行 R103（chapterListApi.responseType=html + tocFetchImpersonate JA3 伪装传输 + backend txRetry 章节事务合并 + ddyueshu 修复）——rebase 冲突 4 文件：seed.json/jsontoc.go 取远端为基座、watchdog-services.sh 取本会话循环版、worklog 双段保留；rebase --theirs/--ours 语义踩坑（rebase 中 theirs=正在重放的本地 commit）致合并态回退，手工恢复远端版并叠加本会话增量
+- 【命名协调】远端已有双参 bookIdFromURL(baseURL, pattern)——本会话单参版改名 bookIdFromURLEndNum；远端 import 无 sort，补齐
+- 【101kks 双通道】运行库规则叠加 chapterListApi(responseType=html + bookIdRegex + itemSelector) 主通道（JA3 伪装直取接口）+ chapterListHtmlApiTemplate walker 备援通道；实测书页 6 章→chapterListApi 850 条全量采用、编号升序 True（抓取时排序生效）、公告行锚定正确；seed.json 同步双通道（TestSeed 通过）
+- 【回归】合并后 scraper-go 全量 45.6s + backend-go 全量 46.8s 双绿；两 commit（3ad2400 合并修复 + 97daa2e 双通道固化）推送 GitHub
+- 【运维】看门狗主循环再次被沙箱回收 → 重启（三服务全绿）；任务 17 Phase2 CF 盾连败 paused 后 resume（179/9268 章推进中）
+
+Stage Summary:
+- R103 两大主线并存互补：responseType=html（书页提取直取，JA3 伪装过 CF）+ chapterListHtmlApiTemplate（walker 跟随，适配分批/LoadMore 站）；101kks 实测 850 章/本全量
+- 引擎抓取时乱序排序（sortChapterRefsByNo）为远端会话没有的独立增量，5165 形态页面乱序源头根治
+- 一键升级命令（用户服务器）：cd /opt/novel-admin && bash scripts/upgrade.sh
