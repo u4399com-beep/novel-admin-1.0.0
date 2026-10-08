@@ -12,7 +12,7 @@ import (
 // /ajax_novels/chapterlist/{id}.html 提供（HTML 片段形态，jsontoc 的 JSON 通道不适用），
 // 且端点 URL 不出现在任何页面锚里——规则无法用 chapterListPaginationSelector 表达。
 
-func TestBookIdFromURL(t *testing.T) {
+func TestBookIdFromURLEndNum(t *testing.T) {
         cases := []struct{ url, want string }{
                 {"https://101kks.com/book/184.html", "184"},
                 {"https://101kks.com/book/184/index.html", "184"},
@@ -23,8 +23,8 @@ func TestBookIdFromURL(t *testing.T) {
                 {"not a url", ""},
         }
         for _, c := range cases {
-                if got := bookIdFromURL(c.url); got != c.want {
-                        t.Errorf("bookIdFromURL(%q) = %q, want %q", c.url, got, c.want)
+                if got := bookIdFromURLEndNum(c.url); got != c.want {
+                        t.Errorf("bookIdFromURLEndNum(%q) = %q, want %q", c.url, got, c.want)
                 }
         }
 }

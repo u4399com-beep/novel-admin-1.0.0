@@ -9,12 +9,19 @@
  *   "url":  "/novel/clist/",                  // 必填：接口路径（相对书页）或绝对 URL，强制同源
  *   "method": "POST",                         // 可选：GET|POST，默认 POST
  *   "body": "bid={bookId}",                   // 可选：表单体，{bookId} 占位符
- *   "bookIdSelector": "#bid@value",           // 必填：书页内书籍 ID 提取（支持 @attr）
- *   "listPath": "data",                       // 可选：JSON 内数组路径（点分），默认顶层为数组
- *   "titleField": "title",                    // 必填：章节标题字段
- *   "orderField": "ordernum",                 // 可选：章节序号字段（用于 urlTemplate 的 {order}）
- *   "skipField": "ctype", "skipValue": "1",   // 可选：条目该字段==skipValue 时跳过（卷标记行）
- *   "urlTemplate": "/read/{bookId}/p{order}.html" // 必填：章节 URL 模板（{bookId}/{order} 占位）
+ *   "bookIdSelector": "#bid@value",           // JSON 模式必填 / html 模式可选：书页内书籍 ID 提取（支持 @attr）
+ *   "listPath": "data",                       // JSON 模式可选：JSON 内数组路径（点分），默认顶层为数组
+ *   "titleField": "title",                    // JSON 模式必填：章节标题字段
+ *   "orderField": "ordernum",                 // JSON 模式可选：章节序号字段（用于 urlTemplate 的 {order}）
+ *   "skipField": "ctype", "skipValue": "1",   // JSON 模式可选：条目该字段==skipValue 时跳过（卷标记行）
+ *   "urlTemplate": "/read/{bookId}/p{order}.html" // JSON 模式必填：章节 URL 模板（{bookId}/{order} 占位）
+ *
+ *   —— R103 新增 HTML 片段模式（101kks 实测：目录页静态 HTML 零章节，全量目录由
+ *   同源 AJAX 端点返回 <ul><li><a> 片段填充 #allchapter）——
+ *   "responseType": "html",                   // 可选：json（默认，向后兼容）| html
+ *   "bookIdRegex": "/book/(\\d+)\\.html",     // html 模式可选：从书页 URL 正则提取 {bookId}
+ *                                            //（第一捕获组；selector 未命中时的第二提取途径）
+ *   "itemSelector": "li a[href]"              // html 模式必填：片段内章节锚选择器（title=锚文本）
  * }
  *
  * 安全边界：接口与书页必须同源（协议+主机一致，拒绝规则作者把请求导向内网/第三方）；
@@ -24,11 +31,18 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -58,6 +72,9 @@ type chapterListApiConfig struct {
 	skipField      string
 	skipValue      string
 	urlTemplate    string
+	responseType   string // ""/json = JSON 数组；"html" = HTML 片段（R103）
+	bookIdRegex    string // html 模式可选：书页 URL 正则提取 {bookId}（第一捕获组）
+	itemSelector   string // html 模式必填：片段内章节锚选择器
 }
 
 // parseChapterListApi 解析并校验配置 JSON；非法/缺关键字段时返回原因
@@ -73,11 +90,43 @@ func parseChapterListApi(raw string) (chapterListApiConfig, string) {
 		return ""
 	}
 	urlS := s("url")
+	if urlS == "" {
+		return chapterListApiConfig{}, "chapterListApi 缺少必填字段（url）"
+	}
+	// R103：responseType 分模式校验。json 模式维持原必填集（url/bookIdSelector/
+	// titleField/urlTemplate）；html 模式改需 itemSelector（章节 URL/标题直接来自
+	// 片段锚点），bookId 由 bookIdSelector 或 bookIdRegex 二者其一提供。
+	responseType := strings.ToLower(strings.TrimSpace(s("responseType")))
+	if responseType == "" {
+		responseType = "json"
+	}
+	if responseType != "json" && responseType != "html" {
+		return chapterListApiConfig{}, "chapterListApi.responseType 仅支持 json|html"
+	}
 	bookIdSelector := s("bookIdSelector")
+	bookIdRegex := s("bookIdRegex")
+	if responseType == "html" {
+		itemSelector := s("itemSelector")
+		if itemSelector == "" {
+			return chapterListApiConfig{}, "chapterListApi html 模式缺少必填字段（itemSelector）"
+		}
+		if bookIdSelector == "" && bookIdRegex == "" {
+			return chapterListApiConfig{}, "chapterListApi html 模式需要 bookIdSelector 或 bookIdRegex 之一（{bookId} 占位符来源）"
+		}
+		method := strings.ToUpper(s("method"))
+		if method != "POST" {
+			method = "GET" // html 片段端点（$.ajax GET）主流形态，html 模式默认 GET
+		}
+		return chapterListApiConfig{
+			url: urlS, method: method, body: s("body"),
+			bookIdSelector: bookIdSelector, bookIdRegex: bookIdRegex,
+			responseType: responseType, itemSelector: itemSelector,
+		}, ""
+	}
 	titleField := s("titleField")
 	urlTemplate := s("urlTemplate")
-	if urlS == "" || bookIdSelector == "" || titleField == "" || urlTemplate == "" {
-		return chapterListApiConfig{}, "chapterListApi 缺少必填字段（url/bookIdSelector/titleField/urlTemplate）"
+	if bookIdSelector == "" || titleField == "" || urlTemplate == "" {
+		return chapterListApiConfig{}, "chapterListApi 缺少必填字段（bookIdSelector/titleField/urlTemplate）"
 	}
 	method := strings.ToUpper(s("method"))
 	if method != "GET" {
@@ -85,10 +134,72 @@ func parseChapterListApi(raw string) (chapterListApiConfig, string) {
 	}
 	return chapterListApiConfig{
 		url: urlS, method: method, body: s("body"),
-		bookIdSelector: bookIdSelector, listPath: s("listPath"),
+		bookIdSelector: bookIdSelector, bookIdRegex: bookIdRegex, listPath: s("listPath"),
 		titleField: titleField, orderField: s("orderField"),
 		skipField: s("skipField"), skipValue: s("skipValue"), urlTemplate: urlTemplate,
+		responseType: responseType,
 	}, ""
+}
+
+// reBookIdRegex 编译缓存不必——规则加载时一次性使用，直接 regexp.MustCompile。
+// bookIdFromURL 从书页 URL 按正则第一捕获组提取 {bookId}（101kks /book/6527.html → 6527）。
+func bookIdFromURL(baseURL, pattern string) string {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return ""
+	}
+	if m := re.FindStringSubmatch(baseURL); len(m) >= 2 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+// extractHtmlToc 解析 HTML 片段响应为章节引用（R103）：itemSelector 命中锚点，
+// href 经 effectiveAnchorHref 反混淆（javascript:; + onclick 赋值形态），标题取锚文本。
+// 锚 href 绝对化后要求 http/https（与 JSON 模式 urlTemplate 同姿态；章节抓取时
+// 引擎侧 SSRF 逐跳校验继续兜底）。
+func extractHtmlToc(fragment []byte, cfg chapterListApiConfig, baseURL string, warnings *[]string) []BookChapterRef {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(fragment))
+	if err != nil {
+		*warnings = append(*warnings, "chapterListApi(html)：片段解析失败 "+err.Error())
+		return []BookChapterRef{}
+	}
+	sel, _ := parseSel(cfg.itemSelector)
+	if sel == "" {
+		*warnings = append(*warnings, "chapterListApi(html)：itemSelector 无效")
+		return []BookChapterRef{}
+	}
+	m := compileSel(sel)
+	if m == nil {
+		*warnings = append(*warnings, "chapterListApi(html)：itemSelector 无法编译（"+cfg.itemSelector+"）")
+		return []BookChapterRef{}
+	}
+	refs := []BookChapterRef{}
+	doc.FindMatcher(m).Each(func(i int, a *goquery.Selection) {
+		if i >= maxTocEntries {
+			return
+		}
+		title := trimJSSpace(a.Text())
+		if title == "" {
+			title = trimJSSpace(a.AttrOr("title", ""))
+		}
+		if title == "" {
+			return
+		}
+		href := effectiveAnchorHref(a)
+		if href == "" || strings.HasPrefix(strings.ToLower(href), "javascript:") {
+			return
+		}
+		u := urlJoin(href, baseURL)
+		if u == nil || (u.Scheme != "http" && u.Scheme != "https") {
+			return
+		}
+		refs = append(refs, BookChapterRef{Title: truncateStr(title, 200), Url: strPtr(u.String())})
+	})
+	if len(refs) == 0 {
+		*warnings = append(*warnings, "chapterListApi(html)：片段内未提取到章节锚（检查 itemSelector 配置）")
+	}
+	return refs
 }
 
 // pickPath 按点分路径取 JSON 值（"data" / "result.list"）
@@ -159,6 +270,100 @@ func encodeURIComp(s string) string {
 	return b.String()
 }
 
+// tocErrNoTransport 伪装传输不可用哨兵（curl-impersonate 二进制缺失时回退 Go 原生）
+var tocErrNoTransport = errors.New("no curl-impersonate transport")
+
+// tocFetchImpersonate R103：目录接口的 JA3 伪装传输。Go net/http 的 TLS ClientHello
+// 是知名机器人指纹，CF 系 WAF 对「浏览器 UA + Go TLS」的 AJAX 请求直接 403
+// （101kks 实测：同头族 curl 200 / Go 403，增删 Referer/XHR 头族均不改变结果）——
+// 书页主抓取走策略链可用 curl-impersonate 穿透，同源的目录接口却因独立发请求
+// 恒 403，chapterListApi 能力形同虚设。二进制可用时经 curl-impersonate 发送
+// （TLS/JA3 指纹级伪装 + 同一套请求头），缺失时返回 tocErrNoTransport 由调用方
+// 回退 Go 原生（非 CF 站不受影响）。
+// 不带 --location：同源校验仅覆盖首跳（与 tocHTTPClient.CheckRedirect 同姿态），
+// 3xx 原样返回交调用方拒绝；Set-Cookie 逐行返回供会话桶回存。
+func tocFetchImpersonate(req *http.Request, budgetMs int64) (body []byte, status int, setCookies []string, err error) {
+	bins := detectCurlImpersonates()
+	if len(bins) == 0 {
+		return nil, 0, nil, tocErrNoTransport
+	}
+	curlCursorMu.Lock()
+	bin := bins[curlBinCursor%len(bins)]
+	curlBinCursor = (curlBinCursor + 1) % len(bins)
+	curlCursorMu.Unlock()
+	tu, perr := urlParse(req.URL.String())
+	if perr != nil {
+		return nil, 0, nil, tocErrNoTransport
+	}
+	maxSec := budgetMs / 1000
+	if maxSec < 3 {
+		maxSec = 3
+	}
+	if maxSec > 30 {
+		maxSec = 30
+	}
+	tag := itoa(int(nowMs())) + "-toc"
+	tmpOut := filepath.Join(os.TempDir(), "scraper-"+tag+".body")
+	tmpHdr := filepath.Join(os.TempDir(), "scraper-"+tag+".hdr")
+	defer func() { _ = os.Remove(tmpOut); _ = os.Remove(tmpHdr) }()
+	args := []string{
+		"--silent", "--show-error",
+		"--max-time", itoa(int(maxSec)),
+		"--compressed",
+		"--output", tmpOut,
+		"--dump-header", tmpHdr,
+		"--write-out", "%{http_code}",
+	}
+	if pin := curlResolvePin(tu); pin != "" {
+		args = append(args, "--resolve", pin) // DNS rebinding 钉死（Task 26-d 同款）
+	}
+	// 请求头全量透传（含 UA/Referer/Accept/Cookie；Sec-Fetch/XHR 头族保留——
+	// curl-impersonate 的真浏览器 TLS 下 XHR 形态是真实形态而非矛盾指纹）。
+	// curl-impersonate 二进制预置整套浏览器默认头（UA/Sec-Fetch/Accept 族）且排在
+	// -H 追加头之前——服务器读首个同名头时预置默认（116 顶层导航形态）压过引擎
+	// 构造的 XHR 头族（R103 单测实证）。每个透传键先以「-H K:」（curl 移除语义）
+	// 删默认再「-H K: v」追加，引擎构造的头族完整生效。
+	if ua := req.Header.Get("User-Agent"); ua != "" {
+		args = append(args, "--header", "User-Agent:", "--header", "User-Agent: "+ua)
+	}
+	for k, vs := range req.Header {
+		for _, v := range vs {
+			if k == "Accept-Encoding" {
+				continue // --compressed 由 curl 自理，避免双重声明冲突
+			}
+			if k == "User-Agent" {
+				continue // 已按移除+追加处理
+			}
+			args = append(args, "--header", k+":", "--header", k+": "+v)
+		}
+	}
+	if req.Body != nil {
+		form, rerr := io.ReadAll(req.Body)
+		if rerr == nil && len(form) > 0 {
+			args = append(args, "--data-binary", string(form))
+		}
+	}
+	args = append(args, "--", req.URL.String())
+	ctxExec, cancel := context.WithTimeout(context.Background(), time.Duration(maxSec+5)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctxExec, bin, args...)
+	stdout, execErr := cmd.Output()
+	if execErr != nil {
+		return nil, 0, nil, fmt.Errorf("curl-impersonate exec: %w", execErr)
+	}
+	st, _ := strconv.Atoi(strings.TrimSpace(string(stdout)))
+	hdrText, _ := os.ReadFile(tmpHdr)
+	setCookies = headerLines(string(hdrText), "Set-Cookie")
+	if st < 200 || st >= 300 {
+		return nil, st, setCookies, nil
+	}
+	raw, rerr := os.ReadFile(tmpOut)
+	if rerr != nil {
+		return nil, st, setCookies, rerr
+	}
+	return raw, st, setCookies, nil
+}
+
 // extractJsonToc 提取 JSON 目录：返回章节引用数组（解析失败时为空数组，原因写入 warnings）。
 // SSRF 安全：接口 URL 解析后必须与 baseUrl 同协议同主机；请求复用引擎 cookie 会话（同源才回放）。
 func extractJsonToc(root *goquerySelection, cfg chapterListApiConfig, baseURL string, warnings *[]string) []BookChapterRef {
@@ -202,15 +407,30 @@ func tocSlotBudget(remainingMs int64) int64 {
 // 采集时几乎必 shed（目录被静默截断为书页内嵌几章），自适应预算在保证不突破消费
 // 超时的前提下把排队容忍度放到 20s，实测大幅降低 shed 率。
 func extractJsonTocBudgeted(root *goquerySelection, cfg chapterListApiConfig, baseURL string, warnings *[]string, remainingMs int64) []BookChapterRef {
-	// 1) 书页内提取 bookId
-	bookId := pickText(root, []string{cfg.bookIdSelector})
+	// 1) 书页内提取 bookId：selector 优先，未命中且配置了 bookIdRegex 时从书页 URL 提取
+	//（101kks 形态：书页无 id 元素，id 在 URL 路径 /book/6527.html；AJAX 端点
+	// /ajax_novels/chapterlist/{bookId}.html 直接可构造）
+	bookId := ""
+	if cfg.bookIdSelector != "" {
+		bookId = pickText(root, []string{cfg.bookIdSelector})
+	}
+	if bookId == "" && cfg.bookIdRegex != "" {
+		bookId = bookIdFromURL(baseURL, cfg.bookIdRegex)
+	}
 	if bookId == "" {
-		*warnings = append(*warnings, "chapterListApi：bookIdSelector 未命中（"+cfg.bookIdSelector+"），跳过 JSON 目录提取")
+		src := cfg.bookIdSelector
+		if src == "" {
+			src = "bookIdRegex " + cfg.bookIdRegex
+		}
+		*warnings = append(*warnings, "chapterListApi：bookId 未命中（"+src+"），跳过目录提取")
 		return []BookChapterRef{}
 	}
 
 	// 2) 接口 URL 同源校验
-	apiURL := urlJoin(cfg.url, baseURL)
+	// R103：cfg.url 支持 {bookId} 占位符（101kks 形态 /ajax_novels/chapterlist/{bookId}.html
+	// 的路径参数端点）——原实现仅 body/urlTemplate 支持占位符，cfg.url 字面量直传。
+	apiURLPath := strings.ReplaceAll(cfg.url, "{bookId}", encodeURIComp(bookId))
+	apiURL := urlJoin(apiURLPath, baseURL)
 	if apiURL == nil {
 		*warnings = append(*warnings, "chapterListApi：接口 URL 无法解析")
 		return []BookChapterRef{}
@@ -297,6 +517,34 @@ func extractJsonTocBudgeted(root *goquerySelection, cfg chapterListApiConfig, ba
 	if cfg.method == "POST" {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 	}
+	// R103：优先走 curl-impersonate JA3 伪装传输（CF 系对 Go TLS 指纹 AJAX 恒 403），
+	// 二进制缺失/执行失败回退 Go 原生。预算口径同 tocHTTPClient（max-time 由 slotBudget 推导）。
+	if ib, istatus, isc, ierr := tocFetchImpersonate(req, slotBudget); ierr != tocErrNoTransport {
+		if ierr != nil {
+			*warnings = append(*warnings, "chapterListApi：伪装传输失败，回退原生（"+truncateStr(ierr.Error(), 120)+"）")
+		} else {
+			if len(isc) > 0 {
+				recordSetCookieLines(hostOf(apiURL.String()), isc, https)
+			}
+			if isRedirectStatus(istatus) {
+				*warnings = append(*warnings, "chapterListApi：接口返回重定向 HTTP "+itoa(istatus)+"，已拒绝跟随（SSRF 防护）")
+				return []BookChapterRef{}
+			}
+			if istatus < 200 || istatus >= 300 {
+				*warnings = append(*warnings, "chapterListApi：接口返回 HTTP "+itoa(istatus))
+				return []BookChapterRef{}
+			}
+			body, tooLarge := readAllCapped(bytes.NewReader(ib), maxTocBytes)
+			if tooLarge || len(body) == 0 {
+				*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
+				return []BookChapterRef{}
+			}
+			if cfg.responseType == "html" {
+				return extractHtmlToc(body, cfg, baseURL, warnings)
+			}
+			return parseJsonTocBody(body, cfg, bookId, baseURL, warnings)
+		}
+	}
 	res, err := tocHTTPClient.Do(req)
 	if err != nil {
 		*warnings = append(*warnings, "chapterListApi：接口请求失败 "+err.Error())
@@ -337,7 +585,16 @@ func extractJsonTocBudgeted(root *goquerySelection, cfg chapterListApiConfig, ba
 		return []BookChapterRef{}
 	}
 
-	// 4) 解析 JSON → 章节引用
+	// 4) 解析响应 → 章节引用（json=数组映射 urlTemplate；html=片段锚直接提取，R103）
+	if cfg.responseType == "html" {
+		return extractHtmlToc(body, cfg, baseURL, warnings)
+	}
+	return parseJsonTocBody(body, cfg, bookId, baseURL, warnings)
+}
+
+// parseJsonTocBody JSON 目录体 → 章节引用（R103 从 extractJsonTocBudgeted 尾段抽出，
+// 伪装传输/原生传输两路径共用）。
+func parseJsonTocBody(body []byte, cfg chapterListApiConfig, bookId, baseURL string, warnings *[]string) []BookChapterRef {
 	var jsonVal any
 	if err := json.Unmarshal(body, &jsonVal); err != nil {
 		*warnings = append(*warnings, "chapterListApi：响应不是合法 JSON")
@@ -422,28 +679,28 @@ func jsonStr(v any) string {
 	}
 }
 
-// trimTrailingZeros 格式化浮点（JSON 数字 → URL 片段，去科学计数法尾巴）
 func trimTrailingZeros(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
 // ---------------------------------------------------------------------------
-// chapterListHtmlApiTemplate（R103）：HTML 片段目录接口模板展开
+// R103 增量（本会话）：chapterListHtmlApiTemplate（walker 通道）与抓取时乱序排序。
+// 与已并的 chapterListApi.responseType=html（书页提取直取通道）互补：
+// responseType=html 在书页提取时直取接口条目；chapterListHtmlApiTemplate 把接口 URL
+// 并入 TocPages 由目录 walker 逐页跟随（适配接口分批/需分页/LoadMore 站形态）。
 // ---------------------------------------------------------------------------
 
 // reNumSeg URL path 中的连续数字段（bookId 提取用）
 var reNumSeg = regexp.MustCompile(`\d+`)
 
-// bookIdFromURL 从书页 URL 提取书籍 id：path 最后一段连续数字
-// （/book/184.html → "184"；/novel/123/ → "123"；无数字返回空串）。
-// 只看 path 不看 query——query 里的数字（分页/追踪参数）不可靠。
-func bookIdFromURL(rawURL string) string {
+// bookIdFromURLEndNum 从书页 URL 提取书籍 id：path 最后一段连续数字
+// （/book/184.html → "184"；无数字返回空串）。只看未转义 path——query 数字
+// （分页/追踪参数）不可靠；%20 等转义序列里的数字会误命中。
+func bookIdFromURLEndNum(rawURL string) string {
 	u, err := urlParse(rawURL)
 	if err != nil || u == nil {
 		return ""
 	}
-	// 用未转义的 u.Path 而非 EscapedPath：%20 等转义序列里的数字会被误当 bookId
-	// （"not a url" → "http://not%20a%20url" → EscapedPath 含 "20"）
 	nums := reNumSeg.FindAllString(u.Path, -1)
 	if len(nums) == 0 {
 		return ""
@@ -453,9 +710,8 @@ func bookIdFromURL(rawURL string) string {
 
 // expandTocHtmlApi 展开 HTML 片段目录接口模板：{bookId} 替换 + 绝对化 +
 // 同源校验（复用 jsonTocSameOrigin，与 JSON 目录接口同款 SSRF 防护）+ 去锚。
-// 任一步失败返回 ok=false（调用方落结构化警告，不影响书页内嵌目录）。
 func expandTocHtmlApi(tpl, baseURL string) (string, bool) {
-	id := bookIdFromURL(baseURL)
+	id := bookIdFromURLEndNum(baseURL)
 	if id == "" {
 		return "", false
 	}
@@ -481,28 +737,8 @@ func expandTocHtmlApi(tpl, baseURL string) (string, bool) {
 	return u, true
 }
 
-// ---------------------------------------------------------------------------
-// sortChapterRefsByNo（R103）：页面乱序源站的抓取时排序
-// ---------------------------------------------------------------------------
-
 // reArabicChapterNo 标题「第N章/节/回/话」阿拉伯编号（含全角数字；允许少量装饰前缀）
 var reArabicChapterNo = regexp.MustCompile(`^[\[【(（「『]{0,2}第\s*([0-9０-９]{1,7})\s*[章节回话]`)
-
-// foldFullwidthDigits 全角数字 ０-９ → 0-9（chapterListApi 与阿拉伯编号解析共用语义）
-func foldFullwidthDigits(s string) string {
-	if !strings.ContainsFunc(s, func(r rune) bool { return r >= '０' && r <= '９' }) {
-		return s
-	}
-	var b strings.Builder
-	for _, r := range s {
-		if r >= '０' && r <= '９' {
-			b.WriteRune(r - '０' + '0')
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
 
 // parseArabicChapterNo 引擎侧编号解析：仅「第N章」阿拉伯形态（中文数字形态不在抓取
 // 层处理——排序守卫按解析率判定，低解析率自动跳过，后端 resort 有完整中文数字支持）
@@ -516,6 +752,22 @@ func parseArabicChapterNo(title string) (int64, bool) {
 		return 0, false
 	}
 	return v, true
+}
+
+// foldFullwidthDigits 全角数字 ０-９ → 0-9
+func foldFullwidthDigits(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return r >= '０' && r <= '９' }) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '０' && r <= '９' {
+			b.WriteRune(r - '０' + '0')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // sortChapterRefsByNo 按标题阿拉伯编号稳定排序（解析率 ≥80% 且无重复编号才启用；
