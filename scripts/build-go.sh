@@ -30,9 +30,12 @@ export GOPROXY="${GOPROXY:-https://goproxy.cn,direct}"
 
 echo "[build-go] go=$(command -v go) GOPROXY=$GOPROXY"
 echo "[build-go] backend-go ..."
-( cd mini-services/backend-go && go build -o backend-go.bin . )
+# R103：双产物布局——backend-go.bin（deploy-cn.sh/run.sh/dev-go.sh 消费）
+# 与 bin/backend-go（ensure-services.sh watchdog 消费）内容一致，防两消费方
+# 各自拉起不同版本互抢 3000 端口（watchdog 60s 循环会把旧 bin 拍回去）。
+( cd mini-services/backend-go && go build -o backend-go.bin . && mkdir -p bin && cp -f backend-go.bin bin/backend-go )
 
 echo "[build-go] scraper-go ..."
-( cd mini-services/scraper-go && go build -o scraper-go.bin . )
+( cd mini-services/scraper-go && go build -o scraper-go.bin . && mkdir -p bin && cp -f scraper-go.bin bin/scraper-go )
 
 echo "[build-go] done"

@@ -4394,3 +4394,19 @@ Stage Summary:
 - 目录页「最新章节」区块全站迁移至书籍页简介下方，11 主题 + _fallback 全覆盖，服务端新→旧零 JS
 - phase2 书间并行（默认 2），list 任务（几十本书）填充消除书间空泡；总并发与限流保护不变
 - 全局代理池上线：自动搜代理+连通性测试+筛选沉淀+规则自动补种四合一；PROXYPOOL_OFF=1 可停用；admin 可观测
+
+---
+Task ID: 5（主代理收尾补充）
+Agent: Z.ai Code（主代理）
+Task: rebase 合并远程 R103-final 系列提交 + 服务布局统一（bin/ 双产物）
+
+Work Log:
+- git push 被拒 → rebase 远程 4 个新提交（b684469 101kks AJAX+JA3+事务合并、97daa2e 101kks 双通道固化、1787d6e worklog 等），冲突 4 文件手工合并：main.go（双方启动钩子并集）、schema.go（ScrapeTaskLog+ProxyExit 两表共存）、worker.go（14 块全取 HEAD=R102-b 日志拆表版，我的书间并行在 phase2Fill 不冲突区自动保留）、worklog.md（双方记录全保留）；合并后 go build + go test 全量通过（50.2s）
+- 发现服务布局分裂：远程 ensure-services.sh watchdog 指向 bin/backend-go，而 build-go.sh 仍输出 backend-go.bin——两消费方各自拉起不同版本互抢 3000（实证：watchdog 60s 把 13:59 旧 bin 拍回 3000，proxypool 路由 404）
+- build-go.sh 改双产物布局（backend-go.bin + bin/backend-go 同步拷贝，scraper-go 同理），两消费方版本永续一致
+- 沙箱周期清理杀后台进程后经 ensure-services.sh 拉起（bin/backend-go 已是新代码），proxypool 200、收割循环正常
+- Agent Browser 终验：admin 代理池卡片 total 448/alive 448/waiting 1/topN 10 实时渲染
+
+Stage Summary:
+- 远程/本地两线 R103 工作完整合并并推送（1787d6e..29312df + 双产物修复待推）
+- 服务布局统一：bin/ 双产物防版本漂移；补种成果：trxsw/biqutu/77shuku/minyuan 4 条规则自动获得代理出口，仅 23qb 黑洞待续
