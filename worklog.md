@@ -4470,3 +4470,22 @@ Work Log:
 Stage Summary:
 - 首页热门小说区块 4 处逻辑缺陷全修复：isHot 空态自愈（区块不再永久「暂无数据」）、SSR 浏览计数（点击榜语义恢复）、浏览不再污染更新时间、文案对齐；另修复书级字数断链（周期兜底回填）
 - 防御性设计：isHot 自愈与字数回填均为幂等增量操作，DB 重建/沙箱回收场景自动恢复；updatedAt 全链路回归「内容变更」单一语义
+---
+Task ID: R106
+Agent: Z.ai Code（主代理）
+Task: ①章节采集提速详细方案规划 ②章节名序号排序可行性探讨
+
+Work Log:
+- 【提速调研】实测速率基线：task#8=756 章/h、#11=588、#10=351、#16=35（biqutu 严格限流）、#15=20（minyuan）——仅为理论单域天花板 2400 章/h 的 15-50%
+- 瓶颈拆解：单章墙钟=max(域槽 1200ms 礼貌间隔(合规红线 <1000ms 禁止), 网络时间)+落库；AIMD 退避上界 8s、politenessExtra 上界 300ms、策略预算 20s；browser 策略网络 1-5s 是挑战站实际瓶颈
+- 已就位机制盘点（不重复建设）：affinity 提位/车道双层 AIMD/任务级并行(runner 5 pending/轮+fleet 14 规则)/keep-alive+gzip/熔断自愈/R103 单章事务
+- 方案成稿 docs/perf-plan.md：P0（快通道策略会话锁定+paused 舰队唤醒，预期总吞吐×2+）→ P1（两阶段流水线重叠-30~50% 端到端、host 感知书间并行池、落库微批）→ P2（代理 per-IP 分桶默认关、CloakBrowser 实例池）；每期含预期收益/风险/工作量/验收口径
+- 关键洞察：fleet 每任务=单站多书（同 host），书间并行不增单域吞吐——真杠杆是多域并行度（唤醒 14 条 paused）+ 单域网络时间压缩（curl 快通道）；落库批量收益 <1% 非瓶颈
+- 【序号排序探讨】实证系统能力已实现 80%：parseChapterNo 解析器完备（第N章/节/回/话+中文数字+全角+「123.」前缀+装饰符）、chineseNumeralToInt、采集管线 Task 48 已接线（worker.go:557 reorderRefPairs 阈值 0.2）、存量 GET/POST /api/novels/resort-chapters（R101 卷感知版）、未编号章锚定不丢章
+- 乱序规模实测：GET resort 审计 books=975（审计总数），candidates=17+ 本乱序候选（disorder 0.22~1.0，《人在欧洲》302 章全乱）
+- 三缺口识别：①存量候选无人触发（POST 需手动且全库任务 running 时 409）②采集路径仍用旧版 reorderChapterRefs（R101 卷感知版只升了 API 路径，零破坏可统一）③finalize 无自动体检钩子
+- 「直接按序号排 idx」不作为默认的技术理由成文：源站目录顺序权威、miss 形态聚堆风险、阈值触发+锚定+稳定排序是更安全折中
+
+Stage Summary:
+- 提速方案 P0/P1/P2 三期成稿（docs/perf-plan.md），P0 两项（策略锁定+舰队唤醒）预期总吞吐 ×2 以上且低风险，待用户拍板实施
+- 序号排序结论：可行且大部分已实现；补齐三缺口（admin 体检按钮/采集路径 Vols 统一/finalize 自动体检）即可全自动化，待确认后实施
