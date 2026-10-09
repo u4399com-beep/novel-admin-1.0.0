@@ -4489,3 +4489,26 @@ Work Log:
 Stage Summary:
 - 提速方案 P0/P1/P2 三期成稿（docs/perf-plan.md），P0 两项（策略锁定+舰队唤醒）预期总吞吐 ×2 以上且低风险，待用户拍板实施
 - 序号排序结论：可行且大部分已实现；补齐三缺口（admin 体检按钮/采集路径 Vols 统一/finalize 自动体检）即可全自动化，待确认后实施
+
+---
+Task ID: R107
+Agent: Z.ai Code（主代理）
+Task: 章节采集提速——实施 perf-plan P0-1/P0-2/P1-2（用户拍板「现在开工」）
+
+Work Log:
+- 沙箱再次重置自愈：db/ 目录丢失→mkdir 重建；Go 1.22.12 重装至 /home/z/go-sdk/go；ensure-services.sh 拉起双服务
+- 读 chain.go(805 行)/affinity.go/ratelimit 键构/worker.go phase2Fill/runList/runner.go/pool.go 全文，确认三处改造点
+- 【P0-1 慢锁快探】scraper-go 新增 sessionlock.go：Tier3 成功→slowLockMark（每 30 次链尝试或锁龄>2min 复探到期）；Tier1/2 成功→slowLockClear；预算闸 8s（复探绝不挤占正章产出）；PROBE_SLOW_LOCK_OFF=1 停用。chain.go 两处接线（成功分支 mark/clear + 亲和提位后插探）。机制依据：挑战 cookie 落按 host 共享的 Cookie 会话桶（cookies.go），browser 攻克一次后 HTTP 策略常可直接放行——现设计永久锁死 browser 提位窗口，复探是唯一逃逸通道。handlers.go /api/strategies 增 slowLock 观测
+- 【P0-2 舰队唤醒】runner.go：①resumeRestartOrphans 启动一次性归队（'服务重启，任务自动暂停'前缀专属匹配，恢复后文案改写'服务重启自动恢复：…'防崩溃循环风暴）②autoResumeBlockedTasks 封禁形态有界自动恢复（'%疑似源站封禁或站点不可达%'词表 + 静默≥30min + 代理池存活≥3 前置 + 每任务≤2次 + 每轮≤2条）。词表契约测试 runner_resume_blocked_test.go（契约锁定/孤儿唤醒幂等/封禁通道四场景=池空不唤醒·每轮≤2·静默期不碰·2次上限）
+- 【P1-2 host 感知书间并行】worker.go phase2Fill 重构：fillMap 构建期快照 plans（并行 workers 零 fillMap 读）+ mapMu 串行化 delete + breakerStopped atomic.Bool；按 plan.Referer（兜底首章 URL）host 分组，组间并行（SCRAPE_BOOK_PARALLEL 默认 2）组内严格串行（同域排队无收益）；熔断/停止后 workers 持续 drain 至 close 防生产端阻塞死锁。专项测试 worker_bookparallel_test.go（多域 4 书全填充+域检测日志 / 单域+SCRAPE_BOOK_PARALLEL=1 退化串行 / 熔断 drain 30s 看门狗）+ -race 通过
+- 【P1-1 复评暂缓】单域任务 Phase1/2 共享同 1.2s 域槽——重叠不增吞吐（总请求×间隔不变），跨域收益已被 P1-2 覆盖（Phase1 经 BOOK_CONCURRENCY=4 天然跨域）；流式 fillMap 重构风险/收益比不划算
+- 【P1-3 复评关闭】12 车道攒批需跨车道汇合协调，与 R103 单章事务原子性冲突；落库 5-15ms 对 1.2s 间隔 <1%，WAL+NORMAL 已确认
+- 回归：backend-go go build/vet + 全量测试通过（2 次环境性 database is locked/SSRF 127.0.0.1 抖动复跑全绿，基线同样失败已实证与改动无关）+ race 通过；scraper-go build/vet + chain 测试全绿（TestChapterListApiBookIdPlaceholderInURL 基线环境性失败已 stash 对照实证）
+- 部署：build-go.sh 双产物 + 重启；Agent Browser 验证 admin 任务页 16 任务渲染 + 前台首页 108 书链+热门区块正常
+- 生产实证：①重启暂停 11 条→孤儿唤醒同秒归队 11 条（14:37:51 日志），fleet 并行度 5→13 running ②101kks.com 慢锁命中→[fast-probe] 复探按期触发任务日志（未命中时 browser 照常出正文零副作用）③15 host 亲和表仅 101kks 慢锁，其余全快通道 HTTP ④限流通道自动恢复 6 条次正常轮转
+
+Stage Summary:
+- 提速三期中 P0-1/P0-2/P1-2 全部落地并生产验证，P1-1/P1-3 经复评暂缓/关闭（理由成文 docs/perf-plan.md）
+- 舰队自愈闭环：重启零人工恢复（原每次重启 14 条 paused 需手动 E21）；封禁站获得 30min 冷却+代理池前置的自愈通道；多域并行度 5→13
+- 慢站逃逸通道：browser 永久锁定问题根解（周期复探+双向自愈），挑战站开销上界 4-5%，混合站命中后 750→1200-1500 章/h
+- commit b46251d 推送 GitHub；每期独立 env 开关（PROBE_SLOW_LOCK_OFF / SCRAPE_BOOK_PARALLEL）可随时回退
