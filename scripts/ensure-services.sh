@@ -3,6 +3,7 @@
 # 用法：bash scripts/ensure-services.sh && <你的命令>
 ROOT=/home/z/my-project
 OK=1
+mkdir -p "$ROOT/db"  # R104: SQLite 打开失败 error14 的根因（沙箱重置后 db/ 目录随 gitignore 丢失）
 curl -s --max-time 2 http://127.0.0.1:3000/api/health | rg -q '"ok":true' || OK=0
 curl -s --max-time 2 http://127.0.0.1:3030/api/health | rg -q '"ok":true' || OK=0
 [ "$OK" = "1" ] && exit 0

@@ -182,7 +182,7 @@
         <label class="adm-field">模式
           <select id="adm-new-mode" class="adm-input"><option value="single">单本采集（书页 URL）</option><option value="list">范围采集（列表页 URL）</option></select>
         </label>
-        <label class="adm-field">目标 URL *<input id="adm-new-url" class="adm-input" placeholder="https://www.example.com/book/1.html"></label>
+        <label class="adm-field">目标 URL *<input id="adm-new-url" class="adm-input" placeholder="https://www.example.com/book/1.html（列表页可含 {page} 占位符，如 /list/{page}.html）"></label>
         <label class="adm-field">采集规则
           <select id="adm-new-rule" class="adm-input"><option value="">不使用规则</option>{{range .Rules}}<option value="{{.id}}">{{.name}}</option>{{end}}</select>
         </label>
@@ -195,6 +195,11 @@
           </select>
         </label>
         <label class="adm-field hidden" id="adm-new-pages-wrap">列表页数（1-999）<input id="adm-new-pages" type="number" min="1" max="999" value="1" class="adm-input md:w-24"></label>
+        <!-- R104: 范围采集起止页（可选，留空=旧语义从第 1 页起共 pages 页；targetUrl 含 {page} 占位符时按占位符展开） -->
+        <label class="adm-field hidden" id="adm-new-pf-wrap">起始页（可选）<input id="adm-new-pf" type="number" min="1" max="9999" placeholder="1" class="adm-input md:w-20"></label>
+        <label class="adm-field hidden" id="adm-new-pt-wrap">结束页（可选）<input id="adm-new-pt" type="number" min="1" max="9999" placeholder="=页数" class="adm-input md:w-20"></label>
+        <!-- R104: 采集范围提示（仅 list 模式相关） -->
+        <p class="adm-field hidden md:col-span-5 text-[11px] text-neutral-400" id="adm-new-range-hint">范围采集：目标 URL 可含 <code class="text-neutral-600">{page}</code> 占位符（每页替换为页码）；起始/结束页留空则从第 1 页采到「列表页数」为止。</p>
       </div>
       <div class="mt-2 flex justify-end">
         <button type="button" id="adm-new-submit" class="adm-btn adm-btn-primary">创建任务</button>
@@ -216,7 +221,7 @@
         <table class="adm-table">
           <thead><tr><th>ID</th><th>模式</th><th>规则</th><th>目标 URL</th><th>状态</th><th>进度</th><th>成果</th><th>时间</th><th class="text-right">操作</th></tr></thead>
           <tbody id="adm-tasks-tbody">
-            {{range .Tasks}}<tr data-task-id="{{.id}}" data-mode="{{.mode}}" data-url="{{.targetUrl}}" data-pages="{{.pages}}" data-rule-id="{{.ruleId}}">
+            {{range .Tasks}}<tr data-task-id="{{.id}}" data-mode="{{.mode}}" data-url="{{.targetUrl}}" data-pages="{{.pages}}" data-rule-id="{{.ruleId}}" data-page-from="{{.pageFrom}}" data-page-to="{{.pageTo}}">
               <td class="tabular-nums text-neutral-500">{{.id}}</td>
               <td>{{if eq .mode "list"}}<span class="adm-badge adm-badge-neutral">范围</span>{{else}}<span class="adm-badge adm-badge-outline">单本</span>{{end}}</td>
               <td>{{if .ruleName}}{{.ruleName}}{{else}}<span class="text-neutral-400">无规则</span>{{end}}</td>

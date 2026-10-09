@@ -19,85 +19,89 @@ type RuleMap = map[string]string
 
 // LoadedRule 运行时清洗后的规则对象
 type LoadedRule struct {
-	Name        string // 规则名（仅日志展示）
-	Charset     string // 目标站字符集（""=auto）
-	Proxy       string // 站点级出口代理（""=直连）
-	InsecureTLS bool   // 跳过目标站 TLS 证书校验（自签/裸 IP 站点）
-	Cookies     string // Task 53: 规则级静态 cookie 底座（"k=v; k2=v2"，人工过验会话；""=无）
-	ListRule    RuleMap
-	BookRule    RuleMap
-	ChapterRule RuleMap
+        Name        string // 规则名（仅日志展示）
+        Charset     string // 目标站字符集（""=auto）
+        Proxy       string // 站点级出口代理（""=直连）
+        InsecureTLS bool   // 跳过目标站 TLS 证书校验（自签/裸 IP 站点）
+        Cookies     string // Task 53: 规则级静态 cookie 底座（"k=v; k2=v2"，人工过验会话；""=无）
+        ListRule    RuleMap
+        BookRule    RuleMap
+        ChapterRule RuleMap
 }
 
 // ChapterRef 书页/目录页提取出的章节链接
 type ChapterRef struct {
-	Title string `json:"title"`
-	URL   string `json:"url"`
+        Title string `json:"title"`
+        URL   string `json:"url"`
 }
 
 // BookData 引擎 /api/test（bookRule）返回的书籍数据
 type BookData struct {
-	Title        string       `json:"title"`
-	Author       string       `json:"author"`
-	Description  string       `json:"description"`
-	Cover        string       `json:"cover"`
-	Status       string       `json:"status"`
-	Category     string       `json:"category"`
-	ChapterCount *int         `json:"chapterCount"`
-	Chapters     []ChapterRef `json:"chapters"`
-	CatalogURL   string       `json:"catalogUrl"`
-	// R82：目录分页页 URL（规则键 chapterListPaginationSelector 命中锚，引擎已去重保序
-	// 并转绝对 URL）。分页目录站（biquge2023 系实测 xinjianpan）书页只内嵌第一页章节，
-	// 全量目录按 list-1.html…list-N.html 分页承载——walker 逐页跟随补全
-	TocPages []string `json:"tocPages"`
+        Title        string       `json:"title"`
+        Author       string       `json:"author"`
+        Description  string       `json:"description"`
+        Cover        string       `json:"cover"`
+        Status       string       `json:"status"`
+        Category     string       `json:"category"`
+        ChapterCount *int         `json:"chapterCount"`
+        Chapters     []ChapterRef `json:"chapters"`
+        CatalogURL   string       `json:"catalogUrl"`
+        // R82：目录分页页 URL（规则键 chapterListPaginationSelector 命中锚，引擎已去重保序
+        // 并转绝对 URL）。分页目录站（biquge2023 系实测 xinjianpan）书页只内嵌第一页章节，
+        // 全量目录按 list-1.html…list-N.html 分页承载——walker 逐页跟随补全
+        TocPages []string `json:"tocPages"`
 }
 
 // ListItem 列表页条目
 type ListItem struct {
-	Title    string `json:"title"`
-	URL      string `json:"url"`
-	Author   string `json:"author"`
-	Category string `json:"category"`
+        Title    string `json:"title"`
+        URL      string `json:"url"`
+        Author   string `json:"author"`
+        Category string `json:"category"`
 }
 
 // ChapterData 引擎 /api/chapter 返回的章节数据
 type ChapterData struct {
-	Title      string   `json:"title"`
-	Content    string   `json:"content"`
-	Paragraphs []string `json:"paragraphs"`
-	WordCount  int      `json:"wordCount"`
-	NextURL    string   `json:"nextUrl"`
+        Title      string   `json:"title"`
+        Content    string   `json:"content"`
+        Paragraphs []string `json:"paragraphs"`
+        WordCount  int      `json:"wordCount"`
+        NextURL    string   `json:"nextUrl"`
 }
 
 // TaskRecord 任务记录的业务字段子集（ScrapeTask 行）
 type TaskRecord struct {
-	ID        int
-	Mode      string // single | list
-	TargetURL string
-	Pages     int
-	RuleID    *int // null = 未使用规则
+        ID        int
+        Mode      string // single | list
+        TargetURL string
+        Pages     int
+        RuleID    *int // null = 未使用规则
+        // R104: 范围采集起止页（0=未设置）。TargetURL 含 {page} 占位符时每页 URL =
+        // 占位符替换为页码；未含时仍走规则 paginationTemplate/猜测变体。
+        PageFrom int
+        PageTo   int
 }
 
 // TaskFlushFields Run.Flush 可写回的任务进度字段（全部为 ScrapeTask 标量列；
 // 指针 nil = 不写该列，对齐 TS TaskFlushFields 可选字段语义）
 type TaskFlushFields struct {
-	Done          *int
-	Total         *int
-	ChaptersDone  *int
-	ChaptersTotal *int
-	Created       *int
-	Updated       *int
-	Chapters      *int
+        Done          *int
+        Total         *int
+        ChaptersDone  *int
+        ChaptersTotal *int
+        Created       *int
+        Updated       *int
+        Chapters      *int
 }
 
 // refPair 归一化后的章节行（title→URL；Phase 1/2 间传递）
 type refPair struct {
-	Title string
-	URL   string
+        Title string
+        URL   string
 }
 
 // fillPlan Phase 2 单书填充计划：书页 referer + 待填充行
 type fillPlan struct {
-	Referer string
-	Rows    []refPair
+        Referer string
+        Rows    []refPair
 }

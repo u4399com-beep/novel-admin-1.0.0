@@ -383,9 +383,19 @@
     var storageBadge = '';
     if (t.storageMode === 'txt') storageBadge = ' <span class="adm-badge adm-badge-outline" title="正文存为一章一 TXT 文件">TXT</span>';
     else if (t.storageMode === 'both') storageBadge = ' <span class="adm-badge adm-badge-neutral" title="数据库+TXT 文件双写">双写</span>';
-    return '<tr data-task-id="' + t.id + '" data-mode="' + escapeHtml(t.mode) + '" data-url="' + escapeHtml(t.targetUrl) + '" data-pages="' + escapeHtml(t.pages) + '" data-rule-id="' + escapeHtml(ruleIdAttr) + '">' +
+    // R104: 范围采集起止页徽章（占位符或显式起止页时标出页区间）
+    var rangeBadge = '';
+    if (t.mode === 'list') {
+      var hasRange = (t.pageFrom && t.pageFrom > 0) || (t.pageTo && t.pageTo > 0) || /\{page\}|%7bpage%7d/i.test(t.targetUrl || '');
+      if (hasRange) {
+        var pf = (t.pageFrom && t.pageFrom > 0) ? t.pageFrom : 1;
+        var pt = (t.pageTo && t.pageTo > 0) ? t.pageTo : ((t.pages && t.pages > 0) ? t.pages : pf);
+        rangeBadge = ' <span class="adm-badge adm-badge-outline" title="范围采集起止页（R104）">第' + pf + '-' + pt + '页</span>';
+      }
+    }
+    return '<tr data-task-id="' + t.id + '" data-mode="' + escapeHtml(t.mode) + '" data-url="' + escapeHtml(t.targetUrl) + '" data-pages="' + escapeHtml(t.pages) + '" data-rule-id="' + escapeHtml(ruleIdAttr) + '" data-page-from="' + escapeHtml(t.pageFrom || 0) + '" data-page-to="' + escapeHtml(t.pageTo || 0) + '">' +
       '<td class="tabular-nums text-neutral-500">' + t.id + '</td>' +
-      '<td>' + (t.mode === 'list' ? '<span class="adm-badge adm-badge-neutral">范围</span>' : '<span class="adm-badge adm-badge-outline">单本</span>') + storageBadge + '</td>' +
+      '<td>' + (t.mode === 'list' ? '<span class="adm-badge adm-badge-neutral">范围</span>' : '<span class="adm-badge adm-badge-outline">单本</span>') + storageBadge + rangeBadge + '</td>' +
       '<td>' + name + '</td>' +
       '<td class="adm-cell-url"><span title="' + escapeHtml(t.targetUrl) + '">' + escapeHtml(t.targetUrl) + '</span>' +
         (t.message ? '<span class="block truncate text-[11px] text-neutral-400" title="' + escapeHtml(t.message) + '">' + escapeHtml(t.message) + '</span>' : '') + '</td>' +
@@ -475,9 +485,11 @@
     var er = toggleExpansion(tr, 'edit-' + id, 9,
       '<div class="grid gap-2 md:grid-cols-[auto_1fr_auto_auto_auto] md:items-end" data-edit="' + id + '">' +
       '<label class="adm-field">模式<select class="adm-input adm-edit-mode"><option value="single">单本</option><option value="list">范围</option></select></label>' +
-      '<label class="adm-field">目标 URL<input class="adm-input adm-edit-url" placeholder="https://…"></label>' +
+      '<label class="adm-field">目标 URL<input class="adm-input adm-edit-url" placeholder="https://…（可含 {page} 占位符）"></label>' +
       '<label class="adm-field">采集规则<select class="adm-input adm-edit-rule"><option value="">不使用规则</option></select></label>' +
       '<label class="adm-field adm-edit-pages-wrap hidden">页数（1-999）<input type="number" min="1" max="999" class="adm-input adm-edit-pages" value="1"></label>' +
+      '<span class="flex gap-1.5 adm-edit-range-wrap hidden"><label class="adm-field">起始页<input type="number" min="1" max="9999" class="adm-input adm-edit-pf w-20" placeholder="留空"></label>' +
+      '<label class="adm-field">结束页<input type="number" min="1" max="9999" class="adm-input adm-edit-pt w-20" placeholder="留空"></label></span>' +
       '<span class="flex gap-1.5"><button type="button" class="adm-btn adm-btn-primary" data-act="task-edit-save" data-id="' + id + '">保存</button>' +
       '<button type="button" class="adm-btn" data-act="task-edit-cancel">取消</button></span></div>');
     if (!er) return;
@@ -489,14 +501,20 @@
     var url = tr.dataset.url || '';
     var pages = tr.dataset.pages || '1';
     var rid = tr.dataset.ruleId || '';
+    var pf = tr.dataset.pageFrom || '0';
+    var pt = tr.dataset.pageTo || '0';
     er.querySelector('.adm-edit-mode').value = mode;
     er.querySelector('.adm-edit-url').value = url;
     er.querySelector('.adm-edit-pages').value = pages;
     er.querySelector('.adm-edit-rule').value = rid;
+    er.querySelector('.adm-edit-pf').value = (pf && pf !== '0') ? pf : '';
+    er.querySelector('.adm-edit-pt').value = (pt && pt !== '0') ? pt : '';
     er.querySelector('.adm-edit-pages-wrap').classList.toggle('hidden', mode !== 'list');
+    er.querySelector('.adm-edit-range-wrap').classList.toggle('hidden', mode !== 'list');
     var modeSel = er.querySelector('.adm-edit-mode');
     modeSel.addEventListener('change', function () {
       er.querySelector('.adm-edit-pages-wrap').classList.toggle('hidden', modeSel.value !== 'list');
+      er.querySelector('.adm-edit-range-wrap').classList.toggle('hidden', modeSel.value !== 'list');
     });
   }
 
@@ -512,6 +530,12 @@
       var p = Math.floor(Number(box.querySelector('.adm-edit-pages').value) || 0);
       if (p < 1 || p > 999) return toast('列表页数需为 1-999 的整数', 'err');
       body.pages = p;
+      // R104: 起止页可选，填了才传（后端 null/不传 = 不写，绝不静默清零）
+      var pf = Math.floor(Number(box.querySelector('.adm-edit-pf').value) || 0);
+      var pt = Math.floor(Number(box.querySelector('.adm-edit-pt').value) || 0);
+      if (pf > 0) body.pageFrom = pf;
+      if (pt > 0) body.pageTo = pt;
+      if (pf > 0 && pt > 0 && pf > pt) return toast('起始页不能大于结束页', 'err');
     }
     try {
       await api('PUT', '/api/scrape-tasks/' + id, body); // PUT 传 mode/targetUrl/pages/ruleId
@@ -535,7 +559,11 @@
   function initTasks() {
     var modeSel = $('#adm-new-mode');
     modeSel.addEventListener('change', function () {
-      $('#adm-new-pages-wrap').classList.toggle('hidden', modeSel.value !== 'list');
+      var isList = modeSel.value === 'list';
+      $('#adm-new-pages-wrap').classList.toggle('hidden', !isList);
+      $('#adm-new-pf-wrap').classList.toggle('hidden', !isList);   // R104
+      $('#adm-new-pt-wrap').classList.toggle('hidden', !isList);   // R104
+      $('#adm-new-range-hint').classList.toggle('hidden', !isList); // R104
     });
     var createTaskBtn = $('#adm-new-submit');
     createTaskBtn.addEventListener('click', withBusy(createTaskBtn, async function () {
@@ -548,6 +576,15 @@
         if (pages < 1 || pages > 999) return toast('列表页数需为 1-999 的整数', 'err');
       }
       var body = { mode: mode, targetUrl: url, pages: pages };
+      // R104: 起止页可选（留空 = 旧语义从第 1 页采到页数上限）
+      if (mode === 'list') {
+        var pf = Math.floor(Number($('#adm-new-pf').value) || 0);
+        var pt = Math.floor(Number($('#adm-new-pt').value) || 0);
+        if (pf > 9999 || pt > 9999) return toast('起止页需为 1-9999 的整数', 'err');
+        if (pf > 0 && pt > 0 && pf > pt) return toast('起始页不能大于结束页', 'err');
+        if (pf > 0) body.pageFrom = pf;
+        if (pt > 0) body.pageTo = pt;
+      }
       var rid = $('#adm-new-rule').value;
       if (rid) body.ruleId = Number(rid);
       var storage = $('#adm-new-storage').value; // Task 32-b: 存储模式 db|txt|both

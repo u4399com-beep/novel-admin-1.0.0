@@ -913,17 +913,18 @@ func handleWebAdmin(w http.ResponseWriter, r *http.Request) {
 
         tasks := []map[string]any{}
         _ = queryList(
-                `SELECT t."id", COALESCE(t."ruleId",0), COALESCE(r."name",''), t."mode", t."targetUrl", t."pages", t."status", t."total", t."done", t."created", t."updated", t."chapters", t."message", t."updatedAt" FROM "ScrapeTask" t LEFT JOIN "ScrapeRule" r ON r."id" = t."ruleId" ORDER BY t."id" DESC LIMIT 100`,
+                `SELECT t."id", COALESCE(t."ruleId",0), COALESCE(r."name",''), t."mode", t."targetUrl", t."pages", t."status", t."total", t."done", t."created", t."updated", t."chapters", t."message", t."updatedAt", t."pageFrom", t."pageTo" FROM "ScrapeTask" t LEFT JOIN "ScrapeRule" r ON r."id" = t."ruleId" ORDER BY t."id" DESC LIMIT 100`,
                 func(rows *sql.Rows) error {
-                        var id, ruleID, pages, total, done, created, updatedN, chapters int64
+                        var id, ruleID, pages, total, done, created, updatedN, chapters, pageFrom, pageTo int64
                         var ruleName, mode, targetUrl, status, message string
                         var updatedAt any
-                        if err := rows.Scan(&id, &ruleID, &ruleName, &mode, &targetUrl, &pages, &status, &total, &done, &created, &updatedN, &chapters, &message, &updatedAt); err == nil {
+                        if err := rows.Scan(&id, &ruleID, &ruleName, &mode, &targetUrl, &pages, &status, &total, &done, &created, &updatedN, &chapters, &message, &updatedAt, &pageFrom, &pageTo); err == nil {
                                 tasks = append(tasks, map[string]any{
                                         "id": id, "ruleId": ruleID, "ruleName": ruleName, "mode": mode,
                                         "targetUrl": targetUrl, "pages": pages, "status": status,
                                         "total": total, "done": done, "created": created, "updated": updatedN,
                                         "chapters": chapters, "message": message, "updatedAt": updatedAt,
+                                        "pageFrom": pageFrom, "pageTo": pageTo,
                                 })
                         }
                         return nil

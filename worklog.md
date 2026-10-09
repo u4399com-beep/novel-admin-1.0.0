@@ -4428,3 +4428,24 @@ Stage Summary:
 - 章节填充任务创建跑通：API 一句话创建（curl -X POST /api/scrape-tasks -d '{"mode":"single","targetUrl":"<书页URL>","ruleId":<规则ID>}'），admin UI 同等效
 - 沙箱重建后全链路自愈：seed 规则恢复 → fleet-keeper 自动建任务 → 多任务并行填充 → 316 本骨架入库
 - 101kks 沙箱 IP 被挑战页软拦截属环境性（browser 策略可穿但 1-5s/章），服务器出口 IP 直连表现应更好
+
+---
+Task ID: R104-2
+Agent: Z.ai Code（主代理）
+Task: ①aijjxs 规则诊断（书目入库但正文采集全失败）②范围采集 {page} 占位符 + 起止页范围改造
+
+Work Log:
+- 【沙箱自愈】重置后 db/ 目录再次丢失（gitignore）→ mkdir 修复并根治：ensure-services.sh 首行补 mkdir -p "$ROOT/db"；重装 Go 1.22.12（/home/z/go-sdk/go）
+- 【aijjxs 排查·重大反转】初见 bookRule.catalogLinkSelector 疑似坏选择器（"aref^=" 缺 a[h 前缀）——hex 级取证证明是**本次会话工具输出渲染层吃字符的假象**（markdown 链接语法误伤 [h 序列），DB 真值 61 5b 68…=a[href^="/read/"] 完好 17 字节；教训：选择器类字符串必须 hex 取证，肉眼打印不可信
+- 【aijjxs 真根因】站点改版目录页分离：书页 /txt/{id}.html 已无章节列表（10KB 壳，仅推荐位链接），目录在 /read/{id}/（「在线阅读全文」锚）；walker 靠 catalogLinkSelector 发现目录页→引擎实测 catalogUrl 能正确返回 /read/57617/；旧观察「正文全失败」=Phase1 骨架期 chaptersDone=0 的长窗口（59 本×428 章骨架先行）+ 模板翻转期踩坑
+- 【aijjxs 实测三段全通】列表 59 条 → 目录页 /read/57617/ 290 章（ul.chapter-list a）→ 正文页 #view_content_txt 2862 字；任务 #1 恢复后 novel 31《清澈女大的六零年代》290/290 章全部落库（2802 字/章）；Agent Browser SSR /chapter/74602 eval 验证 CONTENT_OK（正文含「水英/羊水」原文）
+- 【范围采集改造】DB：ScrapeTask 加 pageFrom/pageTo 列（ensureColumn，0=未设置）；API：POST/PUT 接受校验（1-9999、from≤to、null 不写不清零）、LIST_SELECT/scan/SSR admin 查询同步扩列；worker：TaskRecord 加字段，collectListItems 三路语义——①targetUrl 含 {page} 占位符（大小写不敏感，含 %7Bpage%7D 编码形）→ 每页 URL=占位符替换页码、区间 [pageFrom,pageTo]、跳过首页原样抓（占位符原样对源站是 404）、不走规则模板/猜测（任务级显式优先）②无占位符+pageFrom>1 → 跳过首页从 pageFrom 起按变体抓 ③无占位符+无区间 → 完全旧行为；合并去重抽 mergeListItems 共用；连续失败熔断沿用 MAX_CONSECUTIVE_PAGE_FAILS
+- 【admin UI】新建表单加起始页/结束页（list 模式显示）+ URL placeholder 提示 {page} + 范围提示行；编辑对话框同款字段；任务行渲染「第N-M页」区间徽章 + data-page-from/to；admin.js node --check 通过
+- 【端到端验证】路径形态 /rank/lastupdate/{page}.html 展开为 2/3/4.html（404 为故意选错的站内分页形态，机械性正确：连续失败 3 次熔断提前终止）；查询串形态 ?page={page} + pageFrom=2,pageTo=3 → 第 2 页 30 条+第 3 页 30 条→去重 60 本→Phase1 骨架自动推进；旧语义任务（无占位符无区间）行为不变
+- 【回归】go vet 干净 + go test 全量 57.9s 通过；admin 页 SSR（web_data.go 任务查询扩列）无 <no value>
+- 【运维】aijjxs 任务#1 与全舰队 15 条暂停任务经 E21 复活；测试任务 #18（路径形态）已删，#19（查询串形态，60 本）留 fleet 继续填充
+
+Stage Summary:
+- aijjxs 规则无需改动即已健康：目录分离形态被 catalogLinkSelector 正确覆盖，全链路实测 290 章正文入库并 SSR 渲染验证；「正文全失败」为观察窗口+历史模板翻转，当前任务 #1 稳定填充
+- 范围采集新能力上线：targetUrl 支持 {page} 占位符（路径/查询串皆可）+ pageFrom/pageTo 起止页（API/admin 双入口），零破坏向后兼容（0=未设置走旧行为）
+- 新增运维认知：工具输出渲染会吃 [h 序列——凡选择器/URL 断言先 hex 取证；ensure-services.sh 已自愈 db 目录

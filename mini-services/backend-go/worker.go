@@ -1387,7 +1387,56 @@ func firstChapterPreview(novelID int) string {
 
 // collectListItems 列表页翻页收集（模板优先、连续失败快速终止、合并去重、任务上限截断）。
 // 返回 (条目, 最后命中的列表页 URL 作 referer)。
+// R104: TargetURL 含 {page} 占位符时按占位符语义展开（页区间 [pageFrom,pageTo]，
+// 任务级显式优先于规则模板/猜测变体，不做首页原样抓取）；未含时旧行为不变。
 func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, string, string) {
+        if hasPagePlaceholder(task.TargetURL) {
+                return collectListItemsPlaceholder(run, task, rule)
+        }
+        startPage, endPage := effectivePageRange(task)
+        if startPage > 1 {
+                // pageFrom>1 且无占位符：跳过原样首页，直接从第 startPage 页变体起抓
+                run.Log(fmt.Sprintf("从第 %d 页起采（跳过首页），抓取列表页…", startPage))
+                items := []ListItem{}
+                currentListURL := task.TargetURL
+                consecutiveFails := 0
+                if hasPaginationTemplate(rule.ListRule) {
+                        run.Log("分页模板生效: " + truncateRunes(rule.ListRule["paginationTemplate"], 120))
+                }
+                for k := startPage; k <= endPage; k++ {
+                        if stopState(run.TaskID) != "" {
+                                break
+                        }
+                        got := 0
+                        hit := false
+                        for _, v := range buildPageVariants(rule.ListRule, task.TargetURL, k) {
+                                pageItems, _ := fetchListPage(run, v, rule, "")
+                                if len(pageItems) > 0 {
+                                        got = len(pageItems)
+                                        hit = true
+                                        currentListURL = v
+                                        items = append(items, pageItems...)
+                                        break
+                                }
+                        }
+                        if !hit {
+                                consecutiveFails++
+                                run.Log(fmt.Sprintf("第 %d 页无结果（连续失败 %d）", k, consecutiveFails))
+                                if consecutiveFails >= MAX_CONSECUTIVE_PAGE_FAILS {
+                                        run.Log(fmt.Sprintf("连续 %d 页翻页失败，提前终止翻页", MAX_CONSECUTIVE_PAGE_FAILS))
+                                        break
+                                }
+                                continue
+                        }
+                        consecutiveFails = 0
+                        run.Log(fmt.Sprintf("第 %d 页命中: %s，提取 %d 条", k, truncateRunes(currentListURL, 100), got))
+                }
+                if len(items) == 0 {
+                        run.Log("列表页未提取到书籍条目")
+                        return nil, "", currentListURL
+                }
+                return mergeListItems(run, items), "", currentListURL
+        }
         run.Log("抓取列表页第 1 页…")
         first, firstErr := fetchListPage(run, task.TargetURL, rule, "")
         if len(first) == 0 {
@@ -1403,7 +1452,7 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
                 run.Log("分页模板生效: " + truncateRunes(rule.ListRule["paginationTemplate"], 120))
         }
 
-        for k := 2; k <= task.Pages; k++ {
+        for k := 2; k <= endPage; k++ {
                 if stopState(run.TaskID) != "" {
                         break
                 }
@@ -1433,6 +1482,11 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
         }
 
         // 合并去重（按 URL，缺 URL 按标题）
+        return mergeListItems(run, items), firstErr, currentListURL
+}
+
+// mergeListItems 合并去重（按 URL，缺 URL 按标题）+ 单任务上限截断（R104 自原尾部抽出共用）
+func mergeListItems(run *Run, items []ListItem) []ListItem {
         seen := map[string]bool{}
         merged := []ListItem{}
         for _, it := range items {
@@ -1450,7 +1504,44 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
                 merged = merged[:MAX_BOOKS_PER_TASK]
                 run.Log(fmt.Sprintf("条目数超出单任务上限（%d），已截断", MAX_BOOKS_PER_TASK))
         }
-        return merged, firstErr, currentListURL
+        return merged
+}
+
+// collectListItemsPlaceholder {page} 占位符路径（R104）：每一页 URL = TargetURL 占位符
+// 替换为页码，页区间 [pageFrom,pageTo]（effectivePageRange 归一后 [startPage,endPage]）。
+// 不做首页原样抓取（占位符原样对源站是 404 垃圾页）；连续失败快速终止与旧语义同阈值。
+// 返回 (条目, 最后命中页 URL 作 referer)。
+func collectListItemsPlaceholder(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, string, string) {
+        startPage, endPage := effectivePageRange(task)
+        run.Log(fmt.Sprintf("{page} 占位符生效，抓取第 %d-%d 页…", startPage, endPage))
+        items := []ListItem{}
+        currentListURL := task.TargetURL
+        consecutiveFails := 0
+        for k := startPage; k <= endPage; k++ {
+                if stopState(run.TaskID) != "" {
+                        break
+                }
+                pageURL := expandPagePlaceholder(task.TargetURL, k)
+                pageItems, _ := fetchListPage(run, pageURL, rule, "")
+                if len(pageItems) == 0 {
+                        consecutiveFails++
+                        run.Log(fmt.Sprintf("第 %d 页无结果（连续失败 %d）: %s", k, consecutiveFails, truncateRunes(pageURL, 90)))
+                        if consecutiveFails >= MAX_CONSECUTIVE_PAGE_FAILS {
+                                run.Log(fmt.Sprintf("连续 %d 页翻页失败，提前终止翻页", MAX_CONSECUTIVE_PAGE_FAILS))
+                                break
+                        }
+                        continue
+                }
+                consecutiveFails = 0
+                currentListURL = pageURL
+                run.Log(fmt.Sprintf("第 %d 页命中: %s，提取 %d 条", k, truncateRunes(pageURL, 100), len(pageItems)))
+                items = append(items, pageItems...)
+        }
+        if len(items) == 0 {
+                run.Log("列表页未提取到书籍条目")
+                return nil, "", currentListURL
+        }
+        return mergeListItems(run, items), "", currentListURL
 }
 
 // ==================== 两种模式 ====================
@@ -1769,10 +1860,10 @@ func runTask(taskID int) {
         // Task 32-b: storageMode（TXT 文件存储模式）随任务参数读出（db.go once 已 ensureColumn，
         // 旧任务行/异常值统一归一 db）
         var mode, targetURL, storageMode string
-        var pages int
+        var pages, pageFrom, pageTo int
         var ruleID sql.NullInt64
-        if err := queryOne("SELECT mode, targetUrl, pages, ruleId, storageMode FROM ScrapeTask WHERE id = ?",
-                []any{&mode, &targetURL, &pages, &ruleID, &storageMode}, taskID); err != nil {
+        if err := queryOne("SELECT mode, targetUrl, pages, ruleId, storageMode, pageFrom, pageTo FROM ScrapeTask WHERE id = ?",
+                []any{&mode, &targetURL, &pages, &ruleID, &storageMode, &pageFrom, &pageTo}, taskID); err != nil {
                 // Task 44-b（P2）：参数读取失败（存储瞬时异常/损坏行存储类不匹配，如 pages 列
                 // 存在历史工具写入的 TEXT 形态）旧版静默 return——此时 pending→running 条件更新
                 // 已完成，无任何 worker 写终态，runner 只轮询 pending、recoverStaleTasks 仅启动
@@ -1788,14 +1879,21 @@ func runTask(taskID int) {
         default:
                 storageMode = "db"
         }
-        task := TaskRecord{ID: taskID, Mode: mode, TargetURL: targetURL, Pages: pages}
+        task := TaskRecord{ID: taskID, Mode: mode, TargetURL: targetURL, Pages: pages,
+                PageFrom: pageFrom, PageTo: pageTo}
         if ruleID.Valid {
                 v := int(ruleID.Int64)
                 task.RuleID = &v
         }
         rule := loadRule(task.RuleID)
         if task.Mode == "list" {
-                run.Log(fmt.Sprintf("任务开始（范围采集·两阶段并发）目标: %s，页数上限: %d", task.TargetURL, task.Pages))
+                if task.PageFrom > 0 || task.PageTo > 0 || hasPagePlaceholder(task.TargetURL) {
+                        start, end := effectivePageRange(task)
+                        run.Log(fmt.Sprintf("任务开始（范围采集·两阶段并发）目标: %s，页区间: 第 %d-%d 页",
+                                task.TargetURL, start, end))
+                } else {
+                        run.Log(fmt.Sprintf("任务开始（范围采集·两阶段并发）目标: %s，页数上限: %d", task.TargetURL, task.Pages))
+                }
         } else {
                 run.Log(fmt.Sprintf("任务开始（单本采集·两阶段并发）目标: %s", task.TargetURL))
         }
