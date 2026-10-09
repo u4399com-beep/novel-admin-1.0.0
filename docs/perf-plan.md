@@ -1,7 +1,8 @@
 # 章节采集提速方案（R106 规划）
 
-> 状态：规划稿（2026-10-09）。基于 worker.go / runner.go / scraper-go ratelimit.go / chain.go
-> 实码调研 + 在库任务实测速率，非拍脑袋估算。实施按 P0→P1→P2 分期，每期独立可验证、可回滚。
+> 状态：P0-1/P0-2/P1-2 已实施（2026-10-09，R107）；P1-1/P1-3 经实施期复评暂缓（理由见各项标注）。
+> 基于 worker.go / runner.go / scraper-go ratelimit.go / chain.go 实码调研 + 在库任务实测速率，
+> 非拍脑袋估算。实施按 P0→P1→P2 分期，每期独立可验证、可回滚（各自 env 开关）。
 
 ## 一、现状与瓶颈量化（全部实测）
 
@@ -61,6 +62,11 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
   对 HTTP 200 且正文完整的站点直接固定 curl/http 策略，跳过 browser 提位窗口。
 - 预期：browser 混合站单域 750 → 1200-1500 章/h（网络时间 2.5s→0.3s 后 max(1.2s, 网络) 由网络侧转为间隔侧）。
 - 风险：低——锁定仅在同域连续成功时保持，遇挑战/空壳立即解锁回退全链（现有 soft-block 判定复用）。
+- **【已实施 R107】**：scraper-go 新增 sessionlock.go（慢锁标记/清除/周期复探/预算闸 8s）+ chain.go
+  接线（Tier 1/2 成功清锁、Tier 3 成功标记慢锁；每 30 次链尝试或锁龄超 2 分钟把首个可用
+  Tier 1 策略插到链首复探）+ /api/strategies.slowLock 观测。开关 PROBE_SLOW_LOCK_OFF=1。
+  生产实证：101kks.com 慢锁命中后复探按期触发（任务日志 [fast-probe] 行），未命中时本轮
+  照旧由 browser 出正文（失败章节零新增）；快站全部处于 HTTP 快通道无需复探。
 
 **P0-2 唤醒 paused 舰队**（运维 + api 侧联动）
 - 现状：14 条 paused（代理 407/黑洞/直连失败）；代理池 448 个存活但部分规则未路由到可用出口。
@@ -68,6 +74,11 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
   ②autoResumePausedTasks 已每 30s 扫限流类；补「代理恢复即 resume」事件联动。
 - 预期：多域并行度 5→12+，**总吞吐直接 ×2 以上**（域间天然并行，零代码风险）。
 - 风险：低——自动恢复已有每任务 4 次上限防抖。
+- **【已实施 R107】**：runner.go 新增 ①启动孤儿唤醒 resumeRestartOrphans（「服务重启，任务自动暂停」
+  前缀专属匹配→pending，恢复后文案改写防崩溃循环风暴）②封禁形态有界自动恢复
+  autoResumeBlockedTasks（静默 ≥30min + 代理池存活 ≥3 + 每任务 ≤2 次 + 每轮 ≤2 条）。
+  生产实证：重启暂停 11 条→自动归队 11 条（14:37:51 同秒），fleet 并行度 5→13 running；
+  词表契约测试 runner_resume_blocked_test.go（含幂等/上限/静默期/代理池前置四场景）。
 
 ### P1（结构性改造，中等风险）
 
@@ -78,6 +89,10 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
 - 预期：端到端时延 -30~50%（大 list 任务 Phase1 占比 10-30%）。
 - 风险：中——Phase2 熔断需能反压 Phase1（stopState 检查点已贯穿两阶段，复用）；
   fillMap 构建需改流式（骨架 upsert 返回 novelId 后即可 enqueue）。
+- **【R107 实施期复评：暂缓】**：单域任务 Phase1/2 共享同 1.2s 域槽——重叠不增吞吐
+  （总请求数×间隔不变），仅省 3s breather；跨域收益已被 P1-2 书间并行覆盖（Phase1 本身
+  经 BOOK_CONCURRENCY=4 天然跨域并行）。流式 fillMap 重构风险/收益比不划算，待出现
+  「Phase1 占比 >30% 的多域大列表」实证再启用。
 
 **P1-2 聚合任务书间并行池（host 感知）**（worker.go phase2Fill）
 - 现状：`for _, novelID := range ids` 严格串行。
@@ -85,12 +100,20 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
   跨 host 并行使多域任务吃到多域槽。聚合源（多站点规则）收益显著；单站任务自动退化为串行（无副作用）。
 - 预期：多域任务吞吐 ×2-3；单站任务 0%（诚实标注）。
 - 风险：中——laneCtl/统计计数器需按书隔离（atomic 已是共享安全）；fillMap 只读无竞态。
+- **【已实施 R107】**：worker.go phase2Fill 重构——fillMap 构建期快照 plans（workers 只读）、
+  delete 经 mapMu 串行化、breakerStopped 原子化；按 plan.Referer（兜底首章 URL）host 分组，
+  组间并行（默认 ×2，SCRAPE_BOOK_PARALLEL 可调）组内严格串行；熔断后 workers 持续 drain
+  至 close（生产端不死锁）。回归：worker_bookparallel_test.go 三测（多域并行/单域退化串行/
+  熔断 drain 30s 看门狗）+ -race 通过；单站 fleet 任务自动退化串行零行为变化。
 
 **P1-3 落库微批**（worker.go persistChapterFill / db.go）
 - 现状：单章单事务（R103）。
 - 改造：同书相邻章攒 8-16 章批量事务（批内任一失败回退单章路径）；确认 WAL `synchronous=NORMAL`。
 - 预期：<1%（礼貌间隔 1.2s 面前落库 5-15ms 可忽略）——**低优先级，顺手做**。
 - 风险：低。
+- **【R107 实施期复评：不做】**：12 车道并发下「同书相邻章攒批」需跨车道汇合协调，
+  复杂度与 R103 单章事务原子性保证冲突；实测落库 5-15ms 对 1.2s 间隔 <1%，且
+  WAL+synchronous=NORMAL 已确认就位（db.go DSN）。投入产出不成正比，关闭此项。
 
 ### P2（激进项，默认关闭，需明确接受风险再开）
 

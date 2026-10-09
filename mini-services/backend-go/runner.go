@@ -240,6 +240,98 @@ func autoResumePausedTasks() {
         }
 }
 
+// ==================== P0-2（R107 提速·舰队唤醒） ====================
+//
+// 舰队大面积 paused 是多域并行度的第一瓶颈（docs/perf-plan.md §1.4/§P0-2）：
+// ①服务重启把全部 running 孤儿化转 paused，此后无人认领——舰队每次重启都归零，
+//   只能人工逐条复活（R103/R104 两轮实证）；
+// ②封禁形态熔断（pausedPhase2BlockedFmt）被 Task 33 划为「纯手动恢复」，但实证相当
+//   一部分是代理出口死亡/407（E17 前的 trxsw 形态）或站点临时抖动，代理池自愈后
+//   重试即可续采——永久搁置让多域并行度持续流失。
+//
+// 唤醒策略（有界防抖）：
+// - 启动孤儿唤醒（一次性）：仅匹配「服务重启，任务自动暂停」专属文案——重启前就在
+//   跑的任务是健康任务，恢复=还原重启前状态；手动暂停文案不含该前缀，绝不误伤。
+//   恢复后 message 改写不匹配本前缀 → 崩溃循环场景无重启风暴。
+// - 封禁形态有界自动恢复（每 30s 扫）：静默 ≥30 分钟 + 代理池存活出口 ≥3（池子
+//   死气沉沉时重试无意义）+ 每任务每进程生命周期至多 2 次 + 每轮至多 2 条——
+//   「封禁」里混着的代理死口/临时抖动获得自愈通道；确认封禁站至多多烧
+//   2×PHASE2_FAIL_BREAKER 章连败即回到纯手动，烧穿有界。
+
+const (
+        autoResumeBlockedSilentMs   = 30 * 60 * 1000 // 封禁熔断后的静默等待（限流类 3min 的 10 倍，封禁更谨慎）
+        autoResumeBlockedMaxPerTask = 2              // 每任务自动恢复上限（进程生命周期内）
+        autoResumeBlockedPerSweep   = 2              // 每轮至多唤醒条数（防集中重入队踩踏）
+        proxyPoolResumeMinAlive     = 3              // 代理池存活出口低于此值时不唤醒（重试无意义）
+)
+
+var autoResumeBlockedAttempts = map[int]int{}
+
+// resumeRestartOrphans 启动时一次性唤醒「服务重启」孤儿 paused 任务，返回唤醒条数。
+// 恢复后 message 改写为「服务重启自动恢复：…」（不含「服务重启，任务自动暂停」前缀），
+// 后续再重启不会把本条误当新孤儿（进程崩溃循环场景无重启风暴）。
+func resumeRestartOrphans() int {
+        res, err := exec(
+                `UPDATE "ScrapeTask" SET "status" = 'pending',
+                   "message" = '服务重启自动恢复：重新入队继续采集（进度保留）', "updatedAt" = ?
+                 WHERE "status" = 'paused' AND "message" LIKE '服务重启，任务自动暂停%'`,
+                nowMillis())
+        if err != nil {
+                return 0
+        }
+        n, _ := res.RowsAffected()
+        return int(n)
+}
+
+// autoResumeBlockedTasks 封禁形态 paused 任务的有界自动恢复（代理池健康前置）。
+// 词表 '%疑似源站封禁或站点不可达%' 与 pausedPhase2BlockedFmt 构成隐式契约
+// （worker_autorecovery_test.go 锁定该文案不入限流词表；此处为独立第二通道）。
+func autoResumeBlockedTasks() {
+        var alive int
+        if err := queryOne(`SELECT COUNT(*) FROM "ProxyExit" WHERE "dead" = 0`, []any{&alive}); err != nil || alive < proxyPoolResumeMinAlive {
+                return
+        }
+        var ids []int
+        err := queryList(
+                `SELECT "id" FROM "ScrapeTask"
+                 WHERE "status" = 'paused' AND "message" LIKE '%疑似源站封禁或站点不可达%'
+                   AND "updatedAt" <= ? ORDER BY "updatedAt" ASC LIMIT ?`,
+                func(rows *sql.Rows) error {
+                        var id int
+                        if err := rows.Scan(&id); err != nil {
+                                return err
+                        }
+                        ids = append(ids, id)
+                        return nil
+                }, nowMillis()-autoResumeBlockedSilentMs, autoResumeBlockedPerSweep)
+        if err != nil {
+                return
+        }
+        for _, id := range ids {
+                if autoResumeBlockedAttempts[id] >= autoResumeBlockedMaxPerTask {
+                        continue
+                }
+                autoResumeBlockedAttempts[id]++
+                n := autoResumeBlockedAttempts[id]
+                var logv string
+                logv = readTaskLog(int64(id)) // R102-b: 日志拆表读（含主表旧列回退）
+                line := "[" + runTs() + "] 自动恢复（封禁冷却结束且代理池健康）：第 " + itoa(n) + "/" + itoa(autoResumeBlockedMaxPerTask) + " 次重新入队（如为代理死口/临时抖动将续采；确认封禁则回退纯手动）"
+                if logv != "" {
+                        logv += "\n"
+                }
+                logv = lastLines(logv+line, MAX_LOG_LINES)
+                res, err := exec(
+                        `UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（封禁冷却结束+代理池健康），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+                        nowMillis(), id)
+                if err == nil {
+                        if cnt, _ := res.RowsAffected(); cnt > 0 {
+                                _ = writeTaskLog(int64(id), logv)
+                                log.Printf("[backend-go-runner] task %d 封禁形态自动恢复（第 %d 次，代理池存活 %d）", id, n, alive)
+                        }
+                }
+        }
+}
+
 // startRunner runner 主循环入口（main.go 在 runner/all 模式下 go 调用）
 func startRunner() {
         log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
@@ -251,6 +343,11 @@ func startRunner() {
 
         // TS runner 防复活护栏：启动即清一次，之后每 runnerTSKillEvery 轮（≈5 分钟）再清
         killTSScrapeRunner()
+
+        // P0-2 舰队唤醒①：重启孤儿一次性归队（重启前 running 的任务恢复 pending 续采）
+        if n := resumeRestartOrphans(); n > 0 {
+                log.Printf("[backend-go-runner] 服务重启孤儿唤醒：%d 条 paused 任务已重新入队", n)
+        }
 
         tick := 0
         for {
@@ -304,8 +401,10 @@ func startRunner() {
                         _ = recategorizeOne()
 
                         // Task 33: 限流类熔断任务的有界自动恢复（每 15 轮≈30s 扫一次）
+                        // P0-2 舰队唤醒②：封禁形态 paused 的有界自动恢复（同频扫描，独立门槛）
                         if tick%15 == 0 {
                                 autoResumePausedTasks()
+                                autoResumeBlockedTasks()
                         }
 
                         // Task 44-b: 进程内 running 孤儿自查（每 5 轮≈10s）——running 且不在

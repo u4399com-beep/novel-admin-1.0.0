@@ -313,6 +313,22 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 		}
 	}
 
+	// P0-1（R107 提速·慢通道快速复探，sessionlock.go 详注）：亲和把 browser/cloak
+	// 等慢策略锁定链首后，一次性挑战站点（挑战 cookie 已落共享会话桶）的毫秒级
+	// HTTP 策略再无出场机会。此处按周期把首个可用 Tier 1 策略临时插到链首复探：
+	// 命中即亲和自动接管（下章起回快通道）；未命中仅多付一次毫秒级探测，本轮
+	// 照旧由慢策略出正文（预算闸保证复探绝不挤占正章产出）。
+	if !slowProbeOff && opts.requestedStrategy == "" && slowLockProbeDue(host) {
+		preferred := getPreferredStrategy(host)
+		if strategyTierByName(preferred) == tierStrategyBrowser && deadline-nowMs() > slowLockProbeReserveMS {
+			if p := firstAvailableTier1(); p != nil {
+				slowLockNoteProbe(host)
+				order = append([]strategyDef{*p}, order...)
+				warnings = append(warnings, "[fast-probe] 主机 "+host+" 慢策略（"+preferred+"）服务中，已插快通道复探 "+p.name+"（挑战 cookie 落桶后 HTTP 常可直接放行；未命中不影响本轮慢策略出正文）")
+			}
+		}
+	}
+
 	lastStatus := 0
 	lastNote := ""
 	var lastRetryAfterMs *int64
@@ -465,6 +481,13 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
 
 			if res.ok {
 				recordStrategySuccess(host, strat.name)
+				// P0-1（sessionlock.go）：快慢通道双向自愈——Tier 1/2 成功清慢锁
+				//（快通道接管，停止复探）；Tier 3 成功标记/续期慢锁（开启周期复探）
+				if strat.tier <= tierStrategyIv8 {
+					slowLockClear(host)
+				} else {
+					slowLockMark(host)
+				}
 				noteChainSuccess(host, ctx.proxy)                // E17: 仅复位本次成功出口的熔断（其余出口记忆保留）
 				statsRecordChainOK(host, strat.name, nowMs()-t0) // E20: 整链成功计数（主机×策略）
 				// Task 31-b: AIMD 自适应限速「加性回落」——连续成功后该主机请求间隔

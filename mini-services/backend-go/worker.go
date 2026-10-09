@@ -860,7 +860,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
         breakerKindLimit := false
         // Task 35-b: 改 atomic.Bool——章级 onProgress 回调（多车道并发）也会写入
         var stoppedEarly atomic.Bool
-        breakerStopped := false
+        // P1-2: 书间并行后本布尔会被多个书间 worker 并发写 → atomic.Bool（读写竞态消除）
+        var breakerStopped atomic.Bool
         isStopped := throttledCheck(func() bool { return stopState(run.TaskID) != "" })
 
         // Task 31-b: 车道感知自适应并发。固定 12 车道对严格限流站（ixdzs8 实证）太猛：
@@ -967,19 +968,70 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
         // 终态/熔断消息带形态摘要（timeout×N/熔断×N/空壳×N/挑战×N）才能定位主体失败形态
         var failTimeout, failCircuit, failSoftBlock, failOther atomic.Int64
         var rescuedCtr atomic.Int64 // R99: 排队饱和救援重试成功数
-        for _, novelID := range ids {
-                if stoppedEarly.Load() || breakerStopped {
-                        break
+        // ==================== P1-2（R107 提速·host 感知书间并行池） ====================
+        //
+        // 现状：书间严格串行（for ids 逐本）。fleet 任务=单站多书（同 host）时串行是正确的
+        // （域槽排队无收益）；但聚合源/多站点列表任务的书来自多个 host——跨域书并行才能
+        // 吃到多域槽（docs/perf-plan.md P1-2）。
+        // 改造：按 plan.Referer（兜底首行章 URL）的 host 分组；组间并行（默认 ×2，
+        // SCRAPE_BOOK_PARALLEL 可调；=1 或单域自动退化为串行=原行为），组内严格串行。
+        // 并发安全：laneCtl/连败熔断/失败形态计数/EWMA/进度 flush 均为共享原子（与章级
+        // 并发同款语义）；fillMap 读取收敛到构建期快照 plans（workers 只读快照），
+        // delete 由 mapMu 串行化（Go map 并发写不安全）；run.Log 自带互斥。
+        type bookGroup struct {
+                host string
+                ids  []int
+        }
+        plans := make(map[int]fillPlan, len(ids))
+        for _, id := range ids {
+                plans[id] = fillMap[id] // 构建期快照：并行 workers 不再触碰 fillMap 读
+        }
+        hostOfURL := func(u string) string {
+                if pu, err := url.Parse(u); err == nil {
+                        return strings.ToLower(pu.Hostname())
+                }
+                return ""
+        }
+        groups := make([]bookGroup, 0, 8)
+        groupIdx := map[string]int{}
+        for _, id := range ids {
+                h := hostOfURL(plans[id].Referer)
+                if h == "" && len(plans[id].Rows) > 0 {
+                        h = hostOfURL(plans[id].Rows[0].URL) // Referer 缺失兜底首章 URL
+                }
+                if gi, ok := groupIdx[h]; ok {
+                        groups[gi].ids = append(groups[gi].ids, id)
+                } else {
+                        groupIdx[h] = len(groups)
+                        groups = append(groups, bookGroup{host: h, ids: []int{id}})
+                }
+        }
+        bookPar := envInt("SCRAPE_BOOK_PARALLEL", 2)
+        if bookPar > len(groups) {
+                bookPar = len(groups)
+        }
+
+        // canStartBook 书间安全点检查（原 for 循环顶三连检查；并行路径多 goroutine 调用，
+        // breakerStopped 已原子化）
+        canStartBook := func() bool {
+                if stoppedEarly.Load() {
+                        return false
                 }
                 if isStopped() {
                         stoppedEarly.Store(true)
-                        break
+                        return false
                 }
                 if failBreaker.Load() {
-                        breakerStopped = true
-                        break
+                        breakerStopped.Store(true)
+                        return false
                 }
-                plan := fillMap[novelID]
+                return true
+        }
+
+        // fillOneBook 处理单本书的全部待填充章（原 for 循环体原样抽取——书间并行与
+        // 串行路径共用；plan 由快照传入）
+        var mapMu sync.Mutex
+        fillOneBook := func(novelID int, plan fillPlan) {
                 var bookFilled, bookFailed atomic.Int64
                 for off := 0; off < len(plan.Rows); off += SKELETON_BATCH {
                         end := min(off+SKELETON_BATCH, len(plan.Rows))
@@ -1115,7 +1167,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 }
                         }, func() bool { return isStopped() || failBreaker.Load() || stoppedEarly.Load() })
                         if failBreaker.Load() {
-                                breakerStopped = true
+                                breakerStopped.Store(true)
                         }
                         if !onProgress(int(filledCtr.Load())) {
                                 stoppedEarly.Store(true)
@@ -1125,7 +1177,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 stoppedEarly.Store(true)
                                 break
                         }
-                        if breakerStopped {
+                        if breakerStopped.Load() {
                                 break
                         }
                 }
@@ -1134,7 +1186,57 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 } else {
                         run.Log(fmt.Sprintf("书籍 #%d 正文填充完成：成功 %d / 失败 %d", novelID, bookFilled.Load(), bookFailed.Load()))
                 }
-                delete(fillMap, novelID) // 处理完即释放，长任务内存渐减
+                mapMu.Lock()
+                delete(fillMap, novelID) // 处理完即释放，长任务内存渐减（mapMu 防并行写竞争）
+                mapMu.Unlock()
+        }
+
+        // 书间调度：多域且 bookPar>1 → 组间并行池（worker 持续 drain 至 close，防生产端
+        // 停止后阻塞死锁）；单域或 bookPar=1 → 串行（与历史行为逐语义一致）
+        if bookPar > 1 && len(groups) > 1 {
+                hostNames := make([]string, 0, len(groups))
+                for _, g := range groups {
+                        if g.host == "" {
+                                hostNames = append(hostNames, "(unknown)")
+                        } else {
+                                hostNames = append(hostNames, g.host)
+                        }
+                }
+                run.Log(fmt.Sprintf("[book-parallel] 检测到 %d 个源站域，书间并行 ×%d（同域书保持串行）：%s",
+                        len(groups), bookPar, strings.Join(hostNames, ", ")))
+                ch := make(chan bookGroup, len(groups))
+                var wg sync.WaitGroup
+                for w := 0; w < bookPar; w++ {
+                        wg.Add(1)
+                        go func() {
+                                defer wg.Done()
+                                for g := range ch {
+                                        for _, id := range g.ids {
+                                                if !canStartBook() {
+                                                        continue // 停止后继续 drain（不 return，防生产端阻塞）
+                                                }
+                                                fillOneBook(id, plans[id])
+                                        }
+                                }
+                        }()
+                }
+                for _, g := range groups {
+                        if !canStartBook() {
+                                break
+                        }
+                        ch <- g
+                }
+                close(ch)
+                wg.Wait()
+        } else {
+                for _, g := range groups {
+                        for _, id := range g.ids {
+                                if !canStartBook() {
+                                        break
+                                }
+                                fillOneBook(id, plans[id])
+                        }
+                }
         }
         // Task 34: 失败形态摘要进日志（仅有失败时；采样 6 条之外的聚合视图）
         if f := failedCtr.Load(); f > 0 {
@@ -1154,7 +1256,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 run.Log("[失败形态统计] 共 " + itoa(int(f)) + " 章失败：" + strings.Join(parts, "、"))
         }
         return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly.Load(),
-                FailBreaker: breakerStopped || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照
+                FailBreaker: breakerStopped.Load() || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照
                 BreakerRateLimit: breakerKindLimit,
                 // Task 31-b: 车道感知观测指标
                 LaneShrinks: int(laneShrinks.Load()), LaneFinal: int(laneLimit.Load())}

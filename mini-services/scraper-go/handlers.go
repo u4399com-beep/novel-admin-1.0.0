@@ -149,6 +149,18 @@ func handleStrategies(w http.ResponseWriter, _ *http.Request) {
 			"maxEntries":   affMax,
 			"trackedHosts": affHosts,
 		},
+		// P0-1 慢通道锁定与快通道复探（sessionlock.go）：Tier 3 攻克主机后周期性
+		// 把首个可用 Tier 1 HTTP 策略插到链首复探——挑战 cookie 落桶后 HTTP 常
+		// 可直接放行，命中即亲和自动接管回快通道；PROBE_SLOW_LOCK_OFF=1 停用
+		"slowLock": func() map[string]any {
+			n, detail := slowLockStats()
+			return map[string]any{
+				"description":  "慢通道锁定与快通道复探：browser/cloak 攻克主机后标记慢锁，每 30 次链尝试（或锁龄超 2 分钟）把首个可用 Tier 1 HTTP 策略临时插到链首复探；命中即亲和接管回快通道，未命中仅多付一次毫秒级探测",
+				"probeEvery":   slowLockProbeEvery,
+				"trackedHosts": n,
+				"hosts":        detail,
+			}
+		}(),
 		// 按主机 Cookie 会话持久化说明
 		"cookieSession": func() map[string]any {
 			return map[string]any{
