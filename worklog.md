@@ -4449,3 +4449,24 @@ Stage Summary:
 - aijjxs 规则无需改动即已健康：目录分离形态被 catalogLinkSelector 正确覆盖，全链路实测 290 章正文入库并 SSR 渲染验证；「正文全失败」为观察窗口+历史模板翻转，当前任务 #1 稳定填充
 - 范围采集新能力上线：targetUrl 支持 {page} 占位符（路径/查询串皆可）+ pageFrom/pageTo 起止页（API/admin 双入口），零破坏向后兼容（0=未设置走旧行为）
 - 新增运维认知：工具输出渲染会吃 [h 序列——凡选择器/URL 断言先 hex 取证；ensure-services.sh 已自愈 db 目录
+---
+Task ID: R105
+Agent: Z.ai Code（主代理）
+Task: 检查首页热门小说区块逻辑（激活主题 trxsw，SSR handleWebHome 数据链全检）
+
+Work Log:
+- 定位数据链：handleWebHome Hot=isHot=1 按 clicks DESC LIMIT 10 → trxsw/home.html 双栏列表（副标题「全站点击 TOP12」）；SiteSetting.activeTheme=trxsw，SiteSite 空表走默认站点
+- 【P0 实证】全库 888→949 本中 isHot=1 为 0 本 → 热门区块恒「暂无数据」：isHot 无任何自动打标，ensureFeaturedBootstrap 只自愈 isFeatured 不自愈 isHot（沙箱重建后运营位全失）
+- 【P1 实证】全库 clicks=maxClicks=0：SSR 书页 handleWebBook 零计数（api_novels 的 +1 只在 JSON 详情端点），热门/点击榜/相关推荐排序全部退化为 id DESC
+- 【P2 实证】api_novels.go:595 浏览计数显式 set updatedAt（Prisma 时代注释对齐）→ 浏览行为污染「最新更新/更新榜」排序
+- 【P3 实证】书级字数断链：Novel.wordCount 全库 949 本全 0（recalcWordCountsFor 只在任务收尾触发，3 running+14 paused 任务的书长期无字数；首页/榜单字数「—」、stats 总字数失真、字数补标口径退化 id DESC）
+- 修复①web_data.go 新增 ensureHotBootstrap（进程级一次性闸，hot=0 且库≥10 → 按字数 Top10 补标，与 Featured 同款口径）+ handleWebHome 调用
+- 修复②handleWebBook 加 fire-and-forget clicks+1（不触碰 updatedAt）；修复③api_novels 浏览计数去掉 updatedAt=?（updatedAt 回归「章节采集/编辑」语义）
+- 修复④trxsw/home.html 副标题 TOP12→TOP10（对齐 LIMIT 10 契约）
+- 修复⑤worker.go 新增 backfillNovelWordCounts（增量聚合 UPDATE：只碰 wordCount=0 且存在已填充章节的书，幂等随填充进度收敛，不触碰 updatedAt）+ runner.go tick%150≈5 分钟节流调用；启动首轮即回填 40 本（Chapter_novelId_idx_key 索引保障性能）
+- 教训：MultiEdit 部分应用曾误删 handleWebHome 函数声明行（第 2 条 old_str 越界吞函数头、第 3 条失败后未全部回滚）→ 已修复声明并全程逐段 Read 复核
+- 验证：go build/vet 全绿；go test 主包三连 ok（首跑 FAIL 为 fleet 并行写库环境互扰）；重启后 isHot 0→10、wordCount 0→40 本；Agent Browser 实测首页热门区块 {sub:"全站点击 TOP10", count:10, top3:[穿越大唐/莫阳羽瑶/混沌天帝诀]}；书页 /book/949 访问后 clicks 0→1 且 updatedAt 逐字节不变；桌面+移动(390px)截图存档 /tmp/r105-home-hot.png、r105-home-mobile.png；dev.log 仅 LLM 429 预期限流
+
+Stage Summary:
+- 首页热门小说区块 4 处逻辑缺陷全修复：isHot 空态自愈（区块不再永久「暂无数据」）、SSR 浏览计数（点击榜语义恢复）、浏览不再污染更新时间、文案对齐；另修复书级字数断链（周期兜底回填）
+- 防御性设计：isHot 自愈与字数回填均为幂等增量操作，DB 重建/沙箱回收场景自动恢复；updatedAt 全链路回归「内容变更」单一语义

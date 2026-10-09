@@ -1162,6 +1162,24 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 
 // ==================== 字数汇总 ====================
 
+// backfillNovelWordCounts 书级字数兜底回填（R105）：recalcWordCountsFor 只在任务收尾触发，
+// 长跑/熔断暂停任务的已填充章节使 Novel.wordCount 长期为 0（首页/榜单字数显示「—」、
+// stats 总字数失真、isHot/isFeatured 字数补标口径退化——949 本实证全 0）。runner 低频执行
+// 一条增量聚合 UPDATE：只碰「wordCount=0 且存在已填充章节」的书——幂等、随填充进度自动
+// 收敛；任务收尾 recalcWordCountsFor 语义不变（精确重算含负向修正）。不触碰 updatedAt
+//（浏览/回填不得污染「最新更新/更新榜」排序）。
+func backfillNovelWordCounts() {
+        res, err := exec(`UPDATE "Novel" SET "wordCount" = COALESCE((SELECT SUM("wordCount") FROM "Chapter" WHERE "Chapter"."novelId" = "Novel"."id"), 0)
+                WHERE "wordCount" = 0 AND EXISTS (SELECT 1 FROM "Chapter" WHERE "Chapter"."novelId" = "Novel"."id" AND "Chapter"."wordCount" > 0)`)
+        if err != nil {
+                log.Printf("[backend-go-runner] 书级字数兜底回填失败: %v", err)
+                return
+        }
+        if n, _ := res.RowsAffected(); n > 0 {
+                log.Printf("[backend-go-runner] 书级字数兜底回填：%d 本 wordCount 从 0 修正", n)
+        }
+}
+
 // recalcWordCountsFor 任务收尾：对涉及的书籍统一重算字数（GROUP BY 汇总，避免逐书聚合）
 func recalcWordCountsFor(novelIDs []int) {
         if len(novelIDs) == 0 {

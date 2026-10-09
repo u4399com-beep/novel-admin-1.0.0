@@ -306,8 +306,9 @@ func applyWebKeywords(data map[string]any, key string, vars map[string]string, f
 
 // ---------- 首页 ----------
 
-// gFeaturedBootDone 进程级一次性闸：自愈检查每进程只做一次（命中与否都不再重复查库）
+// gFeaturedBootDone / gHotBootDone 进程级一次性闸：自愈检查每进程只做一次（命中与否都不再重复查库）
 var gFeaturedBootDone atomic.Bool
+var gHotBootDone atomic.Bool
 
 // ensureFeaturedBootstrap 首页「编辑推荐」空态自愈（Task 59-R4）：DB 重建/沙箱回收后
 // isFeatured 无人打标，首页推荐区永久「暂无数据」。守卫触发条件：库内 ≥8 本且
@@ -332,9 +333,33 @@ func ensureFeaturedBootstrap() {
         log.Printf("[web-home] 编辑推荐空态自愈：已按字数 Top8 补标 isFeatured=1（库内 %d 本）", total)
 }
 
+// ensureHotBootstrap 首页「热门小说」空态自愈（R105）：isHot 与 isFeatured 同为运营打标位，
+// 但仅 Featured 有空态自愈——DB 重建/沙箱回收后 isHot 无人打标，热门区块永久「暂无数据」
+//（888 本实证 isHot=0）。守卫触发条件：库内 ≥10 本且 isHot=1 计数为 0 → 按字数 Top10 补标
+//（与 ensureFeaturedBootstrap 同款口径：字数作为人气代理指标；重启后存量推荐书全被删亦可重新武装）。
+func ensureHotBootstrap() {
+        if gHotBootDone.Load() {
+                return
+        }
+        gHotBootDone.Store(true) // 无论结果如何本进程只检一次（后台再重建→重启自愈）
+        var hot, total int
+        if err := queryOne(`SELECT (SELECT COUNT(*) FROM "Novel" WHERE "isHot" = 1), (SELECT COUNT(*) FROM "Novel")`, []any{&hot, &total}); err != nil {
+                return
+        }
+        if hot > 0 || total < 10 {
+                return
+        }
+        if _, err := exec(`UPDATE "Novel" SET "isHot" = 1 WHERE "id" IN (SELECT "id" FROM "Novel" ORDER BY "wordCount" DESC, "id" DESC LIMIT 10)`); err != nil {
+                log.Printf("[web-home] 热门小说空态补标失败: %v", err)
+                return
+        }
+        log.Printf("[web-home] 热门小说空态自愈：已按字数 Top10 补标 isHot=1（库内 %d 本）", total)
+}
+
 func handleWebHome(w http.ResponseWriter, r *http.Request) {
         data := webCommon(r)
         ensureFeaturedBootstrap()
+        ensureHotBootstrap()
         featured, _ := queryNovelList(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 12, 0)
         hot, _ := queryNovelList(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10, 0)
         latest, _ := queryNovelList("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 14, 0)
@@ -506,6 +531,10 @@ func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string)
                 web404(w, r, "书籍不存在")
                 return
         }
+        // 浏览计数 fire-and-forget（R105：SSR 书页此前零计数——api_novels 的 +1 只在
+        // JSON 详情端点触发，纯 SSR 访问路径 clicks 恒 0，热门/点击榜排序退化为 id DESC）。
+        // 注意不触碰 updatedAt：updatedAt 只随章节采集/编辑变化，浏览不得污染「最新更新/更新榜」。
+        _, _ = exec(`UPDATE "Novel" SET "clicks" = "clicks" + 1 WHERE "id" = ?`, nid)
         data["Novel"] = novel
         title, _ := novel["title"].(string)
         author, _ := novel["author"].(string)
