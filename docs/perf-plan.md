@@ -264,3 +264,34 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
 - 序号解析有 miss 形态（「上篇」「（5）」无「第…章」壳），全量按序号重排会让 miss 章节聚堆；
 - 现行「阈值触发才重排 + 未编号锚定 + 稳定排序保留同号相对序」是更安全的折中——
   已有序目录 0% 乱序不动，真乱序（>20%）才修正。
+
+---
+
+## R110 实测补充（2026-10-10）：三层架构落地后的挑战站实测与快通道传导
+
+### 实测矩阵（挑战站 × 策略层）
+| 站点 | 挑战形态 | Tier1 HTTP | iv8(T2) | cloak/browser(T3) | 结论 |
+|---|---|---|---|---|---|
+| pilishuwu | Cloudflare JS 挑战（__CF$cv$pa，js-cookie+reload 壳） | 403 challenge | 算不出（需真浏览器 API） | **可过（~50%/次）** | 一次过盾→cf_clearance 入 jar→同 host 全站快通道 |
+| kelexs/cunshu | GoEdge 概率挑战（403/200壳/307→CAPTCHA 三态随机） | 403~60%（指纹随机） | 初始 GET 被 403 | 403 | fetch-curl + WAF_VERIFY_RETRY 原地重掷（~60%/次，3 次连败 <7%） |
+| dwxwc | TCP 层拒连（机房 IP 黑名单） | 000 | 000 | 000 | 仅代理出口可解（免费池无解，站判定死亡） |
+| 101kks | IP 挑战页 | 403 | — | browser 可过 | 既有慢锁+复探机制覆盖 |
+
+### R110 新增机制（性能相关部分）
+1. **cloak cookie 回存**（最大杠杆）：cloak 过盾后 context cookies（cf_clearance/PHPSESSID 等）
+   回传引擎 jar（server.py /cloak 响应 + strategy_sidecar 回存）。挑战站从「每章重打挑战
+   10-17s」变为「一次攻克 + 快通道亚秒/章」——与 P0-1 慢锁复探形成闭环：复探命中即亲和
+   接管快通道，cookie 过期后 browser/cloak 自动重新攻克再 bank。
+2. **GoEdge 概率挑战原地重掷**：fetch-curl 识别 307→/WAF/VERIFY/* 不跟随、重试同 URL
+   （WAF_VERIFY_RETRY 默认 3）。非验证码破解（不与挑战交互），仅利用 WAF 自身的随机放行。
+3. **进程组击杀**（稳定性→间接吞吐）：browser 桥接超时全树 SIGKILL，杜绝 Chromium 孤儿
+   吃满线程配额导致的 pthread_create EAGAIN 连锁全灭（R110 实测根因）。
+4. **stealth 单实例锁 + driver janitor + 池 4→2**：侧车自身的资源上界（线程配额 ~925 的
+   环境里 4 cloak 实例 + rebuild 漂移足以打穿）。
+
+### 运维红线（新）
+- **fleet 运行期禁重启 scraper-go**：重启清空 cookie jar + 短暂拒连 → 全 fleet 章节连败
+  → 60 章熔断 mass pause（R110 实测 14:19:54 全灭事件）。恢复靠 autoResume 30min 静默窗，
+  代价 ≈30min 舰队空转。
+- stealth /health 探测失败≠可重启：负载下 cloak 渲染会拖慢响应，先看进程存活（flock 单
+  实例闸已兜底）。
