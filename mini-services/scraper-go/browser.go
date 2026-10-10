@@ -16,6 +16,7 @@ import (
         "path/filepath"
         "strings"
         "sync"
+        "syscall"
         "time"
 )
 
@@ -137,6 +138,20 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
         defer cancel()
         cmd := exec.CommandContext(ctx, pyBin, renderPy, targetURL, itoa(int(timeoutMs)), chromeUA)
         cmd.Env = env
+        // R110 泄漏根修：render.py 的进程树是 python → node(playwright driver) → chromium。
+        // CommandContext 超时只 SIGKILL 直接子进程 python，孙进程（node/chrome，各 ~60-100
+        // 线程）全部孤儿化——沙箱线程配额（threads-max ~925）被累积孤儿吃满后，全机
+        // pthread_create 报 EAGAIN，browser/cloak 策略连锁 render-error。改进程组击杀：
+        // Setpgid 让子树成组，ctx 到点/失败路径对 -pid 全组 SIGKILL；WaitDelay 兜底
+        // 半杀状态（组内残余持 stdout 时 Output() 不再无限等）。
+        cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+        cmd.Cancel = func() error {
+                if cmd.Process != nil {
+                        _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+                }
+                return cmd.Process.Kill()
+        }
+        cmd.WaitDelay = 3 * time.Second
         stdout, err := cmd.Output()
         if err != nil {
                 // Task 56-a: execErrDetail 透出 python stderr 细节（旧行为仅 "exit status N"，

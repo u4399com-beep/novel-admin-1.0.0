@@ -28,133 +28,139 @@ package main
 
 // sidecarStrategyRun 两个侧车策略的共享执行骨架（域槽 → 调用 → assess → 结果映射）
 func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
-	warnings := []string{}
-	deadline := nowMs() + timeoutMs
-	// 预算感知取槽（与 fetch 系/got/curl 系同口径）：侧车策略对目标站的请求节奏
-	// 同样受 per-host 域槽治理——礼貌间隔/突发抑制/AIMD 全部生效
-	waited, granted := acquireDomainSlotBudgeted(hostOf(targetURL), deadline, 1000)
-	if !granted {
-		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
-			warnings: warnings, note: "timeout-budget"}
-	}
-	deadline += waited // 排队时间补偿：排队不吃服务时间窗
-	remaining := deadline - nowMs()
-	if remaining < 1000 {
-		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
-			warnings: warnings, note: "timeout-budget"}
-	}
+        warnings := []string{}
+        deadline := nowMs() + timeoutMs
+        // 预算感知取槽（与 fetch 系/got/curl 系同口径）：侧车策略对目标站的请求节奏
+        // 同样受 per-host 域槽治理——礼貌间隔/突发抑制/AIMD 全部生效
+        waited, granted := acquireDomainSlotBudgeted(hostOf(targetURL), deadline, 1000)
+        if !granted {
+                return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
+                        warnings: warnings, note: "timeout-budget"}
+        }
+        deadline += waited // 排队时间补偿：排队不吃服务时间窗
+        remaining := deadline - nowMs()
+        if remaining < 1000 {
+                return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
+                        warnings: warnings, note: "timeout-budget"}
+        }
 
-	s0 := nowMs()
-	// 侧车统一使用引擎进程级保鲜 Chrome UA（与 browser 桥接车道同款 UA 派生口径）
-	ua := chromeUA
+        s0 := nowMs()
+        // 侧车统一使用引擎进程级保鲜 Chrome UA（与 browser 桥接车道同款 UA 派生口径）
+        ua := chromeUA
 
-	if kind == "cloak" {
-		resp, err := sidecarCloakFetch(targetURL, remaining, ctx.proxy, ua)
-		ms := nowMs() - s0
-		if err != nil {
-			return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
-				warnings:    append(warnings, "CloakBrowser 侧车调用失败: "+errShort(err)),
-				note:        "unavailable-sidecar",
-				subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: false, Status: 0, Ms: ms, Note: "unavailable-sidecar"}}}
-		}
-		if !resp.OK {
-			return attemptResult{ok: false, status: resp.Status, bytes: []byte{}, contentType: "",
-				warnings:    append(warnings, "CloakBrowser 渲染失败: "+errTextOr(resp.Error, "unknown")),
-				note:        "cloak-render-failed",
-				subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: false, Status: resp.Status, Ms: ms, Blocked: false, Bytes: 0, Note: "cloak-render-failed"}}}
-		}
-		body := []byte(resp.HTML)
-		// Task 54（E15）口径：侧车 payload 不含响应头，serverChallenge=false 由体判定兜底
-		a := assess(resp.Status, body, "text/html; charset=utf-8", false)
-		if a.warning != "" {
-			warnings = append(warnings, a.warning)
-		}
-		return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
-			warnings: warnings, note: a.note,
-			subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
-		}
-	}
+        if kind == "cloak" {
+                resp, err := sidecarCloakFetch(targetURL, remaining, ctx.proxy, ua)
+                ms := nowMs() - s0
+                if err != nil {
+                        return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
+                                warnings:    append(warnings, "CloakBrowser 侧车调用失败: "+errShort(err)),
+                                note:        "unavailable-sidecar",
+                                subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: false, Status: 0, Ms: ms, Note: "unavailable-sidecar"}}}
+                }
+                // R110：过盾 cookie 回存引擎 jar（与 iv8/browser 车道同语义）——挑战型站点
+                // 一次 cloak 攻克即惠及同 host 后续所有快通道请求（cf_clearance 类）；
+                // 失败路径也可能已种部分 cookie（__cf_bm 等），同样回存
+                if len(resp.Cookies) > 0 {
+                        recordBridgeCookies(hostOf(targetURL), resp.Cookies)
+                }
+                if !resp.OK {
+                        return attemptResult{ok: false, status: resp.Status, bytes: []byte{}, contentType: "",
+                                warnings:    append(warnings, "CloakBrowser 渲染失败: "+errTextOr(resp.Error, "unknown")),
+                                note:        "cloak-render-failed",
+                                subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: false, Status: resp.Status, Ms: ms, Blocked: false, Bytes: 0, Note: "cloak-render-failed"}}}
+                }
+                body := []byte(resp.HTML)
+                // Task 54（E15）口径：侧车 payload 不含响应头，serverChallenge=false 由体判定兜底
+                a := assess(resp.Status, body, "text/html; charset=utf-8", false)
+                if a.warning != "" {
+                        warnings = append(warnings, a.warning)
+                }
+                return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
+                        warnings: warnings, note: a.note,
+                        subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
+                }
+        }
 
-	// kind == "iv8"
-	resp, err := sidecarIv8Fetch(targetURL, remaining, ua)
-	ms := nowMs() - s0
-	if err != nil {
-		return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
-			warnings:    append(warnings, "iv8 侧车调用失败: "+errShort(err)),
-			note:        "unavailable-sidecar",
-			subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: false, Status: 0, Ms: ms, Note: "unavailable-sidecar"}}}
-	}
-	if !resp.OK {
-		return attemptResult{ok: false, status: resp.Status, bytes: []byte{}, contentType: "",
-			warnings:    append(warnings, "iv8 执行失败: "+errTextOr(resp.Error, "unknown")),
-			note:        "iv8-run-failed",
-			subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: false, Status: resp.Status, Ms: ms, Blocked: false, Bytes: 0, Note: "iv8-run-failed"}}}
-	}
-	// iv8 算出的会话 cookie 回存引擎 jar（与 browser 策略渲染后回存同语义）
-	sidecarRecordCookies(targetURL, resp.Cookies)
-	body := []byte(resp.HTML)
-	a := assess(resp.Status, body, "text/html; charset=utf-8", false)
-	if a.warning != "" {
-		warnings = append(warnings, a.warning)
-	}
-	return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
-		warnings: warnings, note: a.note,
-		subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
-	}
+        // kind == "iv8"
+        resp, err := sidecarIv8Fetch(targetURL, remaining, ua)
+        ms := nowMs() - s0
+        if err != nil {
+                return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
+                        warnings:    append(warnings, "iv8 侧车调用失败: "+errShort(err)),
+                        note:        "unavailable-sidecar",
+                        subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: false, Status: 0, Ms: ms, Note: "unavailable-sidecar"}}}
+        }
+        if !resp.OK {
+                return attemptResult{ok: false, status: resp.Status, bytes: []byte{}, contentType: "",
+                        warnings:    append(warnings, "iv8 执行失败: "+errTextOr(resp.Error, "unknown")),
+                        note:        "iv8-run-failed",
+                        subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: false, Status: resp.Status, Ms: ms, Blocked: false, Bytes: 0, Note: "iv8-run-failed"}}}
+        }
+        // iv8 算出的会话 cookie 回存引擎 jar（与 browser 策略渲染后回存同语义）
+        sidecarRecordCookies(targetURL, resp.Cookies)
+        body := []byte(resp.HTML)
+        a := assess(resp.Status, body, "text/html; charset=utf-8", false)
+        if a.warning != "" {
+                warnings = append(warnings, a.warning)
+        }
+        return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
+                warnings: warnings, note: a.note,
+                subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
+        }
 }
 
 // errShort 错误消息截断（warnings 单条不超 200 字符，与 truncateStr 口径一致）
 func errShort(err error) string {
-	if err == nil {
-		return ""
-	}
-	return truncateStr(err.Error(), 200)
+        if err == nil {
+                return ""
+        }
+        return truncateStr(err.Error(), 200)
 }
 
 func errTextOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return truncateStr(s, 200)
+        if s == "" {
+                return fallback
+        }
+        return truncateStr(s, 200)
 }
 
 // probeSidecarCloak fetch-cloak 可用性：侧车在线 + cloakbrowser 可导入 + Chromium 二进制就绪。
 // 任一缺失即 false（链自动跳过；与 curl-impersonate 二进制缺失同形态——不报错、不重试、不占用预算）。
 func probeSidecarCloak() bool {
-	if !sidecarAvailable() {
-		return false
-	}
-	caps := sidecarCapabilities()
-	return caps.Cloak && caps.CloakBinary
+        if !sidecarAvailable() {
+                return false
+        }
+        caps := sidecarCapabilities()
+        return caps.Cloak && caps.CloakBinary
 }
 
 // probeSidecarIv8 fetch-iv8 可用性：侧车在线 + iv8 可导入。
 func probeSidecarIv8() bool {
-	return sidecarAvailable() && sidecarCapabilities().IV8
+        return sidecarAvailable() && sidecarCapabilities().IV8
 }
 
 var fetchCloakStrategy = strategyDef{
-	name: "fetch-cloak",
-	// Task 101-a 描述（管理面 /api/strategies 透出）；102-a 重定位为 Tier 3 重渲染层：
-	// R101 曾放链首 fetch-browser 之后「能过盾时后面的梯子都省了」，但单页 ~3.4s + ~1GB
-	// 进程树的成本不该为每个新站点默认承担（文章实证：真实浏览器不应是默认执行环境）；
-	// 新链序按成本递增，亲和/挑战跳层负责把真需要的站点路由到本层
-	description:  "CloakBrowser 隐身 Chromium 渲染（侧车 :3031，Tier 3 重渲染）——源码级指纹伪装，过 Cloudflare/指纹检测；重但强",
-	probe:        probeSidecarCloak,
-	selfRetrying: true, // 昂贵策略不做链层外层重试（与 browser 策略同口径）
-	tier:         tierStrategyBrowser,
-	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
-		return sidecarStrategyRun("cloak", targetURL, timeoutMs, ctx)
-	},
+        name: "fetch-cloak",
+        // Task 101-a 描述（管理面 /api/strategies 透出）；102-a 重定位为 Tier 3 重渲染层：
+        // R101 曾放链首 fetch-browser 之后「能过盾时后面的梯子都省了」，但单页 ~3.4s + ~1GB
+        // 进程树的成本不该为每个新站点默认承担（文章实证：真实浏览器不应是默认执行环境）；
+        // 新链序按成本递增，亲和/挑战跳层负责把真需要的站点路由到本层
+        description:  "CloakBrowser 隐身 Chromium 渲染（侧车 :3031，Tier 3 重渲染）——源码级指纹伪装，过 Cloudflare/指纹检测；重但强",
+        probe:        probeSidecarCloak,
+        selfRetrying: true, // 昂贵策略不做链层外层重试（与 browser 策略同口径）
+        tier:         tierStrategyBrowser,
+        run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
+                return sidecarStrategyRun("cloak", targetURL, timeoutMs, ctx)
+        },
 }
 
 var fetchIv8Strategy = strategyDef{
-	name:         "fetch-iv8",
-	description:  "iv8 V8 环境模拟（侧车 :3031，Tier 2 轻执行）——无头执行站点 JS 算 cookie/参数，不启动 Chromium，纯脚本吞吐 ~100 倍于真实浏览器",
-	probe:        probeSidecarIv8,
-	selfRetrying: true,
-	tier:         tierStrategyIv8,
-	run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
-		return sidecarStrategyRun("iv8", targetURL, timeoutMs, ctx)
-	},
+        name:         "fetch-iv8",
+        description:  "iv8 V8 环境模拟（侧车 :3031，Tier 2 轻执行）——无头执行站点 JS 算 cookie/参数，不启动 Chromium，纯脚本吞吐 ~100 倍于真实浏览器",
+        probe:        probeSidecarIv8,
+        selfRetrying: true,
+        tier:         tierStrategyIv8,
+        run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
+                return sidecarStrategyRun("iv8", targetURL, timeoutMs, ctx)
+        },
 }

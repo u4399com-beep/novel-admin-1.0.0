@@ -42,3 +42,4 @@ mini-services/scraper-go/scraper-go.bin
 .watchdog-loop.sh
 __pycache__/
 *.pyc
+mini-services/stealth-service/venv/

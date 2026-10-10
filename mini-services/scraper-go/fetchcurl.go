@@ -79,6 +79,13 @@ var curlPlainStrategy = strategyDef{
                 var lastLimitedRetryAfter *int64
                 // Task 32-d 修复：失败时 status 恒回 0 → 链层限流记忆（429/503）丢失，与 curlimp.go 同口径修复
                 lastHTTPStatus := 0
+                // R110：GoEdge 概率挑战原地重试上限（WAF_VERIFY_RETRY env 可调，0=关）
+                wafCaptchaRetryMax := 3
+                if v := strings.TrimSpace(os.Getenv("WAF_VERIFY_RETRY")); v != "" {
+                        if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 10 {
+                                wafCaptchaRetryMax = n
+                        }
+                }
 
                 // 子尝试梯子：默认（HTTP/2）→ --http1.1（覆盖协议指纹差异）
                 variants := []struct {
@@ -92,6 +99,8 @@ var curlPlainStrategy = strategyDef{
                         // prevURL 上一跳 URL（Task 49-a E6：hop>0 头族拓扑精化）
                         prevURL := ""
                         stopVariants := false
+                        // R110：GoEdge 概率挑战计数（按 URL 记账，重试同一 URL 重掷骰子）
+                        wafRetries := 0
                         for {
                                 tu, err := urlParse(current)
                                 if err != nil || tu.Host == "" {
@@ -221,6 +230,19 @@ var curlPlainStrategy = strategyDef{
                                         if len(locs) == 0 {
                                                 subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "redirect-no-location"})
                                                 break
+                                        }
+                                        // R110（GoEdge 概率挑战突破）：部分 WAF（实测 kelexs/cunshu GoEdge）
+                                        // 对未持凭证请求按概率 307 到 /WAF/VERIFY/CAPTCHA（跟随即人机验证，
+                                        // 合规红线不碰），但对同一 URL 的下一次请求重掷骰子（实测 ~60%
+                                        // 直接放行且无 Set-Cookie 清关凭据）。策略：识别 WAF verify 形态的
+                                        // Location，不跟随、原地重试同一 URL（有界，默认 3 次；概率独立
+                                        // 同分布，3 连败概率 <7%）。非验证码破解：不与挑战交互，只是重试
+                                        // WAF 本身随机放行的原始请求。
+                                        if strings.Contains(strings.ToLower(locs[0]), "/waf/verify") && wafRetries < wafCaptchaRetryMax {
+                                                wafRetries++
+                                                subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: true, Bytes: 0, Note: "waf-captcha-redirect-retry(" + itoa(wafRetries) + "/" + itoa(wafCaptchaRetryMax) + ")"})
+                                                time.Sleep(200 * time.Millisecond)
+                                                continue // current 不变，重掷同 URL
                                         }
                                         next := urlJoin(locs[0], current)
                                         if next == nil {

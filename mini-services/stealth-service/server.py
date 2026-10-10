@@ -45,7 +45,13 @@ LISTEN_PORT = 3031
 DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
 MAX_TIMEOUT_MS = 120_000
-MAX_PROXY_BROWSERS = 4
+# R110：4→2（沙箱实测每 cloak 实例 ~1 棵 node driver + chrome 树，60-100 线程/棵；
+# threads-max ~925 的环境里 4 实例 + rebuild 漂移足以把线程配额打穿）
+MAX_PROXY_BROWSERS = 2
+# R110：直接子进程上限（node run-driver 为主）。browser.close() 偶发不杀 driver →
+# rebuild 漂移累积；janitor 每 30s 对超额最老驱动补刀（杀驱动只会使其归属浏览器
+# 下次请求走 rebuild 路径自愈，不产生用户可见错误）
+MAX_CHILD_DRIVERS = 4
 
 # ---------- 能力探测（import 失败不崩，优雅降级） ----------
 
@@ -143,11 +149,62 @@ class CloakPool:
 _CLOAK_POOL = CloakPool()
 
 
+def _child_procs():
+    """枚举本进程的直接子进程 [(pid, comm, etime)]（读 /proc，无外部依赖）。"""
+    import os as _os
+    me = _os.getpid()
+    out = []
+    for pid in _os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as f:
+                stat = f.read().decode("utf-8", "replace")
+            i = stat.index("(")
+            comm = stat[i + 1:stat.rindex(")")]
+            after = stat[stat.rindex(")") + 2:].split()
+            if int(after[1]) != me:
+                continue
+            # stat field 22 = starttime（clock ticks）：after 里下标 19
+            out.append((int(pid), comm, int(after[19])))
+        except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
+            continue
+        except Exception:
+            continue
+    return out
+
+
+def _driver_janitor():
+    """R110：后台每 30s 巡检直接子进程，超额最老 driver/chrome 补刀。
+
+    只针对 node run-driver / chrome 系进程；上限 MAX_CHILD_DRIVERS。杀掉后其归属
+    池条目在下次请求时按既有 rebuild 路径重建，服务自愈。"""
+    import os as _os
+    import signal as _signal
+    while True:
+        time.sleep(30)
+        try:
+            kids = [k for k in _child_procs()
+                    if ("driver" in k[1] or "chrome" in k[1] or "headless" in k[1])]
+            if len(kids) <= MAX_CHILD_DRIVERS:
+                continue
+            kids.sort(key=lambda k: k[2])  # starttime 升序 = 最老在前
+            for pid, comm, _ in kids[:len(kids) - MAX_CHILD_DRIVERS]:
+                try:
+                    _os.kill(pid, _signal.SIGKILL)
+                    print(f"[stealth-service] janitor 击杀超额子进程 {pid} ({comm})", flush=True)
+                except Exception:
+                    pass
+        except Exception:
+            continue
+
+
 def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
     """CloakBrowser 整页渲染。单次请求内 page 级异常重建浏览器重试一次。"""
     t0 = time.time()
     timeout_s = max(3.0, min(timeout_ms, MAX_TIMEOUT_MS) / 1000.0)
     last_err = None
+    cookies_out = []
     for attempt in (0, 1):
         browser = _CLOAK_POOL.acquire(proxy, user_agent) if attempt == 0 \
             else _CLOAK_POOL.rebuild(proxy, user_agent)
@@ -171,8 +228,22 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
                     final_url = page.url
             except Exception:
                 pass
+            # R110：会话 cookie 回传——挑战型站点（Cloudflare cf_clearance 等）浏览器
+            # 过盾后 cookie 落在 context 里，不回传则引擎每章都重打挑战（慢 10 倍）。
+            # 与 browser 桥接（renderPayload.Cookies）/iv8（document.cookie）同语义。
+            try:
+                for c in (page.context.cookies(final_url) or []):
+                    cookies_out.append({
+                        "name": c.get("name") or "",
+                        "value": c.get("value") or "",
+                        "expires": c.get("expires") or -1,
+                        "secure": bool(c.get("secure")),
+                    })
+            except Exception:
+                pass
             return {
                 "ok": True, "html": html, "status": status, "finalUrl": final_url,
+                "cookies": cookies_out,
                 "elapsedMs": int((time.time() - t0) * 1000),
             }
         except Exception as e:
@@ -182,10 +253,22 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
         finally:
             if page is not None:
                 try:
+                    cookies_out = []
+                    for c in (page.context.cookies() or []):
+                        cookies_out.append({
+                            "name": c.get("name") or "",
+                            "value": c.get("value") or "",
+                            "expires": c.get("expires") or -1,
+                            "secure": bool(c.get("secure")),
+                        })
+                except Exception:
+                    pass
+                try:
                     page.close()
                 except Exception:
                     pass
     return {"ok": False, "error": f"cloak 渲染失败: {last_err}",
+            "cookies": cookies_out,
             "elapsedMs": int((time.time() - t0) * 1000)}
 
 
@@ -311,7 +394,48 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"ok": False, "error": "not found"})
 
 
+def _sweep_orphan_chromium():
+    """R110：清扫孤儿 Chromium（父进程已死、被 init 收养的 chrome/chrome_crashpad）。
+
+    泄漏链：scraper-go browser 策略超时只杀 render.py 直接子进程（R110 已在 Go 侧
+    改进程组击杀根修），历史积压与任何残余路径的 chrome 树会挂 PPID 1——每棵树
+    60-100 线程，沙箱 threads-max ~925 很快被吃满，pthread_create EAGAIN 连锁
+    browser/cloak 全灭。本侧车重启时（run.sh 崩溃自动重启会频发）顺带清扫：
+    只杀「PPID==1 且 comm 含 chrome」的进程——活的池内实例父进程是本 python，
+    不会误伤。"""
+    import os as _os
+    import signal as _signal
+    me = _os.getpid()
+    killed = 0
+    for pid in _os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        p = int(pid)
+        if p == me:
+            continue
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as f:
+                stat = f.read().decode("utf-8", "replace")
+            # comm 可能含空格/括号：取最后一个 ')' 之后的字段（state=第3字段，ppid=第4字段）
+            after = stat[stat.rindex(")") + 2:].split()
+            comm_end = stat.rindex(")")
+            comm = stat[stat.index("(") + 1:comm_end]
+            ppid = int(after[1])
+            if ppid != 1 or "chrome" not in comm:
+                continue
+            _os.kill(p, _signal.SIGKILL)
+            killed += 1
+        except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
+            continue
+        except Exception:
+            continue
+    if killed:
+        print(f"[stealth-service] 启动清扫：击杀 {killed} 个孤儿 chrome 进程", flush=True)
+
+
 def main():
+    _sweep_orphan_chromium()
+    threading.Thread(target=_driver_janitor, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", LISTEN_PORT), Handler)
     srv.daemon_threads = True
     print(f"[stealth-service] v{VERSION} listening on http://127.0.0.1:{LISTEN_PORT} "
