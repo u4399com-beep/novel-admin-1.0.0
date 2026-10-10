@@ -4534,3 +4534,27 @@ Stage Summary:
 - 提速二期 P3 系列成稿并落地两项：失败章轮内回收（挑战/限流站瞬态失败 45min 级恢复 → 30s 级，省 fleet 重扫预算）+ fleet 增量快进（成熟库刷新任务 Phase1 重复书页请求 -70-90%，连载更新零损失）
 - 关关采集器八项机制映射完成：六项已对齐/关闭，P3-1/P3-4 补齐差距，P3-2 成稿待镜像验证工具
 - commit 1ede3a9 推送 GitHub；P3-1/P3-4 均有独立 env 开关可随时回退
+
+---
+Task ID: R110
+Agent: Z.ai Code（主代理）
+Task: 利用 HTTP+iv8+CloakBrowser 三层架构与关关式方案集，全量在库规则测试、突破与章节采集提速
+
+Work Log:
+- 【三层架构补全】沙箱重置致 stealth-service :3031 全灭 → venv 重建 + PyPI 官源装 cloakbrowser 0.6.0/iv8 0.1.4；run.sh 改优先 venv python；/health 全绿（cloak/cloakBinary/iv8=true），引擎 /api/strategies 十策略全 available
+- 【稳定性根修 ①browser 进程树泄漏】实证 64 个孤儿 Chromium 进程（4GB RSS）把沙箱线程配额（threads-max 925）吃到 706，pthread_create EAGAIN 连锁 render-error/browser+cloak 全灭；根因 CommandContext 超时只杀 python 直接子进程，node driver + chrome 孙进程孤儿化 → browser.go 改 Setpgid 进程组 + cmd.Cancel 全组 SIGKILL + WaitDelay 3s
+- 【稳定性根修 ②stealth 多实例风暴】发现 /tmp/watchdog-loop.sh（旧看护）+ ensure-services 健康探误判（负载下 /health 2s 超时）每分钟叠加 run.sh 实例互相抢 3031 端口崩溃循环 → run.sh 加 flock 单实例闸 + ensure-services 改 pgrep 进程存活判定 + server.py 启动清扫孤儿 chrome（PPID==1）
+- 【稳定性根修 ③cloak driver 泄漏】browser.close() 偶发不杀 playwright run-driver（实测 1 进程挂 8 driver）→ server.py 加 30s 周期 janitor（直接子进程 driver/chrome 超额最老补刀）+ cloak 池 4→2 实例
+- 【快通道传导（本round最大杠杆）】实测缺口：cloak 过盾后 cookies 留在侧车 context，引擎拿不到 → cf_clearance 白丢、每章重打挑战（10-17s/章）。修复：server.py /cloak 成功+失败路径均回传 context cookies；sidecar.go CloakResp 加 Cookies 字段；strategy_sidecar.go 成功/失败路径均 recordBridgeCookies。实证：cloak 过盾一次 → fetch-curl 立即 200 亚秒抓到另一章（214KB 正文）——挑战站「一次攻克 + 全站快通道」闭环成立
+- 【GoEdge 概率挑战突破】kelexs 实测指纹矩阵：裸 curl 稳定 200、引擎全策略 403/挑战页/307→CAPTCHA 随机三态（~60% 放行无 Set-Cookie 凭据）→ fetchcurl.go 加 /WAF/VERIFY/* Location 识别：不跟随（跟随即人机验证红线）、原地重试同 URL（WAF_VERIFY_RETRY 默认 3，3 连败 <7%）。cunshu 同族 WAF 一并覆盖
+- 【引擎监督链查明】runner.go:152 内置 scraper-go 心跳守护（缺失 >10s 自动 ./scraper-go.bin 拉起）——解释进程溯源谜团；binary 名 scraper-go.bin 与 bin/scraper-go 同构建产物
+- 【规则体检与突破】20 条规则全量过查：健康 12（含新修复的 #19 pilishuwu）；#25 kelexs 选择器全改（.list.dList ul li 系，首页改版 div/ul 化）+启用，引擎实测 20 条目含作者；#19 pilishuwu 选择器全改（首页 mod-cover-list、书页 works-intro-title strong、目录 /menu/ 分离页 chapter-page-new、正文 read-content）+启用+任务#17 建跑（34 书 Phase1 通过、117 章正文）；#29 dwxwc 三层全参战仍 TCP 层拒连（机房 IP 黑名单，判死亡留禁用）；#26 cunshu 同 GoEdge 族留观察
+- 【mass-pause 事件与自愈】fleet 运行期重启 scraper 两连击（14:19/14:35）→ cookie jar 清空 + 拒连窗口 → 19 任务全灭（60 章连败熔断）；autoResumeBlockedTasks 30min 静默窗到期自动全数复活（15:06 实证 task17/18 归队），运维红线成文 perf-plan：fleet 运行期禁重启引擎
+- 【回归与吞吐】scraper-go + backend-go 测试套件全绿（45s/55s）；commit f88ef6a（代码）+ 539cb28（docs）推送
+- 【10 分钟实测吞吐】T0/T1/T2 三点采样：14:52→15:02 +426 章（2480/h，9 任务）→ 15:02→15:10 +861 章（**~6600/h**，含 aijjxs 966/h、ddyueshu 1216/h、101kks 982/h、x2552 1200/h、23uswx 1231/h）；pilishuwu 挑战站复活后 4 分钟 19 章（~285/h，browser 慢路仅 ~20/h，快通道 10 倍+）；全库已填充章节 8625→9470
+
+Stage Summary:
+- 三层架构（HTTP×7 + iv8 + cloak/browser）全链可用且稳定化：进程组击杀/单实例锁/janitor 三根修杜绝线程耗尽型连锁瘫痪；cloak cookie 回存打通「过盾一次→全站快通道」——挑战站吞吐 10 倍级提升的关键机制
+- GoEdge 概率挑战获得合规突破通道（原地重掷，不解验证码）；kelexs/pilishuwu 两条规则选择器翻新并恢复采集
+- 舰队实测 ~6600 章/h（提速前 ~1500-2500/h），101kks 挑战站 982/h 进入快通道行列
+- 运维红线：fleet 运行期禁重启 scraper-go（cookie jar 即吞吐）；stealth /health 超时≠死亡（flock 已防多实例）
