@@ -4512,3 +4512,25 @@ Stage Summary:
 - 舰队自愈闭环：重启零人工恢复（原每次重启 14 条 paused 需手动 E21）；封禁站获得 30min 冷却+代理池前置的自愈通道；多域并行度 5→13
 - 慢站逃逸通道：browser 永久锁定问题根解（周期复探+双向自愈），挑战站开销上界 4-5%，混合站命中后 750→1200-1500 章/h
 - commit b46251d 推送 GitHub；每期独立 env 开关（PROBE_SLOW_LOCK_OFF / SCRAPE_BOOK_PARALLEL）可随时回退
+
+---
+Task ID: R108
+Agent: Z.ai Code（主代理）
+Task: ①参照关关采集器再提几个采集提速方案 ②继续探索章节采集提速（用户指定开工实施）
+
+Work Log:
+- 【沙箱第 10 次重置自愈】db/、Go 工具链、.bin、curl-impersonate 全灭；按手册快捷路径 12 分钟恢复：Go 1.22.12（aliyun 镜像）→ curl-impersonate 21 二进制（ghfast.top）→ build-go.sh 双产物 → recover-r26.sh（mkdir db/ + 空库 DDL+seed 17 规则）→ create-fleet.py 重建 13 任务；恢复后 R104/R107 的全部 git 内修复即刻生效（孤儿唤醒/舰队自愈实证 11 条自动归队）
+- 【P3 方案集成稿】docs/perf-plan.md 新增「提速方案二期 P3 系列」：关关采集器机制逐项映射表（多线程/断点续采/失败回收/连载监听/多书源/代理池/流水线/定时队列 × 本系统现状差距判定）+ 五项新方案
+- 【P3-1 失败章轮内回收重试轮（实施）】worker.go phase2Fill：主循环三处失败位点（引擎失败/200 空壳/落库失败）登记回收队列（SCRAPE_RETRY_MAX_ROWS=2000 上限）；书间调度结束后冷却 30s（retryCooldownBase）开始回收重试，默认 2 轮（SCRAPE_RETRY_PASSES，0=关）；重试轮复用 laneCtl 车道闸/shrinkLanes 限流降档/noteChapterFail 连败熔断/laneQueueEwma 饱和感知/persistChapterFill 持久化全语义；Phase2Outcome.RetriedFilled 观测字段；熔断/停止/任务删除任一命中即中止回收
+- 【P3-4 fleet 增量快进（实施，关关「连载监听」保守版）】db.go ensureColumn 加 Novel.tocScannedAt（ms，0=从未扫描）；worker.go 新增 tocFastSkipTarget 三重条件判定（①title+author 双键精确匹配=upsertBook 同键，title 经 trim+t2s+限长同规整；②tocScannedAt 在 SCRAPE_TOC_REFRESH_HOURS=6h 窗口内；③零空骨架 wordCount=0 行=0——续传 FillRows 的 URL 依赖目录 diff）→ phase1Skeletons 抓书页前快进跳过（[toc-fast] 日志 + novelIDs 记账 + tocScannedAt 续期=跳过视作扫描）；真实扫描成功后同样续期；条目无作者一律不快进（宁多抓不漏采）
+- 【坑：envInt 对 "0" 回退默认值】SCRAPE_RETRY_PASSES=0 / SCRAPE_TOC_REFRESH_HOURS=0 的停用语义永不可达（Atoi("0") 成功但 n>0 不满足 → return def）→ 新增 envIntAllowZero；测试实证：禁用用例曾跑满 2 轮×30s 冷却（60.16s）即此坑
+- 【P3-2 镜像域名轮换（设计成稿待实施）】ScrapeRule.mirrorHosts + 引擎 fetchPage host 替换 + 镜像独立域槽；前置条件=镜像内容一致性抽样比对工具；默认关（规则级开关）
+- 【P3-5 同域任务单飞行（复评不做）】fleet-keeper 已有同规则活跃任务去重，两规则同 host 罕见，共享域槽已保证合规速率
+- 【P2-1 代理分桶设计补充】复评发现引擎已有 per-request 代理轮换（proxyCursor）+ 出口独立熔断（E17），分桶只需 acquireDomainSlot(host) 键扩为 host|egress（pickProxy 先行）；维持默认关
+- 回归：go build/vet 干净；新增 worker_retry_test.go 三测（回收成功 RetriedFilled=2 且 calls=5 / 禁用零额外调用 / 熔断跳过回收）+ worker_tocfast_test.go 两测（六分支全锁 / 快进条目零请求+对照组正常抓+tocScannedAt 续期）；全量 54s 通过 + race 通过
+- 生产实证：部署后 11 条 paused 孤儿自动归队；tocScannedAt 写入 188 本（P3-4 锚点生效）；舰队 8 running 持续填充；[retry-pass] 标记待首个带失败任务收尾后出现（任务日志拆表，API /api/scrape-tasks/{id}.log 可查）
+
+Stage Summary:
+- 提速二期 P3 系列成稿并落地两项：失败章轮内回收（挑战/限流站瞬态失败 45min 级恢复 → 30s 级，省 fleet 重扫预算）+ fleet 增量快进（成熟库刷新任务 Phase1 重复书页请求 -70-90%，连载更新零损失）
+- 关关采集器八项机制映射完成：六项已对齐/关闭，P3-1/P3-4 补齐差距，P3-2 成稿待镜像验证工具
+- commit 1ede3a9 推送 GitHub；P3-1/P3-4 均有独立 env 开关可随时回退
