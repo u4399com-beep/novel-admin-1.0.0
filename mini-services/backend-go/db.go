@@ -162,6 +162,14 @@ func getDB() (*sql.DB, error) {
                         `ALTER TABLE "SiteSetting" ADD COLUMN "homeConfig" TEXT NOT NULL DEFAULT '{}'`); err != nil {
                         log.Printf("[db] SiteSetting.homeConfig 加列失败（首页自定义区块降级空块）: %v", err)
                 }
+                // P3-4（R108 提速·关关式连载监听）：Novel.tocScannedAt 目录最近扫描时刻（ms，
+                // 0=从未扫描）——fleet 刷新任务快进判定锚点（窗口内的已采完书跳过书页/目录重抓，
+                // 见 worker.go tocFastSkipTarget 与 docs/perf-plan.md §P3-4）。存量库幂等加列；
+                // 加列失败降级为全量重扫（快进查询报错即不命中，采集正确性不受影响）。
+                if err := ensureColumn(db, "Novel", "tocScannedAt",
+                        `ALTER TABLE "Novel" ADD COLUMN "tocScannedAt" INTEGER NOT NULL DEFAULT 0`); err != nil {
+                        log.Printf("[db] Novel.tocScannedAt 加列失败（fleet 增量快进降级为全量重扫，不影响采集正确性）: %v", err)
+                }
                 // ===== 以下为数据回填链（Task 60-R18 起与 schema 迁移严格分层）=====
                 // Task 40: 存量词一次性归一回填（幂等：只扫 kwNorm='' 行；空池零开销）
                 if err := backfillPseoKeywordNorm(db); err != nil {

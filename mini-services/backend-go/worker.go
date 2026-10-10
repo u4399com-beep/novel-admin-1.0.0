@@ -62,6 +62,19 @@ func envInt(name string, def int) int {
         return def
 }
 
+// envIntAllowZero 同 envInt，但接受 0（「0=显式关闭」语义的开关用：P3-1 SCRAPE_RETRY_PASSES
+// 与 P3-4 SCRAPE_TOC_REFRESH_HOURS 均以 0 为停用值；envInt 对 "0" 会回退默认值，永远关不掉）
+func envIntAllowZero(name string, def int) int {
+        v := strings.TrimSpace(os.Getenv(name))
+        if v == "" {
+                return def
+        }
+        if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+                return n
+        }
+        return def
+}
+
 var (
         // MAX_CHAPTERS_PER_BOOK 单本书章节数上限（用户指令「取消采集数量的限制」：默认放宽至
         // 10000，仍保留 env 应急阀避免失控任务堆内存）
@@ -409,19 +422,64 @@ type Phase1Outcome struct {
         FillMap         map[int]fillPlan // novelId → 填充计划：书页 referer + 待填充 (title,url) 行
         TotalRefs       int              // 全部有效章节链接数（含已填充跳过）——single 模式进度分母
         SkippedFilled   int              // 其中已有正文而跳过的数量——single 模式进度初值
+        SkippedFresh    int              // P3-4: toc 增量快进跳过的条目数（窗口内已扫描且零空骨架）
         FillTotal       int              // 待填充总行数——list 模式 chaptersTotal 的来源
         Fatal           error            // TS 语义：store 层非唯一冲突错误向上抛 → 任务按 failed 收尾
 }
 
 // phase1Skeletons 书目骨架（BOOK_CONCURRENCY 有界并发）：抓书页 → 目录二次提取 →
 // 分类保障 → upsert 书籍 → 骨架入库，产出 Phase 2 填充计划。
+// tocRefreshHours P3-4 增量快进窗口（小时；SCRAPE_TOC_REFRESH_HOURS，0=关闭）
+func tocRefreshHours() int {
+        return envIntAllowZero("SCRAPE_TOC_REFRESH_HOURS", 6)
+}
+
+// tocFastSkipTarget P3-4（R108 提速·关关「连载监听」保守版）增量快进判定：
+// 列表条目命中「库内已有 + 目录扫描窗口内 + 零空骨架」→ 跳过书页/目录重抓。
+// 三重条件缺一不可（docs/perf-plan.md §P3-4）：
+//  1. 双键保守：条目 title+author 均非空且与库内 Novel 精确匹配（与 upsertBook 去重同键；
+//     title 经与入库侧同规整：trim+t2s+限长）。author 为空的条目一律不快进——title 单键
+//     撞名会把同名异书误跳过，宁多抓不漏采；
+//  2. tocScannedAt 在 SCRAPE_TOC_REFRESH_HOURS（默认 6h）内——窗口外的书照常重扫，
+//     连载新章零损失（本机制只省「确认没更新」的重复请求，不省更新本身）；
+//  3. 零空骨架（wordCount=0 行数=0）——续传 FillRows 的章 URL 依赖目录 diff 重建，
+//     有空骨架必须重抓书页。
+// 任一条件不满足/env 关闭/查询异常（含 tocScannedAt 列缺失的兑底）→ false（抓取路径零变化）。
+func tocFastSkipTarget(rule LoadedRule, item ListItem) (int, bool) {
+        hours := tocRefreshHours()
+        if hours <= 0 {
+                return 0, false
+        }
+        title := truncateRunes(trimSpaceStr(t2sField(t2sModeFromRule(rule), item.Title)), novelTitleMax)
+        author := trimSpaceStr(item.Author)
+        if title == "" || author == "" {
+                return 0, false
+        }
+        var novID int
+        var scanned, empty int64
+        err := queryOne(`SELECT n."id", COALESCE(n."tocScannedAt", 0),
+                (SELECT COUNT(*) FROM "Chapter" c WHERE c."novelId" = n."id" AND c."wordCount" = 0)
+                FROM "Novel" n WHERE n."title" = ? AND n."author" = ? LIMIT 1`,
+                []any{&novID, &scanned, &empty}, title, author)
+        if err != nil {
+                return 0, false // 无匹配/列缺失：不快进
+        }
+        if empty > 0 {
+                return 0, false // 有待填骨架：续传 URL 依赖目录 diff，必须重抓
+        }
+        if scanned <= 0 || nowMillis()-scanned >= int64(hours)*3600_000 {
+                return 0, false // 窗口外（或从未扫描）：照常重扫
+        }
+        return novID, true
+}
+
 func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string) Phase1Outcome {
         var mu sync.Mutex
         fillMap := map[int]fillPlan{}
         var novelIDs []int
         okBooks, failBooks, failStreak := 0, 0, 0
         firstError := ""
-        totalRefs, skippedFilled, fillTotal := 0, 0, 0
+        totalRefs, skippedFilled, fillTotal, skippedFresh := 0, 0, 0, 0
         sawCatalog := 0
         bookFailBreaker := false
         var fatal error
@@ -481,6 +539,19 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
         }()
 
         runPool(items, BOOK_CONCURRENCY, func(item ListItem, _ int) {
+                // P3-4（R108 提速·关关式连载监听快进）：窗口内已扫描 + 零空骨架的书跳过
+                // 书页/目录重抓（fleet 刷新任务的最大重复请求源，成熟库每轮白烧数百书页）。
+                // 三重条件与双键保守规则见 tocFastSkipTarget 注释；跳过视作一次扫描
+                //（tocScannedAt 续期），连载更新零损失（窗口外的书照常重扫）。
+                if novID, ok := tocFastSkipTarget(rule, item); ok {
+                        _, _ = execRetry(`UPDATE "Novel" SET "tocScannedAt" = ? WHERE "id" = ?`, nowMillis(), novID)
+                        mu.Lock()
+                        novelIDs = append(novelIDs, novID)
+                        skippedFresh++
+                        mu.Unlock()
+                        run.Log(fmt.Sprintf("[toc-fast] 《%s》窗口内已扫描且无待填骨架，跳过书页重抓（增量快进）", truncateRunes(item.Title, 24)))
+                        return
+                }
                 bookURL := item.URL
                 // R86：小目录护栏——chapterListApi 被引擎限速 shed 时目录截断，退避重抓（详见
                 // fetchBookPageWithTocRetry）；未配置 chapterListApi 的规则等价直调 fetchBookPage
@@ -599,6 +670,8 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
                 if sk.Capped {
                         run.Log(fmt.Sprintf("《%s》已达单本上限（%d 章），超出部分未采集", truncateRunes(up.Title, 24), MAX_CHAPTERS_PER_BOOK))
                 }
+                // P3-4: 真实扫描完成 → 续期目录扫描时刻（增量快进的窗口锚点）
+                _, _ = execRetry(`UPDATE "Novel" SET "tocScannedAt" = ? WHERE "id" = ?`, nowMillis(), up.NovelID)
                 mu.Lock()
                 novelIDs = append(novelIDs, up.NovelID)
                 okBooks++
@@ -651,7 +724,7 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
                 OKBooks: okBooks, FailBooks: failBooks, FirstError: firstError,
                 BookFailBreaker: bookFailBreaker,
                 NovelIDs:        novelIDs, FillMap: fillMap,
-                TotalRefs: totalRefs, SkippedFilled: skippedFilled, FillTotal: fillTotal,
+                TotalRefs: totalRefs, SkippedFilled: skippedFilled, FillTotal: fillTotal, SkippedFresh: skippedFresh,
                 Fatal: fatal,
         }
 }
@@ -812,11 +885,16 @@ const laneRestoreEvery = int64(24)
 // 连捷回升再打满，boom-bust 震荡空转），冻结回升让供需自然收敛到最小稳定车道数。
 const laneQueueFreezeEWMA = int64(3500)
 
+// retryCooldownBase P3-1 失败章回收重试的冷却基长（轮前与轮间一致；测试可直接改写缩短）。
+// 无独立 env——SCRAPE_RETRY_PASSES=0 即整体停用。
+var retryCooldownBase = 30 * time.Second
+
 // Phase2Outcome Phase 2 结果
 type Phase2Outcome struct {
-        Filled       int
-        Failed       int
-        StoppedEarly bool
+        Filled        int
+        Failed        int
+        RetriedFilled int // P3-1: 回收重试轮补采成功章数（观测用；已含在 Filled 内）
+        StoppedEarly  bool
         // FailBreaker 连败熔断触发（Task 26-d）：连续 PHASE2_FAIL_BREAKER 章失败且期间零成功，
         // 判定源站封禁/不可达 → 任务自动转 paused 而非把全部骨架烧成 failed（任务 41 实证）
         FailBreaker bool
@@ -1028,6 +1106,34 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 return true
         }
 
+        // ==================== P3-1（R108 提速·失败章轮内回收，关关「回收重采」） ====================
+        //
+        // 主循环失败章登记回收队列（有界），书间调度全部结束后冷却重试（默认 2 轮）——
+        // 瞬态失败（200 空壳/挑战窗口/限流窗口/预算耗尽）即采即回收，不再等 fleet 下一轮
+        // 45min 级恢复。重试轮完整复用主路径语义（laneCtl 车道闸/限流降档/连败熔断/
+        // EWMA 饱和感知/persistChapterFill 持久化）；再失败留骨架（下轮 fleet 兑底），
+        // 零惩罚。env：SCRAPE_RETRY_PASSES（默认 2，0=关）/SCRAPE_RETRY_MAX_ROWS（默认 2000）。
+        // 详见 docs/perf-plan.md §P3-1。
+        type retryRow struct {
+                novelID int
+                chRowID int
+                chIdx   int
+                title   string
+                url     string
+                referer string
+        }
+        retryMax := envInt("SCRAPE_RETRY_MAX_ROWS", 2000)
+        var retryMu sync.Mutex
+        var retryList []retryRow
+        recordRetry := func(novelID, chRowID, chIdx int, title, u, referer string) {
+                retryMu.Lock()
+                defer retryMu.Unlock()
+                if len(retryList) >= retryMax {
+                        return
+                }
+                retryList = append(retryList, retryRow{novelID: novelID, chRowID: chRowID, chIdx: chIdx, title: title, url: u, referer: referer})
+        }
+
         // fillOneBook 处理单本书的全部待填充章（原 for 循环体原样抽取——书间并行与
         // 串行路径共用；plan 由快照传入）
         var mapMu sync.Mutex
@@ -1092,6 +1198,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 if !res.OK {
                                         failedCtr.Add(1)
                                         bookFailed.Add(1)
+                                        recordRetry(novelID, row.id, row.idx, row.title, u, referer) // P3-1: 登记回收队列
                                         e := res.Error // Task 29: 采样最近失败原因供熔断分类
                                         lastFailErr.Store(&e)
                                         // Task 34: 失败形态统计（与 isRateLimitErrText/isSoftBlockErrText 同口径分桶）
@@ -1120,6 +1227,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 if trimSpaceStr(content) == "" {
                                         failedCtr.Add(1) // 源站空壳章：保留骨架，重发任务自动重试
                                         bookFailed.Add(1)
+                                        recordRetry(novelID, row.id, row.idx, row.title, u, referer) // P3-1: 登记回收队列
                                         // Task 31-b: HTTP 200 空壳按限流类软拦截采样（ixdzs8 实证该形态是
                                         // 限流窗口的主要表现——200 但 .page-content 为空）
                                         e := "章节正文为空（HTTP 200 空壳响应，疑似限流软拦截/挑战竞态）"
@@ -1155,6 +1263,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 } else {
                                         failedCtr.Add(1)
                                         bookFailed.Add(1)
+                                        recordRetry(novelID, row.id, row.idx, title, u, referer) // P3-1: 登记回收队列（存解析后 title，重试免再解析）
                                         noteChapterFail()
                                 }
                                 // Task 35-b: 章级节流进度落库——onProgress 原先只在书级循环末尾
@@ -1238,6 +1347,98 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                         }
                 }
         }
+
+        // ==================== P3-1: 失败章轮内回收重试 ====================
+        // 主循环结束后按冷却节奏重试回收队列（关关「回收重采」）：熔断/停止/任务删除
+        // 任一命中即中止；重试轮复用 laneCtl 车道闸与主路径全部判定；仍失败者留骨架。
+        retried := 0
+        if passes := envIntAllowZero("SCRAPE_RETRY_PASSES", 2); passes > 0 && failedCtr.Load() > 0 &&
+                !stoppedEarly.Load() && !failBreaker.Load() && !breakerStopped.Load() {
+                retryMu.Lock()
+                pending := retryList
+                retryMu.Unlock()
+                waitInterruptible := func(d time.Duration) bool {
+                        deadline := time.Now().Add(d)
+                        for time.Now().Before(deadline) {
+                                if isStopped() || stoppedEarly.Load() || failBreaker.Load() {
+                                        return false
+                                }
+                                time.Sleep(200 * time.Millisecond)
+                        }
+                        return true
+                }
+                if len(pending) > 0 {
+                        run.Log(fmt.Sprintf("[retry-pass] 主循环失败 %d 章（回收队列 %d，上限 %d），冷却 %s 后开始回收重试（至多 %d 轮）",
+                                failedCtr.Load(), len(pending), retryMax, retryCooldownBase, passes))
+                }
+                for p := 1; p <= passes && len(pending) > 0; p++ {
+                        if !waitInterruptible(retryCooldownBase) {
+                                break
+                        }
+                        if isStopped() || stoppedEarly.Load() || failBreaker.Load() || breakerStopped.Load() {
+                                break
+                        }
+                        run.Log(fmt.Sprintf("[retry-pass] 第 %d/%d 轮回收：重试 %d 章", p, passes, len(pending)))
+                        var next []retryRow
+                        var passOK atomic.Int64
+                        runPoolDynamic(pending, laneCtl, func(rr retryRow, _ int) {
+                                if stoppedEarly.Load() || failBreaker.Load() || breakerStopped.Load() {
+                                        return
+                                }
+                                res := fetchChapterRescued(rr.url, rule, rr.referer, &rescuedCtr)
+                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), res.ElapsedMs))
+                                if !res.OK {
+                                        e := res.Error
+                                        lastFailErr.Store(&e)
+                                        if isRateLimitErr(e) || isSoftBlockErr(e) {
+                                                shrinkLanes("retry: HTTP 429/503 或引擎限流/软拦截判定")
+                                        }
+                                        noteChapterFail()
+                                        retryMu.Lock()
+                                        next = append(next, rr)
+                                        retryMu.Unlock()
+                                        return
+                                }
+                                cleaned := cleanChapterContent(res.Data.Content)
+                                content := truncateRunes(cleaned.Text, MAX_CONTENT_CHARS)
+                                if trimSpaceStr(content) == "" {
+                                        e := "章节正文为空（HTTP 200 空壳响应，疑似限流软拦截/挑战竞态）"
+                                        lastFailErr.Store(&e)
+                                        shrinkLanes("retry: 200 空壳软拦截")
+                                        noteChapterFail()
+                                        retryMu.Lock()
+                                        next = append(next, rr)
+                                        retryMu.Unlock()
+                                        return
+                                }
+                                content = t2sField(t2sMode, content)
+                                title := trimSpaceStr(rr.title)
+                                if title == "" {
+                                        title = trimSpaceStr(res.Data.Title)
+                                }
+                                if title == "" {
+                                        title = "第" + itoa(rr.chRowID) + "章"
+                                }
+                                title = truncateRunes(t2sField(t2sMode, title), chapterTitleMax)
+                                if persistChapterFill(run, rr.novelID, rr.chRowID, rr.chIdx, title, content, storageMode) {
+                                        passOK.Add(1)
+                                        filledCtr.Add(1)
+                                        consecFails.Store(0)
+                                        bumpLaneOnSuccess()
+                                        run.IncChapters()
+                                } else {
+                                        noteChapterFail()
+                                        retryMu.Lock()
+                                        next = append(next, rr)
+                                        retryMu.Unlock()
+                                }
+                        }, func() bool { return isStopped() || failBreaker.Load() || stoppedEarly.Load() })
+                        retried += int(passOK.Load())
+                        run.Log(fmt.Sprintf("[retry-pass] 第 %d/%d 轮回收完成：成功 %d / 仍失败 %d", p, passes, passOK.Load(), len(pending)-int(passOK.Load())))
+                        pending = next
+                }
+        }
+
         // Task 34: 失败形态摘要进日志（仅有失败时；采样 6 条之外的聚合视图）
         if f := failedCtr.Load(); f > 0 {
                 parts := []string{}
@@ -1259,7 +1460,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 FailBreaker: breakerStopped.Load() || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照
                 BreakerRateLimit: breakerKindLimit,
                 // Task 31-b: 车道感知观测指标
-                LaneShrinks: int(laneShrinks.Load()), LaneFinal: int(laneLimit.Load())}
+                LaneShrinks: int(laneShrinks.Load()), LaneFinal: int(laneLimit.Load()),
+                RetriedFilled: retried}
 }
 
 // ==================== 字数汇总 ====================
