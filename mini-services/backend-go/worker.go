@@ -451,7 +451,7 @@ func tocFastSkipTarget(rule LoadedRule, item ListItem) (int, bool) {
                 return 0, false
         }
         title := truncateRunes(trimSpaceStr(t2sField(t2sModeFromRule(rule), item.Title)), novelTitleMax)
-        author := trimSpaceStr(item.Author)
+        author := cleanAuthorLabel(item.Author) // 剥「作者：」前缀，与 resolveAuthor 入库侧同规整（双键对齐）
         if title == "" || author == "" {
                 return 0, false
         }
@@ -1134,6 +1134,16 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 retryList = append(retryList, retryRow{novelID: novelID, chRowID: chRowID, chIdx: chIdx, title: title, url: u, referer: referer})
         }
 
+        // ==================== P3-2: 规则级镜像域名轮换（关关「多书源」） ====================
+        // 仅章节填充消费：每次抓章前 round-robin 换域到健康镜像（独立域槽 → 多域并行），
+        // 连败降权/成功复活；全降权回主域。FillRows/骨架行恒存主域 canonical URL，
+        // 断点续采/目录 diff 语义不变。未配置镜像时 rot=nil 全路径零开销。
+        rot := newMirrorRotator(rule.Mirrors)
+        if rot != nil {
+                run.Log(fmt.Sprintf("[mirror] 镜像轮换启用（%d 镜像，独立域槽并行，连败 %d 降权）：%s",
+                        len(rule.Mirrors), mirrorFailDemote, rot.summary()))
+        }
+
         // fillOneBook 处理单本书的全部待填充章（原 for 循环体原样抽取——书间并行与
         // 串行路径共用；plan 由快照传入）
         var mapMu sync.Mutex
@@ -1193,7 +1203,10 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 if referer == "" {
                                         referer = safeOrigin(u)
                                 }
-                                res := fetchChapterRescued(u, rule, referer, &rescuedCtr)
+                                // P3-2: 镜像换域（round-robin，连败降权）后抓取；结果回填健康态
+                                fu, fr := rot.pickURL(u, referer)
+                                res := fetchChapterRescued(fu, rule, fr, &rescuedCtr)
+                                rot.report(fu, res.OK)
                                 laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), res.ElapsedMs))
                                 if !res.OK {
                                         failedCtr.Add(1)
@@ -1385,7 +1398,11 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 if stoppedEarly.Load() || failBreaker.Load() || breakerStopped.Load() {
                                         return
                                 }
-                                res := fetchChapterRescued(rr.url, rule, rr.referer, &rescuedCtr)
+                                // P3-2: 回收重试同样走镜像换域（主循环失败章可能仅主域限流，
+                                // 换镜像即采即得——关关「换源重采」语义）
+                                fu, fr := rot.pickURL(rr.url, rr.referer)
+                                res := fetchChapterRescued(fu, rule, fr, &rescuedCtr)
+                                rot.report(fu, res.OK)
                                 laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), res.ElapsedMs))
                                 if !res.OK {
                                         e := res.Error

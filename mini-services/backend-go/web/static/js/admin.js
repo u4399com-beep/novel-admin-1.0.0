@@ -219,11 +219,12 @@
         '<td>' + (r.enabled ? '<span class="text-emerald-600">✓</span>' : '<span class="text-neutral-400">✗</span>') + '</td>' +
         '<td>' + ruleHealthCell(r.health) + '</td>' +
         '<td>' + escapeHtml(r.charset) + '</td>' +
-        '<td class="adm-cell-url">' + (r.proxy ? escapeHtml(r.proxy) : '<span class="text-neutral-300">—</span>') + '</td>' +
+        '<td class="adm-cell-url">' + (r.proxy ? escapeHtml(r.proxy) : '<span class="text-neutral-300">—</span>') + (r.mirrorHosts ? ' <span class="adm-badge adm-badge-outline" title="镜像：' + escapeHtml(r.mirrorHosts) + '">镜+' + escapeHtml(String(r.mirrorHosts).split(',').length) + '</span>' : '') + '</td>' +
         '<td>' + (r.insecureTLS ? '<span class="text-amber-600">✓</span>' : '<span class="text-neutral-300">—</span>') + '</td>' +
         '<td>' + (r.cookies ? '<span class="text-amber-600" title="已配置静态 cookie 底座">✓</span>' : '<span class="text-neutral-300">—</span>') + '</td>' +
         '<td class="adm-cell-note" title="' + escapeHtml(r.notes) + '">' + escapeHtml(r.notes) + '</td>' +
         '<td class="whitespace-nowrap text-right">' +
+          '<button type="button" class="adm-btn-xs" data-act="rule-mirror-check" data-id="' + escapeHtml(r.id) + '" title="镜像域名内容一致性检测（P3-2）">镜像</button> ' +
           '<button type="button" class="adm-btn-xs" data-act="rule-edit" data-id="' + escapeHtml(r.id) + '">编辑</button> ' +
           '<button type="button" class="adm-btn-xs adm-danger" data-act="rule-del" data-id="' + escapeHtml(r.id) + '" data-name="' + escapeHtml(r.name) + '">删除</button>' +
         '</td></tr>';
@@ -295,6 +296,7 @@
     $('#adm-rule-charset').value = initial ? (initial.charset || 'utf-8') : 'utf-8';
     $('#adm-rule-proxy').value = initial ? (initial.proxy || '') : '';
     $('#adm-rule-cookies').value = initial ? (initial.cookies || '') : '';
+    $('#adm-rule-mirror').value = initial ? (initial.mirrorHosts || '') : '';
     $('#adm-rule-enabled').checked = initial ? initial.enabled !== false : true;
     $('#adm-rule-insecure').checked = initial ? initial.insecureTLS === true : false;
     $('#adm-rule-notes').value = initial ? (initial.notes || '') : '';
@@ -337,6 +339,7 @@
       name: name, siteUrl: siteUrl, enabled: $('#adm-rule-enabled').checked,
       charset: $('#adm-rule-charset').value, proxy: proxy,
       cookies: $('#adm-rule-cookies').value.trim(),
+      mirrorHosts: $('#adm-rule-mirror').value.trim(),
       insecureTLS: $('#adm-rule-insecure').checked, notes: $('#adm-rule-notes').value,
       listRule: listRule, bookRule: bookRule, chapterRule: chapterRule
     };
@@ -1660,6 +1663,24 @@
         } catch (err) { handleErr(err); }
       } else if (act === 'rule-fmt') {
         formatJsonTextarea(btn.dataset.target);
+      } else if (act === 'rule-mirror-check') {
+        // P3-2: 镜像域名内容一致性检测（引擎参战，最坏 ~1 分钟）
+        var mkey = 'mirror-check:' + id;
+        if (busy[mkey]) return toast('镜像检测进行中，请稍候', 'err');
+        busy[mkey] = true;
+        btn.disabled = true;
+        btn.textContent = '检测中';
+        toast('镜像检测已启动：主域与各镜像并发探测（约 10-60 秒）');
+        try {
+          var res = await api('POST', '/api/scrape-rules/mirror-check', { id: Number(id) });
+          $('#adm-mirror-probe').textContent = '探针（' + (res.probeKind === 'list' ? '列表页' : '首页') + '）：' + res.probe + ' — ' + (res.summary || '');
+          var vb = { ok: '<span class="text-emerald-600">✓ ok</span>', diff: '<span class="text-amber-600">△ diff</span>', dead: '<span class="text-red-600">✗ dead</span>' };
+          $('#adm-mirror-tbody').innerHTML = (res.results || []).map(function (m) {
+            return '<tr><td class="adm-cell-url">' + escapeHtml(m.mirror) + '</td><td>' + (vb[m.verdict] || escapeHtml(m.verdict)) + '</td><td class="adm-cell-note">' + escapeHtml(m.detail || '') + '</td></tr>';
+          }).join('') || '<tr><td colspan="3" class="adm-empty">无结果</td></tr>';
+          openModal('adm-modal-mirror');
+        } catch (err) { handleErr(err); }
+        finally { busy[mkey] = false; btn.disabled = false; btn.textContent = '镜像'; }
 
       // ---- 任务 ----
       } else if (act === 'task-log') {

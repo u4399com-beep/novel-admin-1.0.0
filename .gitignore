@@ -43,3 +43,5 @@ mini-services/scraper-go/scraper-go.bin
 __pycache__/
 *.pyc
 mini-services/stealth-service/venv/
+mini-services/backend-go/public/covers/
+mini-services/backend-go/db/

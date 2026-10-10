@@ -131,6 +131,12 @@ func getDB() (*sql.DB, error) {
                         `ALTER TABLE "ScrapeRule" ADD COLUMN "cookies" TEXT NOT NULL DEFAULT ''`); err != nil {
                         log.Printf("[db] ScrapeRule.cookies 加列失败（规则 cookie 底座不可用，采集不受影响）: %v", err)
                 }
+                // P3-2: ScrapeRule.mirrorHosts 规则级镜像域名（逗号分隔；空=单域模式）。
+                // 存量库幂等加列；空默认值保证旧规则行为不变
+                if err := ensureColumn(db, "ScrapeRule", "mirrorHosts",
+                        `ALTER TABLE "ScrapeRule" ADD COLUMN "mirrorHosts" TEXT NOT NULL DEFAULT ''`); err != nil {
+                        log.Printf("[db] ScrapeRule.mirrorHosts 加列失败（镜像轮换不可用，采集不受影响）: %v", err)
+                }
                 // R97: SiteSetting 三列——全局代理池（proxyPool，规则无自有池时兜底出口）+
                 // TXT/封面自定义存储目录（txtDir/coversDir，空=默认 repoRoot 相对路径）。
                 // 存量库幂等加列（Task 40/45-b 先例）。

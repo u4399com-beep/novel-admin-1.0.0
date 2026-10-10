@@ -151,6 +151,8 @@
           <label class="flex items-center gap-1.5"><input type="checkbox" id="adm-rule-insecure"> 跳过 TLS 证书校验</label>
         </div>
         <label class="adm-field sm:col-span-2">静态 Cookie 底座 cookies（空 = 不注入；站点强制人机验证时，人工过验后从浏览器复制 Cookie 请求头粘贴至此）<input id="adm-rule-cookies" class="adm-input adm-mono" placeholder="如：wzws_cid=xxx; token=yyy（k=v 用分号分隔，引擎每次抓取前种入会话桶）"></label>
+        <label class="adm-field sm:col-span-2">镜像域名 mirrorHosts（可选，逗号分隔，至多 8 条；正文填充阶段自动轮换分流 → 吞吐 ×N，主域被封自动切换）
+          <input id="adm-rule-mirror" class="adm-input adm-mono" placeholder="如：https://www.example-m1.com,https://m2.example.com（路径结构须与主站一致，保存后请点「镜像检测」验证内容一致性）"></label>
       </div>
       <div class="mt-3 space-y-3">
         <div class="adm-field">
@@ -633,6 +635,19 @@
       <button type="button" class="adm-btn" data-act="modal-close" data-modal-close="adm-modal-chapter-edit">取消</button>
       <button type="button" id="adm-chapter-edit-save" class="adm-btn adm-btn-primary">保存章节</button>
     </div>
+  </div>
+</div>
+<!-- 镜像检测结果弹层（P3-2 镜像验证工具） -->
+<div id="adm-modal-mirror" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+  <div class="adm-card flex max-h-[80vh] w-full max-w-xl flex-col">
+    <div class="mb-2 flex items-center justify-between"><h2 class="adm-h2 !mb-0">镜像一致性检测</h2>
+      <button type="button" class="adm-btn-xs" data-act="modal-close" data-modal-close="adm-modal-mirror">关闭</button></div>
+    <div class="text-[11px] text-neutral-400" id="adm-mirror-probe"></div>
+    <div class="adm-table-wrap mt-2 min-h-0 flex-1"><table class="adm-table">
+      <thead><tr><th>镜像</th><th>结论</th><th>说明</th></tr></thead>
+      <tbody id="adm-mirror-tbody"></tbody>
+    </table></div>
+    <p class="mt-2 text-[11px] text-neutral-400">ok=结构与内容一致可用；diff=可达但内容疑似不一致（建议剔除）；dead=不可达。假镜像只会烧请求不产出，请及时从规则 mirrorHosts 中移除。</p>
   </div>
 </div>
 <script src="/static/js/admin-fleet.js" defer></script>

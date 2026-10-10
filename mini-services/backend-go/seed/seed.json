@@ -122,14 +122,14 @@
       "id": 19,
       "name": "pilishuwu",
       "siteUrl": "https://www.pilishuwu.com/",
-      "enabled": false,
-      "charset": "gbk",
+      "enabled": true,
+      "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
-      "listRule": "{\"itemSelector\":\"#centerm tr\",\"titleSelector\":\"td:nth-child(1) a\",\"linkSelector\":\"td:nth-child(1) a\",\"authorSelector\":\"td.C\"}",
-      "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"dd h3:contains(作者：)\", \"descriptionSelector\": \"p.pl + table + p\", \"categorySelector\": \"dt a[href*=\\\"/list/\\\"]\", \"chapterLinkSelector\": \"#at td.L a\", \"catalogLinkSelector\": \"a.read\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
-      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"dd#contents\"}",
-      "notes": "【未实测草稿】2026-09 实测 Cloudflare 层封锁：数据中心 IP 全指纹 403（含 curl_chrome116/ff117/edge101、Playwright 真浏览器），CF 边缘偶发 520（源站故障）。需住宅 IP 或站点放宽防护后实测。规则基于杰奇族模板反推（主题 trxsw/pilishuwu 均为六列 杰奇 文章名称/最新章节/作者/字数/更新/状态 布局）。\n【28-a 复测停用 2026-09-24】经代理全策略复测仍 challenge-page 硬反爬（fetch-browser/ua-rotate/mobile 全系拦截页），与 26-a/27-b 结论一致 → enabled=false 落档停用，防止任务轮询空烧；站点放宽防护后仅需重新启用（规则选择器为杰奇族标准结构，未变）。"
+      "listRule": "{\"itemSelector\": \"ol.custom-rank-list li.rank-item\", \"titleSelector\": \"p.rank-t a\", \"linkSelector\": \"p.rank-t a\", \"authorSelector\": \"p.rank-a\"}",
+      "bookRule": "{\"titleSelector\": \"h2.works-intro-title strong\", \"descriptionSelector\": \"p.works-intro-short\", \"chapterLinkSelector\": \".chapter-page-new a\", \"catalogLinkSelector\": \"a[href*='/menu/']\", \"chapterListPaginationSelector\": \"a:contains(下一页),a:contains(下页),.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a\"}",
+      "chapterRule": "{\"titleSelector\": \"h3.j_chapterName\", \"contentSelector\": \"div.read-content\"}",
+      "notes": "【R111 重推实测 2026-10-10】引擎探针逐段验证：分类页 rank 区块 ol.custom-rank-list li.rank-item（含作者）；书页 works-intro-title strong + /menu/ 目录分离页；目录 chapter-page-new a；正文 j_chapterName + read-content。charset gbk→utf-8 实测修正。"
     },
     {
       "id": 20,
@@ -199,16 +199,16 @@
     {
       "id": 25,
       "name": "kelexs",
-      "siteUrl": "https://www.kelexs.com/list-1/",
-      "enabled": false,
+      "siteUrl": "https://www.kelexs.com/",
+      "enabled": true,
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
       "cookies": "",
-      "listRule": "{\"itemSelector\":\"ul.list li, .book-list li, .novel-list li, #novellist li, .novellist li\",\"titleSelector\":\"a\",\"linkSelector\":\"a\"}",
+      "listRule": "{\"itemSelector\": \".list.dList ul li, .list.dList li, ul.dList li, .dList li\", \"titleSelector\": \"a\", \"linkSelector\": \"a\", \"authorSelector\": \".author, span:contains(作者：), .bookinfo span:nth-child(2)\"}",
       "bookRule": "{\"titleSelector\": \"meta[property=\\\"og:novel:book_name\\\"]@content, meta[property=\\\"og:title\\\"]@content, h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content, .author, #info p:first-of-type\", \"descriptionSelector\": \"meta[property=\\\"og:description\\\"]@content, .intro, #intro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content, .pic img@src, #fmimg img@src\", \"statusSelector\": \"meta[property=\\\"og:novel:status\\\"]@content\", \"categorySelector\": \"meta[property=\\\"og:novel:category\\\"]@content\", \"chapterLinkSelector\": \"#list dl dd a, .chapter-list a, ul.chapter a, #allchapter li a\", \"catalogLinkSelector\": \"a.catalog-more, a.more-btn\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
       "chapterRule": "{\"titleSelector\":\"h1, .bookname h1\",\"contentSelector\":\"#content, #chaptercontent, #txtcontent, #contenttxt, .read-content\",\"nextSelector\":\"a:contains(下一章), a:contains(下一頁), #next_url, #pb_next\"}",
-      "notes": "【未实测草稿·WAF 强制人机验证】2026-09 Task 53 实测：GoEdge WAF 对沙箱出口全域强制人机验证——curl 原生/curl-impersonate(chrome116 JA3)/德国代理出口均 307 → /WAF/VERIFY/CAPTCHA 图形验证码页（VBWI info token），Playwright headless 真浏览器直接 403（Connection: 47.57.242.119 机房 IP），全路径/协议/子域变体一致；验证码破解违反合规红线（引擎 compliance captchaSolving=禁止提供），自动采集无解。\n【启用路径】①用户在自有浏览器人工完成一次人机验证；②F12 复制 kelexs.com 的 Cookie 请求头；③编辑本规则填入「静态 cookie 底座」字段并启用；④引擎每次抓取前自动种入 host 会话桶（Task 53 能力，6h TTL，站点 Set-Cookie 自动接管），失效后重复①-③更新即可。\n【选择器依据】未经页面实测（WAF 拦截），基于 /list-{cid}/ URL 族通用模板 + og:novel:* meta 兜底 + 引擎内置启发式候选编写；实际放行后应先跑三段实测校准。分页形态未知未配 paginationTemplate。"
+      "notes": "【R111 重推 2026-10-10】R110 实测笔记重构：首页改版 div/ul 化，条目 .list.dList ul li 系（20 条目含作者）；本窗口引擎探针全链 403/502（GoEdge 概率挑战），选择器待挑战窗口任务实测校准——引擎 og:novel:* 兜底 + 内置启发式可先跑。"
     },
     {
       "id": 26,

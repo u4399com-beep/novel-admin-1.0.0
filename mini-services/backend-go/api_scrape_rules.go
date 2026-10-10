@@ -23,59 +23,67 @@
 package main
 
 import (
-	"database/sql"
-	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
+        "database/sql"
+        "fmt"
+        "net/http"
+        "net/url"
+        "strconv"
+        "strings"
+        "sync"
 )
 
 func init() {
-	register("GET", "/api/scrape-rules", handleScrapeRulesList)
-	register("POST", "/api/scrape-rules", handleScrapeRulesSave)
-	register("PUT", "/api/scrape-rules", handleScrapeRulesPut)
-	register("DELETE", "/api/scrape-rules", handleScrapeRulesDelete)
-	// E19（61-R4）: 手动触发一轮规则健康巡检（admin「立即巡检」按钮）
-	register("POST", "/api/scrape-rules/health-check", handleScrapeRulesHealthCheck)
+        register("GET", "/api/scrape-rules", handleScrapeRulesList)
+        register("POST", "/api/scrape-rules", handleScrapeRulesSave)
+        register("PUT", "/api/scrape-rules", handleScrapeRulesPut)
+        register("DELETE", "/api/scrape-rules", handleScrapeRulesDelete)
+        // E19（61-R4）: 手动触发一轮规则健康巡检（admin「立即巡检」按钮）
+        register("POST", "/api/scrape-rules/health-check", handleScrapeRulesHealthCheck)
+        // P3-2: 镜像域名内容一致性检测（admin 规则面板「镜像检测」按钮）
+        register("POST", "/api/scrape-rules/mirror-check", handleRuleMirrorCheck)
 }
+
+// mirrorHostsMax 规则镜像域名上限（同站镜像族罕超 3-4 域；上限防误配拖慢填充轮转）
+const mirrorHostsMax = 8
 
 // ==================== GET /api/scrape-rules ====================
 
 func handleScrapeRulesList(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	// E19（61-R4）: 巡检结果一次性装配（表未建/读败降级空 map，规则面板主功能不受影响）
-	healthMap := ruleHealthByRule()
-	rows := make([]map[string]any, 0)
-	err := queryList(
-		`SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes" FROM "ScrapeRule" ORDER BY "id" ASC`,
-		func(rs *sql.Rows) error {
-			var id int64
-			var name, siteURL, charset, proxy, cookies, listRule, bookRule, chapterRule, notes string
-			var enabled, insecureTLS bool
-			if err := rs.Scan(&id, &name, &siteURL, &enabled, &charset, &proxy, &insecureTLS, &cookies, &listRule, &bookRule, &chapterRule, &notes); err != nil {
-				return err
-			}
-			rows = append(rows, map[string]any{
-				"id":          id,
-				"name":        name,
-				"siteUrl":     siteURL,
-				"enabled":     enabled,
-				"charset":     charset,
-				"proxy":       proxy,
-				"insecureTLS": insecureTLS,
-				"cookies":     cookies,
-				"listRule":    safeParseRule(listRule),
-				"bookRule":    safeParseRule(bookRule),
-				"chapterRule": safeParseRule(chapterRule),
-				"notes":       notes,
-				"health":      healthMap[id], // 无巡检记录时为 nil（面板显示「未巡检」）
-			})
-			return nil
-		})
-	if err != nil {
-		failJSON(w, "服务器错误", firstLineErr(err), 500)
-		return
-	}
-	writeJSON(w, 200, rows)
+        // E19（61-R4）: 巡检结果一次性装配（表未建/读败降级空 map，规则面板主功能不受影响）
+        healthMap := ruleHealthByRule()
+        rows := make([]map[string]any, 0)
+        err := queryList(
+                `SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes",IFNULL("mirrorHosts",'') FROM "ScrapeRule" ORDER BY "id" ASC`,
+                func(rs *sql.Rows) error {
+                        var id int64
+                        var name, siteURL, charset, proxy, cookies, listRule, bookRule, chapterRule, notes, mirrorHosts string
+                        var enabled, insecureTLS bool
+                        if err := rs.Scan(&id, &name, &siteURL, &enabled, &charset, &proxy, &insecureTLS, &cookies, &listRule, &bookRule, &chapterRule, &notes, &mirrorHosts); err != nil {
+                                return err
+                        }
+                        rows = append(rows, map[string]any{
+                                "id":          id,
+                                "name":        name,
+                                "siteUrl":     siteURL,
+                                "enabled":     enabled,
+                                "charset":     charset,
+                                "proxy":       proxy,
+                                "insecureTLS": insecureTLS,
+                                "cookies":     cookies,
+                                "listRule":    safeParseRule(listRule),
+                                "bookRule":    safeParseRule(bookRule),
+                                "chapterRule": safeParseRule(chapterRule),
+                                "notes":       notes,
+                                "mirrorHosts": mirrorHosts, // P3-2: 镜像域名（逗号分隔，规范化形态）
+                                "health":      healthMap[id], // 无巡检记录时为 nil（面板显示「未巡检」）
+                        })
+                        return nil
+                })
+        if err != nil {
+                failJSON(w, "服务器错误", firstLineErr(err), 500)
+                return
+        }
+        writeJSON(w, 200, rows)
 }
 
 // ==================== POST /api/scrape-rules/health-check（E19） ====================
@@ -83,63 +91,63 @@ func handleScrapeRulesList(w http.ResponseWriter, r *http.Request, _ map[string]
 // handleScrapeRulesHealthCheck 手动触发一轮巡检。异步执行（立即 202 返回，面板轮询
 // GET /api/scrape-rules 观察 health 字段变化）；已有一轮在途时 409（幂等拒绝，防双轮连击）。
 func handleScrapeRulesHealthCheck(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	if triggerRuleHealthCheckAsync() {
-		writeJSON(w, 202, map[string]any{"ok": true, "message": "巡检已启动，稍后刷新规则面板查看结果"})
-		return
-	}
-	writeJSON(w, 409, map[string]any{"ok": false, "message": "已有巡检在途，请稍后再试"})
+        if triggerRuleHealthCheckAsync() {
+                writeJSON(w, 202, map[string]any{"ok": true, "message": "巡检已启动，稍后刷新规则面板查看结果"})
+                return
+        }
+        writeJSON(w, 409, map[string]any{"ok": false, "message": "已有巡检在途，请稍后再试"})
 }
 
 // ==================== proxy 字段解析（TS parseProxyField 逐行移植） ====================
 
 type proxyFieldResult struct {
-	value string
-	err   string
+        value string
+        err   string
 }
 
 func parseProxyField(raw any) proxyFieldResult {
-	if raw == nil {
-		return proxyFieldResult{value: ""}
-	}
-	s, isStr := raw.(string)
-	if !isStr {
-		return proxyFieldResult{err: "proxy 必须是字符串"}
-	}
-	if s == "" {
-		return proxyFieldResult{value: ""}
-	}
-	t := trimSpaceStr(s)
-	if t == "" {
-		return proxyFieldResult{value: ""}
-	}
-	if runeLen(t) > 1024 {
-		return proxyFieldResult{err: "proxy 过长（上限 1024 字符）"}
-	}
-	parts := make([]string, 0)
-	for _, p := range strings.Split(t, ",") {
-		p = trimSpaceStr(p)
-		if p == "" {
-			continue
-		}
-		u, err := url.Parse(p)
-		badForm := proxyFieldResult{err: "proxy 形态非法（" + truncateRunes(p, 40) + "；示例：socks5h://user:pass@host:port，多个用英文逗号分隔）"}
-		if err != nil || u.Host == "" {
-			// JS new URL(p) 抛异常（含空主机/非法端口）
-			return badForm
-		}
-		switch u.Scheme {
-		case "http", "https", "socks5", "socks5h", "socks4":
-		default:
-			return proxyFieldResult{err: "proxy 仅支持 http/https/socks5/socks5h/socks4 形态（如 socks5h://127.0.0.1:1080）"}
-		}
-		if port := u.Port(); port != "" {
-			if n, perr := strconv.Atoi(port); perr != nil || n < 0 || n > 65535 {
-				return badForm
-			}
-		}
-		parts = append(parts, p)
-	}
-	return proxyFieldResult{value: strings.Join(parts, ",")}
+        if raw == nil {
+                return proxyFieldResult{value: ""}
+        }
+        s, isStr := raw.(string)
+        if !isStr {
+                return proxyFieldResult{err: "proxy 必须是字符串"}
+        }
+        if s == "" {
+                return proxyFieldResult{value: ""}
+        }
+        t := trimSpaceStr(s)
+        if t == "" {
+                return proxyFieldResult{value: ""}
+        }
+        if runeLen(t) > 1024 {
+                return proxyFieldResult{err: "proxy 过长（上限 1024 字符）"}
+        }
+        parts := make([]string, 0)
+        for _, p := range strings.Split(t, ",") {
+                p = trimSpaceStr(p)
+                if p == "" {
+                        continue
+                }
+                u, err := url.Parse(p)
+                badForm := proxyFieldResult{err: "proxy 形态非法（" + truncateRunes(p, 40) + "；示例：socks5h://user:pass@host:port，多个用英文逗号分隔）"}
+                if err != nil || u.Host == "" {
+                        // JS new URL(p) 抛异常（含空主机/非法端口）
+                        return badForm
+                }
+                switch u.Scheme {
+                case "http", "https", "socks5", "socks5h", "socks4":
+                default:
+                        return proxyFieldResult{err: "proxy 仅支持 http/https/socks5/socks5h/socks4 形态（如 socks5h://127.0.0.1:1080）"}
+                }
+                if port := u.Port(); port != "" {
+                        if n, perr := strconv.Atoi(port); perr != nil || n < 0 || n > 65535 {
+                                return badForm
+                        }
+                }
+                parts = append(parts, p)
+        }
+        return proxyFieldResult{value: strings.Join(parts, ",")}
 }
 
 // ==================== 保存（POST/PUT 共用） ====================
@@ -148,210 +156,409 @@ func parseProxyField(raw any) proxyFieldResult {
 // 语义：null/原始类型失败，数组通过后续 name 校验兜住）；id 字段校验复用
 // positiveIntIDField（原 scrapeRuleIDParam 已并入，Task 54 精简：两函数逐字节同体）。
 func handleScrapeRulesSave(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	v, ok := readBodyValue(r)
-	if !bodyObjectOK(v, ok) {
-		writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
-		return
-	}
-	handleScrapeRulesSaveBody(w, bodyMap(v))
+        v, ok := readBodyValue(r)
+        if !bodyObjectOK(v, ok) {
+                writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
+                return
+        }
+        handleScrapeRulesSaveBody(w, bodyMap(v))
 }
 
 func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
-	name, _ := body["name"].(string)
-	if trimSpaceStr(name) == "" {
-		writeJSON(w, 400, map[string]string{"error": "name 必填"})
-		return
-	}
-	if val, present := body["enabled"]; present {
-		if _, isBool := val.(bool); !isBool {
-			writeJSON(w, 400, map[string]string{"error": "enabled 必须是布尔值"})
-			return
-		}
-	}
-	if val, present := body["insecureTLS"]; present {
-		if _, isBool := val.(bool); !isBool {
-			writeJSON(w, 400, map[string]string{"error": "insecureTLS 必须是布尔值"})
-			return
-		}
-	}
-	if val, present := body["charset"]; present && val != nil {
-		if _, isStr := val.(string); !isStr {
-			writeJSON(w, 400, map[string]string{"error": "charset 必须是字符串"})
-			return
-		}
-	}
-	if val, present := body["notes"]; present && val != nil {
-		if _, isStr := val.(string); !isStr {
-			writeJSON(w, 400, map[string]string{"error": "notes 必须是字符串"})
-			return
-		}
-	}
-	if val, present := body["cookies"]; present && val != nil {
-		if _, isStr := val.(string); !isStr {
-			writeJSON(w, 400, map[string]string{"error": "cookies 必须是字符串（\"k=v; k2=v2\" 形态）"})
-			return
-		}
-	}
-	site := parseHttpURL(body["siteUrl"], "siteUrl", 200)
-	if !site.ok {
-		writeJSON(w, 400, map[string]string{"error": site.message})
-		return
-	}
-	proxy := parseProxyField(body["proxy"])
-	if proxy.err != "" {
-		writeJSON(w, 400, map[string]string{"error": proxy.err})
-		return
-	}
-	if val, present := body["id"]; present {
-		if _, okID := positiveIntIDField(val); !okID {
-			writeJSON(w, 400, map[string]string{"error": "无效 id"})
-			return
-		}
-	}
+        name, _ := body["name"].(string)
+        if trimSpaceStr(name) == "" {
+                writeJSON(w, 400, map[string]string{"error": "name 必填"})
+                return
+        }
+        if val, present := body["enabled"]; present {
+                if _, isBool := val.(bool); !isBool {
+                        writeJSON(w, 400, map[string]string{"error": "enabled 必须是布尔值"})
+                        return
+                }
+        }
+        if val, present := body["insecureTLS"]; present {
+                if _, isBool := val.(bool); !isBool {
+                        writeJSON(w, 400, map[string]string{"error": "insecureTLS 必须是布尔值"})
+                        return
+                }
+        }
+        if val, present := body["charset"]; present && val != nil {
+                if _, isStr := val.(string); !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "charset 必须是字符串"})
+                        return
+                }
+        }
+        if val, present := body["notes"]; present && val != nil {
+                if _, isStr := val.(string); !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "notes 必须是字符串"})
+                        return
+                }
+        }
+        if val, present := body["cookies"]; present && val != nil {
+                if _, isStr := val.(string); !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "cookies 必须是字符串（\"k=v; k2=v2\" 形态）"})
+                        return
+                }
+        }
+        site := parseHttpURL(body["siteUrl"], "siteUrl", 200)
+        if !site.ok {
+                writeJSON(w, 400, map[string]string{"error": site.message})
+                return
+        }
+        proxy := parseProxyField(body["proxy"])
+        if proxy.err != "" {
+                writeJSON(w, 400, map[string]string{"error": proxy.err})
+                return
+        }
+        if val, present := body["id"]; present {
+                if _, okID := positiveIntIDField(val); !okID {
+                        writeJSON(w, 400, map[string]string{"error": "无效 id"})
+                        return
+                }
+        }
 
-	// ---- 规则三字段（listRule/bookRule/chapterRule）提取与校验 ----
-	// 更新路径语义（Task 26-d 修复）：字段缺失/null → 保留 DB 旧值（部分更新）；
-	// 字段为 JSON 对象 → sanitize 后整体覆盖；字段为其他类型 → 400 拒绝，
-	// 绝不静默置 {}（Task 24-d 实证：PUT 只传 name+notes 会把三条规则连清）。
-	// 新建路径语义不变：缺失 → {}（对齐 TS Prisma 写入）。
-	isUpdate := false
-	if _, okID := positiveIntIDField(body["id"]); okID {
-		isUpdate = true
-	}
-	listObj, listProvided, listErr := ruleFieldObj(body["listRule"], "listRule")
-	if listErr != "" {
-		writeJSON(w, 400, map[string]string{"error": listErr})
-		return
-	}
-	bookObj, bookProvided, bookErr := ruleFieldObj(body["bookRule"], "bookRule")
-	if bookErr != "" {
-		writeJSON(w, 400, map[string]string{"error": bookErr})
-		return
-	}
-	chapObj, chapProvided, chapErr := ruleFieldObj(body["chapterRule"], "chapterRule")
-	if chapErr != "" {
-		writeJSON(w, 400, map[string]string{"error": chapErr})
-		return
-	}
-	listJSON, bookJSON, chapJSON := "{}", "{}", "{}"
-	if isUpdate {
-		var oldList, oldBook, oldChap sql.NullString
-		if err := queryOne(`SELECT "listRule","bookRule","chapterRule" FROM "ScrapeRule" WHERE "id" = ?`,
-			[]any{&oldList, &oldBook, &oldChap}, int(body["id"].(float64))); err != nil && !isNoRows(err) {
-			failJSON(w, "服务器错误", firstLineErr(err), 500)
-			return
-		}
-		if !listProvided {
-			listJSON = nonEmptyJSON(oldList.String)
-		}
-		if !bookProvided {
-			bookJSON = nonEmptyJSON(oldBook.String)
-		}
-		if !chapProvided {
-			chapJSON = nonEmptyJSON(oldChap.String)
-		}
-	}
-	if listProvided {
-		listJSON = marshalCompact(sanitizeRuleMap(listObj))
-	}
-	if bookProvided {
-		bookJSON = marshalCompact(sanitizeRuleMap(bookObj))
-	}
-	if chapProvided {
-		chapJSON = marshalCompact(sanitizeRuleMap(chapObj))
-	}
+        // ---- 规则三字段（listRule/bookRule/chapterRule）提取与校验 ----
+        // 更新路径语义（Task 26-d 修复）：字段缺失/null → 保留 DB 旧值（部分更新）；
+        // 字段为 JSON 对象 → sanitize 后整体覆盖；字段为其他类型 → 400 拒绝，
+        // 绝不静默置 {}（Task 24-d 实证：PUT 只传 name+notes 会把三条规则连清）。
+        // 新建路径语义不变：缺失 → {}（对齐 TS Prisma 写入）。
+        isUpdate := false
+        if _, okID := positiveIntIDField(body["id"]); okID {
+                isUpdate = true
+        }
+        listObj, listProvided, listErr := ruleFieldObj(body["listRule"], "listRule")
+        if listErr != "" {
+                writeJSON(w, 400, map[string]string{"error": listErr})
+                return
+        }
+        bookObj, bookProvided, bookErr := ruleFieldObj(body["bookRule"], "bookRule")
+        if bookErr != "" {
+                writeJSON(w, 400, map[string]string{"error": bookErr})
+                return
+        }
+        chapObj, chapProvided, chapErr := ruleFieldObj(body["chapterRule"], "chapterRule")
+        if chapErr != "" {
+                writeJSON(w, 400, map[string]string{"error": chapErr})
+                return
+        }
+        listJSON, bookJSON, chapJSON := "{}", "{}", "{}"
+        if isUpdate {
+                var oldList, oldBook, oldChap sql.NullString
+                if err := queryOne(`SELECT "listRule","bookRule","chapterRule" FROM "ScrapeRule" WHERE "id" = ?`,
+                        []any{&oldList, &oldBook, &oldChap}, int(body["id"].(float64))); err != nil && !isNoRows(err) {
+                        failJSON(w, "服务器错误", firstLineErr(err), 500)
+                        return
+                }
+                if !listProvided {
+                        listJSON = nonEmptyJSON(oldList.String)
+                }
+                if !bookProvided {
+                        bookJSON = nonEmptyJSON(oldBook.String)
+                }
+                if !chapProvided {
+                        chapJSON = nonEmptyJSON(oldChap.String)
+                }
+        }
+        if listProvided {
+                listJSON = marshalCompact(sanitizeRuleMap(listObj))
+        }
+        if bookProvided {
+                bookJSON = marshalCompact(sanitizeRuleMap(bookObj))
+        }
+        if chapProvided {
+                chapJSON = marshalCompact(sanitizeRuleMap(chapObj))
+        }
 
-	enabled := true
-	if b, isBool := body["enabled"].(bool); isBool {
-		enabled = b
-	}
-	charset := "utf-8"
-	if cs, isStr := body["charset"].(string); isStr && trimSpaceStr(cs) != "" {
-		charset = cs
-	}
-	charset = truncateRunes(strings.ToLower(charset), 32)
-	insecureTLS, _ := body["insecureTLS"].(bool)
-	notes, _ := body["notes"].(string)
-	// Task 53: 规则级静态 cookie 底座（用户人工过验后的会话凭证；保存端裁剪与引擎
-	// 解析端 strField 同口径 4096；缺失/null → "" 全量保存语义与 proxy/insecureTLS 一致）
-	cookies := ""
-	if cs, isStr := body["cookies"].(string); isStr {
-		cookies = truncateRunes(trimSpaceStr(cs), 4096)
-	}
+        // P3-2: 规则级镜像域名（可选字符串，逗号分隔；缺失/null → 更新保留旧值/新建空）。
+        // 保存即规范化（scheme 补全/去重/剔除主域/剔非法，上限 8 条）——存储形态即运行形态
+        mirrorHosts := ""
+        mirrorProvided := false
+        if mv, present := body["mirrorHosts"]; present && mv != nil {
+                ms, isStr := mv.(string)
+                if !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "mirrorHosts 必须是字符串（逗号分隔镜像域名）"})
+                        return
+                }
+                mirrorProvided = true
+                mirrorHosts = ms
+        }
+        if mirrorProvided {
+                parsed := parseMirrorHosts(mirrorHosts, site.value)
+                if len(parsed) > mirrorHostsMax {
+                        writeJSON(w, 400, map[string]string{"error": fmt.Sprintf("镜像域名至多 %d 条", mirrorHostsMax)})
+                        return
+                }
+                parts := make([]string, 0, len(parsed))
+                for _, mh := range parsed {
+                        parts = append(parts, mh.String())
+                }
+                mirrorHosts = strings.Join(parts, ",")
+        }
 
-	name = truncateRunes(trimSpaceStr(name), 80)
+        enabled := true
+        if b, isBool := body["enabled"].(bool); isBool {
+                enabled = b
+        }
+        charset := "utf-8"
+        if cs, isStr := body["charset"].(string); isStr && trimSpaceStr(cs) != "" {
+                charset = cs
+        }
+        charset = truncateRunes(strings.ToLower(charset), 32)
+        insecureTLS, _ := body["insecureTLS"].(bool)
+        notes, _ := body["notes"].(string)
+        // Task 53: 规则级静态 cookie 底座（用户人工过验后的会话凭证；保存端裁剪与引擎
+        // 解析端 strField 同口径 4096；缺失/null → "" 全量保存语义与 proxy/insecureTLS 一致）
+        cookies := ""
+        if cs, isStr := body["cookies"].(string); isStr {
+                cookies = truncateRunes(trimSpaceStr(cs), 4096)
+        }
 
-	if id, okID := positiveIntIDField(body["id"]); okID {
-		res, err := exec(
-			`UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "cookies"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
-			name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
-			listJSON, bookJSON, chapJSON,
-			truncateRunes(notes, 1000), nowMillis(), id,
-		)
-		if err != nil {
-			failJSON(w, "服务器错误", firstLineErr(err), 500)
-			return
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			writeJSON(w, 404, map[string]string{"error": "规则不存在"})
-			return
-		}
-		writeJSON(w, 200, map[string]any{"id": id})
-		return
-	}
+        name = truncateRunes(trimSpaceStr(name), 80)
 
-	newID, err := execReturningID(
-		`INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
-		listJSON, bookJSON, chapJSON,
-		truncateRunes(notes, 1000), nowMillis(), nowMillis(),
-	)
-	if err != nil {
-		if isUniqueConflict(err) {
-			// TS conflict 分支 detail 为 undefined → JSON 无 detail 键
-			writeJSON(w, 409, map[string]string{"error": "规则名称已存在"})
-			return
-		}
-		writeJSON(w, 500, map[string]string{"error": "保存失败", "detail": firstLineErr(err)})
-		return
-	}
-	writeJSON(w, 201, map[string]any{"id": newID})
+        if id, okID := positiveIntIDField(body["id"]); okID {
+                if !mirrorProvided {
+                        var oldMirror sql.NullString
+                        if err := queryOne(`SELECT IFNULL("mirrorHosts",'') FROM "ScrapeRule" WHERE "id" = ?`, []any{&oldMirror}, id); err == nil {
+                                mirrorHosts = oldMirror.String // 部分更新语义：未提供保留旧值（与三规则组同口径）
+                        }
+                }
+                res, err := exec(
+                        `UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "cookies"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "mirrorHosts"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
+                        name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
+                        listJSON, bookJSON, chapJSON, mirrorHosts,
+                        truncateRunes(notes, 1000), nowMillis(), id,
+                )
+                if err != nil {
+                        failJSON(w, "服务器错误", firstLineErr(err), 500)
+                        return
+                }
+                if n, _ := res.RowsAffected(); n == 0 {
+                        writeJSON(w, 404, map[string]string{"error": "规则不存在"})
+                        return
+                }
+                writeJSON(w, 200, map[string]any{"id": id})
+                return
+        }
+
+        newID, err := execReturningID(
+                `INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","mirrorHosts","notes","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
+                listJSON, bookJSON, chapJSON, mirrorHosts,
+                truncateRunes(notes, 1000), nowMillis(), nowMillis(),
+        )
+        if err != nil {
+                if isUniqueConflict(err) {
+                        // TS conflict 分支 detail 为 undefined → JSON 无 detail 键
+                        writeJSON(w, 409, map[string]string{"error": "规则名称已存在"})
+                        return
+                }
+                writeJSON(w, 500, map[string]string{"error": "保存失败", "detail": firstLineErr(err)})
+                return
+        }
+        writeJSON(w, 201, map[string]any{"id": newID})
+}
+
+// ==================== POST /api/scrape-rules/mirror-check（P3-2 镜像验证工具） ====================
+//
+// P3-2 前置条件（设计稿）：「镜像连通性 + 内容一致性抽样比对，防止路径结构不同的
+// 假镜像烧穿」。探针选择：
+//   1. 优先取该规则最新 list 任务的 targetUrl（真实列表页）经引擎 listRule 抽取——
+//      条目数比值 [0.7,1.43] 且前 20 条标题交集 ≥1 → ok（结构与内容双重证据）；
+//   2. 无历史任务 → 回退 siteUrl 经 bookRule 抽取（首页弱证据：标题规范化相等 → ok）。
+// 主域与每个镜像并发探测（引擎策略链完整参战，镜像首次访问即建立独立域槽/亲和），
+// 逐镜像给出 verdict：ok / diff（可达但内容不一致）/ dead（不可达）。结果仅回报
+// 不落库——是否保留镜像由用户决定（发现假镜像应手工从 mirrorHosts 剔除）。
+func handleRuleMirrorCheck(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+        v, ok := readBodyValue(r)
+        if !bodyObjectOK(v, ok) {
+                writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
+                return
+        }
+        body := bodyMap(v)
+        id, okID := positiveIntIDField(body["id"])
+        if !okID {
+                writeJSON(w, 400, map[string]string{"error": "无效 id"})
+                return
+        }
+        idNum := int(id)
+        rule := loadRule(&idNum)
+        if len(rule.Mirrors) == 0 {
+                writeJSON(w, 400, map[string]string{"error": "该规则未配置有效镜像域名（mirrorHosts）"})
+                return
+        }
+        siteRaw := ""
+        _ = queryOne(`SELECT "siteUrl" FROM "ScrapeRule" WHERE "id" = ?`, []any{&siteRaw}, id)
+        siteU, _ := url.Parse(siteRaw)
+
+        // 探针 URL：最新 list 任务 targetUrl（host 与主站一致才可信）→ 回退 siteUrl
+        probeURL, probeKind := siteRaw, "home"
+        var lastTarget sql.NullString
+        if err := queryOne(`SELECT t."targetUrl" FROM "ScrapeTask" t WHERE t."ruleId" = ? AND t."mode" = 'list' ORDER BY t."id" DESC LIMIT 1`,
+                []any{&lastTarget}, id); err == nil && lastTarget.Valid {
+                if tu, err := url.Parse(lastTarget.String); err == nil && tu.Host != "" && siteU != nil && tu.Host == siteU.Host && lastTarget.String != "" {
+                        probeURL, probeKind = lastTarget.String, "list"
+                }
+        }
+        if probeURL == "" {
+                writeJSON(w, 400, map[string]string{"error": "规则缺少 siteUrl，无法构造探针"})
+                return
+        }
+
+        // probeOnce 经引擎抽取一个入口的探针页（kind=list → listRule 条目；home → bookRule 标题）
+        type probeRes struct {
+                items int
+                title string
+                err   string
+        }
+        probeOnce := func(u string) probeRes {
+                if probeKind == "list" {
+                        res := callEngine[struct {
+                                List *struct {
+                                        Items []ListItem `json:"items"`
+                                } `json:"list"`
+                        }]("/api/test", engineRuleBody(u, map[string]any{"listRule": rule.ListRule}, rule, ""))
+                        if !res.OK {
+                                return probeRes{err: res.Error}
+                        }
+                        n := 0
+                        if res.Data.List != nil {
+                                for _, it := range res.Data.List.Items {
+                                        if it.URL != "" {
+                                                n++
+                                        }
+                                }
+                        }
+                        if n == 0 && res.SoftBlock {
+                                return probeRes{err: softBlockEmptyErrText}
+                        }
+                        return probeRes{items: n}
+                }
+                res := callEngine[struct {
+                        Book *BookData `json:"book"`
+                }]("/api/test", engineRuleBody(u, map[string]any{"bookRule": rule.BookRule}, rule, ""))
+                if !res.OK {
+                        return probeRes{err: res.Error}
+                }
+                if res.Data.Book == nil || res.Data.Book.Title == "" {
+                        return probeRes{err: "未提取到标题（首页弱探针，仅作可达性参考）"}
+                }
+                return probeRes{title: res.Data.Book.Title}
+        }
+
+        // 主域 + 全镜像并发探测（引擎预算内单入口最坏 ~55s，并行总墙钟不叠加）
+        entries := make([]mirrorHost, 0, len(rule.Mirrors)+1)
+        entries = append(entries, mirrorHost{Scheme: siteU.Scheme, Host: siteU.Host}) // 首位=主域基准
+        entries = append(entries, rule.Mirrors...)
+        results := make([]probeRes, len(entries))
+        var wg sync.WaitGroup
+        for i, mh := range entries {
+                wg.Add(1)
+                go func(i int, mh mirrorHost) {
+                        defer wg.Done()
+                        defer func() { _ = recover() }() // 引擎异常不拖垮整个检测
+                        u := probeURL
+                        if i > 0 {
+                                u = hostSwapURL(probeURL, mh)
+                                if u == "" {
+                                        results[i] = probeRes{err: "探针 URL 换域失败"}
+                                        return
+                                }
+                        }
+                        results[i] = probeOnce(u)
+                }(i, mh)
+        }
+        wg.Wait()
+
+        // 比对：主域为基准（主域自身失败 → 全部镜像只能给 diff/dead，不误报 ok）
+        mainRes := results[0]
+        normTitle := func(s string) string {
+                s = strings.ToLower(trimSpaceStr(s))
+                return strings.Map(func(rr rune) rune {
+                        if rr == ' ' || rr == '\t' || rr == '\n' {
+                                return -1
+                        }
+                        return rr
+                }, s)
+        }
+        mainTitle := normTitle(mainRes.title)
+        out := make([]map[string]any, 0, len(rule.Mirrors))
+        okN := 0
+        for i, mh := range rule.Mirrors {
+                mr := results[i+1]
+                verdict, detail := "dead", ""
+                switch {
+                case mr.err != "":
+                        verdict, detail = "dead", truncateRunes(mr.err, 140)
+                case mainRes.err != "":
+                        // 主域自身失败：镜像可达无基准可比（不误报 ok，也不冤死镜像）
+                        verdict, detail = "diff", "主域探针失败（"+truncateRunes(mainRes.err, 80)+"），无基准可比"
+                case probeKind == "list":
+                        ratio := 0.0
+                        if mainRes.items > 0 {
+                                ratio = float64(mr.items) / float64(mainRes.items)
+                        }
+                        if mr.items > 0 && ratio >= 0.7 && ratio <= 1.43 {
+                                verdict = "ok"
+                                detail = fmt.Sprintf("条目 %d vs 主域 %d（比值 %.2f）", mr.items, mainRes.items, ratio)
+                        } else {
+                                verdict = "diff"
+                                detail = fmt.Sprintf("条目 %d vs 主域 %d——数量背离，疑似路径结构不同或内容不同", mr.items, mainRes.items)
+                        }
+                default: // home 探针：标题规范化相等
+                        if mainTitle != "" && normTitle(mr.title) == mainTitle {
+                                verdict = "ok"
+                                detail = "标题一致（首页弱探针）"
+                        } else {
+                                verdict = "diff"
+                                detail = "标题不一致：" + truncateRunes(mr.title, 60)
+                        }
+                }
+                if verdict == "ok" {
+                        okN++
+                }
+                out = append(out, map[string]any{"mirror": mh.String(), "verdict": verdict, "detail": detail})
+        }
+        writeJSON(w, 200, map[string]any{
+                "ok": true, "probe": probeURL, "probeKind": probeKind,
+                "summary": fmt.Sprintf("%d/%d 镜像一致", okN, len(rule.Mirrors)),
+                "results": out,
+        })
 }
 
 // ==================== DELETE /api/scrape-rules?id= ====================
 
 func handleScrapeRulesDelete(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	id, ok := parsePositiveInt(parseQueryStr(r, "id"))
-	if !ok {
-		writeJSON(w, 400, map[string]string{"error": "无效 id"})
-		return
-	}
-	res, err := exec(`DELETE FROM "ScrapeRule" WHERE "id" = ?`, id)
-	if err != nil {
-		// 规则不存在视为删除成功（幂等）；其他真实 DB 错误如实 500
-		writeJSON(w, 500, map[string]string{"error": "删除规则失败", "detail": firstLineErr(err)})
-		return
-	}
-	_ = res // RowsAffected==0（P2025 语义）同样返回 ok:true
-	writeJSON(w, 200, map[string]any{"ok": true})
+        id, ok := parsePositiveInt(parseQueryStr(r, "id"))
+        if !ok {
+                writeJSON(w, 400, map[string]string{"error": "无效 id"})
+                return
+        }
+        res, err := exec(`DELETE FROM "ScrapeRule" WHERE "id" = ?`, id)
+        if err != nil {
+                // 规则不存在视为删除成功（幂等）；其他真实 DB 错误如实 500
+                writeJSON(w, 500, map[string]string{"error": "删除规则失败", "detail": firstLineErr(err)})
+                return
+        }
+        _ = res // RowsAffected==0（P2025 语义）同样返回 ok:true
+        writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // ==================== PUT /api/scrape-rules（seed 或全字段保存） ====================
 
 func handleScrapeRulesPut(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	v, ok := readBodyValue(r)
-	if !bodyObjectOK(v, ok) {
-		// TS PUT 非 seed 分支与 POST 同一保存函数，body 缺失时 POST 返回
-		// 400「请求体必须是 JSON 对象」→ PUT 保持同文案（修复旧版落到「name 必填」的文案漂移）
-		writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
-		return
-	}
-	body := bodyMap(v)
-	if jsTruthy(body["seed"]) {
-		handleScrapeRulesSeed(w)
-		return
-	}
-	handleScrapeRulesSaveBody(w, body)
+        v, ok := readBodyValue(r)
+        if !bodyObjectOK(v, ok) {
+                // TS PUT 非 seed 分支与 POST 同一保存函数，body 缺失时 POST 返回
+                // 400「请求体必须是 JSON 对象」→ PUT 保持同文案（修复旧版落到「name 必填」的文案漂移）
+                writeJSON(w, 400, map[string]string{"error": "请求体必须是 JSON 对象"})
+                return
+        }
+        body := bodyMap(v)
+        if jsTruthy(body["seed"]) {
+                handleScrapeRulesSeed(w)
+                return
+        }
+        handleScrapeRulesSaveBody(w, body)
 }
 
 // ruleFieldObj 提取 listRule/bookRule/chapterRule 字段：
@@ -361,185 +568,185 @@ func handleScrapeRulesPut(w http.ResponseWriter, r *http.Request, _ map[string]s
 //     杜绝 Task 24-d 实证事故：listRule 传字符串被静默 sanitize 成 {} 且连清
 //     bookRule/chapterRule，规则被整条清空
 func ruleFieldObj(v any, field string) (map[string]any, bool, string) {
-	if v == nil {
-		return nil, false, ""
-	}
-	if m, ok := v.(map[string]any); ok {
-		return m, true, ""
-	}
-	return nil, false, field + " 必须是 JSON 对象（如 {\"itemSelector\":\"…\"}），收到 " + jsTypeName(v)
+        if v == nil {
+                return nil, false, ""
+        }
+        if m, ok := v.(map[string]any); ok {
+                return m, true, ""
+        }
+        return nil, false, field + " 必须是 JSON 对象（如 {\"itemSelector\":\"…\"}），收到 " + jsTypeName(v)
 }
 
 func jsTypeName(v any) string {
-	switch v.(type) {
-	case string:
-		return "字符串"
-	case float64:
-		return "数字"
-	case bool:
-		return "布尔"
-	case []any:
-		return "数组"
-	default:
-		return "非对象值"
-	}
+        switch v.(type) {
+        case string:
+                return "字符串"
+        case float64:
+                return "数字"
+        case bool:
+                return "布尔"
+        case []any:
+                return "数组"
+        default:
+                return "非对象值"
+        }
 }
 
 // nonEmptyJSON DB 规则 JSON 列兜底：空/损坏 → "{}"（保留旧值路径专用，防写出非法 JSON）
 func nonEmptyJSON(s string) string {
-	t := strings.TrimSpace(s)
-	if t == "" || t[0] != '{' {
-		return "{}"
-	}
-	return t
+        t := strings.TrimSpace(s)
+        if t == "" || t[0] != '{' {
+                return "{}"
+        }
+        return t
 }
 
 // jsTruthy TS 真值判定（body?.seed）
 func jsTruthy(v any) bool {
-	switch x := v.(type) {
-	case bool:
-		return x
-	case float64:
-		return x != 0
-	case string:
-		return x != ""
-	case nil:
-		return false
-	default:
-		return true
-	}
+        switch x := v.(type) {
+        case bool:
+                return x
+        case float64:
+                return x != 0
+        case string:
+                return x != ""
+        case nil:
+                return false
+        default:
+                return true
+        }
 }
 
 // seedRuleDef 内置模板定义（与 TS SEED_RULES 逐字段一致）
 type seedRuleDef struct {
-	name        string
-	siteURL     string
-	charset     string
-	listRule    map[string]string
-	bookRule    map[string]string
-	chapterRule map[string]string
-	notes       string
+        name        string
+        siteURL     string
+        charset     string
+        listRule    map[string]string
+        bookRule    map[string]string
+        chapterRule map[string]string
+        notes       string
 }
 
 var seedRules = []seedRuleDef{
-	{
-		name:     "笔趣阁系通用模板",
-		siteURL:  "https://www.23qb.net/",
-		charset:  "utf-8",
-		listRule: map[string]string{"itemSelector": ".module-item", "titleSelector": ".module-item-title", "linkSelector": ".module-item-title", "authorSelector": ".module-item-text"},
-		bookRule: map[string]string{
-			"titleSelector":       "h1.page-title",
-			"authorSelector":      "a[href*=\"/author/\"]@title",
-			"descriptionSelector": ".novel-info-content",
-			"coverSelector":       ".novel-cover img@data-src, .novel-cover img@src",
-			"chapterLinkSelector": ".module-row-text",
-			"catalogLinkSelector": "a.catalog-more",
-		},
-		chapterRule: map[string]string{"titleSelector": "h1", "contentSelector": ".article-content"},
-		notes: "2026-09 实测对齐「铅笔小说」（原 23qb）module 系新模板：书页仅含最新 9 章，" +
-			"catalogLinkSelector=a.catalog-more 指向完整目录 /book/{id}/catalog 由 worker 整目提取；章节单页无分页。",
-	},
-	{
-		name:     "顶点系通用模板",
-		siteURL:  "https://www.ddyueshu.cc/",
-		charset:  "gbk",
-		listRule: map[string]string{"itemSelector": "#hotcontent .item, #newscontent .l ul li", "titleSelector": "dt a, .s2 a", "authorSelector": "dt span, .s4"},
-		bookRule: map[string]string{
-			"titleSelector":       "#info h1",
-			"authorSelector":      "#info p:first-of-type",
-			"descriptionSelector": "#intro",
-			"coverSelector":       "#fmimg img@src",
-			"chapterLinkSelector": "#list dl dd a",
-		},
-		chapterRule: map[string]string{"titleSelector": "h1", "contentSelector": "#content"},
-		notes: "2026-09 实测对齐顶点（杰奇结构）：书页 #info/#intro/#list dl dd 全目录（注意该站 href=\"…\" 等号前带空格的反爬写法，cheerio 可正常解析）；" +
-			"作者「作 者：」前缀由引擎自动剥离；章节单页无 link_next。charset=gbk（直连会被重置，需引擎 fetch-browser 策略）。",
-	},
-	{
-		name:     "ShipSay CMS 模板",
-		siteURL:  "http://demo.shipsay.com/",
-		charset:  "utf-8",
-		listRule: map[string]string{"itemSelector": ".book-list .book", "titleSelector": ".title a", "authorSelector": ".author"},
-		bookRule: map[string]string{"titleSelector": "h1.book-title", "authorSelector": ".book-author", "descriptionSelector": ".book-intro", "chapterLinkSelector": ".chapter-list a"},
-		chapterRule: map[string]string{
-			"titleSelector":   "h1.chapter-title",
-			"contentSelector": ".chapter-content",
-			"nextSelector":    "a.next-chapter",
-		},
-		notes: "ShipSay CMS 模板（原演示站 demo.shipsay.com 已下线 502，规则保留供同结构站点复用）。",
-	},
-	{
-		name:     "爱尚系现代模板",
-		siteURL:  "https://www.aijjxs.com/",
-		charset:  "utf-8",
-		listRule: map[string]string{"itemSelector": ".catalog .listbg, .listbg", "titleSelector": ".title a", "linkSelector": ".title a", "authorSelector": ".mainGreen a"},
-		bookRule: map[string]string{
-			"titleSelector":       "h3",
-			"authorSelector":      ".kv a, .author-name",
-			"descriptionSelector": ".intro-panel .desc, .novel-desc",
-			"coverSelector":       ".pic img@src",
-			"statusSelector":      ".kv .sfwj",
-			"chapterLinkSelector": "none",
-			"excludeSelector":     "h1.logo, .top, .search",
-		},
-		chapterRule: map[string]string{
-			"titleSelector":   "h1.chapter-heading",
-			"contentSelector": ".chapter-body",
-			"nextSelector":    "a[rel=\"next\"]",
-			"excludeSelector": "h1.logo, .top, .search",
-		},
-		notes: "帝国CMS TXT下载站（久久小说下载网）实测对齐：全站 h1.logo 为站标「站内搜索…」需排除；" +
-			"书页 h3 书名/.kv 作者/.desc 简介；chapterLinkSelector=none 表示仅采书籍信息（下载站无章节列表，" +
-			"避免启发式把其他书籍链接误判为章节）。",
-	},
+        {
+                name:     "笔趣阁系通用模板",
+                siteURL:  "https://www.23qb.net/",
+                charset:  "utf-8",
+                listRule: map[string]string{"itemSelector": ".module-item", "titleSelector": ".module-item-title", "linkSelector": ".module-item-title", "authorSelector": ".module-item-text"},
+                bookRule: map[string]string{
+                        "titleSelector":       "h1.page-title",
+                        "authorSelector":      "a[href*=\"/author/\"]@title",
+                        "descriptionSelector": ".novel-info-content",
+                        "coverSelector":       ".novel-cover img@data-src, .novel-cover img@src",
+                        "chapterLinkSelector": ".module-row-text",
+                        "catalogLinkSelector": "a.catalog-more",
+                },
+                chapterRule: map[string]string{"titleSelector": "h1", "contentSelector": ".article-content"},
+                notes: "2026-09 实测对齐「铅笔小说」（原 23qb）module 系新模板：书页仅含最新 9 章，" +
+                        "catalogLinkSelector=a.catalog-more 指向完整目录 /book/{id}/catalog 由 worker 整目提取；章节单页无分页。",
+        },
+        {
+                name:     "顶点系通用模板",
+                siteURL:  "https://www.ddyueshu.cc/",
+                charset:  "gbk",
+                listRule: map[string]string{"itemSelector": "#hotcontent .item, #newscontent .l ul li", "titleSelector": "dt a, .s2 a", "authorSelector": "dt span, .s4"},
+                bookRule: map[string]string{
+                        "titleSelector":       "#info h1",
+                        "authorSelector":      "#info p:first-of-type",
+                        "descriptionSelector": "#intro",
+                        "coverSelector":       "#fmimg img@src",
+                        "chapterLinkSelector": "#list dl dd a",
+                },
+                chapterRule: map[string]string{"titleSelector": "h1", "contentSelector": "#content"},
+                notes: "2026-09 实测对齐顶点（杰奇结构）：书页 #info/#intro/#list dl dd 全目录（注意该站 href=\"…\" 等号前带空格的反爬写法，cheerio 可正常解析）；" +
+                        "作者「作 者：」前缀由引擎自动剥离；章节单页无 link_next。charset=gbk（直连会被重置，需引擎 fetch-browser 策略）。",
+        },
+        {
+                name:     "ShipSay CMS 模板",
+                siteURL:  "http://demo.shipsay.com/",
+                charset:  "utf-8",
+                listRule: map[string]string{"itemSelector": ".book-list .book", "titleSelector": ".title a", "authorSelector": ".author"},
+                bookRule: map[string]string{"titleSelector": "h1.book-title", "authorSelector": ".book-author", "descriptionSelector": ".book-intro", "chapterLinkSelector": ".chapter-list a"},
+                chapterRule: map[string]string{
+                        "titleSelector":   "h1.chapter-title",
+                        "contentSelector": ".chapter-content",
+                        "nextSelector":    "a.next-chapter",
+                },
+                notes: "ShipSay CMS 模板（原演示站 demo.shipsay.com 已下线 502，规则保留供同结构站点复用）。",
+        },
+        {
+                name:     "爱尚系现代模板",
+                siteURL:  "https://www.aijjxs.com/",
+                charset:  "utf-8",
+                listRule: map[string]string{"itemSelector": ".catalog .listbg, .listbg", "titleSelector": ".title a", "linkSelector": ".title a", "authorSelector": ".mainGreen a"},
+                bookRule: map[string]string{
+                        "titleSelector":       "h3",
+                        "authorSelector":      ".kv a, .author-name",
+                        "descriptionSelector": ".intro-panel .desc, .novel-desc",
+                        "coverSelector":       ".pic img@src",
+                        "statusSelector":      ".kv .sfwj",
+                        "chapterLinkSelector": "none",
+                        "excludeSelector":     "h1.logo, .top, .search",
+                },
+                chapterRule: map[string]string{
+                        "titleSelector":   "h1.chapter-heading",
+                        "contentSelector": ".chapter-body",
+                        "nextSelector":    "a[rel=\"next\"]",
+                        "excludeSelector": "h1.logo, .top, .search",
+                },
+                notes: "帝国CMS TXT下载站（久久小说下载网）实测对齐：全站 h1.logo 为站标「站内搜索…」需排除；" +
+                        "书页 h3 书名/.kv 作者/.desc 简介；chapterLinkSelector=none 表示仅采书籍信息（下载站无章节列表，" +
+                        "避免启发式把其他书籍链接误判为章节）。",
+        },
 }
 
 // handleScrapeRulesSeed 事务内逐条幂等入库（已存在按 name 跳过），全部成功才提交
 func handleScrapeRulesSeed(w http.ResponseWriter) {
-	db, err := getDB()
-	if err != nil {
-		failJSON(w, "服务器错误", firstLineErr(err), 500)
-		return
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
-		return
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+        db, err := getDB()
+        if err != nil {
+                failJSON(w, "服务器错误", firstLineErr(err), 500)
+                return
+        }
+        tx, err := db.Begin()
+        if err != nil {
+                writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
+                return
+        }
+        committed := false
+        defer func() {
+                if !committed {
+                        _ = tx.Rollback()
+                }
+        }()
 
-	added := 0
-	now := nowMillis()
-	for _, def := range seedRules {
-		var existsID int64
-		err := tx.QueryRow(`SELECT "id" FROM "ScrapeRule" WHERE "name" = ?`, def.name).Scan(&existsID)
-		if err == nil {
-			continue // 已存在按 name 跳过（幂等）
-		}
-		if !isNoRows(err) {
-			writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
-			return
-		}
-		if _, err := tx.Exec(
-			`INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes","createdAt","updatedAt") VALUES (?,?,1,?,'',0,?,?,?,?,?,?)`,
-			def.name, def.siteURL, def.charset,
-			marshalCompact(def.listRule), marshalCompact(def.bookRule), marshalCompact(def.chapterRule),
-			def.notes, now, now,
-		); err != nil {
-			writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
-			return
-		}
-		added++
-	}
-	if err := tx.Commit(); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
-		return
-	}
-	committed = true
-	writeJSON(w, 200, map[string]any{"added": added})
+        added := 0
+        now := nowMillis()
+        for _, def := range seedRules {
+                var existsID int64
+                err := tx.QueryRow(`SELECT "id" FROM "ScrapeRule" WHERE "name" = ?`, def.name).Scan(&existsID)
+                if err == nil {
+                        continue // 已存在按 name 跳过（幂等）
+                }
+                if !isNoRows(err) {
+                        writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
+                        return
+                }
+                if _, err := tx.Exec(
+                        `INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","listRule","bookRule","chapterRule","notes","createdAt","updatedAt") VALUES (?,?,1,?,'',0,?,?,?,?,?,?)`,
+                        def.name, def.siteURL, def.charset,
+                        marshalCompact(def.listRule), marshalCompact(def.bookRule), marshalCompact(def.chapterRule),
+                        def.notes, now, now,
+                ); err != nil {
+                        writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
+                        return
+                }
+                added++
+        }
+        if err := tx.Commit(); err != nil {
+                writeJSON(w, 500, map[string]string{"error": "内置模板入库失败", "detail": firstLineErr(err)})
+                return
+        }
+        committed = true
+        writeJSON(w, 200, map[string]any{"added": added})
 }

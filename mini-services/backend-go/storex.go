@@ -142,11 +142,11 @@ func loadRule(ruleID *int) LoadedRule {
         if ruleID == nil || *ruleID == 0 {
                 return empty
         }
-        var name, charset, proxy, cookies, listRule, bookRule, chapterRule sql.NullString
+        var name, charset, proxy, cookies, listRule, bookRule, chapterRule, mirrorHosts, siteURL sql.NullString
         var insecure bool
         err := queryOne(
-                "SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule FROM ScrapeRule WHERE id = ?",
-                []any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule}, *ruleID)
+                "SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule, IFNULL(mirrorHosts, ''), IFNULL(siteUrl, '') FROM ScrapeRule WHERE id = ?",
+                []any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule, &mirrorHosts, &siteURL}, *ruleID)
         if err != nil {
                 return empty
         }
@@ -160,6 +160,8 @@ func loadRule(ruleID *int) LoadedRule {
                 Proxy:       pickEgressProxy(strings.TrimSpace(proxy.String)),
                 InsecureTLS: insecure,
                 Cookies:     strings.TrimSpace(cookies.String),
+                // P3-2: 规范化镜像入口（剔除主域/非法/重复条目；空配置 → nil 零开销）
+                Mirrors:     parseMirrorHosts(mirrorHosts.String, siteURL.String),
                 ListRule:    safeParseRule(listRule.String),
                 BookRule:    safeParseRule(bookRule.String),
                 ChapterRule: safeParseRule(chapterRule.String),
@@ -285,12 +287,20 @@ func authorIsJunk(a string) bool {
         return junkAuthorSet[strings.ToLower(trimSpaceStr(a))]
 }
 
+// reAuthorLabel 作者标签前缀（与引擎 extract.go stripAuthorLabel 同口径：锚定开头，
+// 仅剥「作者：/作 者：/书籍作者：/author:」前缀形态——pilishuwu 实测列表条目作者
+// 原文「作者：春日负暄」，不剥则入库污染展示且破坏 toc-fast-skip 双键对齐）
+var reAuthorLabelBE = regexp.MustCompile(`(?i)^(?:(?:书籍)?作\s*者\s*[:：]?\s*|(?:author|writer)\s*[:：]?\s*)`)
+
+// cleanAuthorLabel 剥作者标签前缀（安全：仅前缀锚定，正常姓名零改动）
+func cleanAuthorLabel(a string) string { return trimSpaceStr(reAuthorLabelBE.ReplaceAllString(trimSpaceStr(a), "")) }
+
 // resolveAuthor 作者智能填充链：来源作者 → 列表页条目作者兜底 →（新书且仍缺失时）
 // LLM 推断（5s 超时+静默降级，llm.go）→「佚名」。绝不因 author 缺失丢书：返回值恒非空，
 // upsertBook 的入库中止条件仍只有「标题为空」。
 func resolveAuthor(bookAuthor, fallbackAuthor, title, description, t2sMode string, allowLLM bool) string {
         for _, cand := range [2]string{bookAuthor, fallbackAuthor} {
-                a := trimSpaceStr(cand)
+                a := cleanAuthorLabel(cand)
                 if authorIsJunk(a) {
                         continue
                 }
