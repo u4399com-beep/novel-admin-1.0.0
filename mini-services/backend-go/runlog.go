@@ -39,11 +39,6 @@ type Run struct {
         created  int
         updated  int
         chapters int
-
-        // novelIDs 本任务 Phase1 入库书籍清单（phase1Skeletons 返回后由 runList/runSingle 回填，
-        // finalize 终态 success/partial 时供 autoResortNovels 自动目录体检消费）。
-        // 单写者（worker 主 goroutine）在 finalize 可能读取之前完成赋值，无并发竞争。
-        novelIDs []int
 }
 
 // NewRun 构造（对应 TS new Run(taskId)）
