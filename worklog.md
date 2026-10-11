@@ -4628,3 +4628,25 @@ Stage Summary:
 - admin 书籍管理全量可达（R108 首拉 × R111 懒载合流）；序号排序三缺口闭合（采集路径卷感知统一 + 任务收尾自动体检），乱序书从「手动发现手动修」变「入库即修+收尾兜底」
 - 沙箱重置应对：环境自愈流程进一步固化（Go/DB/stealth 依赖三件套）；无备份采集数据确认会随沙箱丢失（fleet 全自动重建兜底）
 - 遗留移交：P2-1 分桶当前仅 2 域启用（可按证据扩表）；dip 深度 100ms 保守（可依 429 占比观测调至 150）；代理池健康度收割持续在跑（300 活 0 死）
+---
+Task ID: R108-b
+Agent: Z.ai Code（主代理）
+Task: 继续修复完善优化所有未完成事项（本轮实际：平行工作线合流收口 + admin 功能补全 + 静态缓存穿透根治）
+
+Work Log:
+- 【沙箱重置自愈】db/ 与 Go SDK 双丢：重装 Go 1.22.12、mkdir db、拉起双服务+watchdog；4 文件意外 chmod(755) 恢复 644；fleet 8 分钟重建至 892 本
+- 【aijjxs 复测】single 任务 #17 实测 290/290 章全部填充 success（服务重启打断→R107 孤儿唤醒归队→补完剩余 10 章后终态）；R112 根修（JS 挑战跨路径弹回判失败回退策略链）生产验证通过，「正文全失败」问题闭环
+- 【seqNum 三缺口本地实现→合流去重】本地完成 finalize 异步钩 autoResortNovels + admin 全库「目录体检」按钮 + rebase 时发现远程 7d2e261 已实现同族功能（autoResortBooks 五收尾点同步钩+卷感知 reorderRefPairs+测试）→ 语义冲突收敛：移除本地重复钩（Run.novelIDs 字段/环境变量/finalize 挂钩全清），保留远程更完善实现；保留本地独有 admin 按钮
+- 【死代码审计（Explore 代理）】640 顶层符号调用图分析：完全死代码仅 scrapesettings.go settingsInvMu/settingsInvalid 双变量（已删）；7 个仅测试引用函数为刻意保留门面（注释在案）；前后端 78 路由×48 调用零断链、13 主题模板零断链；TXT 导出/PSEO config 等 20 余条「有路由无 UI」多为 TS-parity/运维通道，其中 TXT 导出值得接 UI（已接）
+- 【TXT 导出接 UI】api_export 既有通道（POST /api/novels/{id}/export-txt + GET /api/export-txt/list）首次接 admin：书籍行「导出TXT」按钮（SSR 初始行 + JS 重渲染双路径同步），toast 回显章节数/正文章数/体积/服务器路径；实测《异度旅社》918 章 35KB、《太阳城》26 章 1KB 落盘 download/novels/
+- 【静态缓存穿透根治】admin 新按钮不出现的根因=浏览器顽固缓存 admin.js（transferSize=0 内存缓存命中）：新增 {{staticVer}} 模板函数（进程启动毫秒时间戳，同进程恒定、每次部署自动变化），13 主题 _shared.html + admin.html 全部 /static/css|js 引用批量注入 ?v=；今后发版即失效，无需手动强刷
+- 【admin SSR 行陈旧修复】发现书籍表格为 SSR 初始渲染（{{range .Novels}} 3 按钮旧布局）而 JS 重渲染才是 5 按钮 → SSR 行补齐章节工具/导出TXT，双路径一致
+- 【git 平行线合流】git pull --rebase 遭遇远程 R108(7d2e261)/R112(2f5e80f)/worklog(9e18d97)：admin.html 工具栏冲突取远程筛选器布局+插回本地目录体检按钮、SSR 行取本地 5 按钮版、双 bin 以合并源码重建；gofmt 意外重排 3 文件 1956 行格式噪音→checkout 回滚（库一贯空格风格不破例）
+- 【验证】backend-go build/vet/test 全绿（50.9s）；浏览器端到端：导出按钮 toast、目录体检按钮 889 本全部有序 toast、分页 1/45、版本号注入生效；全站重排实测 10/10 本修复（含 454 章 100% 乱序《没钱修什么仙》→ 第1章/第2章… 完美序列）；前台 home/book/search 全 200
+- commit 91254d7 推送 GitHub（先 pull --rebase 后 push，无二次冲突）
+
+Stage Summary:
+- 平行工作线安全合流：同名功能（自动体检钩）双实现收敛为远程版，本地独有能力（admin 体检按钮/导出TXT接UI/静态缓存穿透）无损保留——冲突处理全留痕可回溯
+- 「确认所有功能存在可用」审计收官：零断链 + 唯一完全死代码已删 + 最有价值的无 UI 通道（TXT 导出）已接 admin
+- 静态资源缓存穿透根治落地：部署即生效机制，今后所有前端更新不再受浏览器缓存劫持
+- 遗留移交：rules #12（23qb）持续不健康待深查；P2-1 分桶仅 2 域启用；dip 深度可依观测调优；R112 后 fleet 新采书籍的 autoResortBooks 收尾体检日志可观测验证
