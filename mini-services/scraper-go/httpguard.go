@@ -677,7 +677,7 @@ func fetchWithRedirectGuard(target string, headers map[string]string, timeoutMs 
                         // 在主机排队饱和时逐跳预约等待会把后续跳的预算吃穿 → 跟随后仍被挑战 →
                         // challenge-loop 误判。预计等待超预算时直接 shed（不预约槽位），跟随后
                         // 的落地页仍可能被限流空壳覆盖——快速失败让链层换策略/让 backend 降并发
-                        hopWaited, hopGranted := acquireDomainSlotBudgeted(hostOf(current), deadline, 500)
+                        hopWaited, hopGranted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(current), proxy), deadline, 500)
                         if !hopGranted {
                                 return rawResponse{ok: false, status: 0, note: "queue-saturated",
                                         warning: "域限速排队将超出本跳预算，未预约槽位快速失败（引擎准入拒绝，backend 请降并发）"}

@@ -32,7 +32,7 @@ func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRu
         deadline := nowMs() + timeoutMs
         // 预算感知取槽（与 fetch 系/got/curl 系同口径）：侧车策略对目标站的请求节奏
         // 同样受 per-host 域槽治理——礼貌间隔/突发抑制/AIMD 全部生效
-        waited, granted := acquireDomainSlotBudgeted(hostOf(targetURL), deadline, 1000)
+        waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
         if !granted {
                 return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
                         warnings: warnings, note: "timeout-budget"}

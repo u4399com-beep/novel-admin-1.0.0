@@ -127,7 +127,7 @@ var curlPlainStrategy = strategyDef{
                                 }
 
                                 // Task 35-b: 预算感知取槽 + 排队时间补偿（与 curlimp 同口径）
-                                curlWaited, curlGranted := acquireDomainSlotBudgeted(hostOf(current), deadline, 1000)
+                                curlWaited, curlGranted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(current), ctx.proxy), deadline, 1000)
                                 if !curlGranted {
                                         subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
                                         stopVariants = true

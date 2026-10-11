@@ -1957,6 +1957,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 // 移到 finalizeStopped 之后——「停止检测→终态落库」窗口从秒级压到毫秒级，
                 // 防用户在窗口内 cancel/restart 与 worker 收尾竞态（进度/终态被收尾覆盖）
                 recalcWordCountsFor(p1.NovelIDs)
+                autoResortBooks(run, p1.NovelIDs) // R108: 收尾目录体检（乱序检测+超阈值自动重排，幂等）
                 return
         }
         created, updated, _ := run.Snapshot()
@@ -1980,6 +1981,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 // Task 26-d 无条件连败熔断：站点中途封禁/不可达，余下书目不再空烧；
                 // 已入库书目的骨架保留，重启任务可自动续传
                 recalcWordCountsFor(p1.NovelIDs)
+                autoResortBooks(run, p1.NovelIDs) // R108: 收尾目录体检（乱序检测+超阈值自动重排，幂等）
                 finalize(run, "partial", fmt.Sprintf("书目连续失败达阈值（%d 本，疑似源站封禁或站点不可达），提前中止：已入库 %d/%d 本，进度保留", PHASE1_BOOK_FAIL_BREAKER, p1.OKBooks, total))
                 return
         }
@@ -2004,6 +2006,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 return run.Flush(&TaskFlushFields{ChaptersDone: &doneSoFar, Chapters: &ch, Created: &c2, Updated: &u2})
         })
         recalcWordCountsFor(p1.NovelIDs)
+        autoResortBooks(run, p1.NovelIDs) // R108: 收尾目录体检（乱序检测+超阈值自动重排，幂等）
         created, updated, chapters := run.Snapshot()
         run.Flush(&TaskFlushFields{ChaptersDone: &p2.Filled, Chapters: &chapters, Created: &created, Updated: &updated})
 
@@ -2078,6 +2081,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 finalizeStopped(run, reason, "任务已取消", "已暂停（进度保留，可恢复继续）")
                 // Task 27-c（重新应用 25-a 修复②）：同 runList——recalc 移到终态落库之后
                 recalcWordCountsFor(p1.NovelIDs)
+                autoResortBooks(run, p1.NovelIDs) // R108: 收尾目录体检（乱序检测+超阈值自动重排，幂等）
                 return
         }
         totalChapters := p1.TotalRefs
@@ -2105,6 +2109,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
         })
 
         recalcWordCountsFor(p1.NovelIDs)
+        autoResortBooks(run, p1.NovelIDs) // R108: 收尾目录体检（乱序检测+超阈值自动重排，幂等）
         done := p1.SkippedFilled + p2.Filled
         _, _, chapters := run.Snapshot()
         run.Flush(&TaskFlushFields{Done: &done, ChaptersDone: &done, Chapters: &chapters})

@@ -159,10 +159,10 @@ func TestHostHealthNetFailPenalty(t *testing.T) {
         }
 }
 
-// TestPolitenessExtraMS 突发抑制曲线（Task 26-d；R99 上界 1000→300ms 可 env 覆盖）
+// TestPolitenessExtraMS 突发抑制曲线（Task 26-d；R99 上界 1000→300ms；R108 默认 300→150ms 可 env 覆盖）
 func TestPolitenessExtraMS(t *testing.T) {
         cases := []struct{ in, want int64 }{
-                {0, 0}, {1, 0}, {199, 0}, {200, 100}, {400, 200}, {600, 300}, {1000, 300}, {2200, 300}, {100000, 300}, {-5, 0},
+                {0, 0}, {1, 0}, {199, 0}, {200, 100}, {400, 150}, {600, 150}, {1000, 150}, {2200, 150}, {100000, 150}, {-5, 0},
         }
         for _, c := range cases {
                 if got := politenessExtraMS(c.in); got != c.want {
@@ -179,6 +179,16 @@ func TestPolitenessExtraMS(t *testing.T) {
         for _, c := range legacy {
                 if got := politenessExtraMS(c.in); got != c.want {
                         t.Fatalf("覆盖上界 1000 后 politenessExtraMS(%d) = %d, want %d", c.in, got, c.want)
+                }
+        }
+        // R108 回归：300 上界（R99-R107 期口径）曲线不变形
+        politenessExtraCapMS = 300
+        r99 := []struct{ in, want int64 }{
+                {200, 100}, {400, 200}, {600, 300}, {100000, 300},
+        }
+        for _, c := range r99 {
+                if got := politenessExtraMS(c.in); got != c.want {
+                        t.Fatalf("覆盖上界 300 后 politenessExtraMS(%d) = %d, want %d", c.in, got, c.want)
                 }
         }
         // 上界 0 = 关闭突发抑制（仍保 1.2s 基础礼貌间隔）

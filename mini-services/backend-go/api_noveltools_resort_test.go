@@ -202,3 +202,52 @@ func TestResortTxtMoves(t *testing.T) {
 		t.Fatalf("未变号行不应产生迁移")
 	}
 }
+
+// TestAutoResortBooksHook R108 缺口③回归：任务收尾自动体检钩子——
+// 乱序书被自动重排、有序书零写入、上下界与去重语义正确。
+func TestAutoResortBooksHook(t *testing.T) {
+	mustInitAuditTables(t)
+	t.Setenv("TXT_ROOT", t.TempDir())
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("open temp db: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO "Category" ("id","name") VALUES (9004,'测试分类4')`); err != nil {
+		t.Fatalf("insert category: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "Novel" ("id","title","author","categoryId","updatedAt") VALUES (4,'体检钩子书','作者',9004,?)`, nowMillis()); err != nil {
+		t.Fatalf("insert novel: %v", err)
+	}
+	// 9 章完全倒序（disorder=100% 必触发）
+	for i := 1; i <= 9; i++ {
+		title := fmt.Sprintf("第%d章", 10-i)
+		if _, err := db.Exec(`INSERT INTO "Chapter" ("novelId","idx","title","content","wordCount","createdAt") VALUES (4,?,?,'',10,?)`,
+			i, title, nowMillis()); err != nil {
+			t.Fatalf("insert chapter idx=%d: %v", i, err)
+		}
+	}
+	// 重复 id 去重 + 不存在书静默跳过
+	run := NewRun(0)
+	autoResortBooks(run, []int{4, 4, 999999})
+
+	got := chapterIdxByTitle(t, 4)
+	for n := 1; n <= 9; n++ {
+		title := fmt.Sprintf("第%d章", n)
+		if got[title] != int64(n) {
+			t.Fatalf("自动体检应重排：章节 %s idx = %d, want %d（全表：%v）", title, got[title], n, got)
+		}
+	}
+	logText := run.LogText()
+	if !strings.Contains(logText, "[目录体检]") {
+		t.Fatalf("任务日志应含体检记录，got: %s", logText)
+	}
+	// 有序书零写入：再次执行不动 idx（幂等）
+	run2 := NewRun(0)
+	autoResortBooks(run2, []int{4})
+	got2 := chapterIdxByTitle(t, 4)
+	for n := 1; n <= 9; n++ {
+		if got2[fmt.Sprintf("第%d章", n)] != int64(n) {
+			t.Fatalf("幂等复跑不应改变 idx")
+		}
+	}
+}

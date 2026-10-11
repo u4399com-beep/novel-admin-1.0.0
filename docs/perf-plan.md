@@ -1,6 +1,8 @@
 # 章节采集提速方案（R106 规划）
 
 > 状态：P0-1/P0-2/P1-2 已实施（2026-10-09，R107）；P1-1/P1-3 经实施期复评暂缓（理由见各项标注）。
+> **R108 追加实施（2026-10-11）**：P2-1 代理分桶落地（env opt-in）+ 持续负载间隔优化
+>（politenessExtra 300→150ms + AIMD 对称下探通道）+ 侧车 networkidle 自适应。
 > 基于 worker.go / runner.go / scraper-go ratelimit.go / chain.go 实码调研 + 在库任务实测速率，
 > 非拍脑袋估算。实施按 P0→P1→P2 分期，每期独立可验证、可回滚（各自 env 开关）。
 
@@ -123,12 +125,38 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
 - 预期：单域吞吐 ×N（N=可用出口数），对封 IP 型站点（trxsw/biqutu 实证）收益最大。
 - 风险：**高**——源站总 QPS 上升 N 倍，违反「对单站礼貌」原则，可能触发全站封禁/临检。
   仅对已证实「按 IP 限流」的站点开启（规则级开关），默认 off。
+- **【已实施 R108】**：env `SCRAPE_PROXY_BUCKET_HOSTS="host1:4,host2:2"`（:N 省略默认 4，
+  钳 2..8）逐主机 opt-in。实现在 ratelimit.go：`slotKeyFor(host, egress)`（桶身份=出口
+  host:port，凭据换血不换桶）+ `bucketLanesFor`；chain.go `pickProxy` 对分桶主机做出口
+  子集钉扎（健康出口稳定排序取前 N，源站总 QPS 上界 N×1/1.2s）；全部取槽点（链层/策略层/
+  跳转层/侧车层）改经 slotKeyFor。AIMD/熔断按 (主机×出口) 槽键记账（E17 语义自然延伸）。
+  未配置主机行为与 R107 逐字节一致。测试 r108_test.go（键形态/凭据脱敏/钳制/dip/CAS）。
 
 **P2-2 CloakBrowser 实例池**（scraper-go browser.go / cloak）
 - 现状：fetch-cloak 在沙箱 unavailable；服务器部署后挑战页站（101kks 形态）走 browser 1-5s/章。
 - 改造：CloakBrowser 常驻实例池（2-4 实例复用，省每次冷启动），配合 P0-1 会话锁定。
 - 预期：挑战站 1500 → 2000+ 章/h。
 - 风险：中——内存/句柄常驻，需池化泄漏保护。
+- **【已就位+R108 增强】**：侧车 stealth-service 本就按 proxy|UA 缓存 CloakBrowser 实例
+ （CloakPool，冷启动仅一次）；R108 补 networkidle 等待自适应——实例成功服务过页面（会话热）
+ 后 networkidle 上限 8s→2.5s（首页仍 8s 保挑战页），消除章节正文页白等网络空闲的尾巴；
+ 失败页不推进计数。复评 P2-2 原案「引擎侧实例池」不再需要（侧车已覆盖）。
+
+### P2-R108 持续负载间隔优化（全站生效，默认开，可 env 回退）
+
+**AIMD 对称下探通道 + politenessExtra 上界调优**（scraper-go ratelimit.go）
+- 依据：实测重建期各域持续负载下 politenessExtra 恒顶 +300ms（有效间隔均值 1.5s=2400 章/h
+  天花板）；AIMD 只升不降导致干净域永远享受不到低间隔。
+- 改造①：politenessExtraCapMS 默认 300→150ms（持续有效间隔 1.5s→1.35s，+11%；±300ms 双向
+  抖动继续承担防指纹职责；SCRAPE_POLITENESS_EXTRA_CAP_MS 可回 1000 原始口径）。
+- 改造②：hostSlot 新增 dipMs 下探位——干净成功逐拍 +25ms 加深（上限 SCRAPER_DIP_MAX_MS
+  默认 100ms），间隔计算 max(1.2s-dip, aimd, 1000ms)；任何 429/503/Retry-After 立即归零
+  弹回；AIMD 退避态两曲线互斥（退避回落由 aimdAddStep 承担）；空闲 5min 复位。
+  净效果：干净域持续有效间隔 1.35s→1.25s（再 +8%），合计较 R107 +20%。
+- 合规边界：effInterval 硬红线 1000ms 钳制不变；下探只在成功流上累加，限流一触即回。
+- 开关：SCRAPER_AIMD_DIP_OFF=1 回 R107 只升不降语义。
+- 观测：/api/host-health 的 baseIntervalMs 仍报 1200（下探是槽内行为）；后续可在
+  hostSlotStats 透出 dipMs（本轮未加，观测面保持稳定）。
 
 ## 三、验收口径
 
@@ -246,17 +274,16 @@ browser 策略站（网络时间 2-5s）≈ **1200 章/h**。实测只跑到理�
 | 未编号章处理 | ✅ | 番外/序章锚定前一编号章之后，不丢章 |
 | 乱序实测 | — | 当前库 975 本中 **17+ 本**为乱序候选（disorder 0.22~1.0，如《人在欧洲》302 章全乱） |
 
-### 三个缺口（建议补齐项）
+### 三个缺口（建议补齐项）→ **【R108 已全部闭合】**
 
-1. **存量候选无人触发**：17 本候选躺在审计结果里，POST 端点需手动调用且全库有
-   pending/running 任务时 409 拒绝。建议：admin UI 加「全站目录体检」按钮（一键审计→逐本重排），
-   或 fleet 空闲窗口自动执行。
-2. **采集路径未用卷感知版**：worker.go:557 走旧版 `reorderChapterRefs`（无分卷分段），
-   R101 只升级了 API 路径（`reorderChapterRefsVols`）。分卷书（候选中 1 本 volumeSegments=1）
-   卷内乱序+卷间完整的形态会被误判。建议：采集路径统一换 Vols 版（refs 带空卷信息时行为与旧版一致，零破坏）。
-3. **任务收尾无自动体检**：finalize 只回填简介/字数，不做单书乱序检测。
-   建议：finalize 对涉及书跑 `resortDetectOrder`（只读、毫秒级），超阈值书自动重排——
-   有 DISORDER_RATIO=0.2 阈值 + ≥8 章下限双保险，不会误伤已有序目录。
+1. **存量候选无人触发** → ①admin「章节工具」页签已有目录体检入口；②R108 补 finalize
+   自动体检钩子 autoResortBooks（worker.go 五个收尾点接线）：任务结束时对涉及书逐本
+   resortOneBook（阈值双保险幂等，AUTO_RESORT_OFF=1 可停，单任务上界 100 本）。
+2. **采集路径未用卷感知版** → R108 reorderRefPairs 统一：detectVolume 就地派生卷位 +
+   剥卷前缀（与 storeChapter 落库口径一致）+ 中段序号兜底解析 parseChapterNoAnywhere
+   （「第一卷 起步 第3章」形态）。卷可分 → volumeSegmentReorder；卷不可分 → 与旧版
+   逐字节一致（Impl/fixLeadingDescendingBlock）。测试 TestReorderRefPairsVolumePrefixed。
+3. **任务收尾无自动体检** → 同 ①：autoResortBooks（TestAutoResortBooksHook）。
 
 ### 为什么「直接按序号排 idx」不作为默认行为
 

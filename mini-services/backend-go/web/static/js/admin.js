@@ -2078,6 +2078,9 @@
     refreshRules(true); // 规则名映射 + 新建任务下拉（失败静默，SSR 数据仍在）
     refreshTasks(true); // 任务表首屏立即加载（旧版只靠 10s 轮询：首访 tasks 页签最长空 10s，
                         // document.hidden 期永久空表——与 refreshRules 同款静默首拉）
+    // R108+R111 合流：书籍表首屏即拉（与 switchTab 懒载同口径）——置位 novelsLoaded 防
+    // 首次切页签二次拉取；旧版 init 只绑事件不拉数据，书籍表停在 SSR 前 50 本（页码恒 1/1）
+    novelsLoaded = true; refreshNovels(); loadNovelCatOptions();
   }
 
   if (document.readyState === 'loading') {

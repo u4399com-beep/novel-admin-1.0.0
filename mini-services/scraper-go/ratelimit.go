@@ -90,6 +90,11 @@ type hostSlot struct {
         lastWaitMS atomic.Int64
         sleepers   atomic.Int64
         sheds      atomic.Int64
+        // R108: AIMD 对称下探位（毫秒，0..dipMaxMS）。AIMD 原本只升不降（429 后 ×1.5、
+        // 成功后 -50ms 回落至基础间隔封底）；本字段给「长期干净的域」一个受控的回落通道：
+        // 基础间隔 1.2s 内部下探至 1.2s-dipMax（默认 1.1s），任何限流信号立即归零弹回。
+        // 合规约束：下探后有效间隔仍 ≥1000ms 硬红线（effInterval 钳制不变）。
+        dipMs atomic.Int64
 }
 
 var (
@@ -170,16 +175,19 @@ func aimdRaiseTo(slot *hostSlot, v int64) bool {
 }
 
 // noteAdaptiveRateLimited Task 31-b AIMD「乘性增大」入口：该主机收到 429/503 时调用。
+// R108：参数改槽键口径（裸 host 或 slotKeyFor 的 host|eg:… 形态）——分桶主机按出口
+// 独立退避（哪个出口被限流只慢哪个出口），未分桶主机键恒为裸 host 行为不变。
 // 带 Retry-After 时直接采纳其值（仍受 parseRetryAfterMs 的 30s 解析上限约束，且不高于
 // 既有值时取较大者——站点给的窗口优先于本地推断）；无 Retry-After 时 ×1.5 逐步放大。
 // Task 46-a：两条路径均改 CAS 原子化（aimdRaiseTo / CAS 循环）——旧 Load→Store 在同主机
 // 并发 429/503 下会丢步（A 车道 ×1.5 结果被 B 车道的旧 cur 基底覆盖）。
-// 同时清零连续成功计数（回落序列重新开始）。
-func noteAdaptiveRateLimited(host string, retryAfterMs *int64) {
-        if host == "" {
+// 同时清零连续成功计数（回落序列重新开始）；R108：下探位立即归零（先保护后提速）。
+func noteAdaptiveRateLimited(slotKey string, retryAfterMs *int64) {
+        if slotKey == "" {
                 return
         }
-        slot := getHostSlot(host)
+        slot := getHostSlot(slotKey)
+        resetDip(slot) // R108: 限流即弹回基础间隔，下探奖励清零
         floor := getMinIntervalMs()
         if retryAfterMs != nil && *retryAfterMs > 0 {
                 raise := *retryAfterMs
@@ -204,24 +212,31 @@ func noteAdaptiveRateLimited(host string, retryAfterMs *int64) {
 // noteAdaptiveSuccess Task 31-b AIMD「加性回落」入口：该主机一次成功抓取后调用。
 // 处于自适应态（aimdMs>基础间隔）时每次成功回落 aimdDecayStepMS（50ms），到达基础间隔后
 // 归零自适应态（aimdMs=0 → 后续直接用基础间隔）。
-func noteAdaptiveSuccess(host string) {
-        if host == "" {
+// R108：参数改槽键口径（同 noteAdaptiveRateLimited）；回到基础间隔后转入下探通道
+// noteDipOnSuccess（干净域奖励，深度钳 dipMaxMS）。
+func noteAdaptiveSuccess(slotKey string) {
+        if slotKey == "" {
                 return
         }
-        slot := getHostSlot(host)
+        slot := getHostSlot(slotKey)
         floor := getMinIntervalMs()
         // Task 46-a: CAS 循环防丢步——并发成功/限流信号交错时，回落以最新值为基底重算，
         // 不再覆盖另一车道刚写入的更高退避位（429 后紧跟的成功不应把退避位砍掉）。
         for {
                 cur := slot.aimdMs.Load()
                 if cur <= 0 {
-                        return // 未进入自适应态
+                        // R108: 未处于自适应态 = 干净域 → 成功加深下探（奖励方向）
+                        noteDipOnSuccess(slot)
+                        return
                 }
                 next := aimdAddStep(cur, floor)
                 if next <= floor {
                         next = 0 // 已回到基础间隔：退出自适应态
                 }
                 if slot.aimdMs.CompareAndSwap(cur, next) {
+                        if next == 0 {
+                                noteDipOnSuccess(slot) // R108: 回到基础间隔即开始下探
+                        }
                         return
                 }
         }
@@ -255,11 +270,13 @@ func snapshotAdaptiveIntervals() map[string]int64 {
 
 // politenessExtraCapMS 突发抑制额外间隔上界。R99 调优：默认 1000→300ms——
 // 长章节填充任务动辄连续数千请求，consec≥2000 后旧上界把有效间隔推到 2.2s+，
-// 吞吐上限被砍 45%；上界 300ms 时有效间隔仍 ≥1.5s（高于 1.2s 合规保底），
-// 突发抑制的「别像机关枪」目的由 ±200ms 双向抖动 +300ms 尾差继续承担。
-// env SCRAPE_POLITENESS_EXTRA_CAP_MS 可覆盖（回 1000 即恢复 Task 26-d 原始口径）；
-// 配置非法/负值一律回默认。
-var politenessExtraCapMS = int64(300)
+// 吞吐上限被砍 45%。
+// R108 再调优：默认 300→150ms——实测舰队重建期各域持续负载下额外间隔恒顶在 +300ms
+// （有效间隔均值 1.5s = 2400 章/h 天花板），而突发抑制的「别像机关枪」目的由
+// ±300ms 双向抖动继续承担；150ms 上界时持续有效间隔均值 1.35s（+11% 吞吐），
+// 且仍严于 1.2s 合规保底 + 150ms 尾差。env SCRAPE_POLITENESS_EXTRA_CAP_MS 可覆盖
+//（回 1000 即恢复 Task 26-d 原始口径）；配置非法/负值一律回默认。
+var politenessExtraCapMS = int64(150)
 
 func init() {
         raw := getenv("SCRAPER_POLITENESS_EXTRA_CAP_MS")
@@ -284,6 +301,130 @@ func politenessExtraMS(consec int64) int64 {
                 extra = politenessExtraCapMS
         }
         return extra
+}
+
+// ==================== R108: AIMD 对称下探通道 ====================
+
+// dipMaxMS AIMD 下探深度上界（毫秒）。默认 100：基础间隔 1.2s 的域在持续干净成功后
+// 有效基础间隔可下探至 1.1s（叠加突发抑制/抖动后仍 ≥1000ms 硬红线，effInterval 钳制不变）。
+// 开关：SCRAPER_AIMD_DIP_OFF=1 完全停用（回 R107 只升不降语义）；
+// SCRAPER_DIP_MAX_MS 自定义深度（钳 0..400；400 仅在额外间隔被 env 调 0 时安全）。
+func dipMaxMS() int64 {
+        if getenv("SCRAPER_AIMD_DIP_OFF") != "" {
+                return 0
+        }
+        raw := getenv("SCRAPER_DIP_MAX_MS")
+        if raw == "" {
+                return 100
+        }
+        n, err := strconv.Atoi(raw)
+        if err != nil || n < 0 {
+                return 100
+        }
+        if n > 400 {
+                n = 400
+        }
+        return int64(n)
+}
+
+// dipStepMS 下探步长（每次干净成功 +25ms 加深，达 dipMaxMS 封底）。下探是对称 AIMD 的
+// 「奖励方向」：步长取回落步长（R111 起 100ms）的四分之一——下探通道更保守，多成功几拍
+// 才到位。
+const dipStepMS = int64(25)
+
+// noteDipOnSuccess R108: 干净成功加深下探（仅当该槽未处于 AIMD 退避态时；退避态的回落
+// 由 aimdAddStep 承担，两条曲线不叠加）。CAS 循环防并发丢步（对齐 aimdRaiseTo 契约）。
+func noteDipOnSuccess(slot *hostSlot) {
+        maxDip := dipMaxMS()
+        if maxDip <= 0 {
+                return
+        }
+        for {
+                cur := slot.dipMs.Load()
+                if cur >= maxDip {
+                        return
+                }
+                next := cur + dipStepMS
+                if next > maxDip {
+                        next = maxDip
+                }
+                if slot.dipMs.CompareAndSwap(cur, next) {
+                        return
+                }
+        }
+}
+
+// resetDip R108: 限流信号/空闲复位时下探位立即归零（弹回基础间隔，先保护后提速）。
+func resetDip(slot *hostSlot) {
+        if slot.dipMs.Load() != 0 {
+                slot.dipMs.Store(0)
+        }
+}
+
+// ==================== R108: 代理 per-IP 分桶（P2-1，默认关） ====================
+
+// proxyBucketLanes 按主机配置的代理分桶车道数（0=未启用分桶）。
+// env SCRAPE_PROXY_BUCKET_HOSTS="host1:4,host2:2"（:N 可省略，默认 4；钳 2..8）。
+// 语义：启用分桶的主机，域槽键从 host 扩为 host|eg:<出口>——每个代理出口各自享有
+// 完整合规间隔（每 IP 各自 <1 req/s），对「按 IP 限流」型站点（trxsw/biqutu 实证）
+// 单域吞吐 ×N。风险（perf-plan P2-1）：源站总 QPS 上升 N 倍，仅对已证实按 IP 限流的
+// 站点开启；未列出的主机行为完全不变（键恒为裸 host）。
+var proxyBucketHosts = map[string]int{}
+
+func init() {
+        raw := getenv("SCRAPE_PROXY_BUCKET_HOSTS")
+        if raw == "" {
+                return
+        }
+        for _, part := range strings.Split(raw, ",") {
+                part = strings.TrimSpace(part)
+                if part == "" {
+                        continue
+                }
+                lanes := 4
+                host := part
+                if i := strings.LastIndex(part, ":"); i > 0 {
+                        host = part[:i]
+                        if n, err := strconv.Atoi(part[i+1:]); err == nil && n > 0 {
+                                lanes = n
+                        }
+                }
+                host = strings.ToLower(host)
+                if host == "" {
+                        continue
+                }
+                if lanes < 2 {
+                        lanes = 2
+                }
+                if lanes > 8 {
+                        lanes = 8
+                }
+                proxyBucketHosts[host] = lanes
+        }
+}
+
+// bucketLanesFor 主机的分桶车道数（0=未启用）。host 已约定小写（hostOf 归一口径）。
+func bucketLanesFor(host string) int {
+        return proxyBucketHosts[strings.ToLower(host)]
+}
+
+// reEgressKeyCredStrip 出口键兜底脱敏（url.Parse 失败时）：与 chain.go reProxyCred 同口径。
+var reEgressKeyCredStrip = regexp.MustCompile(`//[^/@]+@`)
+
+// slotKeyFor R108: 域槽键计算。未启用分桶的主机恒返回裸 host（行为与 R107 完全一致，
+// 含代理池轮换场景——池出口轮换但共享 host 槽，单站总节奏不随出口数放大）；
+// 启用分桶且出口非直连时返回 host|eg:<出口 host:port>，每出口独立 1.2s 槽。
+// 桶身份取出口 URL 的 host:port（净主:端口，天然不含凭据）——代理凭据换血不换桶；
+// 解析失败时回退正则脱敏。所有 acquireDomainSlotBudgeted 调用方必须经此函数计算键
+//（链层/策略层/跳转层/侧车层）。
+func slotKeyFor(host, egress string) string {
+        if egress == "" || bucketLanesFor(host) == 0 {
+                return host
+        }
+        if u, err := url.Parse(egress); err == nil && u.Host != "" {
+                return host + "|eg:" + u.Host
+        }
+        return host + "|eg:" + reEgressKeyCredStrip.ReplaceAllString(egress, "//***@")
 }
 
 // acquireDomainSlot 获取指定域名的请求槽位：同域名并发请求串行排队，相邻两次请求
@@ -319,10 +460,17 @@ func acquireDomainSlotBudgeted(host string, deadlineMs int64, reserveMS int64) (
         if now.UnixNano()-slot.lastUsedNano.Load() > int64(5*time.Minute) {
                 slot.consec.Store(0) // 空闲复位：突发抑制只针对持续批量
                 slot.aimdMs.Store(0) // Task 31-b: AIMD 同口径空闲复位（限流记忆由 hosthealth penalty 继续承担短期退避）
+                resetDip(slot)       // R108: 下探位同口径空闲复位（新周期重新从基础间隔起步）
         }
         n := slot.consec.Add(1)
         // Task 31-b: 有效基础间隔 = max(基础礼貌间隔, AIMD 自适应间隔)
-        interval := getMinIntervalMs()
+        // R108: 基础礼貌间隔先减下探位（干净域奖励通道，深度钳 dipMaxMS），再与 AIMD 取大；
+        // 下探永不低于 1000ms 硬红线（AIMD 退避态 interval 由 aimdMs 主导时 dip 不生效——
+        // dip 仅在 aimdMs==0 的干净态累加，见 noteDipOnSuccess）。
+        interval := getMinIntervalMs() - slot.dipMs.Load()
+        if interval < 1000 {
+                interval = 1000
+        }
         if ai := slot.aimdMs.Load(); ai > interval {
                 interval = ai
         }

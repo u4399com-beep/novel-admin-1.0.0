@@ -22,7 +22,10 @@ if ! curl -s --max-time 2 http://127.0.0.1:3000/api/health | rg -q '"ok":true'; 
 fi
 # scraper
 if ! curl -s --max-time 2 http://127.0.0.1:3030/api/health | rg -q '"ok":true'; then
-  (cd "$ROOT/mini-services/scraper-go" && nohup ./bin/scraper-go >>/tmp/scraper-go.log 2>&1 &)
+  # R108 P2-1 代理 per-IP 分桶（perf-plan 默认关，逐主机 opt-in）：trxsw/77shuku 两条规则
+  # 已证实「直连不健康→自动补种代理出口」形态（按 IP 限流/封禁），每出口独立合规槽 ×3；
+  # 删除本行即回全站单槽语义。其余 14 站不受影响（键恒裸 host）。
+  (cd "$ROOT/mini-services/scraper-go" && SCRAPE_PROXY_BUCKET_HOSTS="www.trxsw.com:3,www.77shuku.info:3" nohup ./bin/scraper-go >>/tmp/scraper-go.log 2>&1 &)
 fi
 # 等待就绪（最多 15s）
 for i in $(seq 1 15); do

@@ -103,6 +103,7 @@ class CloakPool:
         self._lock = threading.Lock()
         self._browsers = {}      # key -> browser
         self._broken = {}        # key -> 失败冷却截止时间戳
+        self._pages_served = {}  # R108: key -> 已服务页数（networkidle 自适应：首页长等，后续短等）
 
     def _launch(self, proxy: str, user_agent: str):
         kwargs = {"headless": True}
@@ -142,6 +143,23 @@ class CloakPool:
                     pass
             self._browsers[key] = b
             return b
+
+    def note_page_served(self, proxy: str, user_agent: str):
+        """R108: 页面渲染成功后计数（networkidle 自适应依据：实例已热则短等）。"""
+        key = f"{proxy}|{user_agent}"
+        with self._lock:
+            self._pages_served[key] = self._pages_served.get(key, 0) + 1
+
+    def networkidle_ms(self, proxy: str, user_agent: str) -> int:
+        """R108: networkidle 等待上限自适应。
+        首页（实例冷/新 key）给足 8s——挑战页常有二次跳转/JS 挑战；实例已成功服务过页面后
+        说明挑战已过、会话已热，章节正文页 DOMContentLoaded 即含正文，白等网络空闲只会
+        拖慢每个请求（实测 browser 站 2.4s/章 里相当部分是 networkidle 尾巴）。后续页 2.5s。
+        超时不算失败（与原语义一致）。"""
+        key = f"{proxy}|{user_agent}"
+        with self._lock:
+            served = self._pages_served.get(key, 0)
+        return 8000 if served == 0 else 2500
 
     def rebuild(self, proxy: str, user_agent: str):
         key = f"{proxy}|{user_agent}"
@@ -303,7 +321,8 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
     t0 = time.time()
     timeout_s = max(3.0, min(timeout_ms, MAX_TIMEOUT_MS) / 1000.0)
     last_err = None
-    cookies_out = []
+    cookies_out = []  # R110: cloak cookie 回存快通道（会话热判据之一）
+    served_ok = False  # R108: 成功渲染才计数（网络热标记）；失败页不推进自适应
     for attempt in (0, 1):
         browser = _CLOAK_POOL.acquire(proxy, user_agent) if attempt == 0 \
             else _CLOAK_POOL.rebuild(proxy, user_agent)
@@ -311,12 +330,15 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
         try:
             page = browser.new_page()
             resp = page.goto(url, timeout=int(timeout_s * 1000), wait_until="domcontentloaded")
-            # 尽力等待网络空闲（反爬页常有二次跳转/JS 挑战），超时不算失败
+            # 尽力等待网络空闲（反爬页常有二次跳转/JS 挑战），超时不算失败。
+            # R108: 上限自适应——实例已成功服务过页面（会话热）后短等 2.5s，
+            # 避免章节正文页白等网络空闲拖慢每个请求（首页仍 8s 保挑战页体验）。
             try:
-                page.wait_for_load_state("networkidle", timeout=8000)
+                page.wait_for_load_state("networkidle", timeout=_CLOAK_POOL.networkidle_ms(proxy, user_agent))
             except Exception:
                 pass
             html = page.content()
+            served_ok = True  # R108: 渲染成功，标记网络热（finally 中计数）
             status = 0
             final_url = url
             try:
@@ -373,6 +395,8 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
                     page.close()
                 except Exception:
                     pass
+                if served_ok:
+                    _CLOAK_POOL.note_page_served(proxy, user_agent)
     return {"ok": False, "error": f"cloak 渲染失败: {last_err}",
             "cookies": cookies_out,
             "elapsedMs": int((time.time() - t0) * 1000)}

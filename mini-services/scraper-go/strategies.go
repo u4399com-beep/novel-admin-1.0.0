@@ -88,7 +88,7 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 				// Task 35-b: 预算感知取槽（预计等待超预算时 shed，不预约不睡眠）+
 				// 排队时间补偿 deadline（排队不吃服务时间窗；ixdzs8 12 车道实证：
 				// 末位车道纯排队 18-30s 吃穿 20s 策略预算 → timeout-budget 全灭）
-				waited, granted := acquireDomainSlotBudgeted(hostOf(targetURL), deadline, 1000)
+				waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
 				if !granted {
 					subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
 					if last != nil {
@@ -259,7 +259,7 @@ func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) atte
 		stopVariants := false
 		for {
 			// Task 35-b: 预算感知取槽 + 排队时间补偿（与 fetch 系同口径，见 makeFetchStrategy）
-			waited, granted := acquireDomainSlotBudgeted(hostOf(current), deadline, 1000)
+			waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(current), ctx.proxy), deadline, 1000)
 			if !granted {
 				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
 				break
