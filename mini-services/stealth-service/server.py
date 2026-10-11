@@ -47,11 +47,18 @@ DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 MAX_TIMEOUT_MS = 120_000
 # R110：4→2（沙箱实测每 cloak 实例 ~1 棵 node driver + chrome 树，60-100 线程/棵；
 # threads-max ~925 的环境里 4 实例 + rebuild 漂移足以把线程配额打穿）
-MAX_PROXY_BROWSERS = 2
+# R111：2→3——R110 实证 2 实例在多站点并发 cloak 请求下频繁淘汰/重建（每章一次
+# launch 秒级开销），改成 3 折中：并发站点 ≤3 时零重建，线程预算仍受控
+#（3×~100 线程 + janitor 硬上限）。淘汰改为进程树补刀（_kill_tree），杜绝 close() 不
+# 彻底导致的漂移累积。
+MAX_PROXY_BROWSERS = 3
 # R110：直接子进程上限（node run-driver 为主）。browser.close() 偶发不杀 driver →
 # rebuild 漂移累积；janitor 每 30s 对超额最老驱动补刀（杀驱动只会使其归属浏览器
 # 下次请求走 rebuild 路径自愈，不产生用户可见错误）
-MAX_CHILD_DRIVERS = 4
+# R111：上限 4→3，且 janitor 修复两处漏配：①driver 进程 comm 是 node/MainThread
+# 而非 "driver"，旧过滤永不命中（泄漏实证：1 小时堆积 17 driver + 68 chrome）；
+# ②chrome 树是 driver 的孙进程，旧实现只扫直接子进程看不到。改为全进程表 ppid 树扫描。
+MAX_CHILD_DRIVERS = 3
 
 # ---------- 能力探测（import 失败不崩，优雅降级） ----------
 
@@ -123,11 +130,14 @@ class CloakPool:
             except Exception as e:
                 self._broken[key] = now + 30.0
                 raise RuntimeError(f"cloakbrowser launch 失败: {e}") from e
-            # 容量上限：最旧实例淘汰
-            if len(self._browsers) >= MAX_PROXY_BROWSERS:
+            # 容量上限：最旧实例淘汰（close）。泄漏残余（close 偶发不杀 driver/chrome
+            # 树）由修复后的 janitor（全后代树扫描，30s 周期，硬上限 MAX_CHILD_DRIVERS）
+            # 补刀收敛——差集法会误伤在用的其他池实例，弃用。
+            while len(self._browsers) >= MAX_PROXY_BROWSERS:
                 old_key = next(iter(self._browsers))
+                old_b = self._browsers.pop(old_key)
                 try:
-                    self._browsers.pop(old_key).close()
+                    old_b.close()
                 except Exception:
                     pass
             self._browsers[key] = b
@@ -149,8 +159,82 @@ class CloakPool:
 _CLOAK_POOL = CloakPool()
 
 
+def _proc_snapshot():
+    """R111：全进程表快照 {pid: (ppid, comm, starttime)}（读 /proc，无外部依赖）。"""
+    import os as _os
+    out = {}
+    for pid in _os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as f:
+                stat = f.read().decode("utf-8", "replace")
+            i = stat.index("(")
+            comm = stat[i + 1:stat.rindex(")")]
+            after = stat[stat.rindex(")") + 2:].split()
+            out[int(pid)] = (int(after[1]), comm, int(after[19]))
+        except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
+            continue
+        except Exception:
+            continue
+    return out
+
+
+def _subtree_pids(root_pid, snapshot=None, exclude_pids=None):
+    """R111：root_pid 的完整后代进程集合（含自身；BFS ppid 树扫描，子孙任意深度）。"""
+    if snapshot is None:
+        snapshot = _proc_snapshot()
+    kids = {}
+    for pid, (ppid, _comm, _st) in snapshot.items():
+        kids.setdefault(ppid, []).append(pid)
+    seen = set()
+    stack = [root_pid]
+    exclude = exclude_pids or set()
+    while stack:
+        p = stack.pop()
+        if p in seen:
+            continue
+        seen.add(p)
+        stack.extend(kids.get(p, ()))
+    return seen - exclude
+
+
+def _kill_tree(pids, reason=""):
+    """R111：SIGKILL 进程集合（异常逐个吞——best-effort 清理，不产生用户可见错误）。"""
+    import os as _os
+    import signal as _signal
+    for p in pids:
+        try:
+            _os.kill(p, _signal.SIGKILL)
+        except Exception:
+            pass
+    if pids:
+        print(f"[stealth-service] kill_tree({reason})：击杀 {len(pids)} 个进程", flush=True)
+
+
+def _browser_service_pids(snapshot=None):
+    """R111：本 python 的全部浏览器服务进程（任意深度后代中 node/chrome 系）。
+
+    泄漏根因修复：playwright driver 的 comm 是 node/MainThread 而非 "driver"，
+    旧 janitor 过滤永不命中；chrome 树是 driver 的孙进程，直接子进程扫描也看不到。
+    这里按完整后代树 + comm 关键字识别（本进程唯一的 node 子树就是 playwright）。"""
+    import os as _os
+    me = _os.getpid()
+    descendants = _subtree_pids(me, snapshot=snapshot, exclude_pids={me})
+    snapshot = snapshot or _proc_snapshot()
+    out = []
+    for p in descendants:
+        info = snapshot.get(p)
+        if info is None:
+            continue
+        comm = info[1].lower()
+        if "node" in comm or "chrome" in comm or "chromium" in comm or "headless" in comm:
+            out.append((p, info[1], info[2]))
+    return out
+
+
 def _child_procs():
-    """枚举本进程的直接子进程 [(pid, comm, etime)]（读 /proc，无外部依赖）。"""
+    """枚举本进程的直接子进程 [(pid, comm, etime)]（读 /proc，无外部依赖；R111 保留兼容）。"""
     import os as _os
     me = _os.getpid()
     out = []
@@ -178,21 +262,36 @@ def _driver_janitor():
     """R110：后台每 30s 巡检直接子进程，超额最老 driver/chrome 补刀。
 
     只针对 node run-driver / chrome 系进程；上限 MAX_CHILD_DRIVERS。杀掉后其归属
-    池条目在下次请求时按既有 rebuild 路径重建，服务自愈。"""
+    池条目在下次请求时按既有 rebuild 路径重建，服务自愈。
+
+    R111 重写：改按 _browser_service_pids() 全后代树扫描（node/chrome/chromium/
+    headless 关键字）。旧实现只扫直接子进程且过滤 comm 含 "driver"——playwright
+    driver 的 comm 实为 node/MainThread，过滤永不命中；chrome 树是 driver 孙进程
+    也看不到（实证 1 小时堆积 17 driver + 68 chrome、线程配额打穿全机 EAGAIN）。"""
     import os as _os
     import signal as _signal
     while True:
         time.sleep(30)
         try:
-            kids = [k for k in _child_procs()
-                    if ("driver" in k[1] or "chrome" in k[1] or "headless" in k[1])]
+            kids = _browser_service_pids()
             if len(kids) <= MAX_CHILD_DRIVERS:
                 continue
             kids.sort(key=lambda k: k[2])  # starttime 升序 = 最老在前
-            for pid, comm, _ in kids[:len(kids) - MAX_CHILD_DRIVERS]:
+            excess = kids[:len(kids) - MAX_CHILD_DRIVERS]
+            # 击杀超额实例的完整子树（杀 driver 而不杀其 chrome 树会留孤儿，树扫描补全）
+            snap = _proc_snapshot()
+            all_pids = set()
+            for pid, comm, _st in excess:
+                all_pids |= _subtree_pids(pid, snapshot=snap)
+            for pid, comm, _st in excess:
                 try:
                     _os.kill(pid, _signal.SIGKILL)
-                    print(f"[stealth-service] janitor 击杀超额子进程 {pid} ({comm})", flush=True)
+                    print(f"[stealth-service] janitor 击杀超额浏览器进程 {pid} ({comm})", flush=True)
+                except Exception:
+                    pass
+            for p in all_pids - {x[0] for x in excess}:
+                try:
+                    _os.kill(p, _signal.SIGKILL)
                 except Exception:
                     pass
         except Exception:
@@ -261,6 +360,13 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
                             "expires": c.get("expires") or -1,
                             "secure": bool(c.get("secure")),
                         })
+                except Exception:
+                    pass
+                # R111：new_page() 每次创建独立 BrowserContext（cookie/存储隔离）。
+                # 只 page.close() 在部分版本不级联关 context → context 堆积（cookie 泄漏
+                # 跨请求串味风险 + 内存增长）。显式先关 context 再关 page，双保险。
+                try:
+                    page.context.close()
                 except Exception:
                     pass
                 try:

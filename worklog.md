@@ -4558,3 +4558,25 @@ Stage Summary:
 - GoEdge 概率挑战获得合规突破通道（原地重掷，不解验证码）；kelexs/pilishuwu 两条规则选择器翻新并恢复采集
 - 舰队实测 ~6600 章/h（提速前 ~1500-2500/h），101kks 挑战站 982/h 进入快通道行列
 - 运维红线：fleet 运行期禁重启 scraper-go（cookie jar 即吞吐）；stealth /health 超时≠死亡（flock 已防多实例）
+
+---
+Task ID: R111
+Agent: Z.ai Code (main)
+Task: 用户指令 4 项——0) 不同规则任务不排队直接并发；1) 书籍管理支持全量在库数据（原只有一页）；2) 继续优化章节内容采集效率（书籍/目录快、正文跟不上）；3) 清理死代码并确认功能可用；4) 推送 git。
+
+Work Log:
+- 环境止血：会话开始时全机 fork EAGAIN（资源耗尽）。排查定位 stealth-service 泄漏浏览器树（17 playwright driver + 68 chrome 全挂在 server.py 下，线程配额打穿）。清理并重启 stealth/backend/scraper 三服务。
+- 并发核实（任务0）：triggerScrapeTask 本就 per-task goroutine 并发（10 任务实测同时 running）；引擎域槽 per-host 互不阻塞；runner 派发每轮 5→10 加速舰队起步。「排队感」真实根因=泄漏冻结 + 重启风暴（见下），非调度缺陷。
+- T2a stealth 泄漏根修：①cloak_fetch finally 补 page.context.close()（new_page 的独立 BrowserContext 从不关闭）；②janitor 重写为全后代树扫描（旧过滤 comm 含 "driver" 永不命中——driver 实为 node/MainThread；chrome 树是孙进程直接子进程扫描看不到）+ 池容量 2→3、驱动上限 3；③进程树补刀 _kill_tree/_subtree_pids/_proc_snapshot（/proc ppid BFS）。实测：cloak 3.6s 正常返回、janitor 主动击杀超额、池收敛 1 driver/0 残留。
+- T2b 阅读优先填充（用户体验核心）：Novel.sourceUrl 新列（ensureColumn 幂等）；upsertBook 新增 bookURL 参数（新增书直写、存量书空值回填不覆写）；priorityfill.go——书籍页缺章时自动建 single 任务（host 匹配 enabled 规则），护栏=每书 30min 冷却+全局每分钟 2 条+在途任务上限 15+同 URL 去重（首测踩坑：paused 休眠任务不得计入去重/上限，否则降级舰队下优先填充永不触发）；web_data.go handleWebBook 挂钩（COUNT 走 Chapter_novelId_idx_key 索引 1.3ms）。端到端实测：访问 /book/1532 → single 任务 #22 秒级被 runner 领取。
+- T2c 引擎会话持久化（重启风暴根修）：scraper-go cookie jar 原为纯内存——每次引擎重启全体站点过盾会话清零，重启后所有任务同时重新过盾 → 60 连败熔断风暴（「重启后集体暂停」根因）。加 dirty 标记 + 60s 周期落盘 /tmp/scraper-cookie-jar.json（原子写 tmp+rename）+ 启动恢复。实测：抓取→落盘→重启→「已从磁盘恢复 2 个站点的过盾会话」。
+- T2d AIMD 恢复加速：aimdDecayStepMS 50→100ms（合规下限 ≥基础礼貌间隔不变；8s 退避恢复从 136 连胜缩至 68），aimd_test.go 表驱动同步更新。
+- T1 书籍管理全量化：admin.html 工具栏加分类/状态/排序筛选+每页条数(20/40/60)+页码跳转+共 N 本；admin.js switchTab 首切拉数（旧版 novels/categories 页签从不刷新，页码恒「1 / 1」只显示 SSR 首屏 20 条）；API 分页本就完好（实测 72→77 页随入库增长）。Agent Browser 3/3 PASS（1/77 指示器、翻页、页跳、书籍页/首页渲染、零 console error）。
+- T3 死代码清理：backend-go 711 个包级函数、scraper-go 全部函数引用扫描=零死函数；删除一次性迁移脚本 5 个（add-rules-r99/r101、create-fleet、recover-r26、seed-pagination-r96）；修复 seed.json 草稿不变量（规则 25 kelexs WAF 站 enabled 被历史操作误开，恢复 false 防 fleet 空烧，live DB+种子双修）。nohup 升级 bug 核实已在 deploy-cn.sh 修复（env 前缀方案+历史注释）。
+- 测试：backend-go 全套 ok（55s）、scraper-go 全套 ok（44s）、go vet 双绿、构建双产物部署，站点全路由 smoke 200。
+
+Stage Summary:
+- 「排队/卡死」两大根因根修：stealth 浏览器泄漏（全机冻结源）+ 引擎重启会话清零（集体熔断风暴源）。
+- 阅读优先填充上线：读者访问书籍页即自动优先补该书缺失章节（sourceUrl 回填随 fleet 重扫逐步覆盖存量 949+ 本）。
+- 并发语义确认无排队（任务0 达成），书籍管理支持全量 1500+ 本管理（任务1 达成），AIMD/会话/池三线提速（任务2 落地）。
+- 遗留：23qb/ddyueshu/min-yuan/pilishuwu 等站当前出口不可达（外部因素，熔断自愈机制正常运转）；agent-browser 提示 admin sticky header 偶尔遮挡翻页按钮（次要 UX）。

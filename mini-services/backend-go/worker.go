@@ -645,7 +645,8 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
                 }
 
                 // Task 32-b: item.Author 作列表页条目作者兜底（书页作者占位/缺失时智能填充第一优先）
-                up := upsertBook(run, book, categoryID, rule.Proxy, item.Author, t2sMode)
+                // R111: bookURL 随行落 Novel.sourceUrl（阅读优先填充数据源）
+                up := upsertBook(run, book, categoryID, rule.Proxy, item.Author, t2sMode, bookURL)
                 if !up.OK {
                         mu.Lock()
                         setFirstError(up.Message)

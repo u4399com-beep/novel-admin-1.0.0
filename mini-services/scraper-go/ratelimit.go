@@ -39,8 +39,10 @@ const (
 const (
         // aimdMaxIntervalMS 乘性增大的上界（任务书：上限 8s）
         aimdMaxIntervalMS = 8_000
-        // aimdDecayStepMS 每次成功后的加性回落步长（任务书：每次成功 -0.05s）
-        aimdDecayStepMS = 50
+        // aimdDecayStepMS 每次成功后的加性回落步长。R111：50→100ms——50ms 档从 8s 退避
+        // 恢复到基础间隔需 136 连胜（限流窗口期吞吐近乎归零），100ms 档 68 连胜恢复；
+        // 恢复曲线仍平缓（每成功 100ms），合规下限（≥基础礼貌间隔）不变
+        aimdDecayStepMS = 100
 )
 
 func getMinIntervalMs() int64 {

@@ -254,16 +254,27 @@
     <div class="adm-card">
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <h2 class="adm-h2 !mb-0">书籍管理</h2>
-        <input id="adm-novel-q" class="adm-input w-48" placeholder="搜索书名/作者/简介">
+        <input id="adm-novel-q" class="adm-input w-44" placeholder="搜索书名/作者/简介">
+        <select id="adm-novel-cat" class="adm-input w-32"><option value="">全部分类</option></select>
+        <select id="adm-novel-status" class="adm-input w-28">
+          <option value="">全部状态</option>
+          <option value="serial">连载中</option>
+          <option value="finished">已完结</option>
+        </select>
+        <select id="adm-novel-sort" class="adm-input w-32">
+          <option value="latest">最近更新</option>
+          <option value="clicks">点击最多</option>
+          <option value="words">字数最多</option>
+          <option value="featured">精选优先</option>
+        </select>
+        <select id="adm-novel-pagesize" class="adm-input w-24">
+          <option value="20">20 条/页</option>
+          <option value="40">40 条/页</option>
+          <option value="60">60 条/页</option>
+        </select>
         <button type="button" id="adm-novel-search" class="adm-btn adm-btn-primary">搜索</button>
         <!-- Task 33: 全库智能补全（空简介/占位作者/其他分类滞留/智能完结 一键体检+修复） -->
         <button type="button" id="adm-novel-smartfill" class="adm-btn">智能补全</button>
-        <span class="flex-1"></span>
-        <span class="flex items-center gap-1.5 text-[11px] text-neutral-400">
-          <button type="button" id="adm-novel-prev" class="adm-btn-xs">上一页</button>
-          <span id="adm-novel-page" class="tabular-nums">1 / 1</span>
-          <button type="button" id="adm-novel-next" class="adm-btn-xs">下一页</button>
-        </span>
       </div>
       <div class="adm-table-wrap">
         <table class="adm-table">
@@ -285,6 +296,14 @@
             </tr>{{else}}<tr><td colspan="8" class="adm-empty">暂无书籍</td></tr>{{end}}
           </tbody>
         </table>
+      </div>
+      <!-- R111: 全量分页（共 N 本 / 页码跳转 / 上下页）——旧版只显示 SSR 首屏且页码恒「1 / 1」 -->
+      <div class="mt-3 flex flex-wrap items-center justify-end gap-1.5 text-[11px] text-neutral-400">
+        <span id="adm-novel-total" class="mr-1"></span>
+        <button type="button" id="adm-novel-prev" class="adm-btn-xs">上一页</button>
+        <input id="adm-novel-jump" type="number" min="1" class="adm-input w-16 text-center tabular-nums" placeholder="页码">
+        <span id="adm-novel-page" class="tabular-nums">1 / 1</span>
+        <button type="button" id="adm-novel-next" class="adm-btn-xs">下一页</button>
       </div>
     </div>
   </section>

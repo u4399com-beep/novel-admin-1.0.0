@@ -375,9 +375,11 @@ func startRunner() {
                                 killTSScrapeRunner() // TS runner 防复活护栏（低频）
                         }
 
-                        // 轮询 pending 任务
+                        // 轮询 pending 任务（R111：每轮派发 5→10——任务均为独立 goroutine
+                        // 并发执行（triggerScrapeTask go runTask），互不排队；加大批量只是把
+                        // 大舰队（10+ 规则）的起步等待从多轮压到 1-2 轮，无并发语义变化）
                         var ids []int
-                        err := queryList(`SELECT id FROM ScrapeTask WHERE status = 'pending' ORDER BY id ASC LIMIT 5`,
+                        err := queryList(`SELECT id FROM ScrapeTask WHERE status = 'pending' ORDER BY id ASC LIMIT 10`,
                                 func(rows *sql.Rows) error {
                                         var id int
                                         if err := rows.Scan(&id); err != nil {

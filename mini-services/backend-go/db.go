@@ -176,6 +176,14 @@ func getDB() (*sql.DB, error) {
                         `ALTER TABLE "Novel" ADD COLUMN "tocScannedAt" INTEGER NOT NULL DEFAULT 0`); err != nil {
                         log.Printf("[db] Novel.tocScannedAt 加列失败（fleet 增量快进降级为全量重扫，不影响采集正确性）: %v", err)
                 }
+                // R111（阅读优先填充）：Novel.sourceUrl 书籍源站页 URL——读者打开书籍页发现
+                // 缺章时按此 URL 自动建 single 优先填充任务（见 priorityfill.go）。存量库幂等
+                // 加列；存量书由 fleet 重扫经 upsertBook 空值回填，无 sourceUrl 的书不触发（降级
+                // 为等 fleet 周期）。
+                if err := ensureColumn(db, "Novel", "sourceUrl",
+                        `ALTER TABLE "Novel" ADD COLUMN "sourceUrl" TEXT NOT NULL DEFAULT ''`); err != nil {
+                        log.Printf("[db] Novel.sourceUrl 加列失败（阅读优先填充不可用，等 fleet 周期）: %v", err)
+                }
                 // ===== 以下为数据回填链（Task 60-R18 起与 schema 迁移严格分层）=====
                 // Task 40: 存量词一次性归一回填（幂等：只扫 kwNorm='' 行；空池零开销）
                 if err := backfillPseoKeywordNorm(db); err != nil {

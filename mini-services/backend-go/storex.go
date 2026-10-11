@@ -333,7 +333,9 @@ type UpsertOutcome struct {
 // convertT2S 规则开关（auto|on|off），书名字段入库前繁转简（title/author/description）；
 // 作者占位值经 resolveAuthor 智能填充（来源作者→列表作者→LLM→佚名），且 title-only
 // 兜底收编存量占位作者行（防同书双行），绝不因 author 缺失丢书。
-func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, t2sMode string) UpsertOutcome {
+// upsertBook 书籍入库/更新（Phase 1 书页命中后调用）。bookURL 为书页源站 URL，
+// R111 起随行落 Novel.sourceUrl（阅读优先填充数据源；存量书仅空值回填不覆写）。
+func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, t2sMode, bookURL string) UpsertOutcome {
         fail := func(message string, canceled bool) UpsertOutcome {
                 return UpsertOutcome{OK: false, Canceled: canceled, Message: message}
         }
@@ -387,10 +389,10 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
 
         if !hasExisting {
                 newID, ierr := execRetryReturningID(
-                        "INSERT INTO Novel (title, author, description, cover, categoryId, status, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)",
+                        "INSERT INTO Novel (title, author, description, cover, categoryId, status, createdAt, updatedAt, sourceUrl) VALUES (?,?,?,?,?,?,?,?,?)",
                         title, author, description,
                         gradientTokenFor(title, author), // 无封面时的确定性渐变 token；抓到封面后立即覆写为 /covers/*.jpg
-                        categoryID, status, nowMillis(), nowMillis(),
+                        categoryID, status, nowMillis(), nowMillis(), truncateRunes(trimSpaceStr(bookURL), 500),
                 )
                 if ierr == nil {
                         novelID = newID
@@ -457,12 +459,14 @@ func upsertBook(run *Run, book BookData, categoryID int, proxy, fallbackAuthor, 
                         status = "finished"
                 }
                 // Task 35-a: 空简介不覆写——重采时书页简介提取失败（空串）不再清空既有简介
-                //（旧版无条件 SET description 会把历史好数据抹掉，重发任务即触发）
-                uq := "UPDATE Novel SET categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
-                uargs := []any{categoryID, status, nowMillis(), novelID}
+                //（旧版无条件 SET description 会把历史好数据抹掉，重发任务即触发）；
+                // R111: sourceUrl 空值回填（存量书首次被重扫时补上源站 URL；已有值不覆写，
+                // 防同书多入口 URL 漂移破坏阅读优先填充的同 URL 去重）
+                uq := "UPDATE Novel SET categoryId = ?, status = ?, sourceUrl = CASE WHEN sourceUrl = '' THEN ? ELSE sourceUrl END, updatedAt = ? WHERE id = ?"
+                uargs := []any{categoryID, status, truncateRunes(trimSpaceStr(bookURL), 500), nowMillis(), novelID}
                 if description != "" {
-                        uq = "UPDATE Novel SET description = ?, categoryId = ?, status = ?, updatedAt = ? WHERE id = ?"
-                        uargs = []any{description, categoryID, status, nowMillis(), novelID}
+                        uq = "UPDATE Novel SET description = ?, categoryId = ?, status = ?, sourceUrl = CASE WHEN sourceUrl = '' THEN ? ELSE sourceUrl END, updatedAt = ? WHERE id = ?"
+                        uargs = []any{description, categoryID, status, truncateRunes(trimSpaceStr(bookURL), 500), nowMillis(), novelID}
                 }
                 res, uerr := execRetry(uq, uargs...)
                 if uerr != nil || rowCountOf(res) == 0 {

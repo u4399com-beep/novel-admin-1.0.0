@@ -535,6 +535,14 @@ func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string)
         // JSON 详情端点触发，纯 SSR 访问路径 clicks 恒 0，热门/点击榜排序退化为 id DESC）。
         // 注意不触碰 updatedAt：updatedAt 只随章节采集/编辑变化，浏览不得污染「最新更新/更新榜」。
         _, _ = exec(`UPDATE "Novel" SET "clicks" = "clicks" + 1 WHERE "id" = ?`, nid)
+        // R111 阅读优先填充：读者正在看这本书 = 最高优先级信号。缺章时自动建 single 任务
+        //（每书 30min 冷却 + 每分钟 2 条 + 活跃上限 15 重重护栏，best-effort 不影响渲染）。
+        // 轻量 COUNT 走索引（Chapter.novelId），通常 <1ms。
+        var missingCh int64
+        if err := queryOne(`SELECT COUNT(*) FROM "Chapter" WHERE "novelId" = ? AND "wordCount" = 0`,
+                []any{&missingCh}, nid); err == nil && missingCh > 0 {
+                go triggerPriorityFill(int(nid), int(missingCh))
+        }
         data["Novel"] = novel
         title, _ := novel["title"].(string)
         author, _ := novel["author"].(string)

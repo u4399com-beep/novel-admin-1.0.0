@@ -200,7 +200,7 @@
       "id": 25,
       "name": "kelexs",
       "siteUrl": "https://www.kelexs.com/",
-      "enabled": true,
+      "enabled": false,
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,

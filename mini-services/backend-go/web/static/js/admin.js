@@ -143,6 +143,12 @@
       p.classList.toggle('hidden', p.id !== 'tab-' + name);
     });
     if (name === 'settings' && !settingsLoaded) loadSettingsData();
+    // R111: 页签首次切入时拉取实时数据——旧版书籍/分类页签只显示 SSR 首屏，
+    // 书籍管理页码恒「1 / 1」，无法管理全量在库数据（1436 本只可见前 20 本）
+    if (name === 'novels' && !novelsLoaded) { novelsLoaded = true; refreshNovels(); loadNovelCatOptions(); }
+    if (name === 'categories' && !catsLoaded) { catsLoaded = true; refreshCats(); }
+    if (name === 'tasks' && !tasksLoaded) { tasksLoaded = true; refreshTasks(true); }
+    if (name === 'rules' && !rulesLoaded) { rulesLoaded = true; refreshRules(true); }
   }
 
   function initTabs() {
@@ -616,6 +622,16 @@
   var novelsQ = '';
   var novelsPage = 1;
   var novelsTotalPages = 1;
+  var novelsTotal = 0;
+  var novelsPageSize = 20;
+  var novelsCat = '';
+  var novelsStatus = '';
+  var novelsSort = 'latest';
+  var novelsLoaded = false;
+  var catsLoaded = false;
+  var tasksLoaded = false;
+  var rulesLoaded = false;
+  var novelCatOptionsLoaded = false;
 
   function novelRowHtml(n) {
     return '<tr>' +
@@ -636,14 +652,37 @@
   async function refreshNovels() {
     try {
       var q = encodeURIComponent(novelsQ);
-      var res = await api('GET', '/api/novels?q=' + q + '&page=' + novelsPage + '&pageSize=20');
+      var url = '/api/novels?q=' + q + '&page=' + novelsPage + '&pageSize=' + novelsPageSize;
+      if (novelsCat) url += '&categoryId=' + encodeURIComponent(novelsCat);
+      if (novelsStatus) url += '&status=' + encodeURIComponent(novelsStatus);
+      if (novelsSort) url += '&sort=' + encodeURIComponent(novelsSort);
+      var res = await api('GET', url);
       var list = (res && res.list) || [];
       novelsTotalPages = (res && res.totalPages) || 1;
-      $('#adm-novel-page').textContent = (res && res.page || novelsPage) + ' / ' + novelsTotalPages;
+      novelsTotal = (res && res.total) || 0;
+      if (novelsPage > novelsTotalPages) { novelsPage = novelsTotalPages; }
+      $('#adm-novel-page').textContent = novelsPage + ' / ' + novelsTotalPages;
+      $('#adm-novel-total').textContent = '共 ' + novelsTotal + ' 本';
       $('#adm-novels-tbody').innerHTML = list.length
         ? list.map(novelRowHtml).join('')
         : '<tr><td colspan="8" class="adm-empty">' + (novelsQ ? '没有匹配「' + escapeHtml(novelsQ) + '」的书籍' : '暂无书籍') + '</td></tr>';
     } catch (e) { handleErr(e); }
+  }
+
+  // R111: 分类筛选下拉选项（首次打开书籍页签时拉一次）
+  async function loadNovelCatOptions() {
+    if (novelCatOptionsLoaded) return;
+    novelCatOptionsLoaded = true;
+    try {
+      var cats = await api('GET', '/api/categories');
+      var sel = $('#adm-novel-cat');
+      if (!sel || !cats || !cats.length) return;
+      var cur = novelsCat;
+      sel.innerHTML = '<option value="">全部分类</option>' + cats.map(function (c) {
+        return '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.name) + '（' + escapeHtml(c.novelCount || 0) + '）</option>';
+      }).join('');
+      if (cur) sel.value = cur;
+    } catch (e) { /* 静默：筛选下拉缺失不影响列表 */ }
   }
 
   function initNovels() {
@@ -677,6 +716,19 @@
     });
     $('#adm-novel-prev').addEventListener('click', function () { if (novelsPage > 1) { novelsPage--; refreshNovels(); } });
     $('#adm-novel-next').addEventListener('click', function () { if (novelsPage < novelsTotalPages) { novelsPage++; refreshNovels(); } });
+    // R111: 页码跳转（Enter 或失焦触发）
+    var jumpGo = function () {
+      var n = Math.floor(Number($('#adm-novel-jump').value) || 0);
+      if (n >= 1 && n <= novelsTotalPages && n !== novelsPage) { novelsPage = n; refreshNovels(); }
+      $('#adm-novel-jump').value = '';
+    };
+    $('#adm-novel-jump').addEventListener('keydown', function (e) { if (e.key === 'Enter') jumpGo(); });
+    $('#adm-novel-jump').addEventListener('blur', jumpGo);
+    // R111: 筛选/排序/每页条数——变更即重查回第一页
+    $('#adm-novel-cat').addEventListener('change', function () { novelsCat = this.value; novelsPage = 1; refreshNovels(); });
+    $('#adm-novel-status').addEventListener('change', function () { novelsStatus = this.value; novelsPage = 1; refreshNovels(); });
+    $('#adm-novel-sort').addEventListener('change', function () { novelsSort = this.value; novelsPage = 1; refreshNovels(); });
+    $('#adm-novel-pagesize').addEventListener('change', function () { novelsPageSize = Number(this.value) || 20; novelsPage = 1; refreshNovels(); });
     // Task 30 主线：书籍编辑/章节管理弹层（Task 36-b: 保存按钮防连点）
     var novelSaveBtn = $('#adm-novel-edit-save');
     novelSaveBtn.addEventListener('click', withBusy(novelSaveBtn, saveNovelEdit));
