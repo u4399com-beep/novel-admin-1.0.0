@@ -4602,3 +4602,29 @@ Stage Summary:
 - 「正文采集全部失败」根因链完整闭环：站点对部分书目第 1 页做 TLS 指纹门控（Go 原生栈全灭、Chrome JA3 放行）× 引擎挑战跟随跨路径弹回仍判成功 × 填充顺序新书垫底——三因叠加
 - 修复后：内容简介章 0 失败（挑战页自动回退 curl-impersonate），新书优先出正文（零填充书先填+小书先完结），阅读页可读性立现
 - 附带收获：deploy-backend.sh 假部署 bug 根修；engine 侧「挑战跟随落地偏离」为通用反反爬能力（所有站点/所有 handler 受益）
+---
+Task ID: R108
+Agent: Z.ai Code（主代理）
+Task: ①继续探索章节内容采集速度提升策略方案（R107 后续）②继续未完成事项（admin 书籍分页/序号排序缺口/git 推送）
+
+Work Log:
+- 【沙箱重置自愈】db/ 目录与 Go SDK 全丢、三服务死：重装 Go 1.22.12（/home/z/go-sdk/go）、重建 DB（seed 播种 20 规则）、拉起 backend/scraper/watchdog；stealth 依赖恢复（venv pip 装 cloakbrowser 0.6.1 + iv8 0.1.4，cloak/iv8 全能力 true）。业务数据（949 本）确认无备份随沙箱丢失，fleet 自动重建（8 分钟 422 本，1 小时 819 本）
+- 【实测基线】90s 采样首测 0 章（采样口径错误：正文在 ChapterContent 垂直表非 Chapter.content）→ 修正口径后 6234 章/h（15 running、7 域并行）；单域 2.5-6.4s/章 vs 理论 1.35s；hosthealth 仅 2 域 AIMD 抬升
+- 【瓶颈定位】域槽时间数学：有效间隔=base 1.2s + politenessExtra(0..300，持续负载恒顶 +300) + jitter ±300 → 持续均值 1.5s=2400/h 天花板；AIMD 只升不降致干净域永享不到低间隔
+- 【提速①politenessExtra 调优】默认 300→150ms（持续均值 1.5→1.35s，+11%；±300ms 双向抖动继续承担防指纹；SCRAPER_POLITENESS_EXTRA_CAP_MS 可回旧口径）
+- 【提速②AIMD 对称下探通道】hostSlot 新增 dipMs：干净成功逐拍 +25ms 加深（上限 SCRAPER_DIP_MAX_MS 默认 100），间隔=max(base-dip, aimd, 1000)；任何 429/503/Retry-After 立即归零弹回；AIMD 退避态两曲线互斥；空闲 5min 复位；SCRAPER_AIMD_DIP_OFF=1 停用。合规：effInterval 1000ms 硬红线钳制不变
+- 【提速③P2-1 代理 per-IP 分桶（默认关 env opt-in）】SCRAPE_PROXY_BUCKET_HOSTS="host:N"（默认 4 钳 2..8）：slotKeyFor 桶身份=出口 host:port（url.Parse，凭据换血不换桶）；pickProxy 分桶主机出口子集钉扎（健康出口稳定排序取前 N，源站总 QPS 上界可控）；六个取槽点（链层/策略层×3/跳转层/侧车层）全部改经 slotKeyFor；AIMD/熔断按(主机×出口)槽键记账。ensure-services 对 trxsw/77shuku 启用 ×3（两规则已证实直连不健康靠代理池出口）
+- 【提速④侧车 networkidle 自适应】CloakPool 记 pages_served：首页 8s（挑战页保体验）→ 会话热后 2.5s（章节正文页 DOMContentLoaded 即含正文，白等网络空闲是 2.4s/章的主要尾巴）；失败页不推进计数（served_ok flag）
+- 【admin 书籍分页修复】根因：init() 只绑事件不拉数据 → 书籍表永远停在 SSR 前 50 本、页码恒 1/1。修复：init 首拉 refreshNovels + loadNovelCatOptions（与 R111 switchTab 懒载合流：置位 novelsLoaded 防二次拉取）。实测 1/45 页翻页双向正常
+- 【序号排序缺口②闭合】reorderRefPairs 统一卷感知：detectVolume 就地派生卷位+剥卷前缀（与 storeChapter 落库口径一致，纯卷行标题不动）+ parseChapterNoAnywhere 中段序号兜底（「第一卷 起步 第3章」形态，锚定解析不命中）→ 卷可分走 volumeSegmentReorder；卷不可分退化路径与旧版逐字节一致（Impl/fixLeadingDescendingBlock）。测试 TestReorderRefPairsVolumePrefixed（分卷书卷内倒序修复+卷序保持+URL 配对）
+- 【序号排序缺口③闭合】autoResortBooks 收尾体检钩子：worker.go 五个收尾点接线（stopped/bookFailBreaker/正常×runList/runSingle 全覆盖）——逐本 resortOneBook（骨架分片锁+两阶段改号+TXT 同步，阈值双保险幂等），AUTO_RESORT_OFF 可停、单任务上界 100 本、仅日志不阻断。测试 TestAutoResortBooksHook（倒序书自动重排+幂等零写入+去重+不存在书静默）
+- 【测试】scraper-go r108_test.go 五测（槽键形态/凭据脱敏/分桶钳制/dip 状态机/CAS 并发）+ concurrency_test 表更新（R108 默认 150 + R99 口 300 回归保留）；全量回归唯一 FAIL=SSRF 127.0.0.1 基线环境性（R107 已实证）；-race 通过
+- 【git 并行冲突合流】远端有并行代理 R110（三层架构强化/cloak cookie 桥）/R111（stealth 泄漏根修/优先填充/cookie jar 持久化/AIMD 100ms/admin 分页懒载）/R112（aijjxs 根修）：rebase 五处冲突（双 bin 重建、httpguard/strategy_sidecar 取 origin 版+重放 slotKeyFor、server.py 双 flag 合流）；语义合流确认：aimdDecayStepMS 保留 R111 的 100ms、admin.js R108 首拉+R111 懒载双机制合流（置位防重）、autoResortBooks 与 R112 零填充优先共存；合流后双包全量测试+vet 全绿重建部署
+- 【生产实证】三服务合并版部署：重启后 28s 舰队自愈 13 running；吞吐实测：基线 6234 → 峰值 9590 章/h（+54%），novel 755/821 单域稳定 3870/h（1.05s/章，突破旧 2400-3000 天花板——下探+extra 调优生效）；Agent Browser 终验 admin 1/48 分页、首页 108 书链、章节正文渲染、零 console 错误
+- commit 7d2e261 推送 GitHub（含并行 R110/R111/R112 合流）
+
+Stage Summary:
+- 章节采集提速四件套落地：politenessExtra 150ms + AIMD 对称下探（默认开，可 env 停）+ 代理 per-IP 分桶（默认关，env 逐主机 opt-in）+ 侧车 networkidle 自适应；实测全站 6234→9590 章/h（+54%），干净域单域突破旧天花板 25%+
+- admin 书籍管理全量可达（R108 首拉 × R111 懒载合流）；序号排序三缺口闭合（采集路径卷感知统一 + 任务收尾自动体检），乱序书从「手动发现手动修」变「入库即修+收尾兜底」
+- 沙箱重置应对：环境自愈流程进一步固化（Go/DB/stealth 依赖三件套）；无备份采集数据确认会随沙箱丢失（fleet 全自动重建兜底）
+- 遗留移交：P2-1 分桶当前仅 2 域启用（可按证据扩表）；dip 深度 100ms 保守（可依 429 占比观测调至 150）；代理池健康度收割持续在跑（300 活 0 死）
