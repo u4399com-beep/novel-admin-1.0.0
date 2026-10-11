@@ -1035,12 +1035,42 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 }
         }
 
-        // TS Map 迭代=插入序（Phase 1 并发完成序）；Go map 无序 → 按 novelId 升序确定性处理
+        // TS Map 迭代=插入序（Phase 1 并发完成序）；Go map 无序 → 确定性排序处理。
+        // R112 填充顺序 UX 优化（aijjxs 实证：51 本按 novelId 升序把新扫描的 21 本全排在
+        // 队尾，用户数小时看不到任何一本新书出正文，体感=「正文采集全部失败」）：
+        // ①零填充书优先（刚扫描入库的书立即出进度）②同类内待填充少者优先（小书先完结，
+        // 尽快让更多本可读）③同级按 novelId 升序保持确定性。
         ids := make([]int, 0, len(fillMap))
         for id := range fillMap {
                 ids = append(ids, id)
         }
-        sort.Ints(ids)
+        filledCnt := map[int]int{}
+        if len(ids) > 0 {
+                q := "SELECT novelId, COUNT(*) FROM Chapter WHERE novelId IN (" + sqlPlaceholders(len(ids)) + ") AND wordCount > 0 GROUP BY novelId"
+                args := make([]any, 0, len(ids))
+                for _, id := range ids {
+                        args = append(args, id)
+                }
+                _ = queryList(q, func(rows *sql.Rows) error {
+                        var nid, c int
+                        if err := rows.Scan(&nid, &c); err != nil {
+                                return err
+                        }
+                        filledCnt[nid] = c
+                        return nil
+                }, args...) // 查询失败 → 全 0 → 退化为「待填充少者优先」，行为仍确定
+        }
+        sort.SliceStable(ids, func(i, j int) bool {
+                fi, fj := filledCnt[ids[i]] > 0, filledCnt[ids[j]] > 0
+                if fi != fj {
+                        return !fi // 零填充书在前
+                }
+                pi, pj := len(fillMap[ids[i]].Rows), len(fillMap[ids[j]].Rows)
+                if pi != pj {
+                        return pi < pj // 待填充少者先完结
+                }
+                return ids[i] < ids[j]
+        })
 
         var failSampleLogged atomic.Int64 // Task 31: phase2 失败原因采样（前 6 条进任务日志，ixdzs8 排障实证：无失败明细无法区分限流空壳/挑战失败/选择器失效）
         // Task 34: 失败形态统计（仅失败章计数，成功不计）——采样只有前 6 条看不到全貌，

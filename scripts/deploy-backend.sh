@@ -7,12 +7,15 @@ export GOPATH=/home/z/go
 cd /home/z/my-project/mini-services/backend-go || exit 9
 go build -o backend-go.bin.new . || { echo "build failed"; exit 9; }
 
-pkill -f 'backend-go[.]bin' 2>/dev/null
+# R112: 兼容两种进程形态——CWD 启动（./backend-go.bin）与 bin/ 路径启动
+# （bin/backend-go 无点号，旧模式 backend-go[.]bin 永不匹配 → 旧进程苟活、
+#  新进程 bind: address already in use 静默死亡，部署假成功）。R112 aijjxs 实证。
+pkill -f 'backend-go[.]bin|/bin/backend-go' 2>/dev/null
 for i in $(seq 1 10); do
-  pgrep -f 'backend-go[.]bin' >/dev/null || break
+  pgrep -f 'backend-go[.]bin|/bin/backend-go' >/dev/null || break
   sleep 0.5
 done
-pgrep -f 'backend-go[.]bin' >/dev/null && pkill -9 -f 'backend-go[.]bin' && sleep 1
+pgrep -f 'backend-go[.]bin|/bin/backend-go' >/dev/null && pkill -9 -f 'backend-go[.]bin|/bin/backend-go' && sleep 1
 
 cp backend-go.bin.new backend-go.bin || { echo "cp failed (text-file-busy?)"; exit 9; }
 rm -f backend-go.bin.new

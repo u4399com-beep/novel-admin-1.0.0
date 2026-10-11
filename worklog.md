@@ -4580,3 +4580,25 @@ Stage Summary:
 - 阅读优先填充上线：读者访问书籍页即自动优先补该书缺失章节（sourceUrl 回填随 fleet 重扫逐步覆盖存量 949+ 本）。
 - 并发语义确认无排队（任务0 达成），书籍管理支持全量 1500+ 本管理（任务1 达成），AIMD/会话/池三线提速（任务2 落地）。
 - 遗留：23qb/ddyueshu/min-yuan/pilishuwu 等站当前出口不可达（外部因素，熔断自愈机制正常运转）；agent-browser 提示 admin sticky header 偶尔遮挡翻页按钮（次要 UX）。
+
+---
+Task ID: R112
+Agent: Z.ai Code (main)
+Task: aijjxs.com 书目 21 本入库但正文采集全部失败——根因排查与修复（含引擎策略链与后端填充编排）
+
+Work Log:
+- 摸底：51 本 aijjxs 书 24632 章，仅 1460 填充；任务 #1 日志实证 Phase1 目录扫描全部成功（骨架 21 本齐全），Phase2 每本书开头的「内容简介」章稳定失败（「200 空壳」误判）→ 车道控制被砍 4→2 且冻结回升；填充按 novelId 升序把最新 21 本全排在队尾（用户体感=全部失败，实为排队+慢）
+- 引擎复现：/read/11/57629/1.html（部分书目第 1 页）对 fetch-browser/ua-rotate/mobile/spider 稳定下发 JS token 挑战壳，壳内 location 跨路径弹回书籍页；引擎跟随后把书籍页当 200 成功返回（提取正文为空→「200 空壳」），策略链不再回退；同 URL 显式 curl-impersonate 一次成功（Chrome JA3 免疫该门控）；书页预热/会话 cookie（jar 无 aijjxs 条目）均排除
+- 【引擎修复 ①】httpguard.go：新增 jsFollowFrom 跟踪 + jsLandingDiverged（host/path 比较，query/hash 忽略——同址 token 回放不受影响）+ 末跳返回前弹回判定：落地偏离原路径 → ok=false note=challenge-landing + 弹回警告同步进 warnings 切片（cookie 已逐跳记录不丢）
+- 【引擎修复 ②】strategies.go makeFetchStrategy：fetch 系策略原以 assess() 的 a.ok 判成功（无视守卫层 r.ok=false，修复会被中和）→ 增加 bounceFail=r.note=="challenge-landing" 强制失败，subAttempt/success 分支双处生效；got-scraping/fetchcurl 无 JS 跟随路径不受影响
+- 【后端修复 ③】worker.go phase2Fill 填充顺序重排：旧版 sort.Ints(ids)（novelId 升序，新书垫底）→ ①零填充书优先（新扫描书立即出进度）②同类内待填充少者优先（小书先完结，更多本尽快可读）③同级 novelId 升序确定性；filledCnt 经单条 GROUP BY 查询（查询失败退化为 pending 升序，行为仍确定）
+- 【部署脚本修复 ④】deploy-backend.sh：pkill 模式 'backend-go[.]bin' 匹配不了 'bin/backend-go' 进程路径（无点号）→ 旧进程苟活、新进程 bind: address already in use 静默死亡、部署假成功（R112 当场踩中实证）；模式扩为 'backend-go[.]bin|/bin/backend-go'
+- 证伪一项：规则 #10 catalogLinkSelector「笔误」经码点复核系误读（实为 a[href^="/read/"]，DB 与 seed 均正常），未做无谓修改
+- 测试：新增 audit_r112_test.go（跨路径弹回判失败+警告语义 / 同址 token 回放防误伤 / jsLandingDiverged 表驱动 7 例）+ worker_fillorder_test.go（三书断言引擎请求首现序 302→303→301）；scraper-go 全量 45.9s ok、backend-go 全量 55.8s ok、go vet 双绿
+- 生产验证：部署后 57629/1.html 链路 fetch 系全弹回判失败→curl-impersonate 成功出正文；重启后任务 #1 自动归队，Phase2 新顺序生效——#177《和霸总闪婚后》29/29（含内容简介）91 秒完成、#245《营业不要真亲》53/53 完成，均 0 失败；此后零「失败采样」、零软拦截降档；/chapter/347028 阅读页渲染真实正文与库一致
+- 观测留档：单 host 填充吞吐现约 20 章/分钟（车道冻结于 4 的 EWMA 把「12 车道排队等待」误读为拥堵，属已知次优语义，深度调优留待下轮）；229 短标题孤儿骨架（历史坏扫描产物，无目录行可匹配，永不填充）已在目视中记录，待目录体检工具统一去重
+
+Stage Summary:
+- 「正文采集全部失败」根因链完整闭环：站点对部分书目第 1 页做 TLS 指纹门控（Go 原生栈全灭、Chrome JA3 放行）× 引擎挑战跟随跨路径弹回仍判成功 × 填充顺序新书垫底——三因叠加
+- 修复后：内容简介章 0 失败（挑战页自动回退 curl-impersonate），新书优先出正文（零填充书先填+小书先完结），阅读页可读性立现
+- 附带收获：deploy-backend.sh 假部署 bug 根修；engine 侧「挑战跟随落地偏离」为通用反反爬能力（所有站点/所有 handler 受益）

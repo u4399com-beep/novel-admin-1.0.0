@@ -111,12 +111,16 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 				hdrs := profile.headers(targetURL, profile.withReferer, ctx.referer)
 				r := fetchWithRedirectGuard(targetURL, hdrs, remaining, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
 				a := assess(r.status, r.bytes, r.contentType, r.serverChallenge)
+				// R112: 守卫层判定的 JS 挑战弹回（challenge-landing）优先于 assess——
+				// 落地页是 200+正常页外观的入口页/书籍页（aijjxs 实证），必须按失败
+				// 处理，链层才能回退到 curl-impersonate 等指纹差异策略
+				bounceFail := r.note == "challenge-landing"
 				ms := nowMs() - s0
 				note := r.note
 				if note == "" {
 					note = a.note
 				}
-				subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: a.ok, Status: r.status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: note})
+				subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: a.ok && !bounceFail, Status: r.status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: note})
 				if r.warning != "" || a.warning != "" {
 					w := r.warning
 					if w == "" {
@@ -130,7 +134,7 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
 					lastLimitedStatus = r.status
 					lastLimitedRetryAfter = r.retryAfter
 				}
-				if a.ok {
+				if a.ok && !bounceFail {
 					return attemptResult{ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r.retryAfter}
 				}
 				last = &attemptResult{ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, note: note, subAttempts: subAttempts, retryAfter: r.retryAfter}
