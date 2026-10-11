@@ -646,6 +646,7 @@
       '<button type="button" class="adm-btn-xs" data-act="novel-edit" data-id="' + escapeHtml(n.id) + '">编辑</button> ' +
       '<button type="button" class="adm-btn-xs" data-act="novel-chapters" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">章节</button> ' +
       '<button type="button" class="adm-btn-xs" data-act="novel-chtools" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">章节工具</button> ' +
+      '<button type="button" class="adm-btn-xs" data-act="novel-export-txt" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">导出TXT</button> ' +
       '<button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="' + escapeHtml(n.id) + '" data-title="' + escapeHtml(n.title) + '">删除</button></td></tr>';
   }
 
@@ -710,6 +711,28 @@
           refreshNovels();
         } else {
           toast('智能补全失败：' + ((res && res.error) || '未知错误'), 'err');
+        }
+      } catch (e) { handleErr(e); }
+      finally { btn.disabled = false; }
+    });
+    // R108: 全库目录乱序体检——GET 审计（不写库）→ 有候选时确认 → POST 卷感知重排
+    // （与任务终态自动体检 autoResortNovels 同源语义：resortOneBook 阈值 DISORDER_RATIO）
+    $('#adm-novel-resort').addEventListener('click', async function () {
+      var btn = this;
+      btn.disabled = true;
+      try {
+        var rep = await api('GET', '/api/novels/resort-chapters');
+        var cands = (rep && rep.candidates) || [];
+        if (!cands.length) { toast('目录体检通过：' + ((rep && rep.books) || 0) + ' 本全部有序，无需重排', 'ok'); return; }
+        var top = cands.slice(0, 5).map(function (c) {
+          return '#' + c.id + '《' + (c.title || '').slice(0, 18) + '》' + c.chapters + '章 乱序' + Math.round((c.disorder || 0) * 100) + '%';
+        }).join('；');
+        if (!confirm('目录体检：' + ((rep && rep.books) || 0) + ' 本中 ' + cands.length + ' 本乱序超阈值。\n\n最严重：' + top + '\n\n将对这 ' + cands.length + ' 本执行卷感知重排（只调章节顺序不动内容，两阶段事务）。是否执行？')) return;
+        var res = await api('POST', '/api/novels/resort-chapters', {});
+        if (res && typeof res.reordered === 'number') {
+          toast('目录重排完成：' + res.reordered + '/' + res.scanned + ' 本已重排' + (res.activeTasks ? ('（在途任务 ' + res.activeTasks + ' 个，重排与其并发安全）') : ''), 'ok');
+        } else {
+          toast('目录重排失败：' + ((res && res.error) || '未知错误'), 'err');
         }
       } catch (e) { handleErr(e); }
       finally { btn.disabled = false; }
@@ -1770,6 +1793,13 @@
         switchTab('chapters');
         $('#adm-chtool-novel-id').value = id;
         loadChTools(id);
+      } else if (act === 'novel-export-txt') { // R108: TXT 全书导出接 UI（api_export.go 原有通道）
+        btn.disabled = true;
+        try {
+          var ex = await api('POST', '/api/novels/' + id + '/export-txt');
+          toast('《' + (btn.dataset.title || '') + '》导出完成：' + ex.chapters + ' 章（正文 ' + ex.filled + ' 章，' + Math.round((ex.bytes || 0) / 1024) + ' KB）→ ' + ex.file, 'ok');
+        } catch (err) { handleErr(err); }
+        finally { btn.disabled = false; }
       } else if (act === 'chapter-edit') {
         openChapterEdit(id);
       } else if (act === 'modal-close') {

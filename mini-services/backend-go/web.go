@@ -70,8 +70,15 @@ func isKnownTheme(t string) bool {
 
 // ---------- 模板函数 ----------
 
+// staticVer 静态资源缓存穿透版本号（R108）：进程启动毫秒时间戳——每次部署/重启自动
+// 变化，模板里 {{staticVer}} 拼到 /static/** 引用后浏览器缓存立即失效，杜绝「发新版
+// 页面仍旧 JS」问题（admin 新按钮不出现即此根因）。同进程内恒定，URL 稳定可复用缓存。
+var staticVer = strconv.FormatInt(nowMillis(), 10)
+
 func webFuncMap() template.FuncMap {
         return template.FuncMap{
+                // staticVer 静态资源版本号（见上）
+                "staticVer": func() string { return staticVer },
                 // wcFmt 字数格式化：12345 → 1.2万字；890 → 890字
                 "wcFmt": func(v any) string {
                         n := toInt64(v)

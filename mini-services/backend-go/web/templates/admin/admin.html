@@ -9,9 +9,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>站点管理后台 | {{.Site.siteName}}</title>
-<link rel="stylesheet" href="/static/css/tw.css">
-<link rel="stylesheet" href="/static/css/admin.css">
-<script src="/static/js/admin.js" defer></script>
+<link rel="stylesheet" href="/static/css/tw.css?v={{staticVer}}">
+<link rel="stylesheet" href="/static/css/admin.css?v={{staticVer}}">
+<script src="/static/js/admin.js?v={{staticVer}}" defer></script>
 </head>
 <body class="adm-body min-h-screen bg-neutral-100 text-[13px] leading-normal text-neutral-800">
 <header class="sticky top-0 z-40 bg-neutral-900 text-white shadow">
@@ -275,6 +275,8 @@
         <button type="button" id="adm-novel-search" class="adm-btn adm-btn-primary">搜索</button>
         <!-- Task 33: 全库智能补全（空简介/占位作者/其他分类滞留/智能完结 一键体检+修复） -->
         <button type="button" id="adm-novel-smartfill" class="adm-btn">智能补全</button>
+        <!-- R108: 全库目录乱序体检+重排（GET 审计 → 确认后 POST 卷感知重排，与任务终态自动体检同源） -->
+        <button type="button" id="adm-novel-resort" class="adm-btn">目录体检</button>
       </div>
       <div class="adm-table-wrap">
         <table class="adm-table">
@@ -291,6 +293,8 @@
               <td class="text-right whitespace-nowrap">
                 <button type="button" class="adm-btn-xs" data-act="novel-edit" data-id="{{.id}}">编辑</button>
                 <button type="button" class="adm-btn-xs" data-act="novel-chapters" data-id="{{.id}}" data-title="{{.title}}">章节</button>
+                <button type="button" class="adm-btn-xs" data-act="novel-chtools" data-id="{{.id}}" data-title="{{.title}}">章节工具</button>
+                <button type="button" class="adm-btn-xs" data-act="novel-export-txt" data-id="{{.id}}" data-title="{{.title}}">导出TXT</button>
                 <button type="button" class="adm-btn-xs adm-danger" data-act="novel-del" data-id="{{.id}}" data-title="{{.title}}">删除</button>
               </td>
             </tr>{{else}}<tr><td colspan="8" class="adm-empty">暂无书籍</td></tr>{{end}}
@@ -656,6 +660,7 @@
     </div>
   </div>
 </div>
+<<<<<<< HEAD
 <!-- 镜像检测结果弹层（P3-2 镜像验证工具） -->
 <div id="adm-modal-mirror" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
   <div class="adm-card flex max-h-[80vh] w-full max-w-xl flex-col">
@@ -670,6 +675,9 @@
   </div>
 </div>
 <script src="/static/js/admin-fleet.js" defer></script>
+=======
+<script src="/static/js/admin-fleet.js?v={{staticVer}}" defer></script>
+>>>>>>> 7414fd1 (R108: seqNum 三缺口收口（终态自动目录体检+admin体检按钮+TXT导出接UI）+ 静态资源缓存穿透)
 </body></html>
 {{end}}
 

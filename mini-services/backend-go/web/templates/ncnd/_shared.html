@@ -10,8 +10,8 @@
 <title>{{if eq .Path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" .Site.siteName)}}{{if eq $t .pageTitle}}{{$t}} | {{.Site.siteName}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
 {{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
-<link rel="stylesheet" href="/static/css/cover-gradients.css">
-<link rel="stylesheet" href="/static/css/ncnd.css">
+<link rel="stylesheet" href="/static/css/cover-gradients.css?v={{staticVer}}">
+<link rel="stylesheet" href="/static/css/ncnd.css?v={{staticVer}}">
 </head>
 <body class="nc-root">
 {{if ne (printf "%.9s" .Path) "/chapter/"}}
@@ -95,7 +95,7 @@
     <p>{{if .Site.footerText}}{{.Site.footerText}}{{else}}Copyright © {{.Site.siteName}} · 主题版式克隆自 ncnd.net（gelin）{{end}}</p>
   </footer>
 
-<script src="/static/js/app.js" defer></script>
-<script src="/static/js/ncnd.js" defer></script>
+<script src="/static/js/app.js?v={{staticVer}}" defer></script>
+<script src="/static/js/ncnd.js?v={{staticVer}}" defer></script>
 </body>
 </html>{{end}}

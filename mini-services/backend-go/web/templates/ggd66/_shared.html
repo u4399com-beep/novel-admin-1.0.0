@@ -9,8 +9,8 @@
 <title>{{.pageTitle}}</title>
 {{if .pageDescription}}<meta name="description" content="{{.pageDescription}}">{{end}}
 {{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
-<link rel="stylesheet" href="/static/css/tw.css">
-<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<link rel="stylesheet" href="/static/css/tw.css?v={{staticVer}}">
+<link rel="stylesheet" href="/static/css/cover-gradients.css?v={{staticVer}}">
 <style>
 body{font-family:"Microsoft YaHei","微软雅黑",simsun,arial,sans-serif}
 </style>
@@ -77,7 +77,7 @@ body{font-family:"Microsoft YaHei","微软雅黑",simsun,arial,sans-serif}
   <div id="gg-history-list" class="max-h-[50vh] overflow-y-auto text-[13px]"></div>
 </div>
 
-<script src="/static/js/app.js" defer></script>
-<script src="/static/js/ggd66.js" defer></script>
+<script src="/static/js/app.js?v={{staticVer}}" defer></script>
+<script src="/static/js/ggd66.js?v={{staticVer}}" defer></script>
 </body>
 </html>{{end}}

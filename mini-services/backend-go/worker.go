@@ -109,6 +109,11 @@ var (
         MAX_CONSECUTIVE_PAGE_FAILS = 3
         // MAX_CONSECUTIVE_BOOK_FAILS 书页连续失败快速终止阈值（且 0 本成功）
         MAX_CONSECUTIVE_BOOK_FAILS = 5
+        // AUTORESORT_MAX_BOOKS 任务终态后自动目录体检的最大书籍数（R108：防超大 list
+        // 任务终态后体检过久；超限部分由手动全库体检覆盖）
+        AUTORESORT_MAX_BOOKS = envInt("SCRAPE_AUTORESORT_MAX_BOOKS", 300)
+        // AUTORESORT_OFF 自动目录体检停用开关（值 1 停用；默认开启）
+        AUTORESORT_OFF = os.Getenv("SCRAPE_AUTORESORT_OFF") == "1"
 )
 
 // ==================== 进程级防重与僵尸回收 ====================
@@ -1566,6 +1571,58 @@ func recalcWordCountsFor(novelIDs []int) {
         }
 }
 
+// ==================== R108：终态后自动目录体检（seqNum 三缺口收口） ====================
+
+// autoResortNovels 任务终态（success/partial）后对本任务入库书籍逐本乱序体检。
+// 背景（R106 探讨结论）：采集路径 reorderRefPairs 在骨架期无卷信息（旧版语义），
+// 存量候选又依赖手动触发——本钩子让终态书籍自动获得卷感知体检（Chapter.volume
+// 已由 Task 45-b 落库），补齐「无人触发」缺口。
+// 语义与 POST /api/novels/resort-chapters 单书路径完全同源（resortOneBook：阈值
+// DISORDER_RATIO、卷字段分段、两阶段事务、TXT 同步、同书骨架分片锁并发安全——
+// 与在途采集互斥，未超阈值内置 no-op 不写库）。
+// 有界：AUTORESORT_MAX_BOOKS（默认 300）本，超限部分由手动全库体检覆盖；
+// SCRAPE_AUTORESORT_OFF=1 停用。独立 goroutine（finalize 不阻塞）；
+// 体检结果追加进任务日志（任务已终态，无并发写者）。
+func autoResortNovels(run *Run) {
+        defer func() {
+                if r := recover(); r != nil {
+                        run.Log("自动目录体检异常: " + truncateRunes(fmt.Sprintf("%v", r), 120))
+                        _ = writeTaskLog(int64(run.TaskID), run.LogText())
+                }
+        }()
+        if AUTORESORT_OFF || len(run.novelIDs) == 0 {
+                return
+        }
+        ids := run.novelIDs
+        if len(ids) > AUTORESORT_MAX_BOOKS {
+                ids = ids[:AUTORESORT_MAX_BOOKS]
+        }
+        reordered := 0
+        notes := []string{}
+        for _, id := range ids {
+                title, moved, note, found, err := resortOneBook(int64(id), false)
+                if err != nil {
+                        run.Log(fmt.Sprintf("自动目录体检 #%d 失败：%s", id, truncateRunes(firstLineErr(err), 80)))
+                        continue
+                }
+                if !found || moved == 0 {
+                        continue
+                }
+                reordered++
+                if len(notes) < 5 {
+                        seg := ""
+                        if note != "" {
+                                seg = "（" + truncateRunes(note, 40) + "）"
+                        }
+                        notes = append(notes, fmt.Sprintf("#%d《%s》%d 章%s", id, truncateRunes(title, 20), moved, seg))
+                }
+        }
+        if reordered > 0 {
+                run.Log(fmt.Sprintf("━━ 自动目录体检：%d/%d 本乱序已重排（%s）", reordered, len(ids), strings.Join(notes, "；")))
+        }
+        _ = writeTaskLog(int64(run.TaskID), run.LogText())
+}
+
 // ==================== 正文持久化与简介回填（Task 32-b） ====================
 
 // persistChapterFill phase2 单章持久化（垂直分表 + TXT 存储模式统一写序）：
@@ -1944,6 +2001,7 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
         // ---- Phase 1：书目骨架 ----
         run.Log(fmt.Sprintf("━━ 阶段 1/2 书目骨架（并发 %d）", BOOK_CONCURRENCY))
         p1 := phase1Skeletons(run, rule, collected, currentListURL)
+        run.novelIDs = p1.NovelIDs // R108：终态后自动目录体检消费
         if p1.Fatal != nil { // TS：store 层非唯一冲突错误沿 promise 链冒泡 → catch 收尾
                 run.Log("发生未预期错误: " + truncateRunes(p1.Fatal.Error(), 200))
                 finalize(run, "failed", "任务执行异常")
@@ -2058,6 +2116,7 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
         items := []ListItem{{Title: "", URL: task.TargetURL}}
         run.Log(fmt.Sprintf("━━ 阶段 1/2 书目骨架（并发 %d）", BOOK_CONCURRENCY))
         p1 := phase1Skeletons(run, rule, items, "")
+        run.novelIDs = p1.NovelIDs // R108：终态后自动目录体检消费
         if p1.Fatal != nil {
                 run.Log("发生未预期错误: " + truncateRunes(p1.Fatal.Error(), 200))
                 finalize(run, "failed", "任务执行异常")
@@ -2214,6 +2273,11 @@ func finalize(run *Run, status, message string) {
         default:
                 _, _ = execRetry("UPDATE ScrapeTask SET updatedAt = ? WHERE id = ?", nowMillis(), run.TaskID)
                 _ = writeTaskLog(int64(run.TaskID), run.LogText())
+        }
+        // R108：任务真正到达 success/partial 终态（running→终态 或 pending 条件领取）
+        // 才触发自动目录体检；default 分支=任务已被取消/删除，尊重用户意图不触发
+        if (cur == "running" || cur == "pending") && (status == "success" || status == "partial") {
+                go autoResortNovels(run)
         }
 }
 

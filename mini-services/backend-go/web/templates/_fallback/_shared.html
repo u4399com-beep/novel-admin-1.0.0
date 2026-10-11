@@ -10,8 +10,8 @@ Task 28-c: 首页分支原硬编码「{{$sn}} - 免费小说阅读」，改为�
 <title>{{if eq $path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" $sn)}}{{if eq $t .pageTitle}}{{$t}} | {{$sn}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
 <meta name="description" content="{{.pageDescription}}">
 {{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
-<link rel="stylesheet" href="/static/css/tw.css">
-<link rel="stylesheet" href="/static/css/cover-gradients.css">
+<link rel="stylesheet" href="/static/css/tw.css?v={{staticVer}}">
+<link rel="stylesheet" href="/static/css/cover-gradients.css?v={{staticVer}}">
 <style>
 /* Task 28-c: 主体 flex 拉伸使页脚 sticky（短页面页脚不悬空中） */
 .fb-body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#fafafa;color:#262626;margin:0;display:flex;flex-direction:column;min-height:100vh}
@@ -75,6 +75,6 @@ Task 28-c: 首页分支原硬编码「{{$sn}} - 免费小说阅读」，改为�
     <p>{{.Site.notice}}</p>
   </div>
 </footer>
-<script src="/static/js/app.js" defer></script>
+<script src="/static/js/app.js?v={{staticVer}}" defer></script>
 </body>
 </html>{{end}}
