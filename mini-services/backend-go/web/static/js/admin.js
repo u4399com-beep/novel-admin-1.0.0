@@ -737,6 +737,37 @@
       } catch (e) { handleErr(e); }
       finally { btn.disabled = false; }
     });
+    // R113: 孤儿骨架审计+清理——GET 审计（零填充且 0 行=坏扫描产物 / 骨架停滞 24h+=目录
+    // 匹配失败或规则死亡）→ 确认 → POST 逐本复验删除（30min 内有行活动自动跳过防误删在途填充）
+    $('#adm-novel-orphan').addEventListener('click', async function () {
+      var btn = this;
+      btn.disabled = true;
+      try {
+        var rep = await api('GET', '/api/novels/orphan-skeletons');
+        var cands = (rep && rep.candidates) || [];
+        var bk = (rep && rep.buckets) || {};
+        if (!cands.length) {
+          toast('孤儿审计通过：零填充 ' + ((rep && rep.zeroFilled) || 0) + ' 本中无可清理孤儿（填充中 ' + ((rep && rep.active) || 0) + ' 本）', 'ok');
+          return;
+        }
+        var top = cands.slice(0, 5).map(function (c) {
+          return '#' + c.id + '《' + (c.title || '').slice(0, 16) + '》(' + c.bucket + ')';
+        }).join('；');
+        if (!confirm('孤儿骨架审计：零填充 ' + rep.zeroFilled + ' 本，其中可清理 ' + cands.length + ' 本'
+          + '（从未建骨架 ' + (bk.noRows || 0) + ' 本、骨架停滞 ' + (bk.staleSkeleton || 0) + ' 本），填充中 ' + rep.active + ' 本不动。'
+          + '\n\n样例：' + top
+          + '\n\n将删除这些书的全部数据（章节经外键级联、TXT 文件同步清理）。是否执行？')) return;
+        var res = await api('POST', '/api/novels/orphan-skeletons', { ids: cands.map(function (c) { return c.id; }) });
+        if (res && typeof res.deleted === 'number') {
+          var skipped = (res.skipped || []);
+          toast('孤儿清理完成：删除 ' + res.deleted + '/' + res.requested + ' 本' + (skipped.length ? ('，跳过 ' + skipped.length + ' 本（复验时已有内容/在途填充）') : ''), 'ok');
+          refreshNovels();
+        } else {
+          toast('孤儿清理失败：' + ((res && res.error) || '未知错误'), 'err');
+        }
+      } catch (e) { handleErr(e); }
+      finally { btn.disabled = false; }
+    });
     $('#adm-novel-prev').addEventListener('click', function () { if (novelsPage > 1) { novelsPage--; refreshNovels(); } });
     $('#adm-novel-next').addEventListener('click', function () { if (novelsPage < novelsTotalPages) { novelsPage++; refreshNovels(); } });
     // R111: 页码跳转（Enter 或失焦触发）

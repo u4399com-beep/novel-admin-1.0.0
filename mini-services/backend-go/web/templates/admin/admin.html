@@ -277,6 +277,8 @@
         <button type="button" id="adm-novel-smartfill" class="adm-btn">智能补全</button>
         <!-- R108: 全库目录乱序体检+重排（GET 审计 → 确认后 POST 卷感知重排，与任务终态自动体检同源） -->
         <button type="button" id="adm-novel-resort" class="adm-btn">目录体检</button>
+        <!-- R113: 孤儿骨架审计+清理（零填充且无行/停滞 24h+ 的坏扫描产物；GET 审计 → 确认 → POST 逐本复验删除） -->
+        <button type="button" id="adm-novel-orphan" class="adm-btn">孤儿清理</button>
       </div>
       <div class="adm-table-wrap">
         <table class="adm-table">
@@ -301,8 +303,8 @@
           </tbody>
         </table>
       </div>
-      <!-- R111: 全量分页（共 N 本 / 页码跳转 / 上下页）——旧版只显示 SSR 首屏且页码恒「1 / 1」 -->
-      <div class="mt-3 flex flex-wrap items-center justify-end gap-1.5 text-[11px] text-neutral-400">
+      <!-- R111: 全量分页（共 N 本 / 页码跳转 / 上下页）——旧版只显示 SSR 首屏且页码恒「1 / 1」；R113: adm-pager 吸底防顶栏遮挡 -->
+      <div class="adm-pager mt-3 flex flex-wrap items-center justify-end gap-1.5 text-[11px] text-neutral-400">
         <span id="adm-novel-total" class="mr-1"></span>
         <button type="button" id="adm-novel-prev" class="adm-btn-xs">上一页</button>
         <input id="adm-novel-jump" type="number" min="1" class="adm-input w-16 text-center tabular-nums" placeholder="页码">
@@ -660,7 +662,6 @@
     </div>
   </div>
 </div>
-<<<<<<< HEAD
 <!-- 镜像检测结果弹层（P3-2 镜像验证工具） -->
 <div id="adm-modal-mirror" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
   <div class="adm-card flex max-h-[80vh] w-full max-w-xl flex-col">
@@ -674,10 +675,7 @@
     <p class="mt-2 text-[11px] text-neutral-400">ok=结构与内容一致可用；diff=可达但内容疑似不一致（建议剔除）；dead=不可达。假镜像只会烧请求不产出，请及时从规则 mirrorHosts 中移除。</p>
   </div>
 </div>
-<script src="/static/js/admin-fleet.js" defer></script>
-=======
 <script src="/static/js/admin-fleet.js?v={{staticVer}}" defer></script>
->>>>>>> 7414fd1 (R108: seqNum 三缺口收口（终态自动目录体检+admin体检按钮+TXT导出接UI）+ 静态资源缓存穿透)
 </body></html>
 {{end}}
 

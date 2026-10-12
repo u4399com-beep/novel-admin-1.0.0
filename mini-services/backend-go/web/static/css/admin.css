@@ -4,6 +4,9 @@
  */
 
 /* ---------- 布局 ---------- */
+/* R113: 锚点滚动落点补偿——顶栏 sticky（顶栏 h-12 + 标签行 ≈ 80px），scrollIntoView(block:start)
+   原本会把目标卡顶到视口顶端被不透明顶栏盖住首行；scroll-padding 让所有锚点滚动自动落在顶栏下方 */
+html { scroll-padding-top: 88px; }
 .adm-tabs { border-bottom: 1px solid #3f3f46; }
 .adm-tab {
   appearance: none; border: 0; background: transparent; cursor: pointer;
@@ -31,6 +34,15 @@
 .adm-cell-url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adm-cell-note { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #737373; }
 .adm-empty { text-align: center; color: #a3a3a3; padding: 24px 8px !important; }
+
+/* R113: 分页条吸底——书籍管理页滚动时，卡片尾部分页条钉在视口底（白底+上描边），
+   不再被 sticky 顶栏遮挡（此前滚到分页条恰好位于顶栏区域时点击被头部吞掉）；
+   卡片滚出视口后回落自然位置。任务/弹层分页在卡片头部或弹层内，不受此问题影响 */
+.adm-pager {
+  position: sticky; bottom: 0; z-index: 5;
+  background: #fff; border-top: 1px solid #f0f0f0;
+  margin-top: .75rem; padding: 8px 2px;
+}
 
 /* ---------- 徽章 ---------- */
 .adm-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; line-height: 18px; white-space: nowrap; }
