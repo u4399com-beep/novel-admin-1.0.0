@@ -4650,3 +4650,23 @@ Stage Summary:
 - 「确认所有功能存在可用」审计收官：零断链 + 唯一完全死代码已删 + 最有价值的无 UI 通道（TXT 导出）已接 admin
 - 静态资源缓存穿透根治落地：部署即生效机制，今后所有前端更新不再受浏览器缓存劫持
 - 遗留移交：rules #12（23qb）持续不健康待深查；P2-1 分桶仅 2 域启用；dip 深度可依观测调优；R112 后 fleet 新采书籍的 autoResortBooks 收尾体检日志可观测验证
+
+---
+Task ID: R113
+Agent: Z.ai Code (main)
+Task: 继续开发与优化 novel-admin-1.0.0（沙箱重建自愈 + R112 遗留孤儿骨架清理 + R111 遗留 UX 修复 + admin.html 遗留冲突标记修复）
+
+Work Log:
+- 【沙箱重建自愈】db/、Go 工具链、curl-impersonate、三服务全灭，GitHub 凭据随之丢失（push 待用户重配 token）：按手册 15 分钟路径恢复——Go 1.22.12（aliyun 镜像 /home/z/go-sdk/go）→ curl-impersonate 21 二进制（ghfast.top）→ build-go.sh 双产物 → 三服务拉起（backend :3000 / scraper :3030 + trxsw/77shuku 分桶 env / stealth :3031 venv 重建 cloakbrowser 0.6.2+iv8 0.1.4 全能力 true）；fleet 25 分钟自组织重建（0→17 任务→909 本书，14 running / 5 paused 已知被封站）；Next.js 脚手架（沙箱初始态）从 :3000 移除，仓库 package.json shim（bun run dev → dev-go.sh）恢复契约
+- 【admin.html 遗留冲突标记修复（本轮意外发现）】R108-b 合并（91254d7）把未解决 git 冲突块原样提交：<<<<<<< HEAD…=======…>>>>>>> 7414fd1 位于 admin.html 尾部——后果=admin 页渲染垃圾文本（=======/>>>>>>> 7414fd1… 可见）+ admin-fleet.js 双重加载（版本化+非版本化各一次，事件重复绑定风险）；正确解析=保留 HEAD 侧镜像检测弹层（P3-2 镜像验证工具，POST /api/scrape-rules/mirror-check 路由与 admin.js 接线俱在）+ 收敛为单条版本化 script；浏览器复验 fleetScriptCount=1、rendered DOM 无 >>>>>>> 
+- 【孤儿骨架审计+清理（R112 遗留移交落地）】新增 orphanskeleton.go：GET /api/novels/orphan-skeletons?minAgeHours=24 只读审计——零填充书三分桶（no-rows=零行坏扫描产物 / stale-skeleton=骨架停滞 24h+（正常舰队分钟级触达零填充书，停滞即目录匹配失败/规则死亡等不可自愈形态）/ active=24h 内有骨架行写入在途填充仅计数）；minAgeHours 书龄下限钳 1..8760 防「刚入库未轮到填充」误报（zeroFilled 口径=全集，分桶时才应用书龄——首版 WHERE 过滤被测试抓出口径矛盾后修正）；POST 逐本复验删除（has-content/fill-in-flight(30min 行活动保护窗) 双护栏 + FK 级联 + removeNovelTxtAll 磁盘清理，与单书删除同源；上限 500/批、去重升序幂等）；admin 书籍工具栏「孤儿清理」按钮（智能补全/目录体检同族交互：审计→confirm 分桶明细+样例→POST→toast→refreshNovels）
+- 【测试】orphanskeleton_test.go 双测：分桶断言（no-rows/stale/active/有填充排除/书龄下限保护五书场景）+ 复验护栏断言（fill-in-flight/has-content/级联删行/幂等二次全 skip）+ 守护栏（空/非法 ids 400、minAgeHours 越界回落）；backend-go 全量 53.8s ok、go vet 净
+- 【R111 遗留 UX 修复：sticky 顶栏遮挡】双修：①书籍分页条 adm-pager 吸底（position:sticky bottom:0 白底上描边，卡片滚动期恒钉视口底，不再被 ~80px sticky 顶栏吞点击；任务/弹层分页在卡片头部或弹层内不受影响）②html scroll-padding-top:88px——规则表单 scrollIntoView(block:start) 原把表单卡顶到视口顶端钻入顶栏之下，现自动落在顶栏下方（浏览器实测 cardTop=88）
+- 【生产实证】合成孤儿端到端：插入 48h 龂零行书 → 审计命中 no-rows → POST deleted=1 → GET 404；浏览器全链验证：孤儿按钮 toast「孤儿审计通过：零填充 825 本中无可清理孤儿（填充中 806 本）」（健康态正确答案）、分页翻页 1/45→2/45、吸底条滚动可见不进顶栏区、规则表单落点 88px、前台 home/book/chapter SSR 全 200
+- 【回归】node --check admin.js 过、模板 go build 吸收、build-go.sh 双产物部署、三服务健康、fleet 增长未中断
+
+Stage Summary:
+- R112 遗留「孤儿骨架统一去重」工具落地：审计（三分桶+书龄下限）与清理（双护栏复验+级联+TXT 清理）成对上线，admin 一键可达；坏扫描产物从「手工 SQL 清理」变「审计→确认→护栏删除」
+- R108-b 遗留冲突标记根修（镜像弹层保留+单次加载），admin 页尾部垃圾文本消除
+- R111 遗留 sticky 顶栏遮挡双修（分页吸底+scroll-padding），agent-browser 实测全过
+- 待办移交：①git push 待用户重配 GitHub token（沙箱重置清空凭据，commit a6ebb17 本地就绪）②23qb 规则深查（多轮均黑洞）③dip 深度可依 429 观测调至 150ms
