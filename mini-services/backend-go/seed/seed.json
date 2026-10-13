@@ -31,14 +31,14 @@
       "id": 12,
       "name": "23qb",
       "siteUrl": "https://www.23qb.net/",
-      "enabled": true,
+      "enabled": false,
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
       "listRule": "{\"itemSelector\":\".module-item\",\"titleSelector\":\"a.module-item-title\",\"linkSelector\":\"a.module-item-title\",\"authorSelector\":\".module-item-text\"}",
       "bookRule": "{\"titleSelector\": \"h1.page-title\", \"authorSelector\": \"span.novel-tag-icon:contains(作者：)\", \"descriptionSelector\": \".novel-info-content\", \"coverSelector\": \".novel-cover img@data-src\", \"statusSelector\": \"a.tag-link[href=\\\"javascript:;\\\"]\", \"chapterLinkSelector\": \"a.module-row-text\", \"catalogLinkSelector\": \"a[href$=\\\"/catalog\\\"]\", \"categorySelector\": \"a.tag-link[href*=\\\"/book/\\\"] span\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
       "chapterRule": "{\"titleSelector\":\"h1.article-title\",\"contentSelector\":\".article-content\"}",
-      "notes": "2026-09 实测：fetch-browser 直连。module 系新模板：列表页 /book/lastupdate_0_0_0_0_0_0_0_1_0.html 30条/页；书页仅最新9章，catalogLinkSelector 命中「完整目录」/book/{id}/catalog（768条，含正文卷标题行）。章节页 h1.article-title + .article-content，单页无分页。作者 span.novel-tag-icon:contains(作者：) 引擎剥前缀；status 走 og:novel:status 兜底。封面 img@data-src（懒加载）。【28-a 校准】书页 tag-link 选择器含笔误（tag-linka，站点实际 class=tag-link）→ 修正 statusSelector/categorySelector；实测 og:novel:category 为空串，修正后分类走 a.tag-link[href*=\"/book/\"] span（言情小说等）直达，status 直达 a.tag-link[href=\"javascript:;\"]（og:novel:status=连载 为兜底）。"
+      "notes": "2026-09 实测：fetch-browser 直连。module 系新模板：列表页 /book/lastupdate_0_0_0_0_0_0_0_1_0.html 30条/页；书页仅最新9章，catalogLinkSelector 命中「完整目录」/book/{id}/catalog（768条，含正文卷标题行）。章节页 h1.article-title + .article-content，单页无分页。作者 span.novel-tag-icon:contains(作者：) 引擎剥前缀；status 走 og:novel:status 兜底。封面 img@data-src（懒加载）。【28-a 校准】书页 tag-link 选择器含笔误（tag-linka，站点实际 class=tag-link）→ 修正 statusSelector/categorySelector；实测 og:novel:category 为空串，修正后分类走 a.tag-link[href*=\"/book/\"] span（言情小说等）直达，status 直达 a.tag-link[href=\"javascript:;\"]（og:novel:status=连载 为兜底）。【R114 定性】主域 www.23qb.net 全球性死亡（直连+池内代理全 000 TCP 黑洞）；镜像 www.23qb.com 为 Cloudflare 硬墙（cf-mitigated: challenge，cloak/iv8/代理均过不去）。多轮黑洞根因=域名死亡而非规则缺陷。按 kelexs 先例 enabled=false 防 fleet 空烧；选择器全部保留，域名复活或拿到 cf_clearance（填 cookies 字段）后可一键重开。"
     },
     {
       "id": 13,

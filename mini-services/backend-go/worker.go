@@ -879,11 +879,14 @@ func laneFloorStore(taskID, limit int) {
 // laneRestoreEvery 连续成功多少章回开一档（+2 车道）；软起步日志与 bumpLaneOnSuccess 共用
 const laneRestoreEvery = int64(24)
 
-// laneQueueFreezeEWMA R99 饱和感知回升冻结阈值（ms）：章节引擎耗时 EWMA（含域槽排队）
-// 超过它即判定域槽队列在积压，冻结车道回升。定标依据：域槽零排队时单章引擎耗时
-// ≈1.2-3s（礼貌间隔 + 网络服务时间），越界即过订阅。12 车道对 0.5 req/s 的域槽供给
-// 纯过订阅（实测车道排队 8-17s → 引擎预算闸快速失败 → 车道控制误判限流骤降 →
-// 连捷回升再打满，boom-bust 震荡空转），冻结回升让供需自然收敛到最小稳定车道数。
+// laneQueueFreezeEWMA R99 饱和感知回升冻结阈值（ms），R114 起采样口径改为「章节引擎
+// 服务耗时」（总耗时−域槽排队，ServiceElapsedMs）EWMA 超过它即判定站点服务真慢，
+// 冻结车道回升。定标依据：健康站点单章服务耗时 ≈0.2-2s（网络服务时间+提取），越界即
+// 站点真慢。历史教训两阶段：R99 立项时 12 车道对 0.5 req/s 的域槽供给纯过订阅（车道
+// 排队 8-17s → 引擎预算闸快速失败 → 车道误判限流骤降 → 连捷回升再打满，boom-bust），
+// Task 35-b 预算闸修复失败面后，R112 实证旧「总耗时含排队」口径仍会把车道自排队误读为
+// 拥堵（N 车道纯排队 N×1.35s 恒超阈 → 车道锁死 4 不回升）——R114 排队逐层埋点剔除后，
+// 本阈值回归其本意「站点服务真慢才冻结」；流水线化排队深但预算闸未 shed = 供需健康。
 const laneQueueFreezeEWMA = int64(3500)
 
 // retryCooldownBase P3-1 失败章回收重试的冷却基长（轮前与轮间一致；测试可直接改写缩短）。
@@ -973,6 +976,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
         // R99: 引擎耗时 EWMA（α=1/4，ms）与回升冻结日志闸——见 laneQueueFreezeEWMA 注释
         var laneQueueEwma atomic.Int64
         var laneFreezeLogged atomic.Int64
+        var laneFrozenState atomic.Bool // R114: 冻结状态沿（解冻沿日志用，见 bumpLaneOnSuccess）
 
         isRateLimitErr := func(err string) bool {
                 return isRateLimitErrText(err)
@@ -999,14 +1003,23 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                 }
         }
         bumpLaneOnSuccess := func() {
-                // R99: 饱和感知冻结——EWMA 超阈说明排队在积压，回升只会加深过订阅；清空连捷
-                // 计数重新观察（失败骤降路径 shrinkLanes 仍生效，两者合围消灭 boom-bust 震荡）
+                // R99: 饱和感知冻结——EWMA 超阈说明站点服务真慢（R114 起口径=服务耗时，车道
+                // 自排队已剔除），回升只会雪上加霜；清空连捷计数重新观察（失败骤降路径
+                // shrinkLanes 仍生效，两者合围消灭 boom-bust 震荡）
                 if ew := laneQueueEwma.Load(); laneBumpFrozen(ew) {
                         laneOKStreak.Store(0)
-                        if laneFreezeLogged.Add(1) <= 3 {
-                                run.Log(fmt.Sprintf("[lane-control] 章节引擎耗时 EWMA %dms>%dms（域槽排队积压），车道回升冻结防自拥堵", ew, laneQueueFreezeEWMA))
+                        laneFrozenState.Store(true)
+                        // R114: 日志闸 3 条封顶改为「前 3 条 + 每 50 条再报」——持续冻结仍可见，
+                        // 不再被 3 条封顶吞掉（排障时无法区分「已解冻」与「冻结持续」）
+                        if n := laneFreezeLogged.Add(1); n <= 3 || n%50 == 0 {
+                                run.Log(fmt.Sprintf("[lane-control] 章节服务耗时 EWMA %dms>%dms，车道回升冻结（第 %d 次）", ew, laneQueueFreezeEWMA, n))
                         }
                         return
+                }
+                // R114: 解冻沿日志——冻结态首次回落到阈值下时记录一次（冻结封顶日志后唯一
+                // 的「供需恢复」信号；服务耗时口径下健康站链探索期高 EWMA 会自然衰减解冻）
+                if laneFrozenState.CompareAndSwap(true, false) {
+                        run.Log(fmt.Sprintf("[lane-control] 章节服务耗时 EWMA 回落至 %dms≤%dms（冻结解除），恢复连捷回升", laneQueueEwma.Load(), laneQueueFreezeEWMA))
                 }
                 if laneOKStreak.Add(1) >= laneRestoreEvery {
                         laneOKStreak.Store(0)
@@ -1238,7 +1251,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 fu, fr := rot.pickURL(u, referer)
                                 res := fetchChapterRescued(fu, rule, fr, &rescuedCtr)
                                 rot.report(fu, res.OK)
-                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), res.ElapsedMs))
+                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), ServiceElapsedMs(res.ElapsedMs, res.QueueMs))) // R114: 服务耗时口径（剔除车道自排队）
                                 if !res.OK {
                                         failedCtr.Add(1)
                                         bookFailed.Add(1)
@@ -1434,7 +1447,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 fu, fr := rot.pickURL(rr.url, rr.referer)
                                 res := fetchChapterRescued(fu, rule, fr, &rescuedCtr)
                                 rot.report(fu, res.OK)
-                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), res.ElapsedMs))
+                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), ServiceElapsedMs(res.ElapsedMs, res.QueueMs))) // R114: 服务耗时口径（剔除车道自排队）
                                 if !res.OK {
                                         e := res.Error
                                         lastFailErr.Store(&e)

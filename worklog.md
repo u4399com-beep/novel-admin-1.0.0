@@ -4670,3 +4670,22 @@ Stage Summary:
 - R108-b 遗留冲突标记根修（镜像弹层保留+单次加载），admin 页尾部垃圾文本消除
 - R111 遗留 sticky 顶栏遮挡双修（分页吸底+scroll-padding），agent-browser 实测全过
 - 待办移交：①git push 待用户重配 GitHub token（沙箱重置清空凭据，commit a6ebb17 本地就绪）②23qb 规则深查（多轮均黑洞）③dip 深度可依 429 观测调至 150ms
+
+---
+Task ID: R114
+Agent: Z.ai Code (main)
+Task: 继续开发与优化 novel-admin-1.0.0（GitHub token 重配推送 R113 + 沙箱第 6 次重置自愈 + 23qb 黑洞定性和处理 + R112 遗留车道冻结口径根修）
+
+Work Log:
+- 【R113 遗留 git push 完成】用户重配 GitHub token：工作树先清 10 文件 mode-only 噪音（沙箱 chmod 644→755 伪改动，checkout 恢复），commit 2f235ed..8ab5ae8（R113 代码+worklog）推送 main；token 经 credential-store 缓存供本会话后续推送
+- 【沙箱第 6 次重置自愈】Go 工具链/db/curl-impersonate/stealth venv/三服务全灭：按手册 15 分钟路径恢复——Go 1.22.12（aliyun 镜像）→ curl-impersonate 21 二进制（ghfast.top）→ 双 .bin 重建 → backend :3000 / scraper :3030（trxsw/77shuku 分桶 env）/ stealth :3031（venv 重建 cloakbrowser 0.6.2+iv8 0.1.4，aliyun PyPI 源，tsinghua 403 规避）全绿；fleetkeeper 2min 首轮 17 任务全建并跑，4 分钟 227 本/35 万骨架章；cookie jar 落盘生效（重启恢复 7 站过盾会话）；Agent Browser 实测 home/admin/书籍管理（分页 1/14、孤儿清理按钮、SSR 行 5 按钮）零 console error
+- 【23qb 多轮黑洞定性闭环】证据链：主域 www.23qb.net DNS 仍解析（64.185.228.36）但 TCP 全黑洞——沙箱直连 + 3 个池内代理出口全 000，判全球性死亡非本出口问题；镜像 www.23qb.com 存活但 Cloudflare 硬墙（cf-mitigated: challenge），cloak（Page.goto ERR_HTTP_RESPONSE_CODE_FAILURE）/iv8（空响应）/cloak+代理 全灭；miniproxypool 的 assignNeededRuleProxies 亦拒绝对其补种（站点级验证不过）——系统自诊断与人工结论一致。处置按 R111 kelexs 先例：live DB + seed.json 双修 enabled=false 防 fleet 空烧，28-a 校准选择器全量保留+notes 记录复活路径（域名复活或 cf_clearance cookie 填 cookies 字段一键重开）；seed 相关测试绿
+- 【R112 遗留车道冻结口径根修（本轮核心优化）】R112 实证「EWMA 把 12 车道排队等待误读为拥堵、车道锁死 4 不回升」根修：引擎侧 scraper-go 逐层埋点排队时长——attemptResult 新增 queueMs 字段，fetch 系（画像梯子求和）/got（跨变体跨跳）/curlimp/fetchcurl（逐跳）/侧车（取槽 waited）五族策略全量接线 + 链层预等待累计（原 _ = waited 丢弃改 chainQueueMs）+ fetchPageResult 组合（链层+获胜策略），handlers 三处响应顶层透出 queueMs；backend 侧 engineclient 解析 QueueMs（缺失/非法回 0）+ 新增 ServiceElapsedMs(total,queue) 纯函数（服务耗时=总耗时−排队，queue≤0/毛刺回退旧口径向后兼容），phase2Fill 两处 EWMA 采样点改服务耗时口径，laneQueueFreezeEWMA 阈值 3500ms 语义回归本意「站点服务真慢才冻结」；附车观测增强：冻结日志闸 3 条封顶改「前 3 条+每 50 条再报」（持续冻结不再被吞）+ 新增解冻沿日志（CAS 状态沿，冻结解除时记「恢复连捷回升」——供需恢复可见）
+- 【测试】backend 新增 audit_r114_test.go 双测：ServiceElapsedMs 表驱动（健康直连/旧引擎回退/失败路径/常规排队/12 车道纯排队剔除/毛刺钳 0/非法 queue）+ TestLaneFreezeSemantic_R114 端到端语义（R112 锁死场景在新口径不冻结/旧口径对照必冻结/queue=0 兼容/站点真慢仍冻结四断言）；scraper-go 46.9s 全绿、backend-go 56.2s 全绿、go vet 双净、双 .bin 重建部署
+- 【生产实证】真章直探引擎 /api/chapter：elapsedMs 11655/queueMs 11486（fleet 满载下域槽排队 11.5s+服务仅 169ms）——旧口径该样本必然推 EWMA 超阈冻结，新口径正确计为流水线化健康排队；浏览器渲染型站（x2552/ixdzs8）冻结持续属正确语义（侧车浏览器池容量 3 是真实瓶颈，服务耗时=渲染时长 5-15s）；3 分钟吞吐实测 +518 章 ≈ 10360 章/h（R110-R113 历史峰值区间 6234-9590 上沿，无回归）；浏览器终验 home/admin 渲染零 error，admin 总览 1014 书/85.7 万章/规则健康 14/17
+
+Stage Summary:
+- 车道饱和观测从「总耗时」改「服务耗时」口径：车道自排队（流水线化正常形态）不再误判拥堵，R112 遗留的「12 车道排队→EWMA 超阈→回升永久冻结→锁死 4 车道」根修完成；快车道站（fetch/got/curl 系）恢复连捷回升通道，浏览器渲染站的冻结保留（真实侧车池约束）
+- 23qb 黑洞三连轮（R108-b/R111/R112 遗留）定性闭环：域名死亡非规则/引擎缺陷，规则休眠防空烧，复活路径留档
+- 沙箱第 6 次重置自愈按手册 15 分钟完成，fleet 自组织重建至 1014 本/85.7 万章，吞吐 10360 章/h 处历史峰值区间上沿
+- 遗留移交：①解冻沿日志的快车道站生产观测（当前 fleet 浏览器渲染站占比高，快车道解冻实证待快车道任务轮转）②链探索期失败策略耗时计入服务耗时的口径边界（挑战站每章多策略探索→冻结，是否需剔除待观测数据）③dip 深度 150ms 调优仍待 429 占比观测

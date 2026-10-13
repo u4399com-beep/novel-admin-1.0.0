@@ -85,7 +85,7 @@ func pageFailureResponse(w http.ResponseWriter, page fetchPageResult, baseURL st
         resp := map[string]any{
                 "ok": false, "url": baseURL, "error": page.err, "detail": page.detail,
                 "challengeSuspected": challengeSuspected, "attempts": page.attempts,
-                "robots": page.robots, "warnings": page.warnings, "elapsedMs": page.elapsedMs,
+                "robots": page.robots, "warnings": page.warnings, "elapsedMs": page.elapsedMs, "queueMs": page.queueMs, // R114: 饱和观测口径（backend 车道 EWMA 剔除自排队）
         }
         if includeHtml && page.debugHTML != "" {
                 resp["htmlDebug"] = truncateStr(page.debugHTML, htmlDebugCap)
@@ -268,7 +268,7 @@ func handleTest(w http.ResponseWriter, body map[string]any) {
 
         resp := map[string]any{
                 "ok": true, "url": baseURL, "strategy": page.strategy, "status": page.status,
-                "elapsedMs": nowMs() - t0, "fetchElapsedMs": page.elapsedMs, "encoding": page.encoding,
+                "elapsedMs": nowMs() - t0, "fetchElapsedMs": page.elapsedMs, "queueMs": page.queueMs, "encoding": page.encoding,
                 "htmlLength": runeLen(page.html), "robots": page.robots, "attempts": page.attempts,
                 "data": data, "warnings": warnings,
         }
@@ -320,7 +320,7 @@ func handleChapter(w http.ResponseWriter, body map[string]any) {
         // 纯提示（ok 仍为 true，不改变既有成功语义），把「200 伪装」暴露给调用方可观测。
         resp := map[string]any{
                 "ok": true, "url": baseURL, "strategy": page.strategy, "status": page.status,
-                "elapsedMs": nowMs() - t0, "fetchElapsedMs": page.elapsedMs, "encoding": page.encoding,
+                "elapsedMs": nowMs() - t0, "fetchElapsedMs": page.elapsedMs, "queueMs": page.queueMs, "encoding": page.encoding,
                 "robots": page.robots, "attempts": page.attempts, "data": data, "warnings": warnings,
         }
         if page.status == 200 && data.Content == "" {

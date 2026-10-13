@@ -76,7 +76,7 @@ func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRu
                         warnings = append(warnings, a.warning)
                 }
                 return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
-                        warnings: warnings, note: a.note,
+                        warnings: warnings, note: a.note, queueMs: waited, // R114: 侧车取槽排队计入饱和观测
                         subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
                 }
         }
@@ -104,7 +104,7 @@ func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRu
                 warnings = append(warnings, a.warning)
         }
         return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
-                warnings: warnings, note: a.note,
+                warnings: warnings, note: a.note, queueMs: waited, // R114: 侧车取槽排队计入饱和观测
                 subAttempts: []SubAttempt{{Profile: "iv8-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
         }
 }

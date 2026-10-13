@@ -91,6 +91,10 @@ type fetchPageResult struct {
         attempts  []AttemptSummary
         robots    RobotsSummary
         elapsedMs int64
+        // queueMs R114: 整链在域槽上的累计排队等待（链层预等待+获胜策略内部排队）。
+        // 顶层 handlers 透出到引擎响应（"queueMs"），backend 车道饱和 EWMA 改用
+        // 「总耗时−排队=服务耗时」口径；旧引擎/未埋点路径为 0（backend 回退旧口径）
+        queueMs   int64
         err       string
         detail    string
         // Task 32-d（Task 31 遗留②落地）：整链失败时策略链最后一次抓到的原始页面（已解码、
@@ -334,6 +338,10 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
         lastNote := ""
         var lastRetryAfterMs *int64
         sawChallenge := false
+        // R114: 链层域槽排队累计（每次取槽 granted 的 waited 求和，跨策略尝试）。成功路径
+        // 与获胜策略自身的 queueMs 相加后进 fetchPageResult.queueMs——backend 车道 EWMA
+        // 据此把「车道自排队」从饱和信号中剔除（见 attemptResult.queueMs 注）
+        chainQueueMs := int64(0)
         // Task 32-d: 失败尝试响应体快照（debugHTML 注入用，见 fetchPageResult.debugHTML 注释）
         var lastFailBytes []byte
         lastFailCT := ""
@@ -422,7 +430,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                                 attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "budget-exhausted（限速排队饱和，未预约槽位快速失败，backend 请降并发）"})
                                 break
                         }
-                        _ = waited // 链层不补偿 deadline：紧随其后的 remaining 重算已把排队时间计入链预算
+                        chainQueueMs += waited // R114: 链层排队累计（原 _ = waited 丢弃；链层不补偿 deadline——紧随其后的 remaining 重算已把排队时间计入链预算）
                         remaining := deadline - nowMs()
                         if remaining < 1500 {
                                 attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "budget-exhausted（限速排队后预算耗尽）"})
@@ -517,6 +525,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                                         status: res.status, warnings: warnings, attempts: attempts,
                                         robots:    RobotsSummary{Checked: robots.info.checked, Disallowed: robots.info.disallowed, CrawlDelayMs: robots.info.crawlDelayMs},
                                         elapsedMs: nowMs() - t0,
+                                        queueMs:   chainQueueMs + res.queueMs, // R114: 链层+获胜策略排队累计
                                 }
                         }
 

@@ -74,6 +74,8 @@ var curlPlainStrategy = strategyDef{
                 explicitReferer := ctx.referer
                 deadline := nowMs() + timeoutMs
                 var lastRetryAfter *int64
+                // R114: 域槽排队累计（跨变体/跨跳求和；饱和观测口径见 attemptResult.queueMs 注）
+                totalWaited := int64(0)
                 // Task 38-a: 本策略内最近一次限流记忆（混合失败时提升返回，保住链层退避记忆）
                 lastLimitedStatus := 0
                 var lastLimitedRetryAfter *int64
@@ -134,6 +136,7 @@ var curlPlainStrategy = strategyDef{
                                         break
                                 }
                                 deadline += curlWaited
+                                totalWaited += curlWaited // R114: 饱和观测口径
                                 remaining := deadline - nowMs()
                                 if remaining < 1000 {
                                         subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
@@ -301,7 +304,7 @@ var curlPlainStrategy = strategyDef{
                                         }
                                 }
                                 if a.ok {
-                                        return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts, retryAfter: lastRetryAfter}
+                                        return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts, retryAfter: lastRetryAfter, queueMs: totalWaited}
                                 }
                                 if status >= 400 {
                                         // Task 38-a: 4xx/5xx 时停止协议梯子（对齐 got 系口径：换协议不会改变服务端
@@ -315,6 +318,6 @@ var curlPlainStrategy = strategyDef{
                         }
                 }
                 finalStatus, finalRA := promoteRateLimitedStatus(lastHTTPStatus, lastRetryAfter, lastLimitedStatus, lastLimitedRetryAfter) // Task 38-a
-                return attemptResult{ok: false, status: finalStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: finalRA}
+                return attemptResult{ok: false, status: finalStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: finalRA, queueMs: totalWaited}
         },
 }

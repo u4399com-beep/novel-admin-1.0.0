@@ -217,6 +217,8 @@ var curlImpersonateStrategy = strategyDef{
                 if len(bins) == 0 {
                         return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "missing-binary"}
                 }
+                // R114: 域槽排队累计（跨变体/跨跳求和；饱和观测口径见 attemptResult.queueMs 注）
+                totalWaited := int64(0)
                 curlCursorMu.Lock()
                 bin := bins[curlBinCursor%len(bins)]
                 curlBinCursor = (curlBinCursor + 1) % len(bins)
@@ -281,6 +283,7 @@ var curlImpersonateStrategy = strategyDef{
                                         break
                                 }
                                 deadline += curlWaited
+                                totalWaited += curlWaited // R114: 饱和观测口径
                                 // 限速等待后再计算剩余预算（避免超时穿透 deadline）
                                 remaining := deadline - nowMs()
                                 if remaining < 1000 {
@@ -438,7 +441,7 @@ var curlImpersonateStrategy = strategyDef{
                                         }
                                 }
                                 if a.ok {
-                                        return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts, retryAfter: lastRetryAfter}
+                                        return attemptResult{ok: true, status: status, bytes: raw, contentType: ctype, warnings: warnings, subAttempts: subAttempts, retryAfter: lastRetryAfter, queueMs: totalWaited}
                                 }
                                 if status >= 400 {
                                         // Task 38-a: 4xx/5xx 时停止协议梯子（对齐 got 系口径：换协议不会改变服务端
@@ -452,6 +455,6 @@ var curlImpersonateStrategy = strategyDef{
                         }
                 }
                 finalStatus, finalRA := promoteRateLimitedStatus(lastHTTPStatus, lastRetryAfter, lastLimitedStatus, lastLimitedRetryAfter) // Task 38-a
-                return attemptResult{ok: false, status: finalStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: finalRA}
+                return attemptResult{ok: false, status: finalStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: finalRA, queueMs: totalWaited}
         },
 }
