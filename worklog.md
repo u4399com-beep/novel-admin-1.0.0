@@ -4689,3 +4689,25 @@ Stage Summary:
 - 23qb 黑洞三连轮（R108-b/R111/R112 遗留）定性闭环：域名死亡非规则/引擎缺陷，规则休眠防空烧，复活路径留档
 - 沙箱第 6 次重置自愈按手册 15 分钟完成，fleet 自组织重建至 1014 本/85.7 万章，吞吐 10360 章/h 处历史峰值区间上沿
 - 遗留移交：①解冻沿日志的快车道站生产观测（当前 fleet 浏览器渲染站占比高，快车道解冻实证待快车道任务轮转）②链探索期失败策略耗时计入服务耗时的口径边界（挑战站每章多策略探索→冻结，是否需剔除待观测数据）③dip 深度 150ms 调优仍待 429 占比观测
+
+---
+Task ID: R115
+Agent: Z.ai Code (main)
+Task: 继续探索章节内容获取效率（R114 遗留②③落地：EWMA 失败章剔除采样 + dip 深度 150 调优 + 限流信号观测面）+ 沙箱第 7 次重置自愈
+
+Work Log:
+- 【沙箱第 7 次重置自愈】三服务全灭/Go 工具链丢/curl-imp 丢/stealth venv 丢/db 空壳：按手册恢复——Go 1.22.12（aliyun 镜像）→ curl-impersonate 21 二进制（ghfast.top）→ build-go.sh 双产物 → ensure-services 拉起（backend :3000 / scraper :3030 trxsw/77shuku 分桶 env）→ stealth venv 重建（cloakbrowser 0.6.2+iv8 0.1.4；pip 首次后台被收割改前台装、旧 server.py 能力检测早于依赖就绪须 pkill 重启 run.sh，health 三能力 true）；fleet 自组织重建（16 任务→991 本/72 万骨架章，git 10 文件 mode-only 噪音 checkout 清理）
+- 【R114 遗留②落地：EWMA 失败章剔除采样】worker.go 两处采样点（主循环+回收轮）原对成败一视同仁——失败链 ElapsedMs 是「策略链探索烧穿」时长（挑战站每章 8 策略×重试×退避 10-55s），其服务耗时部分度量的是「本机对抗挑战的成本」而非站点稳态速度；挑战站每章探索时 EWMA 被持续顶过 3.5s 阈值 → bumpLaneOnSuccess 恒走冻结分支 → 连捷计数恒清零 → 车道回升永久冻结（与 R112 排队锁死同构的口径病，污染样本=失败链）。新增纯函数 chapterServiceSample（engineclient.go）：ok=false 返回 0，ewmaNext 对 ms<=0 拒收天然跳过；安全边界=站点真慢时成功章服务耗时同样上升（冻结语义保留，测试含 3s 慢成功对照锚点），失败风暴由 shrinkLanes 逐章降档+PHASE2_FAIL_BREAKER 兜底
+- 【R114 遗留③落地：dip 默认 100→150ms】持续有效间隔均值 1.25s→1.20s（干净域 +4~8%）；安全性依据：下探仅在 aimdMs==0 干净态累加、任何 429/503/Retry-After 立即归零、25ms/成功拍重建（150ms=6 拍）、effInterval 1000ms 硬红线钳制不变（1200-150=1050）；SCRAPER_DIP_MAX_MS 可回退。ratelimit.go 非法 env 回退值同步 150
+- 【R114 遗留③观测前置：限流信号观测面】hostSlot 新增 rateLimited/lastRateLimitedNano（累计不清零，noteAdaptiveRateLimited 唯一写点）；hostSlotStats 追加 rateLimitedTotal/lastRateLimitedAtMs/dipMs 三字段；新增 snapshotRateLimitedSlots（全量限流槽快照，次数降序上界 64 行，槽键含分桶形态 host|eg:…）；/api/host-health 全量视图透出 rateLimitedSlots/dipMaxMs/dipStepMs，顺手修正过期文案（aimdDecayPerSuccess 实为 -100ms 自 R111，旧文案写 -50ms）
+- 【gofmt 陷阱复踩与自救】scraper-go/backend-go 5 源文件误跑 gofmt -w → 全文件格式噪音（968/3836/638/1371 行）——R108-b 同款教训；git checkout 回滚后按原空格风格重放全部语义编辑（最终 diff 90 行纯语义），两新测试文件 expand -t 8 转仓库 8 空格风格
+- 【测试】backend audit_r115_test.go 双测：chapterServiceSample 表驱动 6 例（失败不采样/旧引擎回退/排队剔除/毛刺钳 0）+ TestLaneFreezeSemantic_R115 端到端（挑战站 1/6 成功率混合流新口径 EWMA=1300ms 不冻结 / 旧口径对照必冻结 / 3s 慢成功仍冻结三断言）；scraper audit_r115_test.go 三测：dip 默认 150 / 限流观测全链（计数 2→stats 透出→快照命中→AIMD 衰减 16 拍后 dip 重建 25ms 两曲线互斥语义）/ 快照降序；修正测试两处错误假设（限流后 aimd=2700 非 1800——×1.5 两次；成功先衰减 AIMD 再下探）；scraper-go 46.2s ok、backend-go 55.8s ok、go vet 双净
+- 【部署】build-go.sh 双产物 + scripts/tmp/deploy-r115.sh（双服务重启+看门狗拉起+失败码收尾）；重启后 16 任务全部自动归队 running（resumeRestartOrphans）、cookie 会话落盘/恢复 6 站点正常
+- 【生产实证】/api/host-health 新观测面全链路验证：101kks.com 完整 AIMD 生命周期可见（累计限流 13 次→aimd 恢复→dip 重建 50ms→又遇限流 dip 归零），单主机明细 rateLimitedTotal/dipMs/slot 全透出；部署后 lane-control「冻结」日志 0 条（R112/R114 时代挑战站常态冻结消失）；吞吐实测（fleet 重建期，历史同相 6.2-9.6k/h）：10.8-12.0k/h 持续（峰值 11997），超 R114 绝对峰值 10360 约 +8~16%；浏览器终验：前台首页 140 链接零 console error、admin 总览/书籍管理（5 按钮 SSR 行+孤儿清理）、/chapter/688611 真实正文 3443 字符渲染正常
+- 【git】credential-store 凭据随沙箱重置丢失，按用户先前提供的 token 重建 ~/.git-credentials（600 权限）；远端 main 与本地 HEAD 一致无并行线需合流
+
+Stage Summary:
+- R114 三项遗留全部闭环：失败章不采样（挑战站车道回升解冻——部署后零冻结日志实证）+ dip 150（干净域 +4~8%）+ 限流信号观测面（下次礼貌参数调优有数据可依）
+- 吞吐：重建期 10.8-12.0k/h 持续（历史同相 6.2-9.6k/h，R114 绝对峰值 10.4k/h），全部提速均在「任何限流信号立即弹回基础间隔」的自动保护框架内
+- 沙箱第 7 次自愈按手册完成；gofmt 陷阱第二次踩坑（-l 会列出全部历史文件、-w 不可对存量文件使用）已在 R115 记录在案
+- 遗留移交：①biqutu aimd 8000ms 深退避为该站常态（按 IP 限流形态，P2-1 分桶证据充分，可考虑 SCRAPE_PROXY_BUCKET_HOSTS 扩表 opt-in）②快车道解冻沿生产观测继续（R114 遗留①，本轮观测面已补充限流计数维度）③dip 150 运行数据积累后可再评估 200（仅当 rateLimitedSlots 长期零新增）

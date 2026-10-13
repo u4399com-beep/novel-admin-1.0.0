@@ -107,7 +107,11 @@ func handleHostHealth(w http.ResponseWriter, r *http.Request) {
                 "aimdMaxIntervalMs":   aimdMaxIntervalMS,
                 "aimdDecayStepMs":     aimdDecayStepMS,
                 "aimdMultiplier":      "×1.5 per 429/503（Retry-After 直接采纳）",
-                "aimdDecayPerSuccess": "-50ms per success（下限=基础间隔）",
+                "aimdDecayPerSuccess": "-100ms per success（下限=基础间隔；R111 起 50→100ms，旧文案已修）",
+                // R115: 下探通道观测（干净域奖励方向 + 限流信号累计——礼貌参数调优的数据依据）
+                "dipMaxMs":         dipMaxMS(),
+                "dipStepMs":        dipStepMS,
+                "rateLimitedSlots": snapshotRateLimitedSlots(),
         }
         if host != "" {
                 out["host"] = host

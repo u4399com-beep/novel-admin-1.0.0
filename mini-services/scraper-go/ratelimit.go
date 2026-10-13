@@ -92,9 +92,14 @@ type hostSlot struct {
         sheds      atomic.Int64
         // R108: AIMD 对称下探位（毫秒，0..dipMaxMS）。AIMD 原本只升不降（429 后 ×1.5、
         // 成功后 -50ms 回落至基础间隔封底）；本字段给「长期干净的域」一个受控的回落通道：
-        // 基础间隔 1.2s 内部下探至 1.2s-dipMax（默认 1.1s），任何限流信号立即归零弹回。
+        // 基础间隔 1.2s 内部下探至 1.2s-dipMax（R115 起默认 1.05s），任何限流信号立即归零弹回。
         // 合规约束：下探后有效间隔仍 ≥1000ms 硬红线（effInterval 钳制不变）。
         dipMs atomic.Int64
+        // R115: 限流信号观测（按槽键累计，不清零——与 sheds 同口径的累计观测位）。
+        // noteAdaptiveRateLimited 是唯一写点；/api/host-health 透出，为 dip 深度等礼貌
+        // 参数的后续调优提供「限流占比」数据依据（R114 遗留③观测前置）。
+        rateLimited         atomic.Int64
+        lastRateLimitedNano atomic.Int64
 }
 
 var (
@@ -188,6 +193,8 @@ func noteAdaptiveRateLimited(slotKey string, retryAfterMs *int64) {
         }
         slot := getHostSlot(slotKey)
         resetDip(slot) // R108: 限流即弹回基础间隔，下探奖励清零
+        slot.rateLimited.Add(1)                 // R115: 限流信号观测（累计）
+        slot.lastRateLimitedNano.Store(time.Now().UnixNano())
         floor := getMinIntervalMs()
         if retryAfterMs != nil && *retryAfterMs > 0 {
                 raise := *retryAfterMs
@@ -305,8 +312,12 @@ func politenessExtraMS(consec int64) int64 {
 
 // ==================== R108: AIMD 对称下探通道 ====================
 
-// dipMaxMS AIMD 下探深度上界（毫秒）。默认 100：基础间隔 1.2s 的域在持续干净成功后
-// 有效基础间隔可下探至 1.1s（叠加突发抑制/抖动后仍 ≥1000ms 硬红线，effInterval 钳制不变）。
+// dipMaxMS AIMD 下探深度上界（毫秒）。R115 默认 100→150：R114 遗留③调优落地——
+// 持续有效间隔均值 1.25s→1.20s（干净域吞吐 +4~8%）。安全性依据：下探仅在 aimdMs==0
+// 的干净态累加，任何 429/503/Retry-After 立即归零弹回，25ms/成功拍逐步重建（150ms=6 拍）；
+// 叠加突发抑制/抖动后仍 ≥1000ms 硬红线（effInterval 钳制不变），对源站的加速不可见
+//（单请求间隔分布仍落在 1.0-1.5s 人类区间）。限流占比观测见 rateLimited 槽字段
+//（/api/host-health.rateLimitedSlots），数据异常时 SCRAPER_DIP_MAX_MS 可回 100/0。
 // 开关：SCRAPER_AIMD_DIP_OFF=1 完全停用（回 R107 只升不降语义）；
 // SCRAPER_DIP_MAX_MS 自定义深度（钳 0..400；400 仅在额外间隔被 env 调 0 时安全）。
 func dipMaxMS() int64 {
@@ -315,11 +326,11 @@ func dipMaxMS() int64 {
         }
         raw := getenv("SCRAPER_DIP_MAX_MS")
         if raw == "" {
-                return 100
+                return 150
         }
         n, err := strconv.Atoi(raw)
         if err != nil || n < 0 {
-                return 100
+                return 150
         }
         if n > 400 {
                 n = 400
@@ -510,13 +521,17 @@ func acquireDomainSlotBudgeted(host string, deadlineMs int64, reserveMS int64) (
         return ms, true
 }
 
-// hostSlotStats Task 35-b: 单主机限速槽观测快照（/api/host-health?host= 消费）
+// hostSlotStats Task 35-b: 单主机限速槽观测快照（/api/host-health?host= 消费）。
+// R115 追加：RateLimited/LastRateLimitedAtMs（限流信号观测）+ DipMS（下探位透出）。
 type hostSlotStats struct {
         LastWaitMS        int64 `json:"lastSlotWaitMs"`
         Sleepers          int64 `json:"slotSleepers"`
         Sheds             int64 `json:"slotSheds"`
         Consec            int64 `json:"slotConsec"`
         PolitenessExtraMS int64 `json:"politenessExtraMs"`
+        RateLimited         int64 `json:"rateLimitedTotal"`
+        LastRateLimitedAtMs int64 `json:"lastRateLimitedAtMs"`
+        DipMS               int64 `json:"dipMs"`
 }
 
 func hostSlotStatsFor(host string) (hostSlotStats, bool) {
@@ -527,13 +542,57 @@ func hostSlotStatsFor(host string) (hostSlotStats, bool) {
                 return hostSlotStats{}, false
         }
         consec := slot.consec.Load()
+        lastRL := int64(0)
+        if nano := slot.lastRateLimitedNano.Load(); nano > 0 {
+                lastRL = nano / int64(time.Millisecond)
+        }
         return hostSlotStats{
                 LastWaitMS:        slot.lastWaitMS.Load(),
                 Sleepers:          slot.sleepers.Load(),
                 Sheds:             slot.sheds.Load(),
                 Consec:            consec,
                 PolitenessExtraMS: politenessExtraMS(consec),
+                RateLimited:         slot.rateLimited.Load(),
+                LastRateLimitedAtMs: lastRL,
+                DipMS:               slot.dipMs.Load(),
         }, true
+}
+
+// rateLimitedSlotRow R115: 全量限流槽观测行（/api/host-health.rateLimitedSlots 消费）。
+// 槽键含分桶形态（host|eg:…）——分桶主机的限流按出口独立记账，观测面同口径。
+type rateLimitedSlotRow struct {
+        Slot     string `json:"slot"`
+        Count    int64  `json:"count"`
+        LastAtMs int64  `json:"lastRateLimitedAtMs"`
+        AimdMs   int64  `json:"aimdMs"`
+        DipMs    int64  `json:"dipMs"`
+}
+
+// snapshotRateLimitedSlots R115: 当前累计限流信号非零的槽位快照（按次数降序，
+// 恒不超 64 行防观测面膨胀）。空切片返回 nil（JSON null，与 adaptiveHosts 空态一致）。
+func snapshotRateLimitedSlots() []rateLimitedSlotRow {
+        hostSlotsMu.Lock()
+        defer hostSlotsMu.Unlock()
+        rows := make([]rateLimitedSlotRow, 0, 8)
+        for k, s := range hostSlots {
+                c := s.rateLimited.Load()
+                if c <= 0 {
+                        continue
+                }
+                lastAt := int64(0)
+                if nano := s.lastRateLimitedNano.Load(); nano > 0 {
+                        lastAt = nano / int64(time.Millisecond)
+                }
+                rows = append(rows, rateLimitedSlotRow{Slot: k, Count: c, LastAtMs: lastAt, AimdMs: s.aimdMs.Load(), DipMs: s.dipMs.Load()})
+        }
+        sort.SliceStable(rows, func(i, j int) bool { return rows[i].Count > rows[j].Count })
+        if len(rows) > 64 {
+                rows = rows[:64]
+        }
+        if len(rows) == 0 {
+                return nil
+        }
+        return rows
 }
 
 // ==================== 重试 ====================

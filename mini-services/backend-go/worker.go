@@ -1251,7 +1251,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 fu, fr := rot.pickURL(u, referer)
                                 res := fetchChapterRescued(fu, rule, fr, &rescuedCtr)
                                 rot.report(fu, res.OK)
-                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), ServiceElapsedMs(res.ElapsedMs, res.QueueMs))) // R114: 服务耗时口径（剔除车道自排队）
+                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), chapterServiceSample(res.OK, res.ElapsedMs, res.QueueMs))) // R114 服务耗时口径 + R115 失败章不采样（挑战探索烧穿不代表稳态服务速度）
                                 if !res.OK {
                                         failedCtr.Add(1)
                                         bookFailed.Add(1)
@@ -1447,7 +1447,7 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
                                 fu, fr := rot.pickURL(rr.url, rr.referer)
                                 res := fetchChapterRescued(fu, rule, fr, &rescuedCtr)
                                 rot.report(fu, res.OK)
-                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), ServiceElapsedMs(res.ElapsedMs, res.QueueMs))) // R114: 服务耗时口径（剔除车道自排队）
+                                laneQueueEwma.Store(ewmaNext(laneQueueEwma.Load(), chapterServiceSample(res.OK, res.ElapsedMs, res.QueueMs))) // R115: 同主循环口径（失败章不采样）
                                 if !res.OK {
                                         e := res.Error
                                         lastFailErr.Store(&e)

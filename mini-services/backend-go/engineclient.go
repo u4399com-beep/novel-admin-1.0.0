@@ -636,6 +636,24 @@ func ServiceElapsedMs(totalMs, queueMs int64) int64 {
         return svc
 }
 
+// chapterServiceSample R115（R114 遗留②落地）：车道饱和 EWMA 的采样门——失败章不采样。
+//
+// 背景：EWMA 采样点原本对成功/失败章一视同仁。但失败链的 ElapsedMs 是「策略链探索
+// 烧穿」的时长（挑战站每章 8 策略 × 重试 × 退避可达 10-55s），其中服务耗时部分同样
+// 巨大——它度量的是「本机对抗挑战的成本」，不是站点的稳态服务速度。挑战站每章多策略
+// 探索时 EWMA 被持续顶过 3.5s 阈值 → bumpLaneOnSuccess 恒走冻结分支 → 连捷计数恒清零
+// → 车道回升永久冻结（与 R112「排队锁死」同构的口径病，只是这次被污染的样本是失败链）。
+//
+// 语义：仅成功章采样（ok=false 返回 0，ewmaNext 对 ms<=0 拒收天然跳过）。安全边界：
+// 站点真变慢时成功章服务耗时同样上升 → 冻结照旧触发（正常路径语义保留）；失败风暴
+// （限流/挑战/封禁）由 shrinkLanes 逐章降档 + PHASE2_FAIL_BREAKER 熔断兜底，不依赖 EWMA。
+func chapterServiceSample(ok bool, elapsedMs, queueMs int64) int64 {
+        if !ok {
+                return 0
+        }
+        return ServiceElapsedMs(elapsedMs, queueMs)
+}
+
 // fetchChapterPaged 抓取整章（含同章分页拼接）：首版 fetchChapter 后，若引擎返回的
 // nextUrl 是当前章节的下一分页，继续抓取并把正文按段落合并，直至无分页/达上限。
 // 任何一页失败都保留已抓到的部分（partial 内容优于整体失败）。
