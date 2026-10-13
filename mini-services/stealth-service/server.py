@@ -16,9 +16,10 @@ stealth-service —— iv8 / CloakBrowser 反检测抓取侧车（R101）。
   GET  /health → {"ok":true,"service":"stealth-service","cloak":bool,"cloakBinary":bool,
                   "iv8":bool,"version":"1.0.0"}
   POST /cloak  {"url","timeoutMs":45000,"proxy":"","userAgent":""}
-            → {"ok":true,"html","status","finalUrl","elapsedMs"}
+            → {"ok":true,"html","status","finalUrl","elapsedMs"[,"warnings"]}
   POST /iv8    {"url","timeoutMs":20000,"userAgent":"","advanceMs":3000}
-            → {"ok":true,"html","cookies","finalUrl","elapsedMs"}
+            → {"ok":true,"html","cookies","finalUrl","elapsedMs"[,"warnings"]}
+  （R116-2：warnings 为可选新增字段——单页 HTML >8MB 截断时给出说明，其余响应不变）
 
 并发与线程安全：
   - ThreadingHTTPServer 每请求一线程；
@@ -59,6 +60,21 @@ MAX_PROXY_BROWSERS = 3
 # 而非 "driver"，旧过滤永不命中（泄漏实证：1 小时堆积 17 driver + 68 chrome）；
 # ②chrome 树是 driver 的孙进程，旧实现只扫直接子进程看不到。改为全进程表 ppid 树扫描。
 MAX_CHILD_DRIVERS = 3
+
+# ---------- R116-2：内存自保参数 ----------
+# 沙箱 4GB 无 swap 实证 OOM：chrome 进程树膨胀 → 内核 OOM killer 击杀本服务 python
+# （exit 137）→ run.sh 2s 重启 → crash-loop。三道源头约束：
+MEM_GUARD_MIN_AVAILABLE_MB = 500    # janitor 内存水位护栏阈值（MemAvailable 低于即杀最老驱动树）
+MAX_HTML_BYTES = 8 * 1024 * 1024    # 单页 HTML 上限（cloak/iv8 超限截断 + warnings 可选字段）
+# chromium 降内存启动参数（追加到每次 launch；cloakbrowser launch(args=...) 会与默认
+# 隐身参数合并，见其 browser.py）。注意 argv 列表里的 --js-flags 不能带 shell 引号
+# （引号是 shell 语法，进程参数中会被当作值的一部分导致 V8 flag 解析失败）。
+# iv8 为 Python 原生 V8 库（非浏览器二进制），无 chrome 启动参数位。
+CHROME_LOW_MEM_ARGS = (
+    "--renderer-process-limit=2",            # 渲染进程上限（默认随站点/iframe 弹性扩张）
+    "--js-flags=--max-old-space-size=128",   # 每个 renderer 的 V8 老生代堆上限 128MB
+    "--disable-dev-shm-usage",               # /dev/shm 小容量沙箱防崩（改用 /tmp）
+)
 
 # ---------- 能力探测（import 失败不崩，优雅降级） ----------
 
@@ -109,8 +125,12 @@ class CloakPool:
         kwargs = {"headless": True}
         if proxy:
             kwargs["proxy"] = proxy
+        # R116-2：追加降内存 chromium 启动参数（在既有参数基础上追加，不删除任何默认
+        # 隐身参数——cloakbrowser launch(args=...) 将其与默认 stealth 参数合并）
+        args = list(CHROME_LOW_MEM_ARGS)
         if user_agent:
-            kwargs["args"] = [f"--user-agent={user_agent}"]
+            args.insert(0, f"--user-agent={user_agent}")
+        kwargs["args"] = args
         return _cloakbrowser.launch(**kwargs)
 
     def acquire(self, proxy: str, user_agent: str):
@@ -230,25 +250,75 @@ def _kill_tree(pids, reason=""):
         print(f"[stealth-service] kill_tree({reason})：击杀 {len(pids)} 个进程", flush=True)
 
 
+def _proc_cmdline(pid):
+    """R116-2：读 /proc/{pid}/cmdline（NUL → 空格），失败返回空串。"""
+    import os as _os
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode("utf-8", "replace").replace("\x00", " ")
+    except Exception:
+        return ""
+
+
+def _is_browser_service(pid, comm, cmdline=""):
+    """R116-2：判定是否浏览器服务进程（playwright driver / chrome 系）。
+
+    comm 判据不可靠的实证（R116-2）：playwright driver 的 comm 既不是 'driver' 也不是
+    'node'，而是 'MainThread'（node 运行时改写主线程名）——R111 的 'node' in comm 对
+    真实 driver 永不命中，实测 26 分钟泄漏 17 个 driver（每次 launch 一棵）。
+    node 系 comm（node/MainThread）一律以 cmdline 权威复核：driver 特征 = cmdline 含
+    'playwright' 或 'run-driver'；chrome 系仍按 comm 快路径。"""
+    comm = (comm or "").lower()
+    if "chrome" in comm or "chromium" in comm or "headless" in comm:
+        return True
+    if "node" in comm or "mainthread" in comm:
+        cmd = cmdline or _proc_cmdline(pid)
+        return ("playwright" in cmd) or ("run-driver" in cmd)
+    return False
+
+
 def _browser_service_pids(snapshot=None):
     """R111：本 python 的全部浏览器服务进程（任意深度后代中 node/chrome 系）。
 
-    泄漏根因修复：playwright driver 的 comm 是 node/MainThread 而非 "driver"，
-    旧 janitor 过滤永不命中；chrome 树是 driver 的孙进程，直接子进程扫描也看不到。
-    这里按完整后代树 + comm 关键字识别（本进程唯一的 node 子树就是 playwright）。"""
+    R116-2 识别修正：node 系 comm（含实测 'MainThread'）走 cmdline 复核（见
+    _is_browser_service）；chrome 系按 comm。返回 [(pid, comm, starttime)]。"""
     import os as _os
     me = _os.getpid()
-    descendants = _subtree_pids(me, snapshot=snapshot, exclude_pids={me})
-    snapshot = snapshot or _proc_snapshot()
+    snap = snapshot or _proc_snapshot()
+    descendants = _subtree_pids(me, snapshot=snap, exclude_pids={me})
     out = []
     for p in descendants:
-        info = snapshot.get(p)
+        info = snap.get(p)
         if info is None:
             continue
-        comm = info[1].lower()
-        if "node" in comm or "chrome" in comm or "chromium" in comm or "headless" in comm:
+        if _is_browser_service(p, info[1]):
             out.append((p, info[1], info[2]))
     return out
+
+
+def _browser_tree_roots(snapshot=None):
+    """R116-2：本 python 后代中的浏览器「驱动树根」列表（starttime 升序 = 最老在前）。
+
+    树根 = 浏览器服务进程中、父进程不是浏览器服务进程者。典型形态：1 个 driver 根 +
+    其下挂 N 个 chrome 子进程 = 1 棵树。旧 janitor 把每个 chrome 子进程各计 1 个实例：
+    单实例 6-11 进程恒超 MAX_CHILD_DRIVERS=3 → 每 30s 谋杀活浏览器 chrome 树
+    （/tmp/stealth.log 累计 612 次），launch/kill 风暴即内存尖峰与每请求重付 launch
+    开销的源头；同时 driver 因 comm 判据失效全部漏判泄漏。改按树根计数后上限 3 = 3 棵
+    完整驱动树（与池容量 MAX_PROXY_BROWSERS=3 对齐），泄漏 driver 亦能被识别补刀。"""
+    snap = snapshot or _proc_snapshot()
+    svc = {}
+    for p, comm, st in _browser_service_pids(snap):
+        svc[p] = (snap[p][0], comm, st)  # (ppid, comm, starttime)
+    svc_pids = set(svc.keys())
+    roots = []
+    for p, (ppid, comm, st) in svc.items():
+        if ppid in svc_pids:
+            continue  # 父进程也是浏览器服务进程（chrome 挂在 driver 下）→ 非根
+        if "crashpad" in comm.lower():
+            continue  # crashpad 守护被收养时不作树根候选（体量小，忽略）
+        roots.append((p, comm, st))
+    roots.sort(key=lambda r: r[2])
+    return roots
 
 
 def _child_procs():
@@ -276,44 +346,95 @@ def _child_procs():
     return out
 
 
-def _driver_janitor():
-    """R110：后台每 30s 巡检直接子进程，超额最老 driver/chrome 补刀。
+def _janitor_kill_trees(roots, log_prefix):
+    """R116-2：击杀一批驱动树根及其完整子树（R111 树补刀语义抽公共实现）。
 
-    只针对 node run-driver / chrome 系进程；上限 MAX_CHILD_DRIVERS。杀掉后其归属
-    池条目在下次请求时按既有 rebuild 路径重建，服务自愈。
-
-    R111 重写：改按 _browser_service_pids() 全后代树扫描（node/chrome/chromium/
-    headless 关键字）。旧实现只扫直接子进程且过滤 comm 含 "driver"——playwright
-    driver 的 comm 实为 node/MainThread，过滤永不命中；chrome 树是 driver 孙进程
-    也看不到（实证 1 小时堆积 17 driver + 68 chrome、线程配额打穿全机 EAGAIN）。"""
+    先对快照做全子树收集再统一 SIGKILL（杀 driver 不杀其 chrome 树会留孤儿）。"""
     import os as _os
     import signal as _signal
+    snap = _proc_snapshot()
+    all_pids = set()
+    for pid, _comm, _st in roots:
+        all_pids |= _subtree_pids(pid, snapshot=snap)
+    for pid, comm, _st in roots:
+        try:
+            _os.kill(pid, _signal.SIGKILL)
+            print(f"[stealth-service] {log_prefix} {pid} ({comm})", flush=True)
+        except Exception:
+            pass
+    for p in all_pids - {x[0] for x in roots}:
+        try:
+            _os.kill(p, _signal.SIGKILL)
+        except Exception:
+            pass
+
+
+def _mem_available_mb():
+    """R116-2：读 /proc/meminfo 的 MemAvailable（kB → MB）；读取失败返回 None。"""
+    try:
+        with open("/proc/meminfo", "rb") as f:
+            for line in f:
+                if line.startswith(b"MemAvailable:"):
+                    return int(line.split()[1]) / 1024.0
+    except Exception:
+        pass
+    return None
+
+
+def _memory_guard():
+    """R116-2：内存水位护栏——MemAvailable < 阈值时按最老优先击杀浏览器驱动树。
+
+    OOM 实证（R116 主代理）：4GB 无 swap 沙箱里 chrome 进程树膨胀 → 内核 OOM killer
+    击杀本服务 python（exit 137）→ run.sh 2s 重启 → crash-loop，并顺带拖垮 backend-go。
+    护栏语义：只杀到水位恢复或只剩 1 棵驱动树为止（绝不全杀，保留最后一棵给在途
+    请求与自愈路径）；被杀池条目下次请求走既有 rebuild 路径重建。"""
+    avail = _mem_available_mb()
+    if avail is None or avail >= MEM_GUARD_MIN_AVAILABLE_MB:
+        return
+    # 迭代上限硬护栏：正常情况下击杀后进程消失/水位回升即退出；防进程不可杀
+    # （D-state 等病理形态）时护栏循环自身活锁（每次巡检至多杀 8 棵，池容量仅 3）
+    for _round in range(8):
+        avail = _mem_available_mb()
+        if avail is None or avail >= MEM_GUARD_MIN_AVAILABLE_MB:
+            break
+        roots = _browser_tree_roots()
+        if len(roots) <= 1:
+            break  # 保留最少 1 棵，不全杀
+        victim = roots[0]  # 已按 starttime 升序，最老在前
+        _janitor_kill_trees([victim], "janitor 内存护栏击杀最老浏览器驱动树")
+        print(f"[janitor] 内存护栏：MemAvailable {avail:.0f}MB，"
+              f"击杀最老浏览器驱动树 pid={victim[0]}", flush=True)
+        time.sleep(2.0)  # 给内核回收时间再复测水位
+
+
+def _driver_janitor():
+    """R110/R111：后台每 30s 巡检后代进程树，超额最老驱动树补刀 + 内存水位护栏。
+
+    R116-2 三处修正：
+      ①识别：driver comm 实测为 'MainThread'（node 改写主线程名），R111 的
+        'node' in comm 对真实 driver 永不命中 → driver 泄漏（实证 26 分钟 17 个）；
+        现 node 系 comm 走 cmdline 复核（_is_browser_service）。
+      ②计数口径：按「驱动树根」而非进程个体——旧口径把单实例 6-11 个 chrome 子进程
+        各计 1 实例，健康单池即恒超上限 → 每 30s 谋杀活浏览器 chrome 树（累计 612 次），
+        launch/kill 风暴即内存尖峰与每请求重付 launch 秒级开销的源头。
+      ③新增内存水位护栏（第②步，先超额补刀后护栏）。
+
+    杀掉后其归属池条目在下次请求时按既有 rebuild 路径重建，服务自愈。"""
     while True:
         time.sleep(30)
+        # ① 超额补刀（R110/R111 原有机制，R116-2 修正识别与计数口径：树根制）
         try:
-            kids = _browser_service_pids()
-            if len(kids) <= MAX_CHILD_DRIVERS:
-                continue
-            kids.sort(key=lambda k: k[2])  # starttime 升序 = 最老在前
-            excess = kids[:len(kids) - MAX_CHILD_DRIVERS]
-            # 击杀超额实例的完整子树（杀 driver 而不杀其 chrome 树会留孤儿，树扫描补全）
-            snap = _proc_snapshot()
-            all_pids = set()
-            for pid, comm, _st in excess:
-                all_pids |= _subtree_pids(pid, snapshot=snap)
-            for pid, comm, _st in excess:
-                try:
-                    _os.kill(pid, _signal.SIGKILL)
-                    print(f"[stealth-service] janitor 击杀超额浏览器进程 {pid} ({comm})", flush=True)
-                except Exception:
-                    pass
-            for p in all_pids - {x[0] for x in excess}:
-                try:
-                    _os.kill(p, _signal.SIGKILL)
-                except Exception:
-                    pass
+            roots = _browser_tree_roots()
+            if len(roots) > MAX_CHILD_DRIVERS:
+                excess = roots[:len(roots) - MAX_CHILD_DRIVERS]  # 最老在前
+                _janitor_kill_trees(excess, "janitor 击杀超额浏览器驱动树")
         except Exception:
-            continue
+            pass
+        # ② 内存水位护栏（R116-2 新增：全机优先，牺牲多余浏览器树换 OOM 豁免）
+        try:
+            _memory_guard()
+        except Exception:
+            pass
 
 
 def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
@@ -338,6 +459,15 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
             except Exception:
                 pass
             html = page.content()
+            # R116-2：大页护栏——单页 HTML 超过 8MB 截断（防异常大页滞留内存/撑爆 JSON
+            # 响应序列化），截断事实通过新增可选字段 warnings 回传（引擎端未知字段自动忽略）。
+            html_warnings = []
+            if len(html) > MAX_HTML_BYTES:
+                html_warnings.append(
+                    f"HTML 超过 {MAX_HTML_BYTES // (1024 * 1024)}MB 已截断（防异常大页滞留内存）")
+                print(f"[stealth-service] cloak 大页护栏：截断 {len(html)}B → "
+                      f"{MAX_HTML_BYTES}B url={url}", flush=True)
+                html = html[:MAX_HTML_BYTES]
             served_ok = True  # R108: 渲染成功，标记网络热（finally 中计数）
             status = 0
             final_url = url
@@ -362,11 +492,14 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
                     })
             except Exception:
                 pass
-            return {
+            out = {
                 "ok": True, "html": html, "status": status, "finalUrl": final_url,
                 "cookies": cookies_out,
                 "elapsedMs": int((time.time() - t0) * 1000),
             }
+            if html_warnings:
+                out["warnings"] = html_warnings
+            return out
         except Exception as e:
             last_err = e
             if attempt == 1:
@@ -408,15 +541,20 @@ _SSL_CTX = ssl.create_default_context()
 
 
 def _http_get(url: str, timeout_s: float, user_agent: str):
-    """侧车侧真实 HTTP（仅取初始 HTML 供 page.load 解析；后续真实请求仍由引擎发起）。"""
+    """侧车侧真实 HTTP（仅取初始 HTML 供 page.load 解析；后续真实请求仍由引擎发起）。
+    R116-2：读入上限 MAX_HTML_BYTES+1——超大响应体（误配二进制/巨型列表页等）不再
+    全量读入内存；超限时返回 oversized=True 供上层截断并附 warnings。"""
     req = urllib.request.Request(url, headers={
         "User-Agent": user_agent or DEFAULT_UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "zh-CN,zh;q=0.9",
     })
     with urllib.request.urlopen(req, timeout=timeout_s, context=_SSL_CTX) as resp:
-        body = resp.read()
-        return resp.status, resp.geturl(), body
+        body = resp.read(MAX_HTML_BYTES + 1)
+        oversized = len(body) > MAX_HTML_BYTES
+        if oversized:
+            body = body[:MAX_HTML_BYTES]
+        return resp.status, resp.geturl(), body, oversized
 
 
 def iv8_fetch(url: str, timeout_ms: int, user_agent: str, advance_ms: int) -> dict:
@@ -424,16 +562,20 @@ def iv8_fetch(url: str, timeout_ms: int, user_agent: str, advance_ms: int) -> di
     返回执行后 DOM 与 document.cookie（供引擎带 cookie 复抓或直接用渲染结果）。"""
     t0 = time.time()
     timeout_s = max(3.0, min(timeout_ms, MAX_TIMEOUT_MS) / 1000.0)
+    src_oversized = False  # R116-2：源响应体超限标记
     try:
-        status, final_url, body = _http_get(url, timeout_s, user_agent)
+        status, final_url, body, src_oversized = _http_get(url, timeout_s, user_agent)
     except urllib.error.HTTPError as e:
         # 403/503 挑战页同样值得进 iv8 跑（正文可能就是 JS 挑战脚本）
         try:
-            body = e.read()
+            body = e.read(MAX_HTML_BYTES + 1)  # R116-2：读入上限
             status, final_url = int(e.code or 0), url
         except Exception:
             return {"ok": False, "error": f"iv8 取源失败: {e}",
                     "elapsedMs": int((time.time() - t0) * 1000)}
+        src_oversized = len(body) > MAX_HTML_BYTES
+        if src_oversized:
+            body = body[:MAX_HTML_BYTES]
     except Exception as e:
         return {"ok": False, "error": f"iv8 取源失败: {e}",
                 "elapsedMs": int((time.time() - t0) * 1000)}
@@ -457,11 +599,24 @@ def iv8_fetch(url: str, timeout_ms: int, user_agent: str, advance_ms: int) -> di
                 pass  # 事件循环推进失败不致命（部分脚本同步完成）
             out_html = ctx.eval("document.documentElement.outerHTML") or ""
             cookies = ctx.eval("document.cookie") or ""
-            return {
+            # R116-2：大页护栏（源响应体 + 渲染产物双检查点，防异常大页滞留内存）
+            warnings = []
+            if src_oversized:
+                warnings.append("源响应体超过 8MB 已截断（防异常大页滞留内存）")
+            if len(out_html) > MAX_HTML_BYTES:
+                warnings.append(
+                    f"渲染后 HTML 超过 {MAX_HTML_BYTES // (1024 * 1024)}MB 已截断（防异常大页滞留内存）")
+                print(f"[stealth-service] iv8 大页护栏：截断 {len(out_html)}B → "
+                      f"{MAX_HTML_BYTES}B url={url}", flush=True)
+                out_html = out_html[:MAX_HTML_BYTES]
+            out = {
                 "ok": True, "html": out_html, "cookies": cookies,
                 "finalUrl": final_url, "status": status,
                 "elapsedMs": int((time.time() - t0) * 1000),
             }
+            if warnings:
+                out["warnings"] = warnings
+            return out
     except Exception as e:
         return {"ok": False, "error": f"iv8 执行失败: {e}",
                 "elapsedMs": int((time.time() - t0) * 1000)}
@@ -525,7 +680,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _sweep_orphan_chromium():
-    """R110：清扫孤儿 Chromium（父进程已死、被 init 收养的 chrome/chrome_crashpad）。
+    """R110：清扫孤儿（父进程已死、被 init 收养 PPID==1）的 chrome 与 playwright driver。
+
+    R116-2 扩展：driver comm 实为 'MainThread'（node 改写主线程名），旧 comm 判据
+    看不见 → 重启后 driver 孤儿残留累积。现对 PPID==1 且 cmdline 含 playwright
+    run-driver 特征的进程一并补刀。
 
     泄漏链：scraper-go browser 策略超时只杀 render.py 直接子进程（R110 已在 Go 侧
     改进程组击杀根修），历史积压与任何残余路径的 chrome 树会挂 PPID 1——每棵树
@@ -551,8 +710,16 @@ def _sweep_orphan_chromium():
             comm_end = stat.rindex(")")
             comm = stat[stat.index("(") + 1:comm_end]
             ppid = int(after[1])
-            if ppid != 1 or "chrome" not in comm:
+            if ppid != 1:
                 continue
+            comm_l = comm.lower()
+            if "chrome" not in comm_l:
+                # R116-2：孤儿 playwright driver 补刀（comm='MainThread'，需 cmdline
+                # 权威复核防误伤未知 node 进程）
+                cmd = _proc_cmdline(p)
+                if not (("mainthread" in comm_l or "node" in comm_l)
+                        and ("playwright" in cmd or "run-driver" in cmd)):
+                    continue
             _os.kill(p, _signal.SIGKILL)
             killed += 1
         except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
@@ -560,7 +727,7 @@ def _sweep_orphan_chromium():
         except Exception:
             continue
     if killed:
-        print(f"[stealth-service] 启动清扫：击杀 {killed} 个孤儿 chrome 进程", flush=True)
+        print(f"[stealth-service] 启动清扫：击杀 {killed} 个孤儿浏览器进程（chrome/driver）", flush=True)
 
 
 def main():

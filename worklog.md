@@ -4711,3 +4711,26 @@ Stage Summary:
 - 吞吐：重建期 10.8-12.0k/h 持续（历史同相 6.2-9.6k/h，R114 绝对峰值 10.4k/h），全部提速均在「任何限流信号立即弹回基础间隔」的自动保护框架内
 - 沙箱第 7 次自愈按手册完成；gofmt 陷阱第二次踩坑（-l 会列出全部历史文件、-w 不可对存量文件使用）已在 R115 记录在案
 - 遗留移交：①biqutu aimd 8000ms 深退避为该站常态（按 IP 限流形态，P2-1 分桶证据充分，可考虑 SCRAPE_PROXY_BUCKET_HOSTS 扩表 opt-in）②快车道解冻沿生产观测继续（R114 遗留①，本轮观测面已补充限流计数维度）③dip 150 运行数据积累后可再评估 200（仅当 rateLimitedSlots 长期零新增）
+
+---
+Task ID: R116
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题（R115 移交①biqutu 分桶）②章节采集效率再探索（还是太慢，兼顾封禁）③强化采集与反反爬能力④完善精简代码⑤推送 git
+
+Work Log:
+- 【效率瓶颈实测定性（本轮核心结论）】基线测量：ChapterContent 增长 10.9-11.5k 章/h；逐主机 ok 增速 90s/120s 双窗口采样：9 快车道主机各 1440-1480 章/h，取槽 consec 增速 2970/h=礼貌间隔上限（1.05-1.35s 槽已打满，sleepers 2-4 恒有排队、sheds≈0）；取槽:成功章=精确 2:1（120s 窗 99:49、96:48）——实证为章节物理分页（每章 2 页均被 fetchChapterPaged 合法合并，wordCount 均值 2007=完整章长度非双章合并）。结论：快车道已运行在「兼顾封禁」约束下的理论天花板（继续压间隔即违反用户红线），提速方向转为①稳定性止损②主机扩容③按 IP 限流站的分桶扩容
+- 【「还是太慢」真实根因：stealth OOM crash-loop】dmesg 实证 `Out of memory: Killed process 19459 (python3) total-vm:8009880kB`（4GB 无 swap 沙箱）；watchdog 日志 12:00-12:41 被迫重启 stealth 26 次（1-3 分钟一拍），backend 亦被 OOM 波及一次（12:39:53）；每次崩溃=浏览器侧车在途请求全灭+失败率抬升+车道降档+任务重排队——吞吐被反复腰斩的元凶
+- 【watchdog 反脆弱改造+fd 泄漏根修（R116-1）】scripts/watchdog-services.sh 重写：①连败闸 FAIL_STRIKES=2（忙时 /health 慢一拍、fork 耗尽 curl 派生失败不再立即判死）②stealth 探活 3→8s（Python GIL+浏览器忙时 /health 延迟高，R111「/health 超时≠死亡」红线的 watchdog 侧落地）③重启防抖 60s（run.sh 2s 崩溃自愈环+flock 已覆盖瞬态，watchdog 只兜底真死亡）④【意外挖出重大潜伏 bug】flock fd 9 被 nohup 子进程继承——旧 watchdog 死亡后锁被存活 backend-go 长期持有（实证 /proc/7463/fd/9 → lock 文件、lock test HELD），新 watchdog 永远拿不到锁=看护静默失效；修复 spawn 9>&- 显式关闭+锁文件升级 v2⑤MemAvailable<400MB 节流观测日志（OOM 取证）
+- 【stealth 内存自保（R116-2，子代理承担+主代理验证收尾）】server.py 五处：①janitor 识别修正——driver comm 实为 MainThread（node 改写主线程名），旧 'node' in comm 永不命中=driver 全部漏判泄漏，改 cmdline 权威复核（playwright/run-driver 特征）②计数口径树根制——旧口径把单实例 6-11 chrome 子进程各计 1 实例，健康单池恒超上限→每 30s 谋杀活 chrome 树（日志累计 612 次=内存尖峰+launch 开销浪费源），改「驱动树根」计数后上限 3=3 棵完整树（与池容量对齐），修复后健康态 0 击杀③新增 _memory_guard 水位护栏——MemAvailable<500MB 时最老优先击杀驱动树（保留最少 1 棵，8 轮上限防活锁）④chromium 降内存启动参数（renderer-process-limit=2 + V8 堆 128MB + disable-dev-shm-usage）⑤8MB 大页护栏（cloak/iv8 截断+新增可选 warnings 字段，_http_get 读入上限）。验证：py_compile OK、重启后三能力 true、cloak 端到端（aijjxs 55988B/3.17s）、新 janitor 30s×N 轮 0 击杀
+- 【gLaneFloor 持久化（R116-3）】backend 重启清零车道下限记忆→全任务回软起步 4 车道重爬（R111 cookie jar 同款病灶）；新增 laneFloorSnapshot/persistLaneFloors（原子写 tmp+rename）/restoreLaneFloorsAt（LoadOrStore 只补空缺）/laneFloorPersistLoop（60s 脏标记触发零常态 I/O），startRunner 启动恢复+go 循环；LANE_FLOOR_PATH 可覆盖（测试隔离）。实战验证：部署后 4 分钟即「车道下限记忆已落盘（2 任务）」
+- 【biqutu 分桶 opt-in（R116-4，R115 遗留①落地）】6 候选出口逐个 curl 站测：3 个 200 通过+1 个现役存活，现役另 1 个已半死（400）剔除→规则 #27 重写为 4 存活出口；SCRAPE_PROXY_BUCKET_HOSTS 扩表 www.biqutu.info:4
+- 【engine.env 单一来源+ensureEngine 缺口根修（R116-4b，部署时实战暴露）】首轮部署后实测发现引擎无分桶 env——ensureEngine 自动拉起路径（引擎失联时 pkill+spawn ./scraper-go.bin）从不带 SCRAPE_PROXY_BUCKET_HOSTS，与手工启动 env 并存=「引擎闪断自愈后分桶静默失效回单槽」的部署缺口（R110 起潜伏）；根修：scripts/engine.env 单一来源（KEY=VALUE+注释），ensureEngine 新增 engineEnvPrefix 解析注入（值域白名单 [A-Za-z0-9.,:_/-] 防注入，非法行整行拒用），ensure-services.sh 同源 source；端到端验证：kill 引擎→ensureEngine 25s 内自动拉起且 /proc env 含完整 BUCKET 配置
+- 【测试+部署】audit_r116_test.go 四测：laneFloor 落盘往返（store→persist→清内存→restore 复原）/只降不升×持久化协同（restore 不覆盖更小值+无文件冷启动）/watchdog 反脆弱静态护栏（连败闸/防抖/8s 探活/v2 锁/9>&-/MemAvailable 六要素断言）/engineEnvPrefix（正常拼接+注入防线+文件缺失回退）；backend-go 全量 55.9s ok、scraper-go 全量 46.0s ok、go vet 双净、build-go.sh 双产物部署
+- 【生产实测】重启爬坡三连测：6558→8892→10128 章/h（25 分钟爬回基线，重启爬坡成本正是 laneFloor 持久化要消灭的）；稳态终测：引擎 13995 ok/h（12 主机 1035-1530/h 全部礼貌天花板区间）、章节填充 10230 ch/h；trxsw 分桶槽可见按出口记账（|eg:47.242.218.151:9001/9002 独立 aimd）；stealth 修复后零崩溃、watchdog 全程零误重启、内存 2.5GB 可用健康
+- 【Agent Browser 终验】首页渲染+搜索+分类导航零 console error；admin 九页签+后端/DB 健康徽章；书籍管理 127 行渲染+吸底分页条 sticky 生效+20 书链接；章节阅读页 /chapter/911427 真实正文 3206 字符；移动端 390px 无横向溢出
+
+Stage Summary:
+- 「还是太慢」定性收口：快车道在兼顾封禁约束下已达礼貌间隔天花板（取槽 2970/h×每章 2 页=1485 章/h/主机），再压间隔=违反用户红线；本轮改打「稳定性止损」——stealth OOM crash-loop（2h 26 次）根修后吞吐不再被反复腰斩，稳态 10.2k 章/h 可持续
+- 反反爬基座加固三件：stealth 内存自保（树根 janitor+水位护栏+降内存参数+大页截断）、watchdog 反脆弱（连败闸/防抖/fd 泄漏根修）、engine.env 单一来源（自动拉起不再丢分桶配置）
+- R115 遗留①闭环：biqutu 4 存活出口分桶 ×4（每 IP 仍 <1 req/s）；R115 遗留③维持 dip=150（101kks 限流 46 次未满足「长期零新增」加码条件，符合既定判据）
+- 后续提速方向移交（天花板已到，扩容是唯一正道）：①新增站点规则（每站 +1485 章/h 潜力，需逐站编写选择器+实测）②biqutu 分桶运行数据观测（4 出口 aimd 独立性验证）③min-yuan/huangjinwu 等慢站的出口池补种

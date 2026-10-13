@@ -22,10 +22,12 @@ if ! curl -s --max-time 2 http://127.0.0.1:3000/api/health | rg -q '"ok":true'; 
 fi
 # scraper
 if ! curl -s --max-time 2 http://127.0.0.1:3030/api/health | rg -q '"ok":true'; then
-  # R108 P2-1 代理 per-IP 分桶（perf-plan 默认关，逐主机 opt-in）：trxsw/77shuku 两条规则
-  # 已证实「直连不健康→自动补种代理出口」形态（按 IP 限流/封禁），每出口独立合规槽 ×3；
-  # 删除本行即回全站单槽语义。其余 14 站不受影响（键恒裸 host）。
-  (cd "$ROOT/mini-services/scraper-go" && SCRAPE_PROXY_BUCKET_HOSTS="www.trxsw.com:3,www.77shuku.info:3" nohup ./bin/scraper-go >>/tmp/scraper-go.log 2>&1 &)
+  # R116: 引擎部署 env 单一来源 scripts/engine.env（backend ensureEngine 自动拉起路径同源）
+  # R108 P2-1 代理 per-IP 分桶（逐主机 opt-in，每出口独立合规槽）：
+  # - trxsw/77shuku —— 直连不健康（按 IP 限流/封禁），自动补种出口 ×3
+  # - biqutu —— R115 遗留①：aimd 8000ms 深退避常态（按 IP 限流），R116 4 出口实测入规则 ×4
+  # 删除 engine.env 对应行即回全站单槽语义。
+  (cd "$ROOT/mini-services/scraper-go" && set -a && . "$ROOT/scripts/engine.env" && set +a && nohup ./bin/scraper-go >>/tmp/scraper-go.log 2>&1 &)
 fi
 # 等待就绪（最多 15s）
 for i in $(seq 1 15); do

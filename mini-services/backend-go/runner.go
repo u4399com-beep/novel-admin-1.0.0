@@ -21,6 +21,7 @@ import (
         "os"
         osexec "os/exec"
         "path/filepath"
+        "strings"
         "time"
 )
 
@@ -127,6 +128,58 @@ func recategorizeOne() bool {
         return true
 }
 
+// engineEnvRootForTest R116: repoRoot 注入点（测试隔离；nil=用真实 repoRoot）。
+var engineEnvRootForTest func() string
+
+// engineEnvPrefix R116: 引擎 env 前缀（scripts/engine.env，KEY=VALUE 行 → "env K=V K=V"）。
+// ensureEngine 自动拉起与 scripts/ensure-services.sh 共享同一份部署 env（单一来源），
+// 修复「自动拉起的引擎缺分桶 env」缺口（R110 形态：ensureEngine 只在引擎失联时拉起，
+// 早期部署的 SCRAPE_PROXY_BUCKET_HOSTS 只存在于手工启动命令行——引擎闪断自愈后分桶
+// 静默失效回单槽）。值域白名单防注入：key [A-Z_]+，value [A-Za-z0-9.,:_/-]。
+func engineEnvPrefix() string {
+        root := repoRoot()
+        if engineEnvRootForTest != nil {
+                root = engineEnvRootForTest()
+        }
+        data, err := os.ReadFile(filepath.Join(root, "scripts", "engine.env"))
+        if err != nil {
+                return ""
+        }
+        parts := make([]string, 0, 4)
+        for _, line := range strings.Split(string(data), "\n") {
+                line = strings.TrimSpace(line)
+                if line == "" || strings.HasPrefix(line, "#") {
+                        continue
+                }
+                k, v, ok := strings.Cut(line, "=")
+                k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+                if !ok || k == "" || v == "" {
+                        continue
+                }
+                if !isPlainASCIIRun(k) || !isPlainASCIIRun(v) {
+                        continue // 含空格/引号/控制符等一律拒用（防注入，宁可缺配）
+                }
+                parts = append(parts, k+"="+v)
+        }
+        if len(parts) == 0 {
+                return ""
+        }
+        return "env " + strings.Join(parts, " ") + " "
+}
+
+// isPlainASCIIRun 白名单字符判定（env 前缀拼接安全集）。
+func isPlainASCIIRun(s string) bool {
+        for _, r := range s {
+                switch {
+                case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+                case r == '.' || r == ',' || r == ':' || r == '_' || r == '-' || r == '/':
+                default:
+                        return false
+                }
+        }
+        return true
+}
+
 // ensureEngine 引擎互监护：不可达则杀残留后 setsid 完全托孤拉起 scraper-go。
 // Task 26-d：BACKEND_ENGINE_URL/PORT 指向非默认引擎时只观测不杀不拉（自定义引擎进程
 // 的拉起方式未知，pkill 'scraper-[g]o.bin' 会误杀生产引擎且无法正确重拉）。
@@ -147,9 +200,10 @@ func ensureEngine() {
         // 放同一 bash -c 时 pkill -f 会匹配到自身命令行导致自杀）
         // Task 33: pkill 同步等待完成后再 spawn（消除 pkill/spawn 异步竞态）
         // R90: 引擎目录改为 repoRoot() 推断（任意部署路径自适应；沙箱内推出值与旧硬编码一致）
+        // R116: spawn 注入 scripts/engine.env 前缀（engineEnvPrefix），分桶 env 不再丢失
         engineDir := filepath.Join(repoRoot(), "mini-services", "scraper-go")
         _ = runBashSync("pkill -f 'scraper-[g]o.bin' 2>/dev/null; true", 5*time.Second)
-        _ = runBashSync(fmt.Sprintf("cd %q && setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &", engineDir), 3*time.Second)
+        _ = runBashSync(fmt.Sprintf("cd %q && setsid nohup %s./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &", engineDir, engineEnvPrefix()), 3*time.Second)
 }
 
 // runBashSync 同步执行 bash 命令（Task 33：限时等待完成，超时放后台收敛）。
@@ -335,6 +389,10 @@ func autoResumeBlockedTasks() {
 // startRunner runner 主循环入口（main.go 在 runner/all 模式下 go 调用）
 func startRunner() {
         log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
+
+        // R116: 车道下限记忆恢复 + 周期落盘（任何任务派发前恢复，防重启清零回软起步重爬）
+        restoreLaneFloors()
+        go laneFloorPersistLoop()
 
         // 僵尸任务回收（recoverStaleTasks 语义：Go runner 是唯一任务执行方，启动时把本进程
         // 启动前仍 running 的任务一次性转 paused 可恢复续传；Task 27-c 注释纠偏：旧文案

@@ -34,6 +34,7 @@ package main
 
 import (
         "database/sql"
+        "encoding/json"
         "fmt"
         "log"
         "net/url"
@@ -851,10 +852,111 @@ func laneFloorLoad(taskID int) int {
         return 0
 }
 
+// laneFloorPersistPath R116: 车道下限记忆落盘路径（env LANE_FLOOR_PATH 可覆盖，测试隔离用）。
+// 与 scraper-go cookie jar（R111）同款机制：/tmp 在沙箱重置时随宿主清空=冷启动（软起步），
+// 普通重启无感续传。
+var laneFloorPersistPath = func() string {
+        if p := os.Getenv("LANE_FLOOR_PATH"); p != "" {
+                return p
+        }
+        return "/tmp/backend-lane-floors.json"
+}()
+
+// laneFloorDirty R116: 脏标记（laneFloorStore 成功写入置位；持久化循环落盘后清零）。
+var laneFloorDirty atomic.Bool
+
+// laneFloorSnapshot R116: gLaneFloor 全量快照（Range 并发安全）。
+func laneFloorSnapshot() map[int]int {
+        out := map[int]int{}
+        gLaneFloor.Range(func(k, v any) bool {
+                id, ok1 := k.(int)
+                n, ok2 := v.(int)
+                if ok1 && ok2 && n > 0 {
+                        out[id] = n
+                }
+                return true
+        })
+        return out
+}
+
+// persistLaneFloors R116: 原子落盘（tmp+rename，对齐 cookie jar 持久化写法）。
+// 返回落盘条目数；写失败返回 0（调用方保留脏标记重试）。
+func persistLaneFloors() int {
+        snap := laneFloorSnapshot()
+        if len(snap) == 0 {
+                return 0
+        }
+        data, err := json.Marshal(snap)
+        if err != nil {
+                return 0
+        }
+        tmp := laneFloorPersistPath + ".tmp"
+        if err := os.WriteFile(tmp, data, 0o600); err != nil {
+                return 0
+        }
+        if err := os.Rename(tmp, laneFloorPersistPath); err != nil {
+                _ = os.Remove(tmp)
+                return 0
+        }
+        return len(snap)
+}
+
+// restoreLaneFloors R116: 启动时从磁盘恢复车道下限记忆（默认路径入口，startRunner 调用）。
+func restoreLaneFloors() int {
+        return restoreLaneFloorsAt(laneFloorPersistPath)
+}
+
+// restoreLaneFloorsAt R116: 从指定路径恢复（测试隔离用）。
+// 只补空缺（LoadOrStore），不覆盖本进程已写入的值（启动早期无并发写，防御式保留语义）。
+// 返回恢复条目数。
+func restoreLaneFloorsAt(path string) int {
+        data, err := os.ReadFile(path)
+        if err != nil {
+                return 0 // 无快照（首次/沙箱重置）：冷启动软起步，正常路径
+        }
+        var doc map[int]int
+        if err := json.Unmarshal(data, &doc); err != nil {
+                log.Printf("[lane-floor] 快照解析失败（按冷启动处理）: %v", err)
+                return 0
+        }
+        n := 0
+        for id, limit := range doc {
+                if id <= 0 || limit <= 0 {
+                        continue
+                }
+                if _, loaded := gLaneFloor.LoadOrStore(id, limit); !loaded {
+                        n++
+                }
+        }
+        if n > 0 {
+                log.Printf("[lane-floor] 已从磁盘恢复 %d 个任务的车道下限记忆（重启不再回软起步重爬）", n)
+        }
+        return n
+}
+
+// laneFloorPersistLoop R116: 脏标记触发的周期落盘（60s；仅 dirty 时写，常态零 I/O）。
+// startRunner go 调用；进程被 kill -9 最多丢最近 60s 的降档增量（可接受：降档记忆
+// 只影响 resume 起步车道数，丢了退化为软起步=旧行为）。
+func laneFloorPersistLoop() {
+        t := time.NewTicker(60 * time.Second)
+        defer t.Stop()
+        for range t.C {
+                if !laneFloorDirty.CompareAndSwap(true, false) {
+                        continue // 无变化：零 I/O
+                }
+                if n := persistLaneFloors(); n > 0 {
+                        log.Printf("[lane-floor] 车道下限记忆已落盘（%d 任务）", n)
+                } else {
+                        laneFloorDirty.Store(true) // 写失败保留脏标记，下轮重试
+                }
+        }
+}
+
 // laneFloorStore 记录任务历史车道下限（只降不升：取历史最小值）。
 // 首写必须 LoadOrStore（Task 35-a 修复，与 scraper-go Task 33 TestLaneFloorConcurrent 同类竞态）：
 // 并发双 shrink 在首写窗口各自 Load 到 cur==0 后裸 Store，后写的较大值会覆盖先写的更小值，
 // 丢失更深降档记忆 → resume 起步偏高速烧穿。
+// R116: 写入成功置脏标记（持久化循环 60s 内落盘，重启不再清零）。
 func laneFloorStore(taskID, limit int) {
         if limit <= 0 {
                 return
@@ -866,11 +968,13 @@ func laneFloorStore(taskID, limit int) {
                 }
                 if cur == 0 {
                         if _, loaded := gLaneFloor.LoadOrStore(taskID, limit); !loaded {
-                                return // 首写成功
+                                laneFloorDirty.Store(true) // R116: 首写成功 → 待落盘
+                                return
                         }
                         continue // 并发者已抢先写入：重新取值比较
                 }
                 if gLaneFloor.CompareAndSwap(taskID, cur, limit) {
+                        laneFloorDirty.Store(true) // R116: 降档成功 → 待落盘
                         return
                 }
         }
