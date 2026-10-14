@@ -480,7 +480,13 @@ func extractChapterRefs(doc *goquery.Document, rule map[string]string, baseURL s
 			title := ""
 			if usedRule {
 				if cts, ok := rule["chapterTitleSelector"]; ok && cts != "" {
-					title = pickText(a, splitAlternatives(cts))
+					if strings.TrimSpace(cts) == "ownText" {
+						// legado 书源 chapterName=ownText 语义（selectors.go ownTextOf）：
+						// 仅锚点直接文本，剥离内嵌站方标记（书海阁 <i class="red"> [免费]</i> 实测）
+						title = collapse(ownTextOf(a))
+					} else {
+						title = pickText(a, splitAlternatives(cts))
+					}
 				}
 			}
 			if title == "" {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/andybalholm/cascadia"
+	"golang.org/x/net/html"
 )
 
 // compileSel 校验并编译选择器；非法返回 nil（调用方跳过，对齐 TS catch 语义）。
@@ -123,6 +124,22 @@ func pickText(s *goquery.Selection, rawSelectors []string) string {
 		}
 	}
 	return ""
+}
+
+// ownTextOf 元素「直接文本」拼接：仅取直接子级文本节点，不含后代元素内的文本。
+// 对齐 legado 书源 chapterName=ownText 语义——章节锚内嵌的站方标记
+// （如 书海阁 <i class="red"> [免费]</i>）不会混入章名。
+// 消费方式：bookRule.chapterTitleSelector = "ownText"（关键字，非 CSS 选择器）。
+func ownTextOf(s *goquery.Selection) string {
+	var b strings.Builder
+	for _, n := range s.Nodes {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.TextNode {
+				b.WriteString(c.Data)
+			}
+		}
+	}
+	return b.String()
 }
 
 // firstMatch 在 scope 内按备选顺序取第一个命中元素

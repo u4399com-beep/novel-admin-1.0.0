@@ -4734,3 +4734,24 @@ Stage Summary:
 - 反反爬基座加固三件：stealth 内存自保（树根 janitor+水位护栏+降内存参数+大页截断）、watchdog 反脆弱（连败闸/防抖/fd 泄漏根修）、engine.env 单一来源（自动拉起不再丢分桶配置）
 - R115 遗留①闭环：biqutu 4 存活出口分桶 ×4（每 IP 仍 <1 req/s）；R115 遗留③维持 dip=150（101kks 限流 46 次未满足「长期零新增」加码条件，符合既定判据）
 - 后续提速方向移交（天花板已到，扩容是唯一正道）：①新增站点规则（每站 +1485 章/h 潜力，需逐站编写选择器+实测）②biqutu 分桶运行数据观测（4 出口 aimd 独立性验证）③min-yuan/huangjinwu 等慢站的出口池补种
+
+---
+Task ID: R117
+Agent: Z.ai Code (main)
+Task: 用户指令——根据 legado 书源 yckceo#7948（书海阁 book.washai.net）编写适配本系统的采集规则（直译+实测+入库+固化 seed）
+
+Work Log:
+- 【沙箱第 8 次重置自愈】三服务全灭/Go 工具链丢/db 目录丢：Go 1.22.12（golang.google.cn 直链；proxy.golang.org 被墙改 GOPROXY=goproxy.cn）→ 双 .bin 重建 → mkdir db（SQLite CANTOPEN(14) 病灶为 /home/z/my-project/db 目录缺失）→ `bun run dev`（dev-go.sh 自愈环）拉起 backend :3000，seed 空表自动播种 20 规则 + fleetkeeper 首轮自动建 16 条 list 任务（E26 自持验证），ensureEngine 自拉起 scraper :3030
+- 【书源解析+四段实测（沙箱直连全通过）】yckceo#7948 为阅读(Legado)书源：书海阁 book.washai.net，ruleBookInfo 八字段/ruleToc（含 nextTocUrl=下一页）/ruleContent，无搜索发现规则。实测定案：①列表=首页+分类页 article.classBookCard 卡片流（.classBookTitle a/.classBookAuthor a 干净作者/.book-cover-badge 分类徽章）②书页 #bookName/#bookAuthor/#bookDesc/#bookCoverImg(img 直挂 id)/#bookStatus/#bookCatBadge 全命中，书页仅最新 1 章→必须走 #allIndexLink 二次抓目录（对齐书源 tocUrl）③目录 /book/indexList-{id}.html 每页 100 章（#bookIndexList li a），第 2 页起 URL 变形态 /book/indexList/{bid}/{N}.html（walker 锚跟随天然兼容），indexPager a:contains(下一页) 逐页发现，799 章 8 页齐全④正文 .readChapterAppendBody 纯 <p> 零广告零脚本（单章 2308 字实测）、无章节内分页
+- 【规则落库】POST /api/scrape-rules 建 #30 书海阁(washai)：siteUrl 指向全站书目 /book/bookclass.html（440 页×20 本，layui ?page=N 分页与引擎猜测变体 ?page=k 天然吻合且保留 c=/k= 过滤参数→不配 paginationTemplate）；chapterListPaginationSelector=a:contains(下一页)、nextSelector=#nextLink 防御性配置（isSameChapterPagination 判定雪花 ID 不构成前缀续写→跨章自动截断零额外请求）；wordCount/lastChapter 书源字段引擎无对应（worker 自统计/目录推导）不需映射
+- 【引擎增强 ownText（legado chapterName=ownText 语义）】章锚内嵌 <i class="red"> [免费]</i> 站方标记会混入章名（pickText 无 ownText 支持）——scraper-go 三处：selectors.go 新增 ownTextOf（直接子级文本节点拼接）+ extract.go extractChapterRefs 支持 chapterTitleSelector="ownText" 关键字 + util.go bookKeys 白名单注释。backend-go engineclient.go fetchTocPage 缩减版 bookRule 键白名单同步透传 chapterTitleSelector（首测实证：不透传则目录页章名回退全文本带 [免费]，修复后 799 章零污染）
+- 【端到端实测（真实任务入库）】单本任务《权势》：目录 walker 799/799 章全量（与源站 data-total 精确一致）、章名「第1章 祸不单行」零 [免费]、正文 31+ 章入库（wordCount 2308/2333/2111 与源文本吻合）——期间同域并发（任务 18+19+探针）触发主机熔断防封禁保护（任务 auto-paused 保进度，冷却自动恢复续传，失败形态被 worker 正确判为限流非封禁）；列表任务 20 条发现+骨架入库（宫墙柳等）
+- 【测试与文档】backend-go 全量 ok、scraper-go 2 个失败均为既有环境问题（HEAD 基线复现，非本轮引入）：TestChapterListApiBookIdPlaceholderInURL 需 SCRAPER_ALLOW_PRIVATE=1（带 env 通过）、TestCachedPublicIPTrailingDot DNS 缓存环境依赖；go vet 双净。文档三处：scrape-rules.md 头部 15→21 条、deployment.md §10.3 规则清单、anti-anti-crawl.md §6.2 增 ownText 能力行。seed.json 追加规则 #30 + _comment 更新（空库重建不丢）
+- 【工具陷阱自救（第三次踩坑记录）】Edit 工具对 tab 缩进 Go 文件会整文件重写为 8 空格（extract/selectors/util/engineclient 四文件中招）——gofmt 文件（HEAD 本 gofmt-clean）直接 gofmt -w 恢复；非 gofmt 文件（engineclient HEAD 即 8 空格风格、21/59 非 gofmt）git checkout 回滚后按原风格 python 重放语义编辑（最终 diff +3/-1 纯语义）；core.fileMode=false 清 10 文件 mode-only 噪音
+- 【git】credential-store 随沙箱重置丢失，按用户 token 重建 ~/.git-credentials（600）；本次为单 commit 语义推送
+
+Stage Summary:
+- 书海阁(washai) 规则 #30 全链路落地：yckceo#7948 直译+沙箱四段实测+真实任务 799 章入库验证，直连可达零代理依赖；seed.json 固化（空库自动播种）
+- 引擎新增 ownText 章名语义（legado 兼容）：chapterTitleSelector="ownText" 关键字 + fetchTocPage 透传，可复用于一切「章锚内嵌站方标记」的 legado 直译源
+- 熔断/暂停/自动恢复链路实战自证：同域过载→熔断→任务 auto-pause→冷却 auto-resume，「兼顾源站封禁」约束的运行时闭环无需人工干预
+- 遗留移交：①任务 18《权势》799 章填充中（熔断冷却后自动续传，无需人工）②washai 未配 proxy（直连健康；若用户国内服务器直连异常再按 R97 流程补池）③fleetkeeper 将在冷却后为规则 30 自动建 pages=10 的 list 任务（siteUrl=bookclass.html 与猜测变体兼容）

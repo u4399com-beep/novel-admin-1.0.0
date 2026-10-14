@@ -107,6 +107,7 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | 出口池自愈（E18，Task 59） | backend 后台 10min/轮遍历「enabled 且带代理池」规则：并发实测池内出口对站点可达性（任何 HTTP 状态含 WAF 403=可达）→ 死口经免费代理源实测补位 → 仅写 proxy 列即时生效（引擎无缓存路径）。与 E17/种子固化构成「活池→换血→重建不丢」三层长期稳定性闭环；PROXYWATCH_OFF=1 停用 |
 | 预算感知限速 | acquireDomainSlotBudgeted：预计排队超预算时 shed 快速失败（不睡眠占槽），域限速与策略预算联动 |
 | 目录序号三层根修 | 目录采集管线 reorderRefPairs 重排（最新块+目录混合 DOM 序 → 全局升序），繁体「節/話」先归一 |
+| 章名 ownText 语义（R117） | `bookRule.chapterTitleSelector = "ownText"` 关键字：锚点直接文本（不含后代元素）——legado 书源 chapterName=ownText 直译，剥离章锚内嵌站方标记（书海阁 `<i class="red"> [免费]</i>` 实测）；backend fetchTocPage 目录页键白名单同步透传 |
 
 ### 6.3 实测遗留问题（截至 24-d 审计）
 

@@ -375,7 +375,9 @@ func fetchListPage(run *Run, u string, rule LoadedRule, referer string) ([]ListI
 // 以 BookData.TocPages 透出。
 func fetchTocPage(run *Run, u string, rule LoadedRule, referer string, quiet bool) ([]ChapterRef, []string, bool) {
         bookRule := RuleMap{}
-        for _, key := range []string{"chapterLinkSelector", "excludeSelector", "chapterListPaginationSelector"} {
+        // chapterTitleSelector 一并透传：ownText 关键字（legado 书源语义）在目录页同样生效，
+        // 否则分页目录站的章名会混入锚内站方标记（书海阁 <i class="red"> [免费]</i> 实测）
+        for _, key := range []string{"chapterLinkSelector", "chapterTitleSelector", "excludeSelector", "chapterListPaginationSelector"} {
                 if v := rule.BookRule[key]; v != "" {
                         bookRule[key] = v
                 }

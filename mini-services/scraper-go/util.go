@@ -126,6 +126,8 @@ var bookKeys = []string{
 	// R103：HTML 片段全量目录接口模板（/ajax_novels/chapterlist/{bookId}.html 形态），
 	// 展开后并入 TocPages 交目录 walker 跟随（extract.go expandTocHtmlApi）
 	"chapterListHtmlApiTemplate",
+	// chapterTitleSelector 特殊关键字 "ownText"：锚点直接文本（legado 书源 chapterName=ownText
+	// 语义，剥离内嵌站方标记如 <i class="red"> [免费]</i>；selectors.go ownTextOf 实现）
 }
 var chapterKeys = []string{"titleSelector", "contentSelector", "nextSelector", "excludeSelector"}
 
