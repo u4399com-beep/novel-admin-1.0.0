@@ -1,0 +1,22 @@
+{{/* washai 目录页：卷分块（Task 45-b 契约）/ 无卷平铺，双栏网格章节列表 */}}
+{{define "content"}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">{{.Novel.title}} · 全部章节<span class="wa-more">共 {{len .Chapters}} 章</span></h2>
+  {{$vols := .Volumes}}{{if $vols}}{{range $vol := $vols}}
+  <h3 class="wa-toc-vol">{{if $vol.name}}{{$vol.name}}{{else}}未分卷{{end}} <small>({{len $vol.chapters}} 章)</small></h3>
+  <div class="wa-toc-grid">
+    {{range $vol.chapters}}<div class="wa-toc-item">
+      <a href="{{chapterURL .id}}">{{.title}}</a>
+      {{if .wordCount}}<span class="wa-rank-meta">{{wcFmt .wordCount}}</span>{{end}}
+    </div>{{end}}
+  </div>
+  {{end}}{{else}}
+  <div class="wa-toc-grid">
+    {{range .Chapters}}<div class="wa-toc-item">
+      <a href="{{chapterURL .id}}">{{.title}}</a>
+      {{if .wordCount}}<span class="wa-rank-meta">{{wcFmt .wordCount}}</span>{{end}}
+    </div>{{else}}<p class="wa-empty-tip">暂无章节</p>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

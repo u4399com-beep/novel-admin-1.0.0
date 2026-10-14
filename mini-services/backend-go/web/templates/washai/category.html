@@ -1,0 +1,56 @@
+{{/* washai 分类页：分类头 + 图文推荐 + 热门榜 + 全部书籍（横向卡片流） */}}
+{{define "content"}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">{{.Category.name}} · 分类列表<span class="wa-more">共 {{len .Novels}} 本</span></h2>
+</div>
+
+{{/* 分类页图文推荐区块（无分页契约：列表全量渲染） */}}
+{{if .FeaturedBlock}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">图文推荐</h2>
+  <div class="wa-cards">
+    {{range .FeaturedBlock}}<article class="wa-card">
+      <a href="{{bookURL .id}}" style="flex:none">{{if isLocalCover .cover}}<span class="wa-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover {{gcls .cover}}">{{title0 .title}}</span>{{end}}</a>
+      <div class="wa-card-body">
+        <a class="wa-card-title" href="{{bookURL .id}}">{{.title}}</a>
+        <p class="wa-card-author">{{.author}}</p>
+        <p class="wa-card-meta">{{if .wordCount}}<span class="wa-badge">{{wcFmt .wordCount}}</span>{{end}}</p>
+        <p class="wa-card-desc">{{excerpt .description 50}}</p>
+      </div>
+    </article>{{end}}
+  </div>
+</div>
+{{end}}
+
+{{if .HotBlock}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">热门书籍</h2>
+  <ul class="wa-rank">
+    {{range $i, $n := .HotBlock}}<li><span class="wa-rank-no">{{$i}}</span>
+      <a class="wa-rank-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <span class="wa-rank-meta">{{$n.author}} · 点击 {{$n.clicks}}</span></li>{{end}}
+  </ul>
+</div>
+{{end}}
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">全部书籍</h2>
+  <div class="wa-cards">
+    {{range .Novels}}<article class="wa-card">
+      <a href="{{bookURL .id}}" style="flex:none">{{if isLocalCover .cover}}<span class="wa-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover {{gcls .cover}}">{{title0 .title}}</span>{{end}}</a>
+      <div class="wa-card-body">
+        <a class="wa-card-title" href="{{bookURL .id}}">{{.title}}</a>
+        <p class="wa-card-author">作者：{{.author}}</p>
+        <p class="wa-card-meta">
+          {{if eq .status "finished"}}<span class="wa-badge wa-badge-green">已完本</span>{{else}}<span class="wa-badge">连载中</span>{{end}}
+          {{if .wordCount}}<span>{{wcFmt .wordCount}}</span>{{end}}
+        </p>
+        <p class="wa-card-chapter">{{if .lastChapterTitle}}<a href="{{bookURL .id}}">{{.lastChapterTitle}}</a>{{else}}暂无章节{{end}}</p>
+        <p class="wa-card-desc">{{excerpt .description 50}}</p>
+      </div>
+    </article>{{else}}<p class="wa-empty-tip">本分类暂无书籍</p>{{end}}
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,79 @@
+{{/* washai 主题（书海阁观感复刻，原创实现）—— 共享骨架。
+结构：白色双层头部（上行 品牌+胶囊搜索+工具链接；下行分类导航）+ 公告条 +
+正文容器 + 深板岩色页脚。全部样式自包含 /static/css/washai.css。
+阅读页（/chapter/）用简化头部：品牌 + 返回书页 + 紧凑搜索。
+布局红线：body flex 纵向 + main flex:1 → 页脚 sticky（短页不悬空）。 */}}
+{{define "layout"}}{{$path := .Path}}{{$sn := .Site.siteName}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{/* title 去重：pageTitle 已含「 - 站名」后缀的页面不再追加；首页/分类无后缀才补「 | 站名」 */}}
+<title>{{if eq $path "/"}}{{.pageTitle}}{{else}}{{$t := trimSuffixStr .pageTitle (printf " - %s" $sn)}}{{if eq $t .pageTitle}}{{$t}} | {{$sn}}{{else}}{{.pageTitle}}{{end}}{{end}}</title>
+<meta name="description" content="{{.pageDescription}}">
+{{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
+<link rel="stylesheet" href="/static/css/cover-gradients.css?v={{staticVer}}">
+<link rel="stylesheet" href="/static/css/washai.css?v={{staticVer}}">
+</head>
+<body class="wa-body">
+{{if ne (printf "%.9s" $path) "/chapter/"}}
+  <header class="wa-header">
+    <div class="wa-wrap">
+      <div class="wa-topbar">
+        <a class="wa-brand" href="/"><span class="wa-brand-mark" aria-hidden="true">海</span>{{$sn}}</a>
+        <form class="wa-search" action="/search" method="get" role="search">
+          <input type="search" name="q" value="{{.Q}}" placeholder="搜索书名 / 作者" aria-label="搜索小说">
+          <button type="submit">搜索</button>
+        </form>
+        <div class="wa-utils">
+          {{if .Site.notice}}<a class="wa-notice-link" href="/" title="{{.Site.notice}}">公告：{{.Site.notice}}</a><span class="wa-divider">|</span>{{end}}
+          <a href="/">书架</a>
+          <span class="wa-divider">|</span>
+          <a href="/search">搜索</a>
+        </div>
+      </div>
+    </div>
+    <nav class="wa-navbar" aria-label="主导航">
+      <div class="wa-wrap">
+        <div class="wa-nav">
+          <a href="/" class="{{if eq $path "/"}}on{{end}}">首页</a>
+          {{range .Nav}}<a href="{{catURL .id}}" class="{{if eq $path (catURL .id)}}on{{end}}">{{.name}}<sup>{{.novelCount}}</sup></a>{{end}}
+          <a href="/search" class="{{if eq $path "/search"}}on{{end}}">搜索</a>
+        </div>
+      </div>
+    </nav>
+  </header>
+{{else}}
+  {{/* 阅读页简化头部：品牌 + 返回书页 + 紧凑搜索 */}}
+  <header class="wa-header">
+    <div class="wa-wrap">
+      <div class="wa-topbar">
+        <a class="wa-brand" href="/"><span class="wa-brand-mark" aria-hidden="true">海</span>{{$sn}}</a>
+        <form class="wa-search" action="/search" method="get" role="search">
+          <input type="search" name="q" value="{{.Q}}" placeholder="搜索书名 / 作者" aria-label="搜索小说">
+          <button type="submit">搜索</button>
+        </form>
+        <div class="wa-utils"><a href="{{bookURL .Novel.id}}">返回书页</a></div>
+      </div>
+    </div>
+  </header>
+{{end}}
+<main class="wa-main">
+  <div class="wa-wrap">
+    {{template "content" .}}
+  </div>
+</main>
+<footer class="wa-footer">
+  <div class="wa-wrap">
+    <p class="wa-footer-brand">{{$sn}}</p>
+    {{if or .FriendLinks .WheelLinks}}<p>友情链接：{{range .FriendLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.name}}</a>{{end}}{{range .WheelLinks}}<a href="{{.url}}">{{.name}}</a>{{end}}</p>{{end}}
+    {{if .FleetLinks}}<p>站群导航：{{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.siteName}}</a>{{end}}</p>{{end}}
+    {{if .Site.footerText}}<p>{{.Site.footerText}}</p>{{end}}
+    {{if .Site.footerLinks}}<p>{{range .Site.footerLinks}}<a href="{{.url}}">{{.label}}</a>{{end}}</p>{{end}}
+    {{if .Site.footerExtra}}<p>{{.Site.footerExtra}}</p>{{end}}
+    {{if .Site.notice}}<p>{{.Site.notice}}</p>{{end}}
+  </div>
+</footer>
+<script src="/static/js/app.js?v={{staticVer}}" defer></script>
+</body>
+</html>{{end}}

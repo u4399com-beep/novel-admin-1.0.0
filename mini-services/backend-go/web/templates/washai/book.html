@@ -1,0 +1,66 @@
+{{/* washai 书籍详情页：面包屑 + 封面(分类徽章) + 信息行 + 简介 + 动作按钮 + 标签 + 章节预览 + 同类推荐 */}}
+{{define "content"}}
+<nav class="wa-crumbs" aria-label="面包屑">
+  <a href="/">首页</a> › <a href="{{catURL .Novel.categoryId}}">{{.CategoryName}}</a> › <span>{{.Novel.title}}</span>
+</nav>
+
+<div class="wa-panel">
+  <div class="wa-book-head">
+    <a class="wa-book-cover" href="{{bookURL .Novel.id}}" aria-label="{{.Novel.title}}封面">
+      {{if isLocalCover .Novel.cover}}<span class="wa-cover wa-cover-lg"><img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面"></span>
+      {{else}}<span class="wa-cover wa-cover-lg {{gcls .Novel.cover}}">{{title0 .Novel.title}}</span>{{end}}
+      {{if .CategoryName}}<span class="wa-cover-badge">{{.CategoryName}}</span>{{end}}
+    </a>
+    <div class="wa-book-info">
+      <h1 class="wa-book-title">{{.Novel.title}}</h1>
+      <ul class="wa-book-meta">
+        <li>作者：<b><a href="/search?q={{.Novel.author}}">{{.Novel.author}}</a></b></li>
+        <li>状态：<b>{{if eq .Novel.status "finished"}}<span class="wa-badge wa-badge-green">已完本</span>{{else}}<span class="wa-badge">连载中</span>{{end}}</b></li>
+        {{if .Novel.wordCount}}<li>总字数：<b>{{wcFmt .Novel.wordCount}}</b></li>{{end}}
+        <li>点击：<b>{{.Novel.clicks}}</b></li>
+        {{if .Novel.updatedAt}}<li>更新：<b>{{dateFmt .Novel.updatedAt}}</b></li>{{end}}
+      </ul>
+      {{if .LastChapter}}<p class="wa-card-chapter">最新章节：<a href="{{chapterURL .LastChapter.id}}">{{.LastChapter.title}}</a></p>{{end}}
+      <p class="wa-intro">{{if .Novel.description}}{{.Novel.description}}{{else}}作者尚未填写简介。{{end}}</p>
+      <div class="wa-book-actions">
+        {{if .LastChapter}}<a class="wa-btn" href="{{chapterURL .LastChapter.id}}">立即阅读</a>{{end}}
+        <a class="wa-btn wa-btn-ghost" href="{{tocURL .Novel.id}}">查看目录</a>
+        <span id="fb-resume" data-book-id="{{.Novel.id}}" data-btn-class="wa-btn wa-btn-ghost"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{/* 小说标签：书名+作者+搜索引擎下拉词（pseo 长尾词），点击跳转聚合页 */}}
+{{if .Tags}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">小说标签</h2>
+  <div class="wa-tags">
+    {{range .Tags}}<a class="wa-tag" href="{{pseoURL .}}">{{.}}</a>{{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">章节预览<a class="wa-more" href="{{tocURL .Novel.id}}">共 {{.ChaptersTotal}} 章 · 完整目录 ›</a></h2>
+  <ul class="wa-rank">
+    {{range .Chapters}}<li><span class="wa-rank-no" aria-hidden="true">·</span>
+      <a class="wa-rank-title" href="{{chapterURL .id}}">{{.title}}</a>
+      {{if .wordCount}}<span class="wa-rank-meta">{{wcFmt .wordCount}}</span>{{end}}</li>{{else}}<li class="wa-empty-tip">暂无章节</li>{{end}}
+  </ul>
+</div>
+
+{{if .Related}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">同类推荐</h2>
+  <div class="wa-grid">
+    {{range .Related}}<article class="wa-grid-item">
+      <a href="{{bookURL .id}}">{{if isLocalCover .cover}}<span class="wa-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover {{gcls .cover}}">{{title0 .title}}</span>{{end}}</a>
+      <a class="wa-grid-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="wa-grid-meta">{{.author}}</p>
+    </article>{{end}}
+  </div>
+</div>
+{{end}}
+{{end}}

@@ -56,7 +56,7 @@ const fallbackTheme = "_fallback"
 
 // themeNames admin 主题切换下拉的可选清单（与 src/themes registry 对齐）
 // R98 追加 ncnd（克隆 ncnd.net「gelin」版式，纯手写 CSS 自包含）
-var themeNames = []string{"aijjxs", "pilishuwu", "ddyueshu", "shipsay", "x2552", "trxsw", "23qb", "101kks", "huangjinwu", "ggd66", "ncnd"}
+var themeNames = []string{"aijjxs", "pilishuwu", "ddyueshu", "shipsay", "x2552", "trxsw", "23qb", "101kks", "huangjinwu", "ggd66", "ncnd", "washai"}
 
 // isKnownTheme 主题白名单校验（?theme= 预览参数防路径穿越）
 func isKnownTheme(t string) bool {

@@ -1,0 +1,11 @@
+{{/* washai 搜索结果页 */}}
+{{define "content"}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">搜索结果<span class="wa-more">{{if .Q}}“{{.Q}}” 共 {{.Total}} 本{{end}}</span></h2>
+  <ul class="wa-rank">
+    {{range .Novels}}<li><span class="wa-rank-no" aria-hidden="true">·</span>
+      <a class="wa-rank-title" href="{{bookURL .id}}">{{.title}}</a>
+      <span class="wa-rank-meta">{{.author}} · {{.categoryName}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</span></li>{{else}}<li class="wa-empty-tip">{{if .Q}}未找到与“{{.Q}}”相关的书籍{{else}}请输入关键词搜索书名或作者{{end}}</li>{{end}}
+  </ul>
+</div>
+{{end}}

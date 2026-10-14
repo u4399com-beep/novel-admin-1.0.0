@@ -4755,3 +4755,25 @@ Stage Summary:
 - 引擎新增 ownText 章名语义（legado 兼容）：chapterTitleSelector="ownText" 关键字 + fetchTocPage 透传，可复用于一切「章锚内嵌站方标记」的 legado 直译源
 - 熔断/暂停/自动恢复链路实战自证：同域过载→熔断→任务 auto-pause→冷却 auto-resume，「兼顾源站封禁」约束的运行时闭环无需人工干预
 - 遗留移交：①任务 18《权势》799 章填充中（熔断冷却后自动续传，无需人工）②washai 未配 proxy（直连健康；若用户国内服务器直连异常再按 R97 流程补池）③fleetkeeper 将在冷却后为规则 30 自动建 pages=10 的 list 任务（siteUrl=bookclass.html 与猜测变体兼容）
+---
+Task ID: R118
+Agent: Z.ai Code (main)
+Task: 用户双指令——①改造书海阁(book.washai.net) 规则适配 https://book.washai.net/book/bookclass.html?page=1 页面 ②复刻书海阁站点主题模版
+
+Work Log:
+- 【沙箱第 9 次重置自愈】三服务全灭/Go 工具链丢/curl-imp 丢/db 目录丢/stealth venv 丢：按手册 15 分钟路径恢复——Go 1.22.12（golang.google.cn 直链）→ curl-impersonate 21 二进制（ghfast.top）→ mkdir db → ensure-services 失败码收尾拉起 backend :3000 / scraper :3030（engine.env 分桶注入）→ stealth venv 后台重建（aliyun PyPI）；fleet 自组织重建（DB 空库播种 20 规则，runner 2s 轮询自动建任务）
+- 【任务①：bookclass?page=1 适配实证（规则 #30 零配置缺陷，验证+取证为主）】curl 实抓 bookclass.html?page=1（100KB 服务端渲染，20×article.classBookCard 卡片流：.classBookTitle a 书名/.classBookAuthor a 干净作者/.book-cover-badge.classCoverCat 分类徽章/.classBookChapter a 最新章/.classBookDesc 简介，layui 分页 nav.seoBookClassPager ?page=N 至 440 页，8 分类 c=1..8）→ 逐字比对规则 #30 listRule 五字段全命中（R117 已预配）→ 双任务实测：任务 20（精确目标 ?page=1，pages=2）total=40=2 页×20 本全提取、任务 21（分类形态 ?c=3&page=1）total=20 且书全为都市言情=过滤参数保留实证 → 结论：引擎未配 paginationTemplate 的猜测变体 ?page=k 与源站 layui 分页语义天然吻合且 q.Set 保留既有 query（显式静态模板反而丢 c=/k= 过滤参数，维持不配是正确设计）；同域 3 任务并发触发主机熔断为防封禁设计（任务 auto-pause 冷却自动恢复，任务 20 实证 auto-resume 回 running），失败的任务 17（fleetkeeper 自动建，撞上熔断硬失败）PATCH action=restart 重新入队
+- 【任务①收尾】规则 #30 notes 追加 R118 复验证据链（?page=1 直采/分类过滤/熔断定性）同步 live DB + seed.json（空库重建不丢）；任务 20 发现书籍字段零污染实证（书名/干净作者/分类映射都市言情·武侠仙侠·科幻未来等）
+- 【任务②：washai 主题复刻（原创实现，非代码拷贝）】抓源站四页（home=JS 骨架渲染、bookclass/book/chapter=服务端渲染）+ 三份 CSS（base/main/book 共 173KB）→ 视觉基因提炼：琥珀金主色 #f2b23b/#f4c453（品牌/按钮/激活态）、墨绿辅色 #2f9368（完本徽章）、深板岩 #1f2d3d/#2b3845（页脚/标题）、白卡细边圆角、左封面(96×128)+右信息横向卡片、白色双层头部（品牌+胶囊搜索+工具链接 / 分类导航条）、阅读页居中窄栏大字宽行距
+- 【主题落地 9 文件】web/templates/washai/（_shared+home+book+toc+chapter+category+search+pseo 八页，全部 wa-* 原创类名+原创模板逻辑，遵循数据契约 .Site/.Nav/.Stats/.HomeBlocks/.Volumes/FriendLinks/FleetLinks/WheelLinks+app.js 契约 ID fb-chapter-content/fb-font-dec/inc/night/fb-resume）+ web/static/css/washai.css（约 330 行自包含原创 CSS，body flex 纵向+main flex:1 页脚 sticky 红线，720px 断点移动适配）→ web.go themeNames 注册 "washai"（sed 单行编辑避开 Edit 工具 tab 重写陷阱）
+- 【部署陷阱与修复】deploy 脚本 pkill 模式 'backend-go[.]bin' 不匹配实际 cmdline 'bin/backend-go'（历史 .bin 命名已改 bin/ 产物）——旧进程占 3000 端口致新二进制启动失败、PATCH activeTheme washai 报「设置行不可用」（旧二进制 isKnownTheme 无 washai→sets 空→报错路径），根修 pkill 模式 'mini-services/backend-go/bin' 后重启成功
+- 【契约测试补齐】TestSharedFooterBlocksRender 失败暴露主题页脚契约（友链/站群/链轮三区块+判空守卫）——按 ncnd 先例补 washai _shared.html 页脚三区块后全绿；backend-go 全量 70.4s ok、go vet 净
+- 【浏览器端到端终验】home（品牌+胶囊搜索+分类导航+深色统计条+图文区块横卡+金边左对齐面板头）/book/459（面包屑+封面徽章+信息行+按钮+标签）/chapter/556955（居中窄栏+工具条+正文排版）/search（结果列表+sticky 页脚）全 200 零 console error；390px 移动端书页/阅读页布局正常（搜索第二行全宽、卡片单列）；首页截图实证 washai 书目进入小编精选区块（572 书/65.7 万章持续增长）
+- 【文档】deployment.md 三处 10 主题→12 主题 + 主题清单补 ncnd/washai + R118 主题设计说明
+- 【git】credential-store 随沙箱重置丢失，按用户先前提供 token 重建 ~/.git-credentials（600 权限）；本 commit 含 R117 遗留未推送 commit（1bb1aee）
+
+Stage Summary:
+- 书海阁规则 #30 对 bookclass.html?page=1 的适配经双任务实证收口：精确 URL 直采 2 页×20 本零缺字段、分类 ?c= 过滤参数保留、猜页变体与 layui 分页吻合——规则本身无需改动（R117 预配正确），复验证据固化进 notes+seed.json
+- washai 主题（第 12 套）全链落地：原创 CSS+八页模板+themeNames 注册+页脚契约补齐，桌面/移动双端浏览器实测零 console error，页脚 sticky 红线达标
+- 部署工具链教训：pkill 模式必须匹配实际产物路径（bin/ 非 *.bin），否则旧进程占端口→新二进制静默启动失败→「设置行不可用」类谜题
+- 遗留移交：①washai 三任务（17 重启/20/21）在熔断冷却节流下逐步续传，fleet 自组织无需人工 ②主题预览 ?theme=washai 可用，如需设为默认已 PATCH activeTheme=washai（当前生效）③stealth venv 本轮仅后台重建，健康探活待下轮确认

@@ -1,0 +1,52 @@
+{{/* washai pseo 关键词聚合页：关键词导语 + 主打书 + 相关书横向卡片流 */}}
+{{define "content"}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">关于“{{.Keyword}}”的小说推荐</h2>
+  {{if .Description}}<p class="wa-lead">{{.Description}}</p>{{end}}
+</div>
+
+{{/* 主打书区块（有数据才渲染） */}}
+{{if .Featured}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">《{{.Featured.title}}》——{{.Keyword}}相关主打书</h2>
+  <div class="wa-book-head">
+    <a class="wa-book-cover" href="{{bookURL .Featured.id}}" aria-label="{{.Featured.title}}封面">
+      {{if isLocalCover .Featured.cover}}<span class="wa-cover wa-cover-lg"><img src="{{.Featured.cover}}" alt="{{.Featured.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover wa-cover-lg {{gcls .Featured.cover}}">{{title0 .Featured.title}}</span>{{end}}
+      {{if .Featured.categoryName}}<span class="wa-cover-badge">{{.Featured.categoryName}}</span>{{end}}
+    </a>
+    <div class="wa-book-info">
+      <a class="wa-card-title" style="font-size:20px" href="{{bookURL .Featured.id}}">{{.Featured.title}}</a>
+      <ul class="wa-book-meta">
+        <li>作者：<b>{{.Featured.author}}</b></li>
+        <li>状态：<b>{{if eq .Featured.status "finished"}}<span class="wa-badge wa-badge-green">完本</span>{{else}}<span class="wa-badge">连载</span>{{end}}</b></li>
+        {{if .Featured.wordCount}}<li>总字数：<b>{{wcFmt .Featured.wordCount}}</b></li>{{end}}
+        <li>共<b>{{.FeaturedChaptersTotal}}</b>章</li>
+      </ul>
+      {{if .FeaturedLastChapter}}<p class="wa-card-chapter">最新章节：<a href="{{chapterURL .FeaturedLastChapter.id}}">{{.FeaturedLastChapter.title}}</a></p>{{end}}
+      <p class="wa-intro">{{if .Featured.description}}{{.Featured.description}}{{else}}作者尚未填写简介。{{end}}</p>
+      {{if .FeaturedTags}}<div class="wa-tags" style="margin-bottom:12px">{{range .FeaturedTags}}<a class="wa-tag" href="{{pseoURL .}}">{{.}}</a>{{end}}</div>{{end}}
+      <div class="wa-book-actions">
+        {{if .FeaturedChapters}}<a class="wa-btn" href="{{with $fc := index .FeaturedChapters 0}}{{chapterURL $fc.id}}{{end}}">开始阅读</a>{{end}}
+        <a class="wa-btn wa-btn-ghost" href="{{tocURL .Featured.id}}">查看目录</a>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">相关书籍</h2>
+  <div class="wa-cards">
+    {{range .Novels}}<article class="wa-card">
+      <a href="{{bookURL .id}}" style="flex:none">{{if isLocalCover .cover}}<span class="wa-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover {{gcls .cover}}">{{title0 .title}}</span>{{end}}</a>
+      <div class="wa-card-body">
+        <a class="wa-card-title" href="{{bookURL .id}}">{{.title}}</a>
+        <p class="wa-card-author">{{.author}} · {{.categoryName}}</p>
+        <p class="wa-card-desc">{{excerpt .description 60}}</p>
+      </div>
+    </article>{{else}}<p class="wa-empty-tip">暂无匹配书籍</p>{{end}}
+  </div>
+</div>
+{{end}}

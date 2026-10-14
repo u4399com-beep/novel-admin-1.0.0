@@ -1,0 +1,74 @@
+{{/* washai 首页：统计条 + 自定义图文区块 + 分类速览 + 本周强推（封面网格）+ 榜单三栏 */}}
+{{define "content"}}
+
+<div class="wa-stats" role="status">
+  <span>收录<b>{{.Stats.novelCount}}</b>本</span>
+  <span>章节<b>{{.Stats.chapterCount}}</b>章</span>
+  <span>总字数<b>{{wcFmt .Stats.totalWordCount}}</b></span>
+  <span>今日更新<b>{{.Stats.todayUpdates}}</b>章</span>
+</div>
+
+{{/* 后台自定义图文区块（小编精选等）——契约：位于分类板块上方 */}}
+{{range .HomeBlocks}}
+<div class="wa-panel">
+  <h2 class="wa-panel-h">{{.title}}<a class="wa-more" href="/">更多 ›</a></h2>
+  <div class="wa-cards">
+    {{range .novels}}<article class="wa-card">
+      <a href="{{bookURL .id}}" style="flex:none">{{if isLocalCover .cover}}<span class="wa-cover"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover {{gcls .cover}}">{{title0 .title}}</span>{{end}}</a>
+      <div class="wa-card-body">
+        <a class="wa-card-title" href="{{bookURL .id}}">{{.title}}</a>
+        <p class="wa-card-author">{{.author}} · {{.categoryName}}</p>
+        <p class="wa-card-desc">{{excerpt .description 60}}</p>
+      </div>
+    </article>{{end}}
+  </div>
+</div>
+{{end}}
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">小说分类</h2>
+  <div class="wa-tags">
+    {{range .Nav}}<a class="wa-tag" href="{{catURL .id}}">{{.name}}（{{.novelCount}}）</a>{{end}}
+  </div>
+</div>
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">本周强推</h2>
+  <div class="wa-grid">
+    {{range .Featured}}<article class="wa-grid-item">
+      <a href="{{bookURL .id}}">{{if isLocalCover .cover}}<span class="wa-cover wa-cover-lg"><img src="{{.cover}}" alt="{{.title}}封面" loading="lazy"></span>
+      {{else}}<span class="wa-cover wa-cover-lg {{gcls .cover}}">{{title0 .title}}</span>{{end}}</a>
+      <a class="wa-grid-title" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="wa-grid-meta">{{.author}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</p>
+    </article>{{end}}
+  </div>
+</div>
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">热门书籍</h2>
+  <ul class="wa-rank">
+    {{range $i, $n := .Hot}}<li><span class="wa-rank-no">{{$i}}</span>
+      <a class="wa-rank-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <span class="wa-rank-meta">{{$n.author}}</span></li>{{end}}
+  </ul>
+</div>
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">最新更新</h2>
+  <ul class="wa-rank">
+    {{range .Latest}}<li><span class="wa-rank-no" aria-hidden="true">·</span>
+      <a class="wa-rank-title" href="{{bookURL .id}}">{{.title}}</a>
+      <span class="wa-rank-meta">{{.lastChapterTitle}} · {{dateFmt .updatedAt}}</span></li>{{end}}
+  </ul>
+</div>
+
+<div class="wa-panel">
+  <h2 class="wa-panel-h">点击排行</h2>
+  <ul class="wa-rank">
+    {{range $i, $n := .RankClicks}}<li><span class="wa-rank-no">{{$i}}</span>
+      <a class="wa-rank-title" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <span class="wa-rank-meta">{{if $n.wordCount}}{{wcFmt $n.wordCount}}{{else}}—{{end}}</span></li>{{end}}
+  </ul>
+</div>
+{{end}}

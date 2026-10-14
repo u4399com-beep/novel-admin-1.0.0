@@ -110,7 +110,7 @@ bash scripts/deploy-cn.sh --systemd
               ┌───────────────────────────────┼──────────────────────────┐
               │                               │                          │
         页面渲染（SSR）                   业务 API                    采集 runner
-   web/templates/ 10 主题              /api/novels 等            worker.go：2s 轮询任务
+   web/templates/ 12 主题              /api/novels 等            worker.go：2s 轮询任务
    + /admin 管理后台                  + /api/health              + 每 ≈30s 互监护引擎
               │                               │                          │
               └───────────────► SQLite db/custom.db ◄────────────────────┘
@@ -840,8 +840,9 @@ ss -ltnp | grep -E ':(3000|3030)\b'
 
 ![引擎策略](images/engine-strategies.png)
 
-> 主题预览：任意页面加 `?theme=<主题名>` 即时切换（10 套主题：
-> trxsw / 23qb / pilishuwu / ggd66 / aijjxs / x2552 / huangjinwu / 101kks / shipsay / ddyueshu）。
+> 主题预览：任意页面加 `?theme=<主题名>` 即时切换（12 套主题：
+> trxsw / 23qb / pilishuwu / ggd66 / aijjxs / x2552 / huangjinwu / 101kks / shipsay / ddyueshu / ncnd / washai）。
+> R118 新增 washai（书海阁观感复刻：琥珀金主色 + 白色双层头部 + 横向封面卡片 + 深板岩页脚，原创 CSS 自包含）。
 
 ### 9.3 采集冒烟测试（下发一条小任务并观察）
 
@@ -1072,7 +1073,7 @@ novel-admin/
 │  │  ├─ main.go                 #   入口（端口/模式解析、优雅退出）
 │  │  ├─ seed.go + seed/seed.json#   空库自动播种（go:embed：15 规则/9 分类/三区块）
 │  │  ├─ web.go / web_data.go    #   SSR 路由与页面数据组装
-│  │  ├─ web/templates/          #   10 主题 × 7 页 + admin + _fallback（磁盘加载，部署必须携带）
+│  │  ├─ web/templates/          #   12 主题 × 7 页 + admin + _fallback（磁盘加载，部署必须携带）
 │  │  ├─ web/static/             #   css/tw.css（Tailwind 产物）+ js/
 │  │  ├─ web-src/tw-input.css    #   Tailwind 入口（@source 扫模板/静态资源/gradient-tokens.txt）
 │  │  ├─ api_*.go                #   业务 API（novels/chapters/categories/scrape-rules/scrape-tasks/…）

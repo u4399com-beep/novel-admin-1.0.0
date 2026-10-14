@@ -1,0 +1,23 @@
+{{/* washai 阅读页：居中窄栏 + 章名 + 工具条（字号/夜间，app.js 契约 ID）+ 正文 + 章节导航 */}}
+{{define "content"}}
+<div class="wa-reader">
+  <article class="wa-reader-panel">
+    <h1 class="wa-reader-title">{{.Chapter.title}}</h1>
+    <p class="wa-reader-sub">{{.Novel.title}} · <a href="{{tocURL .Novel.id}}">查看目录</a></p>
+    <div class="wa-reader-tools">
+      <button type="button" id="fb-font-dec" aria-label="减小字号">A-</button>
+      <button type="button" id="fb-font-inc" aria-label="增大字号">A+</button>
+      <button type="button" id="fb-night" aria-label="切换夜间模式">夜间模式</button>
+    </div>
+    <hr class="wa-reader-divider">
+    <div class="wa-content" id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}">
+      {{range .Paragraphs}}<p>{{.}}</p>{{else}}<p class="wa-empty">本章内容为空，正文正在后台采集中，请稍后返回阅读。</p>{{end}}
+    </div>
+    <div class="wa-chapter-nav">
+      {{if .Prev}}<a class="wa-btn" href="{{chapterURL .Prev.id}}">上一章</a>{{else}}<span class="wa-btn is-off">上一章</span>{{end}}
+      <a class="wa-btn wa-btn-ghost" href="{{tocURL .Novel.id}}">目录</a>
+      {{if .Next}}<a class="wa-btn" href="{{chapterURL .Next.id}}">下一章</a>{{else}}<span class="wa-btn is-off">下一章</span>{{end}}
+    </div>
+  </article>
+</div>
+{{end}}
