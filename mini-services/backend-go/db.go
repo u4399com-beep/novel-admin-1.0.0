@@ -160,6 +160,12 @@ func getDB() (*sql.DB, error) {
                         `ALTER TABLE "ScrapeRule" ADD COLUMN "insecureTLS" BOOLEAN NOT NULL DEFAULT false`); err != nil {
                         log.Printf("[db] ScrapeRule.insecureTLS 加列失败（规则 TLS 开关不可用，采集不受影响）: %v", err)
                 }
+                // R119: ScrapeRule.minTier 规则级策略分层下限（JS 渲染站跳过 HTTP 层假成功）。
+                // 同 DQS 缺陷族预防：存量库幂等加列。
+                if err := ensureColumn(db, "ScrapeRule", "minTier",
+                        `ALTER TABLE "ScrapeRule" ADD COLUMN "minTier" INTEGER NOT NULL DEFAULT 0`); err != nil {
+                        log.Printf("[db] ScrapeRule.minTier 加列失败（规则分层下限不可用，采集不受影响）: %v", err)
+                }
                 // Task 60-R22: SiteSetting.homeConfig 首页自定义区块配置（存量库幂等加列）。
                 // 同 DQS 缺陷族第二例：列缺失时 seed.go/api_settings.go 的 SELECT "homeConfig"
                 // 拿到字符串字面量 → seed 静默跳过默认三区块写入（首页「热门推荐」空），

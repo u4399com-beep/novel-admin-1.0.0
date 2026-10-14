@@ -222,6 +222,10 @@ func proxyPoolHousekeeping() (int, int) {
 // assignNeededRuleProxies 规则补种：直连不健康且 proxy 为空的规则，从池内快口做站点级
 // 验证后自动填入。返回补种成功的规则数。
 // 「直连不健康」口径：RuleHealth.lastOK=0 或 failStreak≥2（表无该规则行 = 从未失败 = 健康，不补）。
+// R119 排除项：minTier≥2 的规则不补种——minTier 语义即「本站必须走浏览器渲染层」，
+// 出口代理对 HTTP 层无意义（被跳过）、对浏览器层反而劣化（render.py 带 proxy 实测
+// render-error、cloak 挑战拖延），该类站点不健康时的正确动作是检查 stealth 侧车，
+// 而非换出口（换血写入还会在 proxy-watch 读改写循环中反复回填，与人工清理打架）。
 func assignNeededRuleProxies() int {
         type ruleRow struct {
                 id      int64
@@ -232,6 +236,7 @@ func assignNeededRuleProxies() int {
         if err := queryList(`SELECT r."id", r."name", r."siteUrl" FROM "ScrapeRule" r
                 LEFT JOIN "RuleHealth" h ON h."ruleId" = r."id"
                 WHERE r."enabled" = 1 AND r."proxy" = '' AND r."siteUrl" != ''
+                  AND IFNULL(r."minTier", 0) < 2
                   AND (IFNULL(h."lastOK", 1) = 0 OR IFNULL(h."failStreak", 0) >= 2)
                 ORDER BY r."id" ASC`,
                 func(rs *sql.Rows) error {

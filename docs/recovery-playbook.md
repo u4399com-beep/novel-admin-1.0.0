@@ -24,6 +24,34 @@ tar -xzf go.tgz && rm go.tgz
 
 后续所有 go 命令前：`export PATH=/home/z/go-sdk/go/bin:$PATH && export GOPATH=/home/z/go`
 
+## 1.5 CloakBrowser 浏览器二进制恢复（R119 实证，约 5 分钟）
+
+stealth 侧车 venv 重建后 `~/.cloakbrowser/` 为空 → cloak launch 运行时自动下载被墙
+（cloakbrowser.dev 与 GitHub Releases 均 SSL 握手超时）。**陷阱：/health 仍报
+cloakBinary=true（旧代码 bool(binary_path) 对「期望路径」恒真，R119 已修为 installed
+字段+文件存在复核）——健康探活被带偏一整轮。**
+
+恢复路径（ghfast.top 镜像 + 断点续传循环，216MB 实测 ~8 分钟）：
+
+```bash
+VER=146.0.7680.177.5   # 与 venv 内 cloakbrowser 版本匹配：
+                        # venv/bin/python3 -c "import cloakbrowser.download as dl; print(dl.get_chromium_version())"
+mkdir -p ~/.cloakbrowser/chromium-$VER && cd /tmp
+while true; do
+  code=$(timeout 560 curl -sL -C - -o cb.tar.gz \
+    "https://ghfast.top/https://github.com/CloakHQ/cloakbrowser/releases/download/chromium-v$VER/cloakbrowser-linux-x64.tar.gz" \
+    -w "%{http_code}")
+  tar -tzf cb.tar.gz >/dev/null 2>&1 && break
+  echo "resume... code=$code size=$(stat -c%s cb.tar.gz)"
+done
+cd ~/.cloakbrowser/chromium-$VER && tar -xzf /tmp/cb.tar.gz && chmod +x chrome && ./chrome --version
+pkill -f "venv/bin/python3 server.py"   # 触发 run.sh 2s 自动重启（新进程检测到二进制）
+```
+
+验证：`curl -s -X POST localhost:3031/cloak -d '{"url":"https://www.aijjxs.com/","timeoutMs":60000}'`
+期望 `"ok": true`。R119 起 cloak 渲染为**子进程隔离**（每请求 spawn 独立解释器，
+playwright sync 的线程亲和/loop 永驻两陷阱根修），首次请求含 ~2s import 开销。
+
 ## 2. DB 恢复
 
 首选顺序：
@@ -117,7 +145,7 @@ bash scripts/install-curl-impersonate.sh
 
 | 依赖 | 状态 | 处置 |
 |---|---|---|
-| pilishuwu（CF 硬墙） | 全策略 403 | 人工过验 cf_clearance → 规则 cookies 字段 |
+| pilishuwu（CF jsd 挑战） | R119 实证直连可过 | stealth 侧车 cloak/browser 渲染自动过盾（规则已清 proxy 直连）；cloak 子进程含挑战完成轮询（20s 上限） |
 | kelexs / cunshu（GoEdge WAF） | 全路径 307→CAPTCHA | 人工过验会话 cookie → 规则 cookies 字段（合规红线：禁破解） |
 | proxyscrape 候选源 | 可用 | E18 候选拉取依赖 |
 | LLM 网关 | 偶发 429 | 指数退避冷却，优雅降级，无需干预 |

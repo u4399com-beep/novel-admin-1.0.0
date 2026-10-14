@@ -109,14 +109,14 @@
       "id": 18,
       "name": "trxsw",
       "siteUrl": "http://www.trxsw.com/lastupdate/",
-      "enabled": true,
+      "enabled": false,
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
       "listRule": "{\"itemSelector\":\"#alistbox\",\"titleSelector\":\".title h2 a\",\"linkSelector\":\".pic a\",\"authorSelector\":\".title span\"}",
       "bookRule": "{\"titleSelector\": \"h1.f21h\", \"authorSelector\": \"h1.f21h em a\", \"descriptionSelector\": \"td .intro\", \"coverSelector\": \".box_intro .pic img@src\", \"statusSelector\": \"td:contains(小说状态)\", \"categorySelector\": \"td:contains(小说分类)\", \"chapterLinkSelector\": \"#qvod-pl-list a\", \"catalogLinkSelector\": \".btopt a\", \"chapterListPaginationSelector\": \"a.morechapter,.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a,#page_bar a,#pagebar a,.pageNav a,.page-nav a,.pagebar a,.page_bar a,a:contains(下一页),a:contains(下一頁)\"}",
       "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#content\"}",
-      "notes": "2026-09 二轮实测通过（经站点级代理出口，直连 TCP 被重置）：唐人小说网（葡萄/杰奇新模板，utf-8）。列表页 /lastupdate/（#alistbox 条目：.title h2 a 书名/.title span 作者/.pic a 书页链接）；书页 /tangren_{id}.html（h1.f21h 内嵌 em 作者已由引擎剥离，td .intro 简介剥「关于书名：」前缀，td:contains 取分类/状态已由引擎剥前缀，#qvod-pl-list 最新 11 章，.btopt a 开始阅读→目录页 /tangren/{id}/ 276 章整目提取）；章节页 #content（p 段落，无同章分页）。封面 img.trxsw.com 图床 → 采集后落盘 webp。proxy 字段为公共代理（欧洲出口），站点封锁大陆/数据中心 IP；建议替换为自有付费代理。\n【proxy 更新 2026-09】经代理实测三段全通过（50条目/书页/2207字章节）。美国免费出口逐个实测失败（Comcast 家宽代理劫持响应返回自身 404；Azure 400；腾讯云 LA 被 TCP 重置——站点封锁机房 IP），故采用实测可用的德国法兰克福出口；如需美国 IP 请在管理后台替换为自有美国代理。\n【proxy 池 2026-09】当前德国出口单节点。"
+      "notes": "2026-09 二轮实测通过（经站点级代理出口，直连 TCP 被重置）：唐人小说网（葡萄/杰奇新模板，utf-8）。列表页 /lastupdate/（#alistbox 条目：.title h2 a 书名/.title span 作者/.pic a 书页链接）；书页 /tangren_{id}.html（h1.f21h 内嵌 em 作者已由引擎剥离，td .intro 简介剥「关于书名：」前缀，td:contains 取分类/状态已由引擎剥前缀，#qvod-pl-list 最新 11 章，.btopt a 开始阅读→目录页 /tangren/{id}/ 276 章整目提取）；章节页 #content（p 段落，无同章分页）。封面 img.trxsw.com 图床 → 采集后落盘 webp。proxy 字段为公共代理（欧洲出口），站点封锁大陆/数据中心 IP；建议替换为自有付费代理。\n【proxy 更新 2026-09】经代理实测三段全通过（50条目/书页/2207字章节）。美国免费出口逐个实测失败（Comcast 家宽代理劫持响应返回自身 404；Azure 400；腾讯云 LA 被 TCP 重置——站点封锁机房 IP），故采用实测可用的德国法兰克福出口；如需美国 IP 请在管理后台替换为自有美国代理。\n【proxy 池 2026-09】当前德国出口单节点。\n【R119 死亡定性 2026-10-14】三路径复核全灭：直连 TCP 0.3s 快速拒绝（000）、HTTPS 同拒、代理出口 8090 返回 502 空响应（源站侧错误页）——站点下线非规则/引擎缺陷。按 23qb/kelexs 先例 enabled=false 休眠防空烧；复活路径：站点恢复后（TCP 可达+HTTP 200）直接 enabled=true 重启任务即可，规则选择器全量保留。"
     },
     {
       "id": 19,
@@ -129,7 +129,8 @@
       "listRule": "{\"itemSelector\": \"ol.custom-rank-list li.rank-item\", \"titleSelector\": \"p.rank-t a\", \"linkSelector\": \"p.rank-t a\", \"authorSelector\": \"p.rank-a\"}",
       "bookRule": "{\"titleSelector\": \"h2.works-intro-title strong\", \"descriptionSelector\": \"p.works-intro-short\", \"chapterLinkSelector\": \".chapter-page-new a\", \"catalogLinkSelector\": \"a[href*='/menu/']\", \"chapterListPaginationSelector\": \"a:contains(下一页),a:contains(下页),.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a\"}",
       "chapterRule": "{\"titleSelector\": \"h3.j_chapterName\", \"contentSelector\": \"div.read-content\"}",
-      "notes": "【R111 重推实测 2026-10-10】引擎探针逐段验证：分类页 rank 区块 ol.custom-rank-list li.rank-item（含作者）；书页 works-intro-title strong + /menu/ 目录分离页；目录 chapter-page-new a；正文 j_chapterName + read-content。charset gbk→utf-8 实测修正。"
+      "notes": "【R111 重推实测 2026-10-10】引擎探针逐段验证：分类页 rank 区块 ol.custom-rank-list li.rank-item（含作者）；书页 works-intro-title strong + /menu/ 目录分离页；目录 chapter-page-new a；正文 j_chapterName + read-content。charset gbk→utf-8 实测修正。\n【R119 路径切换 2026-10-14】102.244.78.61 系出口对浏览器渲染路径反而劣化（render.py render-error 21s、cloak 挑战拖延 403），直连+cloak/browser 渲染已实证可过 CF 挑战（cloak 直连 232KB rank-item 渲染成功）——清空 proxy 改直连，浏览器路径走 stealth 侧车。",
+      "minTier": 3
     },
     {
       "id": 20,
@@ -194,7 +195,7 @@
       "listRule": "{\"itemSelector\": \"ul.u-line li, ul.u-list li.burl\", \"titleSelector\": \".l-name h3.bname a, h3.bname a\", \"linkSelector\": \".l-name a, h3.bname a\", \"authorSelector\": \".l-author .bauthor a, .bauthor a\", \"categorySelector\": \".l-sort a\", \"paginationTemplate\": \"https://ixdzs8.com/new/?page={k}\"}",
       "bookRule": "{\"titleSelector\": \"h1\", \"authorSelector\": \"meta[property=\\\"og:novel:author\\\"]@content\", \"descriptionSelector\": \".pintro\", \"coverSelector\": \"meta[property=\\\"og:image\\\"]@content\", \"statusSelector\": \"meta[property=\\\"og:novel:status\\\"]@content\", \"chapterLinkSelector\": \"ul.u-chapter.cfirst li a\", \"chapterListApi\": \"{\\\"url\\\":\\\"/novel/clist/\\\",\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"bid={bookId}\\\",\\\"bookIdSelector\\\":\\\"#bid@value\\\",\\\"listPath\\\":\\\"data\\\",\\\"titleField\\\":\\\"title\\\",\\\"orderField\\\":\\\"ordernum\\\",\\\"skipField\\\":\\\"ctype\\\",\\\"skipValue\\\":\\\"1\\\",\\\"urlTemplate\\\":\\\"/read/{bookId}/p{order}.html\\\"}\"}",
       "chapterRule": "{\"titleSelector\": \"h1\", \"contentSelector\": \".page-content section, .page-content\"}",
-      "notes": "2026-09 实测（首页最近更新模块 panel>h2>a[href=/new/]>ul.u-line）：书链 /read/{id}/；书页 og:novel:* meta 齐全+.pintro 简介+隐藏全目录（.clist ul.u-chapter 由 POST /novel/clist/ JSON 填充）→ chapterListApi 同源 JSON 目录接口（985 章实测），书页内嵌最新 10 章作回退；章节页轻量 JS token 挑战（引擎 fetch 层内置求解器自动跟随）；正文 .page-content section。/new/?page={k} 分页模板。快填 20 本实证可用。"
+      "notes": "2026-09 实测（首页最近更新模块 panel>h2>a[href=/new/]>ul.u-line）：书链 /read/{id}/；书页 og:novel:* meta 齐全+.pintro 简介+隐藏全目录（.clist ul.u-chapter 由 POST /novel/clist/ JSON 填充）→ chapterListApi 同源 JSON 目录接口（985 章实测），书页内嵌最新 10 章作回退；章节页轻量 JS token 挑战（引擎 fetch 层内置求解器自动跟随）；正文 .page-content section。/new/?page={k} 分页模板。快填 20 本实证可用。\n【R119 代理清理 2026-10-14】配置的 2 个出口（203.252.142.217:80、103.97.141.85:8080）实测全死（000），102.244.78.61 系列对该站亦不可达（000）——清空 proxy 改直连（直连实测 200，站为浏览器渲染型走 stealth 侧车）。"
     },
     {
       "id": 25,

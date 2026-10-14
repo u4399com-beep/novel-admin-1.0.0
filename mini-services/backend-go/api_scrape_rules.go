@@ -53,12 +53,13 @@ func handleScrapeRulesList(w http.ResponseWriter, r *http.Request, _ map[string]
         healthMap := ruleHealthByRule()
         rows := make([]map[string]any, 0)
         err := queryList(
-                `SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes",IFNULL("mirrorHosts",'') FROM "ScrapeRule" ORDER BY "id" ASC`,
+                `SELECT "id","name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","notes",IFNULL("mirrorHosts",''),IFNULL("minTier",0) FROM "ScrapeRule" ORDER BY "id" ASC`,
                 func(rs *sql.Rows) error {
                         var id int64
                         var name, siteURL, charset, proxy, cookies, listRule, bookRule, chapterRule, notes, mirrorHosts string
                         var enabled, insecureTLS bool
-                        if err := rs.Scan(&id, &name, &siteURL, &enabled, &charset, &proxy, &insecureTLS, &cookies, &listRule, &bookRule, &chapterRule, &notes, &mirrorHosts); err != nil {
+                        var minTier int
+                        if err := rs.Scan(&id, &name, &siteURL, &enabled, &charset, &proxy, &insecureTLS, &cookies, &listRule, &bookRule, &chapterRule, &notes, &mirrorHosts, &minTier); err != nil {
                                 return err
                         }
                         rows = append(rows, map[string]any{
@@ -75,6 +76,7 @@ func handleScrapeRulesList(w http.ResponseWriter, r *http.Request, _ map[string]
                                 "chapterRule": safeParseRule(chapterRule),
                                 "notes":       notes,
                                 "mirrorHosts": mirrorHosts, // P3-2: 镜像域名（逗号分隔，规范化形态）
+                                "minTier":     minTier, // R119: 策略分层下限（读路径必须透出——否则 proxy-watch/E18 读改写循环会抹掉该字段）
                                 "health":      healthMap[id], // 无巡检记录时为 nil（面板显示「未巡检」）
                         })
                         return nil
@@ -181,6 +183,16 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
                         writeJSON(w, 400, map[string]string{"error": "insecureTLS 必须是布尔值"})
                         return
                 }
+        }
+        // R119: minTier 规则级策略分层下限（0-3；缺省 0=全链默认）
+        minTier := 0
+        if val, present := body["minTier"]; present && val != nil {
+                f, isNum := val.(float64)
+                if !isNum || f != float64(int(f)) || int(f) < 0 || int(f) > 3 {
+                        writeJSON(w, 400, map[string]string{"error": "minTier 必须是 0-3 的整数（0=全链默认，3=仅重渲染层）"})
+                        return
+                }
+                minTier = int(f)
         }
         if val, present := body["charset"]; present && val != nil {
                 if _, isStr := val.(string); !isStr {
@@ -322,11 +334,17 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
                                 mirrorHosts = oldMirror.String // 部分更新语义：未提供保留旧值（与三规则组同口径）
                         }
                 }
+                if _, present := body["minTier"]; !present {
+                        var oldTier int
+                        if err := queryOne(`SELECT IFNULL("minTier",0) FROM "ScrapeRule" WHERE "id" = ?`, []any{&oldTier}, id); err == nil {
+                                minTier = oldTier // 部分更新语义：未提供保留旧值（与 mirrorHosts 同口径）
+                        }
+                }
                 res, err := exec(
-                        `UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "cookies"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "mirrorHosts"=?, "notes"=?, "updatedAt"=? WHERE "id"=?`,
+                        `UPDATE "ScrapeRule" SET "name"=?, "siteUrl"=?, "enabled"=?, "charset"=?, "proxy"=?, "insecureTLS"=?, "cookies"=?, "listRule"=?, "bookRule"=?, "chapterRule"=?, "mirrorHosts"=?, "notes"=?, "minTier"=?, "updatedAt"=? WHERE "id"=?`,
                         name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
                         listJSON, bookJSON, chapJSON, mirrorHosts,
-                        truncateRunes(notes, 1000), nowMillis(), id,
+                        truncateRunes(notes, 1000), minTier, nowMillis(), id,
                 )
                 if err != nil {
                         failJSON(w, "服务器错误", firstLineErr(err), 500)
@@ -341,9 +359,10 @@ func handleScrapeRulesSaveBody(w http.ResponseWriter, body map[string]any) {
         }
 
         newID, err := execReturningID(
-                `INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","mirrorHosts","notes","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                `INSERT INTO "ScrapeRule" ("name","siteUrl","enabled","charset","proxy","insecureTLS","cookies","listRule","bookRule","chapterRule","mirrorHosts","notes","minTier","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
                 name, site.value, enabled, charset, proxy.value, insecureTLS, cookies,
                 listJSON, bookJSON, chapJSON, mirrorHosts,
+                truncateRunes(notes, 1000), minTier,
                 truncateRunes(notes, 1000), nowMillis(), nowMillis(),
         )
         if err != nil {

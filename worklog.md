@@ -4777,3 +4777,27 @@ Stage Summary:
 - washai 主题（第 12 套）全链落地：原创 CSS+八页模板+themeNames 注册+页脚契约补齐，桌面/移动双端浏览器实测零 console error，页脚 sticky 红线达标
 - 部署工具链教训：pkill 模式必须匹配实际产物路径（bin/ 非 *.bin），否则旧进程占端口→新二进制静默启动失败→「设置行不可用」类谜题
 - 遗留移交：①washai 三任务（17 重启/20/21）在熔断冷却节流下逐步续传，fleet 自组织无需人工 ②主题预览 ?theme=washai 可用，如需设为默认已 PATCH activeTheme=washai（当前生效）③stealth venv 本轮仅后台重建，健康探活待下轮确认
+---
+Task ID: R119
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题收口②章节采集效率（兼顾封禁）③强化采集与反反爬④完善精简代码⑤推送 git
+
+Work Log:
+- 【沙箱状态盘点】第 9 次重置后首次全链检视：三服务存活但 cloakbrowser 浏览器二进制丢失（~/.cloakbrowser 空，运行时下载被墙 SSL 超时）；fleet 9 running/5 paused/3 partial/1 failed；11 快车道主机健康（1400-1800 ok），问题主机 101kks(403)/trxsw(全灭)/pilishuwu(challenge)
+- 【遗留①：trxsw 死亡定性】三路径复核（直连 TCP 0.3s 拒绝/HTTPS 同拒/代理出口 502 空响应）→ 站点下线非规则缺陷；按 23qb/kelexs 先例规则 #18 enabled=false 休眠+notes 复活路径，seed.json 同步，任务 8 cancel
+- 【遗留②：cloakbrowser 二进制恢复】ghfast.top 镜像 + curl -C - 断点续传循环（216MB ~8 分钟，官方 CDN 与 GitHub 双被墙）；恢复手册固化 §1.5（含版本匹配查询命令）；**/health cloakBinary 误报 bug 实锤并修复**——binary_info() 的 binary_path 是「期望路径」恒非空，旧 bool(binary_path) 逻辑在二进制缺失时仍报 true（误导排查一整轮），改为 installed 字段+os.path.isfile 权威复核
+- 【遗留③：stealth cloak 架构根修（本轮最大成果）】多线程复现实证 playwright sync API 双陷阱：①线程亲和（greenlet 绑定创建线程，跨线程炸 Cannot switch/TargetClosed）②loop 永驻（sync_playwright 的 event loop「pumps events until the end of times」，同线程第二次 launch 必炸 Sync API inside asyncio loop）——旧 CloakPool 跨请求/跨线程池复用架构在本进程内根本不可行（三种炸形态随机出现，靠 page 失败→rebuild 慢自愈每请求多付 launch 成本）；根修=子进程隔离渲染：每 /cloak 请求 spawn 独立解释器（multiprocessing spawn 绕开 fork-safety），子进程首启即唯一 launch（陷阱不触发），chrome 树随进程退出消失（泄漏/内存护栏/OOM 链路天然消解）；跨请求语义保留：过盾 cookie 按 host 记忆注入子进程（R110 快通道）+ networkidle 按 host 成功次数自适应（R108）+ **挑战完成轮询**（新增强：检测 challenge 特征后轮询等其消失 20s 上限，防 domcontentloaded 早于挑战 JS 跑完只拿 403 壳）+ 超时杀整树（复用 _subtree_pids 防 chrome 孤儿）
+- 【遗留④：三站任务恢复】washai 17/20 巡检联动自动恢复+21 restart（推进 18/16668）；5165 任务 11/23 restart（250/22422 推进）；ixdzs8 死代理（203.252.142.217/103.97.141.85 全 000）清空改直连→ ok 118→693 大爆发；101kks 代理穿透实证 200（52KB）规则配置本正确，stealth 修复后 ok 4→215+；pilishuwu 顽固失败深挖见下
+- 【pilishuwu 诊断链与 minTier 机制（新引擎能力）】实证链：直连 403(CF jsd) → cloak 直连过盾（232KB rank-item 渲染+cf_clearance）→ 代理出口劣化浏览器路径（render.py render-error 21s、cloak 挑战拖延 403）→ 引擎 fetch-curl 直连拿 230KB 真首页但 **rank 列表纯 JS 渲染零条目（200 假成功抢跑）** → 200 空壳（rank 数据 JS 慢渲染，networkidle 未等到）；根修=规则级 minTier 字段全链落地：DDL+ensureColumn（存量库幂等加列防 DQS 族）、LoadedRule/loadRule、engineRuleBody 透传、引擎 fetchPageOptions.minTier+链层过滤（tier < minTier 剔除，过滤空结构化失败）、**慢锁复探 gate**（minTier>1 站不复探快通道——复探拿 200 空壳会诱导回快通道引发抖动循环）、API 读写路径（含列表 SELECT——初版漏读导致 proxy-watch 读改写循环抹字段，实测暴露后补）、E18 出口池补种 gate（minTier≥2 不补种——出口代理对被跳过的 HTTP 层无意义、对浏览器层反而劣化，换血写入还会反复回填与人工清理打架）；pilishuwu 设 minTier=3
+- 【部署陷阱第三次踩坑】pkill 模式 'mini-services/*/bin' 不匹配实际 cmdline './bin/scraper-go'（相对路径）——**deploy 脚本假部署未被察觉**（旧进程 12:11/12:37 存活占端口，一切「部署后验证」都在旧二进制上进行：minTier 验证/PUT 落库/E18 gate 全部假象）；15:04 修正模式 '\./bin/<name>' 真部署（进程 26500/26509，计数器归零），minTier=3 PUT 真实落库（DB/API 双确认），引擎 /api/test minTier=3 实证只剩 fetch-cloak+browser（fetch-browser 消失），fetch-cloak 两连 200（挑战轮询生效+会话回存 jar）
+- 【任务 9 现状】resume 后仍间歇 paused——「巡检 200 空壳（rank JS 慢渲染）」形态需 waitSelector 增强（引擎抓取时传关键选择器给 cloak 子进程 wait_for_selector），三端改动留遗留移交；pilishuwu ok=24 累计（cloak 过盾间歇成功，任务级重试机制兜底）
+- 【吞吐实测】ChapterContent 17,642→30,578（本轮 +12,936，含 fleet 重建爬坡）；瞬时 2 分钟采样 12,060 章/h（历史峰值区间上沿）；fleet 终态 13 running（任务 21/14/11/23/17/20 全部推进）/2 paused（16 min-yuan 熔断冷却自动恢复中、9 pilishuwu 待 waitSelector）
+- 【测试+文档】backend-go 全量 67.9s ok、scraper-go 45.7s ok（seed 变更契约全绿）、go vet 双净、Agent Browser 终验首页/书页/章页全 200 零 console error（正文 2546 字渲染）；文档三处：recovery-playbook §1.5（二进制恢复路径+health 误报说明）、§7 依赖表更新（pilishuwu 直连可过）、anti-anti-crawl §6.2 补 R119 两行（cloak 子进程隔离/二进制丢失自愈说明）；engine.env 清理 trxsw 过时分桶
+- 【git】credential-store 随沙箱重置丢失，按用户先前提供 token 重建 ~/.git-credentials（600）
+
+Stage Summary:
+- stealth cloak 子进程隔离架构（R119 核心）：playwright sync 双陷阱（线程亲和/loop 永驻）根修，三炸形态归零实证，cookie 会话/自适应等待/大页护栏语义全保留，挑战完成轮询新增强
+- 引擎新能力 minTier（规则级策略分层下限）：JS 渲染站跳过 HTTP 层假成功的通用解，全链 7 处落地（DDL→loadRule→透传→链过滤→慢锁 gate→API 读写→E18 gate）
+- cloakbrowser 二进制丢失自愈路径固化（ghfast.top+断点续传）+ /health cloakBinary 误报修复
+- fleet 收口：trxsw 休眠、ixdzs8/pilishuwu 代理清理改直连、washai/5165/ixdzs8/101kks 全部恢复推进，吞吐 12k 章/h
+- 遗留移交：①任务 9 pilishuwu 的「200 空壳（JS 慢渲染）」需 waitSelector 增强（backend 三调用点传关键选择器→引擎 opts→stealth /cloak 参数→子进程 wait_for_selector，超时不失败）②巡检对 minTier 站的「空壳」判定可结合 waitSelector 结果降噪 ③stealth _CLOAK_COOKIE_MEM 重启失忆（可考虑落盘，同 cookie jar 先例）④biqutu 分桶 ok=1781 健康但慢站分桶收益需长周期观测

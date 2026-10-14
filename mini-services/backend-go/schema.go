@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS "ScrapeRule" (
         "charset" TEXT NOT NULL DEFAULT 'utf-8',
         "proxy" TEXT NOT NULL DEFAULT '',
         "insecureTLS" BOOLEAN NOT NULL DEFAULT false,
+        -- R119: 规则级策略分层下限（0=全链默认；3=仅重渲染层）——JS 渲染站跳过 HTTP 层假成功
+        "minTier" INTEGER NOT NULL DEFAULT 0,
         -- Task 53: 规则级静态 cookie 底座（用户人工过验后的会话凭证 "k=v; k2=v2"；引擎每次抓取前种入 host 会话桶）
         "cookies" TEXT NOT NULL DEFAULT '',
         "listRule" TEXT NOT NULL DEFAULT '{}',

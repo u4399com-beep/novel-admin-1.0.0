@@ -60,6 +60,8 @@ func fetchAndPrepare(w http.ResponseWriter, body map[string]any) pageFetchOutcom
                 proxy:             proxy,
                 insecureTLS:       insecureTLS,
                 ruleCookies:       ruleCookies,
+        // minTier R119: 规则级策略分层下限（0=全链默认；pilishuwu 类 JS 渲染站设 3）
+        minTier:           clampIntField(body["minTier"], 0, 3),
         })
         return pageFetchOutcome{page: page, target: t.url.String()}
 }

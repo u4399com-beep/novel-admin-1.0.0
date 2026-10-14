@@ -215,6 +215,10 @@ func engineRuleBody(u string, ruleVal any, rule LoadedRule, referer string) map[
         if rule.InsecureTLS {
                 body["insecureTLS"] = true
         }
+        // R119: 规则级策略分层下限透传（引擎链层过滤 tier < minTier 的策略；0=默认不发）
+        if rule.MinTier > 0 {
+                body["minTier"] = rule.MinTier
+        }
         // Task 53: 规则级静态 cookie 底座——Trim 后非空才下发（与 loadRule 装载端 TrimSpace、
         // 引擎 strField TrimSpace+4096 rune 钳制同口径；条件自含不依赖调用方预裁剪，空白值
         // 绝不发空/纯空白键，引擎侧缺省=无注入）

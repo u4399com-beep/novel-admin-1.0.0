@@ -78,6 +78,11 @@ type fetchPageOptions struct {
         proxy             string
         insecureTLS       bool
         ruleCookies       string // Task 53: 规则级静态 cookie 底座（"k=v; k2=v2"，用户人工过验后提供；空=无）
+        // minTier R119: 规则级策略分层下限（0=默认全链；3=仅重渲染层）——JS 渲染站的
+        // HTTP 层只会拿到 JS 空壳（200 假成功抢跑亲和记账，解析必空），声明后链层直接
+        // 跳过 tier < minTier 的策略（如 pilishuwu 的 rank 列表纯 JS 渲染，fetch-curl
+        // 230KB 真首页解析零条目）。0 值零行为变化，向后兼容。
+        minTier int
 }
 
 // fetchPageResult 对齐 TS FetchPageResult
@@ -294,6 +299,26 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
         }
 
         order := pickOrder(opts.requestedStrategy, &warnings)
+        // R119: 规则级分层下限过滤——tier < minTier 的策略直接剔除（JS 渲染站跳过
+        // HTTP 层假成功；显式 requestedStrategy 时同样生效，配置即语义）。
+        if opts.minTier > 1 {
+                filtered := order[:0:0]
+                for _, s := range order {
+                        if s.tier >= opts.minTier {
+                                filtered = append(filtered, s)
+                        }
+                }
+                if len(filtered) == 0 {
+                        warnings = append(warnings, fmt.Sprintf("minTier=%d 过滤后策略链为空（请求层低于配置下限），按全链失败处理", opts.minTier))
+                        return fetchPageResult{
+                                ok: false, html: "", encoding: "", strategy: opts.requestedStrategy,
+                                status: 0, warnings: warnings, attempts: []AttemptSummary{},
+                                robots: RobotsSummary{}, elapsedMs: nowMs() - t0,
+                                err: "minTier 过滤后策略链为空", detail: "规则声明的策略分层下限高于全部可用策略",
+                        }
+                }
+                order = filtered
+        }
 
         // 按主机策略亲和：未显式指定策略时，把该主机最近一次成功的策略提到链首
         //（亲和命中失败时后续照旧全链回退，attempts 顺序照实记录）
@@ -323,7 +348,9 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
         // HTTP 策略再无出场机会。此处按周期把首个可用 Tier 1 策略临时插到链首复探：
         // 命中即亲和自动接管（下章起回快通道）；未命中仅多付一次毫秒级探测，本轮
         // 照旧由慢策略出正文（预算闸保证复探绝不挤占正章产出）。
-        if !slowProbeOff && opts.requestedStrategy == "" && slowLockProbeDue(host) {
+        // R119: minTier>1 的站不复探快通道——配置语义即「HTTP 层只会拿 JS 空壳/挑战壳
+        // 假成功」，复探命中 200 空壳反而诱导回快通道（解析空→任务失败→抖动循环）。
+        if !slowProbeOff && opts.requestedStrategy == "" && opts.minTier <= 1 && slowLockProbeDue(host) {
                 preferred := getPreferredStrategy(host)
                 if strategyTierByName(preferred) == tierStrategyBrowser && deadline-nowMs() > slowLockProbeReserveMS {
                         if p := firstAvailableTier1(); p != nil {

@@ -144,9 +144,10 @@ func loadRule(ruleID *int) LoadedRule {
         }
         var name, charset, proxy, cookies, listRule, bookRule, chapterRule, mirrorHosts, siteURL sql.NullString
         var insecure bool
+        var minTier int
         err := queryOne(
-                "SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule, IFNULL(mirrorHosts, ''), IFNULL(siteUrl, '') FROM ScrapeRule WHERE id = ?",
-                []any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule, &mirrorHosts, &siteURL}, *ruleID)
+                "SELECT name, charset, proxy, insecureTLS, cookies, listRule, bookRule, chapterRule, IFNULL(mirrorHosts, ''), IFNULL(siteUrl, ''), IFNULL(minTier, 0) FROM ScrapeRule WHERE id = ?",
+                []any{&name, &charset, &proxy, &insecure, &cookies, &listRule, &bookRule, &chapterRule, &mirrorHosts, &siteURL, &minTier}, *ruleID)
         if err != nil {
                 return empty
         }
@@ -159,6 +160,7 @@ func loadRule(ruleID *int) LoadedRule {
                 // 保存端失效钩子 + TTL 兜底，改动即时生效。
                 Proxy:       pickEgressProxy(strings.TrimSpace(proxy.String)),
                 InsecureTLS: insecure,
+                MinTier:     minTier,
                 Cookies:     strings.TrimSpace(cookies.String),
                 // P3-2: 规范化镜像入口（剔除主域/非法/重复条目；空配置 → nil 零开销）
                 Mirrors:     parseMirrorHosts(mirrorHosts.String, siteURL.String),

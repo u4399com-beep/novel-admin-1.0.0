@@ -23,6 +23,7 @@ type LoadedRule struct {
         Charset     string // 目标站字符集（""=auto）
         Proxy       string // 站点级出口代理（""=直连）
         InsecureTLS bool   // 跳过目标站 TLS 证书校验（自签/裸 IP 站点）
+        MinTier     int    // R119: 规则级策略分层下限（0=全链；3=仅重渲染层，JS 渲染站）
         Cookies     string // Task 53: 规则级静态 cookie 底座（"k=v; k2=v2"，人工过验会话；""=无）
         // P3-2: 规则级镜像入口（parseMirrorHosts 规范化后；空=无镜像走主域）。
         // 仅 Phase2 章节填充消费（mirrorRotator 换域）；列表/书页阶段恒走主域

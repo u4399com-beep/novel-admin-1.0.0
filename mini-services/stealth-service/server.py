@@ -34,6 +34,8 @@ stealth-service —— iv8 / CloakBrowser 反检测抓取侧车（R101）。
 """
 
 import json
+import os
+import queue
 import threading
 import time
 import urllib.request
@@ -96,105 +98,162 @@ except Exception as _e:  # pragma: no cover
 
 
 def _cloak_binary_ready() -> bool:
-    """Chromium 二进制是否已就绪（download/ensure_binary 不在 /health 里做，避免阻塞）。"""
+    """Chromium 二进制是否已就绪（download/ensure_binary 不在 /health 里做，避免阻塞）。
+    R119 修复：binary_info() 的 binary_path 是「期望路径」而非「已存在路径」——二进制
+    缺失时它依然返回非空路径且 installed=false，旧逻辑 bool(binary_path or ...) 恒 true
+    → /health 误报 cloakBinary=true（沙箱重置丢二进制后误报一整轮，健康检查全灭但
+    health 全绿，排查被带偏）。现以 installed 字段为准，旧字段名兜底时必须
+    os.path.isfile 权威复核。"""
     if not HAS_CLOAK:
         return False
     try:
         info = _cloakbrowser.binary_info() or {}
-        # R102 修复：cloakbrowser 0.5.12 实际字段是 binary_path/installed（R101 旧代码
-        # 误写 path/exists → cloakBinary 恒 false → 引擎 fetch-cloak 探测恒不可用）；
-        # 旧字段名保留兜底兼容
-        return bool(info.get("binary_path") or info.get("installed")
-                    or info.get("path") or info.get("exists"))
+        if info.get("installed"):
+            return True
+        # 旧字段名兜底（R102 兼容路径）：binary_path/path/exists 均须以文件实际存在为准
+        p = info.get("binary_path") or info.get("path") or info.get("exists")
+        return bool(p) and os.path.isfile(p)
     except Exception:
         return False
 
 
-# ---------- CloakBrowser 浏览器池（按 proxy 配置缓存复用） ----------
+# ---------- R119：CloakBrowser 子进程隔离渲染（线程亲和 + asyncio loop 双陷阱根修） ----------
+# playwright sync API 两重死结（2026-10-14 实证）：
+#   ①线程亲和：sync browser（greenlet）绑定创建线程，跨线程使用必炸
+#     Cannot switch to a different thread / TargetClosedError；
+#   ②loop 永驻：sync_playwright().start() 的 event loop「pumps events until the
+#     end of times」——同线程第二次 launch 时 get_running_loop() 命中永驻 loop →
+#     「Sync API inside the asyncio loop」。即 CloakPool 的跨请求/跨线程池复用
+#     架构在本进程内根本不可行（旧架构靠 page 失败→rebuild 慢自愈，每请求多付
+#     一次 launch 成本且并发下随机炸三种错误形态）。
+# 根修：每次 /cloak 渲染 spawn 独立解释器子进程（multiprocessing spawn——绕开
+# fork-safety 与父进程线程状态复制），子进程内首启即唯一一次 launch（陷阱不触发），
+# 渲染完退出，chrome 树随进程消失——泄漏/内存护栏/OOM 链路天然消解。
+# 跨请求语义保留：①过盾 cookie 由主进程按 host 记忆并注入子进程（R110 快通道
+# 语义），②networkidle 上限按 host 成功渲染次数自适应（R108 语义）。
 
-class CloakPool:
-    """proxy 字符串 → 已启动浏览器实例。每请求独立 page。"""
+_CLOAK_COOKIE_MEM: dict = {}   # host -> 最近一次过盾 cookies（page.context.cookies 形态，可直接 add_cookies）
+_CLOAK_SERVED: dict = {}       # host -> 累计成功渲染次数（networkidle 自适应依据）
 
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._browsers = {}      # key -> browser
-        self._broken = {}        # key -> 失败冷却截止时间戳
-        self._pages_served = {}  # R108: key -> 已服务页数（networkidle 自适应：首页长等，后续短等）
 
-    def _launch(self, proxy: str, user_agent: str):
-        kwargs = {"headless": True}
-        if proxy:
-            kwargs["proxy"] = proxy
-        # R116-2：追加降内存 chromium 启动参数（在既有参数基础上追加，不删除任何默认
-        # 隐身参数——cloakbrowser launch(args=...) 将其与默认 stealth 参数合并）
-        args = list(CHROME_LOW_MEM_ARGS)
-        if user_agent:
-            args.insert(0, f"--user-agent={user_agent}")
-        kwargs["args"] = args
-        return _cloakbrowser.launch(**kwargs)
+def _cloak_url_host(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        return (urlparse(url).hostname or "").lower()
+    except Exception:
+        return url[:64]
 
-    def acquire(self, proxy: str, user_agent: str):
-        key = f"{proxy}|{user_agent}"
-        with self._lock:
-            b = self._browsers.get(key)
-            if b is not None:
-                try:
-                    # 探活：cloaked browser 无轻量 ping，直接复用（page 级失败走 rebuild）
-                    return b
-                except Exception:
-                    self._browsers.pop(key, None)
-            now = time.time()
-            if now < self._broken.get(key, 0):
-                raise RuntimeError("cloakbrowser 启动失败冷却中（上次 launch 失败）")
+
+def _cloak_networkidle_ms(url: str) -> int:
+    """R108 语义（host 级）：首次给足 8s（挑战页二次跳转/JS 挑战），会话热后 2.5s。"""
+    served = _CLOAK_SERVED.get(_cloak_url_host(url), 0)
+    return 8000 if served == 0 else 2500
+
+
+def _looks_like_challenge(html: str) -> bool:
+    """挑战页特征判定（对齐引擎 serverChallenge 语义的轻量版）：
+    小页面 + 挑战平台脚本/常见盾特征词。大页面（>100KB）视为真实内容不再轮询。"""
+    if not html or len(html) > 100_000:
+        return False
+    low = html.lower()
+    return ("challenge-platform" in low or "/cdn-cgi/challenge" in low
+            or "cf-chl" in low or "jsd/main.js" in low
+            or ("just a moment" in low) or ("checking your browser" in low))
+
+
+def _cloak_launch(proxy: str, user_agent: str):
+    """子进程内启动 cloakbrowser（本进程唯一一次 launch）。R116-2 降内存参数保留。"""
+    import cloakbrowser as _cb
+    kwargs = {"headless": True, "timeout": 90_000, "args": list(CHROME_LOW_MEM_ARGS)}
+    if proxy:
+        kwargs["proxy"] = proxy
+    if user_agent:
+        kwargs["args"] = [f"--user-agent={user_agent}"] + kwargs["args"]
+    return _cb.launch(**kwargs)
+
+
+def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
+                      networkidle_ms: int, initial_cookies: list, out_q) -> None:
+    """子进程入口：launch → page 生命周期 → 结果入队 → 进程自然退出。
+    R110 cookie 回传/R111 context 级清理/R116-2 大页护栏语义全保留。"""
+    t0 = time.time()
+    try:
+        browser = _cloak_launch(proxy, user_agent)
+        page = browser.new_page()
+        if initial_cookies:
             try:
-                b = self._launch(proxy, user_agent)
-            except Exception as e:
-                self._broken[key] = now + 30.0
-                raise RuntimeError(f"cloakbrowser launch 失败: {e}") from e
-            # 容量上限：最旧实例淘汰（close）。泄漏残余（close 偶发不杀 driver/chrome
-            # 树）由修复后的 janitor（全后代树扫描，30s 周期，硬上限 MAX_CHILD_DRIVERS）
-            # 补刀收敛——差集法会误伤在用的其他池实例，弃用。
-            while len(self._browsers) >= MAX_PROXY_BROWSERS:
-                old_key = next(iter(self._browsers))
-                old_b = self._browsers.pop(old_key)
-                try:
-                    old_b.close()
-                except Exception:
-                    pass
-            self._browsers[key] = b
-            return b
-
-    def note_page_served(self, proxy: str, user_agent: str):
-        """R108: 页面渲染成功后计数（networkidle 自适应依据：实例已热则短等）。"""
-        key = f"{proxy}|{user_agent}"
-        with self._lock:
-            self._pages_served[key] = self._pages_served.get(key, 0) + 1
-
-    def networkidle_ms(self, proxy: str, user_agent: str) -> int:
-        """R108: networkidle 等待上限自适应。
-        首页（实例冷/新 key）给足 8s——挑战页常有二次跳转/JS 挑战；实例已成功服务过页面后
-        说明挑战已过、会话已热，章节正文页 DOMContentLoaded 即含正文，白等网络空闲只会
-        拖慢每个请求（实测 browser 站 2.4s/章 里相当部分是 networkidle 尾巴）。后续页 2.5s。
-        超时不算失败（与原语义一致）。"""
-        key = f"{proxy}|{user_agent}"
-        with self._lock:
-            served = self._pages_served.get(key, 0)
-        return 8000 if served == 0 else 2500
-
-    def rebuild(self, proxy: str, user_agent: str):
-        key = f"{proxy}|{user_agent}"
-        with self._lock:
-            try:
-                old = self._browsers.pop(key, None)
-                if old is not None:
-                    old.close()
+                page.context.add_cookies(initial_cookies)
             except Exception:
                 pass
-            self._broken.pop(key, None)
-        return self.acquire(proxy, user_agent)
+        resp = page.goto(url, timeout=int(timeout_s * 1000), wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=networkidle_ms)
+        except Exception:
+            pass  # 超时不算失败（与原语义一致）
+        html = page.content()
+        # R119：挑战页完成等待——CF 等盾页 domcontentloaded+networkidle 常早于挑战
+        # JS 跑完（初始 403 即返回），旧路径此时取 content 只拿到挑战页壳。检测到
+        # 挑战特征后轮询等待其消失（页面自动刷新跳转/放行），上限 20s。
+        for _ in range(10):
+            if not _looks_like_challenge(html) or len(html) > 100_000:
+                break
+            try:
+                page.wait_for_timeout(2000)
+                html = page.content()
+            except Exception:
+                break
+        html_warnings = []
+        if len(html) > MAX_HTML_BYTES:
+            html_warnings.append(
+                f"HTML 超过 {MAX_HTML_BYTES // (1024 * 1024)}MB 已截断（防异常大页滞留内存）")
+            html = html[:MAX_HTML_BYTES]
+        status, final_url = 0, url
+        try:
+            if resp is not None:
+                status = int(resp.status or 0)
+                final_url = resp.url or page.url
+            else:
+                final_url = page.url
+        except Exception:
+            pass
+        cookies_out = []
+        try:
+            for c in (page.context.cookies(final_url) or []):
+                cookies_out.append({
+                    "name": c.get("name") or "", "value": c.get("value") or "",
+                    "expires": c.get("expires") or -1, "secure": bool(c.get("secure")),
+                })
+        except Exception:
+            pass
+        try:  # R111：先关 context 再关 page，防 context 堆积
+            page.context.close()
+        except Exception:
+            pass
+        try:
+            page.close()
+        except Exception:
+            pass
+        out_q.put({"ok": True, "html": html, "status": status, "finalUrl": final_url,
+                   "cookies": cookies_out, "elapsedMs": int((time.time() - t0) * 1000),
+                   **({"warnings": html_warnings} if html_warnings else {})})
+    except Exception as e:
+        try:
+            out_q.put({"ok": False, "error": f"cloak 渲染失败: {e}",
+                       "elapsedMs": int((time.time() - t0) * 1000)})
+        except Exception:
+            pass
 
 
-_CLOAK_POOL = CloakPool()
+def _kill_proc_tree(pid: int) -> None:
+    """击杀子进程及其完整 chrome 树（防 terminate 后 chrome 孤儿挂 PPID 1）。"""
+    import signal as _signal
+    subtree = _subtree_pids(pid, snapshot=_proc_snapshot())
+    for p in subtree:
+        try:
+            import os as _os
+            _os.kill(p, _signal.SIGKILL)
+        except Exception:
+            pass
 
 
 def _proc_snapshot():
@@ -438,101 +497,59 @@ def _driver_janitor():
 
 
 def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
-    """CloakBrowser 整页渲染。单次请求内 page 级异常重建浏览器重试一次。"""
+    """CloakBrowser 整页渲染（R119：子进程隔离——spawn 独立解释器渲染，主进程只
+    等 Queue 结果并兜底超时杀树）。跨请求 cookie 会话（R110）与 networkidle 自适应
+    （R108）在主进程按 host 记忆，随参数注入子进程。"""
+    import multiprocessing as _mp
     t0 = time.time()
     timeout_s = max(3.0, min(timeout_ms, MAX_TIMEOUT_MS) / 1000.0)
-    last_err = None
-    cookies_out = []  # R110: cloak cookie 回存快通道（会话热判据之一）
-    served_ok = False  # R108: 成功渲染才计数（网络热标记）；失败页不推进自适应
-    for attempt in (0, 1):
-        browser = _CLOAK_POOL.acquire(proxy, user_agent) if attempt == 0 \
-            else _CLOAK_POOL.rebuild(proxy, user_agent)
-        page = None
+    host = _cloak_url_host(url)
+    nid_ms = _cloak_networkidle_ms(url)
+    initial_cookies = _CLOAK_COOKIE_MEM.get(host) or []
+    # 预算：page timeout + launch(≤90s，实测冷启 1-25s) + 挑战轮询 20s + import 余量
+    budget = timeout_s + 150.0
+    proc, out = None, None
+    try:
+        ctx = _mp.get_context("spawn")
+        out_q = ctx.Queue()
+        proc = ctx.Process(target=_cloak_child_main,
+                           args=(url, timeout_s, proxy, user_agent, nid_ms,
+                                 initial_cookies, out_q),
+                           daemon=True)
+        proc.start()
         try:
-            page = browser.new_page()
-            resp = page.goto(url, timeout=int(timeout_s * 1000), wait_until="domcontentloaded")
-            # 尽力等待网络空闲（反爬页常有二次跳转/JS 挑战），超时不算失败。
-            # R108: 上限自适应——实例已成功服务过页面（会话热）后短等 2.5s，
-            # 避免章节正文页白等网络空闲拖慢每个请求（首页仍 8s 保挑战页体验）。
+            out = out_q.get(timeout=budget)
+        except Exception:
+            out = None
+    except Exception as e:
+        return {"ok": False, "error": f"cloak 子进程启动失败: {e}",
+                "elapsedMs": int((time.time() - t0) * 1000)}
+    finally:
+        if proc is not None and proc.is_alive():
             try:
-                page.wait_for_load_state("networkidle", timeout=_CLOAK_POOL.networkidle_ms(proxy, user_agent))
+                _kill_proc_tree(proc.pid)
             except Exception:
                 pass
-            html = page.content()
-            # R116-2：大页护栏——单页 HTML 超过 8MB 截断（防异常大页滞留内存/撑爆 JSON
-            # 响应序列化），截断事实通过新增可选字段 warnings 回传（引擎端未知字段自动忽略）。
-            html_warnings = []
-            if len(html) > MAX_HTML_BYTES:
-                html_warnings.append(
-                    f"HTML 超过 {MAX_HTML_BYTES // (1024 * 1024)}MB 已截断（防异常大页滞留内存）")
-                print(f"[stealth-service] cloak 大页护栏：截断 {len(html)}B → "
-                      f"{MAX_HTML_BYTES}B url={url}", flush=True)
-                html = html[:MAX_HTML_BYTES]
-            served_ok = True  # R108: 渲染成功，标记网络热（finally 中计数）
-            status = 0
-            final_url = url
-            try:
-                if resp is not None:
-                    status = int(resp.status or 0)
-                    final_url = resp.url or page.url
-                else:
-                    final_url = page.url
-            except Exception:
-                pass
-            # R110：会话 cookie 回传——挑战型站点（Cloudflare cf_clearance 等）浏览器
-            # 过盾后 cookie 落在 context 里，不回传则引擎每章都重打挑战（慢 10 倍）。
-            # 与 browser 桥接（renderPayload.Cookies）/iv8（document.cookie）同语义。
-            try:
-                for c in (page.context.cookies(final_url) or []):
-                    cookies_out.append({
-                        "name": c.get("name") or "",
-                        "value": c.get("value") or "",
-                        "expires": c.get("expires") or -1,
-                        "secure": bool(c.get("secure")),
-                    })
-            except Exception:
-                pass
-            out = {
-                "ok": True, "html": html, "status": status, "finalUrl": final_url,
-                "cookies": cookies_out,
-                "elapsedMs": int((time.time() - t0) * 1000),
-            }
-            if html_warnings:
-                out["warnings"] = html_warnings
-            return out
-        except Exception as e:
-            last_err = e
-            if attempt == 1:
-                break
-        finally:
-            if page is not None:
+            proc.join(3)
+            if proc.is_alive():
                 try:
-                    cookies_out = []
-                    for c in (page.context.cookies() or []):
-                        cookies_out.append({
-                            "name": c.get("name") or "",
-                            "value": c.get("value") or "",
-                            "expires": c.get("expires") or -1,
-                            "secure": bool(c.get("secure")),
-                        })
+                    proc.kill()
                 except Exception:
                     pass
-                # R111：new_page() 每次创建独立 BrowserContext（cookie/存储隔离）。
-                # 只 page.close() 在部分版本不级联关 context → context 堆积（cookie 泄漏
-                # 跨请求串味风险 + 内存增长）。显式先关 context 再关 page，双保险。
-                try:
-                    page.context.close()
-                except Exception:
-                    pass
-                try:
-                    page.close()
-                except Exception:
-                    pass
-                if served_ok:
-                    _CLOAK_POOL.note_page_served(proxy, user_agent)
-    return {"ok": False, "error": f"cloak 渲染失败: {last_err}",
-            "cookies": cookies_out,
-            "elapsedMs": int((time.time() - t0) * 1000)}
+                proc.join(3)
+    if out is None:
+        return {"ok": False, "error": f"cloak 渲染超时（预算 {int(budget)}s）",
+                "elapsedMs": int((time.time() - t0) * 1000)}
+    if out.get("ok"):
+        _CLOAK_SERVED[host] = _CLOAK_SERVED.get(host, 0) + 1
+        if out.get("cookies"):
+            _CLOAK_COOKIE_MEM[host] = out["cookies"]  # R110 快通道：过盾 cookie 供下次注入
+        else:
+            _CLOAK_COOKIE_MEM.pop(host, None)
+    if out.get("warnings"):
+        for w in out["warnings"]:
+            print(f"[stealth-service] cloak 大页护栏：{w} url={url}", flush=True)
+    return out
 
 
 # ---------- iv8 补环境执行 ----------

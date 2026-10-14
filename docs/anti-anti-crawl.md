@@ -106,6 +106,8 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | 黑洞站代理池种子固化（Task 59） | 直连 SYN 黑洞站（huangjinwu/xinjianpan）的共享代理出口池写入 seed.json 随二进制分发——DB 重建/沙箱回收后重播种即恢复采集能力（此前出口池只存 DB，重建即断链需人工重建）；免费公共代理会自然腐化，腐化后按 §6.2 探测→PUT→E17 逃生流程重建（audit59d 契约锁定 seed 非空） |
 | 出口池自愈（E18，Task 59） | backend 后台 10min/轮遍历「enabled 且带代理池」规则：并发实测池内出口对站点可达性（任何 HTTP 状态含 WAF 403=可达）→ 死口经免费代理源实测补位 → 仅写 proxy 列即时生效（引擎无缓存路径）。与 E17/种子固化构成「活池→换血→重建不丢」三层长期稳定性闭环；PROXYWATCH_OFF=1 停用 |
 | 预算感知限速 | acquireDomainSlotBudgeted：预计排队超预算时 shed 快速失败（不睡眠占槽），域限速与策略预算联动 |
+| cloak 子进程隔离渲染（R119） | playwright sync API 双陷阱根修：①sync browser 线程亲和（greenlet 绑定线程，跨线程炸 Cannot switch/TargetClosed）②loop 永驻（sync_playwright 的 loop「pumps events until the end of times」，同线程第二次 launch 必炸 Sync API inside asyncio loop）——旧 CloakPool 跨请求/跨线程池复用架构在本进程内根本不可行。改为每请求 spawn 独立解释器子进程渲染（首启即唯一 launch 陷阱不触发），chrome 树随进程退出消失（泄漏/内存护栏/OOM 链路天然消解）；跨请求语义保留：过盾 cookie 按 host 记忆注入（R110 快通道）+ networkidle 按 host 成功次数自适应（R108）+ 挑战页完成轮询（特征检测+20s 上限，防 domcontentloaded 早于挑战 JS 跑完只拿到 403 壳） |
+| cloakbrowser 二进制丢失自愈说明 | cloakbrowser.dev/GitHub Releases 双被墙时运行时下载失败，且 /health cloakBinary 误报（binary_path 是期望路径恒非空，R119 已修为 installed 字段+文件存在复核）——恢复手册 §1.5：ghfast.top 镜像+断点续传循环 |
 | 目录序号三层根修 | 目录采集管线 reorderRefPairs 重排（最新块+目录混合 DOM 序 → 全局升序），繁体「節/話」先归一 |
 | 章名 ownText 语义（R117） | `bookRule.chapterTitleSelector = "ownText"` 关键字：锚点直接文本（不含后代元素）——legado 书源 chapterName=ownText 直译，剥离章锚内嵌站方标记（书海阁 `<i class="red"> [免费]</i>` 实测）；backend fetchTocPage 目录页键白名单同步透传 |
 

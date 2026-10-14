@@ -233,6 +233,35 @@ func parseProxy(raw any) string {
 
 // ==================== 超时钳制（clampTimeout） ====================
 
+// clampIntField R119: JSON 数值字段的安全钳取（缺省/非法/越界 → [lo,hi] 内收敛，
+// 缺省 = lo）。与 clampTimeout 同思路但语义为「可选配置项」：缺失/类型不符返回 lo
+//（minTier 语义=0 全链默认，无行为变化），字符串数字容忍（与 clampTimeout 口径一致）。
+func clampIntField(v any, lo, hi int) int {
+	n := float64(lo)
+	switch x := v.(type) {
+	case float64:
+		n = x
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		if err != nil {
+			return lo
+		}
+		n = f
+	default:
+		return lo
+	}
+	if n != n { // NaN
+		return lo
+	}
+	if n < float64(lo) {
+		return lo
+	}
+	if n > float64(hi) {
+		return hi
+	}
+	return int(n)
+}
+
 func clampTimeout(ms any) int {
 	var n float64
 	switch v := ms.(type) {
