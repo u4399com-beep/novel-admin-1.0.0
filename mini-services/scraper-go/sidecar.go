@@ -147,6 +147,9 @@ type sidecarCloakResp struct {
         Cookies   []bridgeCookie `json:"cookies"` // R110：过盾后的会话 cookie（cf_clearance 等）回存引擎 jar
         ElapsedMS int64          `json:"elapsedMs"`
         Error     string         `json:"error"`
+        // R120（遗留①）：waitSelector 命中结果（请求带 waitSelector 时侧车必回；
+        // 旧版侧车/未带等待时 false——调用方仅在 ctx.waitSelector != "" 时消费）
+        WaitSelectorFound bool `json:"waitSelectorFound"`
 }
 
 // sidecarIv8Resp /iv8 响应
@@ -164,13 +167,18 @@ type sidecarIv8Resp struct {
 
 // sidecarCloakFetch CloakBrowser 渲染：返回渲染后 DOM/状态码/最终 URL/耗时。
 // err != nil = 侧车调用层失败（拒连/超时/非法响应）；resp.OK=false = 侧车业务层失败（站点被拒等）。
-func sidecarCloakFetch(url string, timeoutMs int64, proxy, ua string) (sidecarCloakResp, error) {
+// R120：waitSelector 非空时透传侧车（子进程 wait_for_selector 等待关键选择器渲染完成，
+// 超时不失败；waitSelectorTimeoutMs 一并下发，默认 15s 上限 30s 由侧车钳制）。
+func sidecarCloakFetch(url string, timeoutMs int64, proxy, ua, waitSelector string) (sidecarCloakResp, error) {
         payload := map[string]any{"url": url, "timeoutMs": timeoutMs}
         if proxy != "" {
                 payload["proxy"] = proxy
         }
         if ua != "" {
                 payload["userAgent"] = ua
+        }
+        if ws := cssSafeWaitSelector(waitSelector); ws != "" {
+                payload["waitSelector"] = ws
         }
         raw, err := sidecarPost("/cloak", payload, timeoutMs)
         if err != nil {

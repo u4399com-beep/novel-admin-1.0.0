@@ -83,6 +83,12 @@ type fetchPageOptions struct {
         // 跳过 tier < minTier 的策略（如 pilishuwu 的 rank 列表纯 JS 渲染，fetch-curl
         // 230KB 真首页解析零条目）。0 值零行为变化，向后兼容。
         minTier int
+        // waitSelector R120（遗留①）：JS 慢渲染站的「关键选择器」——backend 从页面
+        // 主提取选择器（列表 itemSelector/目录 chapterLinkSelector/正文 contentSelector）
+        // 透传，fetch-cloak 转给侧车 /cloak 由子进程 wait_for_selector 等待渲染完成
+        //（超时不失败；未命中时策略按失败处理让链继续复核，见 strategy_sidecar.go）。
+        // 空值=不等待（HTTP 层策略不受影响），行为与旧版完全一致。
+        waitSelector string
 }
 
 // fetchPageResult 对齐 TS FetchPageResult
@@ -106,6 +112,10 @@ type fetchPageResult struct {
         // 截断到 debugHTMLCapBytes）——排障时直接看到挑战页/空壳页原文而非只剩状态码。
         // 成功路径恒为空（调用方用 html 字段）。includeHtml=true 时经 handlers 透出 htmlDebug。
         debugHTML string
+        // R120: waitSelector 回显与命中结果（handlers 透出 /api/test·/api/chapter 供观测；
+        // waitSelectorFound=false + 200 = 「JS 空壳抢跑」的显式证据）
+        waitSelector       string
+        waitSelectorFound  bool
 }
 
 // listStrategies 可用抓取策略及状态（Task 102-a：含三层架构层级标注）
@@ -473,7 +483,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                         // 硬时间闸：任何策略都不得挂死整条链（链剩余预算 + 2.5s 余量）。
                         // Task 27-c（25-a 遗留 c 收紧）：硬闸 context 传入策略，超时 cancel 后
                         // Go 原生 HTTP 路径的在途请求立即中止，策略 goroutine 不再空转到自身超时
-                        ctx := &strategyRunCtx{referer: opts.referer, proxy: px, insecureTLS: opts.insecureTLS}
+                        ctx := &strategyRunCtx{referer: opts.referer, proxy: px, insecureTLS: opts.insecureTLS, waitSelector: opts.waitSelector}
                         res, _ := runWithHardGate(func(hctx context.Context) attemptResult {
                                 ctx.hardCtx = hctx
                                 return safeStrategyRun(strat, rawURL, effTimeout, ctx)
@@ -553,6 +563,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                                         robots:    RobotsSummary{Checked: robots.info.checked, Disallowed: robots.info.disallowed, CrawlDelayMs: robots.info.crawlDelayMs},
                                         elapsedMs: nowMs() - t0,
                                         queueMs:   chainQueueMs + res.queueMs, // R114: 链层+获胜策略排队累计
+                                        waitSelector: opts.waitSelector, waitSelectorFound: res.waitSelectorFound, // R120
                                 }
                         }
 

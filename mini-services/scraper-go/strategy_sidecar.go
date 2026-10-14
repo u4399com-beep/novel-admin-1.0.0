@@ -49,7 +49,7 @@ func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRu
         ua := chromeUA
 
         if kind == "cloak" {
-                resp, err := sidecarCloakFetch(targetURL, remaining, ctx.proxy, ua)
+                resp, err := sidecarCloakFetch(targetURL, remaining, ctx.proxy, ua, ctx.waitSelector)
                 ms := nowMs() - s0
                 if err != nil {
                         return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "",
@@ -75,8 +75,20 @@ func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRu
                 if a.warning != "" {
                         warnings = append(warnings, a.warning)
                 }
+                // R120（遗留①+反反爬强化）：关键选择器等待未命中——JS 慢渲染站的「200 空壳
+                // 抢跑」显式化。旧路径此处 ok=true 返回壳页 → backend 提取 0 条 → softBlock
+                // 软拦截 → 任务 pause+冷却一整圈浪费；现按失败处理让链继续（minTier 站下一跳
+                // fetch-browser 复核），证据留在 note/warnings；bytes 保留供 debugHTML 排障。
+                if ctx.waitSelector != "" && !resp.WaitSelectorFound && a.ok {
+                        warnings = append(warnings, "waitSelector 未命中（侧车等待后关键选择器仍未出现：JS 慢渲染/选择器失效/空壳）: "+ctx.waitSelector)
+                        return attemptResult{ok: false, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
+                                warnings: warnings, note: "wait-selector-missed", queueMs: waited,
+                                subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: false, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: "wait-selector-missed"}},
+                        }
+                }
                 return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
                         warnings: warnings, note: a.note, queueMs: waited, // R114: 侧车取槽排队计入饱和观测
+                        waitSelectorFound: resp.WaitSelectorFound, // R120: 命中结果回传链层（fetchPageResult 回显）
                         subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
                 }
         }

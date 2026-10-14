@@ -224,7 +224,10 @@ func ruleHealthCheckOne(ruleID int64, siteURL string) (bool, int64, string) {
 		List *struct {
 			Items []ListItem `json:"items"`
 		} `json:"list"`
-	}]("/api/test", engineRuleBody(siteURL, map[string]any{"listRule": lr.ListRule}, lr, ""))
+		// R120（遗留②降噪）：巡检探活同规则路径透传 itemSelector——JS 渲染列表站
+		//（pilishuwu）此前巡检固定撞「200 空壳（软拦截/挑战竞态）」假阴性；cloak 侧
+		// wait_for_selector 等条目渲染完成后，巡检判定的即真实渲染结果而非壳页
+	}]("/api/test", engineRuleBodyWait(siteURL, map[string]any{"listRule": lr.ListRule}, lr, "", lr.ListRule["itemSelector"]))
 	latencyMs := time.Since(s0).Milliseconds()
 	if !res.OK {
 		return false, latencyMs, truncateRunes(res.Error, 200)

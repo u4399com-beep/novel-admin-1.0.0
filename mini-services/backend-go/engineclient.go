@@ -231,6 +231,36 @@ func engineRuleBody(u string, ruleVal any, rule LoadedRule, referer string) map[
         return body
 }
 
+// engineRuleBodyWait 引擎请求体 + waitSelector（R120 遗留①）：JS 慢渲染站的「关键
+// 选择器」透传——fetch-cloak 策略转给侧车 /cloak 由子进程 wait_for_selector 等待
+// 渲染完成（超时不失败），未命中按策略失败让链继续复核。选择器由各调用点取「该页
+// 主提取选择器」（列表 itemSelector/书页 titleSelector/目录 chapterLinkSelector/
+// 正文 contentSelector）：选择器出现 ≈ 提取必然非空，天然对齐 softBlock 语义。
+func engineRuleBodyWait(u string, ruleVal any, rule LoadedRule, referer, waitSelector string) map[string]any {
+        body := engineRuleBody(u, ruleVal, rule, referer)
+        if ws := cssSafeWaitSelector(waitSelector); ws != "" {
+                body["waitSelector"] = ws
+        }
+        return body
+}
+
+// cssSafeWaitSelector R120: DSL 选择器过滤（与 scraper-go util.go 同语义双实现——
+// 两服务独立构建无共享包）：:contains()/aref/ownText 等 pickText 专有语法对侧车
+// Playwright wait_for_selector 非法，不透传（该页不等待，行为与旧版一致）。
+func cssSafeWaitSelector(s string) string {
+        sel := strings.TrimSpace(s)
+        if sel == "" || len(sel) > 256 {
+                return ""
+        }
+        low := strings.ToLower(sel)
+        for _, tok := range []string{":contains(", "aref", "owntext", "text(", "@style", "attr("} {
+                if strings.Contains(low, tok) {
+                        return ""
+                }
+        }
+        return sel
+}
+
 // bookPageResult fetchBookPage 结果
 type bookPageResult struct {
         OK   bool
@@ -246,7 +276,8 @@ type bookPageResult struct {
 func fetchBookPage(run *Run, u string, rule LoadedRule, referer string, quiet bool) bookPageResult {
         res := callEngine[struct {
                 Book *BookData `json:"book"`
-        }]("/api/test", engineRuleBody(u, map[string]any{"bookRule": rule.BookRule}, rule, referer))
+        // R120: 书页关键选择器 = titleSelector（书页多为服务端渲染，选择器已在则零等待）
+        }]("/api/test", engineRuleBodyWait(u, map[string]any{"bookRule": rule.BookRule}, rule, referer, rule.BookRule["titleSelector"]))
         if !res.OK {
                 return bookPageResult{OK: false, Err: res.Error}
         }
@@ -349,7 +380,8 @@ func fetchListPage(run *Run, u string, rule LoadedRule, referer string) ([]ListI
                 List *struct {
                         Items []ListItem `json:"items"`
                 } `json:"list"`
-        }]("/api/test", engineRuleBody(u, map[string]any{"listRule": rule.ListRule}, rule, referer))
+        // R120: 列表页关键选择器 = itemSelector（JS 渲染列表站 cloak 等条目渲染完再取页）
+        }]("/api/test", engineRuleBodyWait(u, map[string]any{"listRule": rule.ListRule}, rule, referer, rule.ListRule["itemSelector"]))
         if !res.OK {
                 run.Log(fmt.Sprintf("列表页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
                 return nil, res.Error
@@ -388,7 +420,8 @@ func fetchTocPage(run *Run, u string, rule LoadedRule, referer string, quiet boo
         }
         res := callEngine[struct {
                 Book *BookData `json:"book"`
-        }]("/api/test", engineRuleBody(u, map[string]any{"bookRule": bookRule}, rule, referer))
+        // R120: 目录页关键选择器 = chapterLinkSelector（JS 渲染目录站 cloak 等章锚渲染完）
+        }]("/api/test", engineRuleBodyWait(u, map[string]any{"bookRule": bookRule}, rule, referer, bookRule["chapterLinkSelector"]))
         if !res.OK {
                 if !quiet {
                         run.Log(fmt.Sprintf("目录页抓取失败(%s): %s", truncateRunes(u, 100), res.Error))
@@ -508,7 +541,8 @@ func fetchFullToc(run *Run, seeds []string, rule LoadedRule, referer string, qui
 
 // fetchChapter 抓取并提取一个章节（warnings 由调用方按存储成败决定是否记录）
 func fetchChapter(u string, rule LoadedRule, referer string) engineResult[ChapterData] {
-        return callEngine[ChapterData]("/api/chapter", engineRuleBody(u, rule.ChapterRule, rule, referer))
+        // R120: 正文页关键选择器 = contentSelector（JS 渲染正文站 cloak 等正文区渲染完）
+        return callEngine[ChapterData]("/api/chapter", engineRuleBodyWait(u, rule.ChapterRule, rule, referer, rule.ChapterRule["contentSelector"]))
 }
 
 var (

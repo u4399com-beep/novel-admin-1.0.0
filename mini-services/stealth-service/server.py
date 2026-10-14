@@ -20,6 +20,10 @@ stealth-service —— iv8 / CloakBrowser 反检测抓取侧车（R101）。
   POST /iv8    {"url","timeoutMs":20000,"userAgent":"","advanceMs":3000}
             → {"ok":true,"html","cookies","finalUrl","elapsedMs"[,"warnings"]}
   （R116-2：warnings 为可选新增字段——单页 HTML >8MB 截断时给出说明，其余响应不变）
+  （R120：/cloak 新增可选 waitSelector/waitSelectorTimeoutMs——JS 慢渲染站的「关键
+  选择器」等待。语义：domcontentloaded 后优先 wait_for_selector（命中即提前返回，
+  省去整段 networkidle）；未命中再走 networkidle+挑战轮询，收尾补一次短等待；全程
+  超时不失败（页面照常返回），响应附 waitSelectorFound 布尔供调用方判定空壳。）
 
 并发与线程安全：
   - ThreadingHTTPServer 每请求一线程；
@@ -134,6 +138,81 @@ def _cloak_binary_ready() -> bool:
 
 _CLOAK_COOKIE_MEM: dict = {}   # host -> 最近一次过盾 cookies（page.context.cookies 形态，可直接 add_cookies）
 _CLOAK_SERVED: dict = {}       # host -> 累计成功渲染次数（networkidle 自适应依据）
+_MEM_LOCK = threading.Lock()   # R120：两份 host 记忆的并发保护（cloak_fetch 在请求线程并发读写）
+
+# ---------- R120：cloak 会话记忆落盘（遗留③，同 backend cookie jar 先例） ----------
+# 旧况：_CLOAK_COOKIE_MEM/_CLOAK_SERVED 纯内存——侧车重启（run.sh 崩溃自愈/watchdog
+# 兜底/沙箱重置）即「失忆」：过盾 cookie 全丢 → 每个站点首访重新扛挑战（8s networkidle
+# + 20s 挑战轮询整段重付），_CLOAK_SERVED 清零还把所有站点打回首次慢等待档。
+# 现以脏标记 + 20s 周期线程原子落盘（tmp+rename），启动时恢复（过期 cookie 剔除）。
+_MEM_PATH = os.environ.get("STEALTH_MEM_PATH") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "cloak-mem.json")
+_MEM_SAVE_INTERVAL_S = 20.0
+_MEM_DIRTY = threading.Event()
+
+
+def _cookie_alive(c: dict) -> bool:
+    """cookie 是否仍有效（expires=-1 会话 cookie 保留——过期与否则由站点重新挑战兜底）。"""
+    try:
+        exp = float(c.get("expires", -1))
+        return exp == -1 or exp > time.time()
+    except Exception:
+        return True
+
+
+def _mem_load() -> None:
+    """启动恢复：读落盘文件，剔除已过期 cookie 后并入内存记忆。任何异常静默跳过
+    （落盘是加速路径不是正确性依赖——丢了无非重新过一次挑战）。"""
+    try:
+        with open(_MEM_PATH, "rb") as f:
+            data = json.loads(f.read().decode("utf-8"))
+        cookies = data.get("cookies") or {}
+        served = data.get("served") or {}
+        with _MEM_LOCK:
+            for host, arr in cookies.items():
+                if not isinstance(arr, list):
+                    continue
+                alive = [c for c in arr if isinstance(c, dict) and _cookie_alive(c)]
+                if alive:
+                    _CLOAK_COOKIE_MEM[host] = alive
+            for host, n in served.items():
+                try:
+                    _CLOAK_SERVED[host] = max(0, int(n))
+                except Exception:
+                    continue
+        print(f"[stealth-service] 会话记忆恢复：cookie host={len(_CLOAK_COOKIE_MEM)} "
+              f"served host={len(_CLOAK_SERVED)}（{_MEM_PATH}）", flush=True)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[stealth-service] 会话记忆恢复失败（忽略）: {e}", flush=True)
+
+
+def _mem_save() -> None:
+    """原子落盘（tmp + os.replace；快照在锁内取、写盘在锁外做，不阻塞渲染请求）。"""
+    with _MEM_LOCK:
+        snap_cookies = {h: list(v) for h, v in _CLOAK_COOKIE_MEM.items()}
+        snap_served = dict(_CLOAK_SERVED)
+    tmp = _MEM_PATH + ".tmp"
+    os.makedirs(os.path.dirname(_MEM_PATH), exist_ok=True)
+    payload = json.dumps({"version": 1, "savedAt": int(time.time()),
+                          "cookies": snap_cookies, "served": snap_served},
+                         ensure_ascii=False)
+    with open(tmp, "wb") as f:
+        f.write(payload.encode("utf-8"))
+    os.replace(tmp, _MEM_PATH)
+
+
+def _mem_save_loop() -> None:
+    """脏标记 + 周期落盘（零常态 I/O：没有新渲染就不写盘）。"""
+    while True:
+        time.sleep(_MEM_SAVE_INTERVAL_S)
+        if _MEM_DIRTY.is_set():
+            _MEM_DIRTY.clear()
+            try:
+                _mem_save()
+            except Exception as e:
+                print(f"[stealth-service] 会话记忆落盘失败（下轮重试）: {e}", flush=True)
 
 
 def _cloak_url_host(url: str) -> str:
@@ -142,12 +221,6 @@ def _cloak_url_host(url: str) -> str:
         return (urlparse(url).hostname or "").lower()
     except Exception:
         return url[:64]
-
-
-def _cloak_networkidle_ms(url: str) -> int:
-    """R108 语义（host 级）：首次给足 8s（挑战页二次跳转/JS 挑战），会话热后 2.5s。"""
-    served = _CLOAK_SERVED.get(_cloak_url_host(url), 0)
-    return 8000 if served == 0 else 2500
 
 
 def _looks_like_challenge(html: str) -> bool:
@@ -173,10 +246,20 @@ def _cloak_launch(proxy: str, user_agent: str):
 
 
 def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
-                      networkidle_ms: int, initial_cookies: list, out_q) -> None:
+                      networkidle_ms: int, initial_cookies: list, out_q,
+                      wait_selector: str = "", ws_timeout_ms: int = 15000) -> None:
     """子进程入口：launch → page 生命周期 → 结果入队 → 进程自然退出。
-    R110 cookie 回传/R111 context 级清理/R116-2 大页护栏语义全保留。"""
+    R110 cookie 回传/R111 context 级清理/R116-2 大页护栏语义全保留。
+    R120 waitSelector（遗留①）：JS 慢渲染站的「关键选择器」等待——
+      ①goto 后若页面非挑战壳，先 wait_for_selector（命中即提前收尾，省整段
+        networkidle—— cloak 首访 8s 档的最常见浪费）；
+      ②未命中再走 networkidle+挑战轮询既有路径，收尾补一次短等待（挑战放行后
+        SPA 才开始拉数据的形态：rank 列表在 networkidle 后 2-10s 才渲染）；
+      ③全程超时不失败（页面照常返回），waitSelectorFound 布尔随响应透出供调用方
+        判定空壳——「200 空壳抢跑」从静默假成功变为可观测、可被链层继续复核。"""
     t0 = time.time()
+    ws = (wait_selector or "").strip()
+    ws_ms = max(2000, min(int(ws_timeout_ms or 15000), 30000))
     try:
         browser = _cloak_launch(proxy, user_agent)
         page = browser.new_page()
@@ -186,10 +269,19 @@ def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
             except Exception:
                 pass
         resp = page.goto(url, timeout=int(timeout_s * 1000), wait_until="domcontentloaded")
-        try:
-            page.wait_for_load_state("networkidle", timeout=networkidle_ms)
-        except Exception:
-            pass  # 超时不算失败（与原语义一致）
+        ws_found = False
+        # R120①：关键选择器优先等待（挑战壳不用等——选择器永远不会出现在盾页上）
+        if ws and not _looks_like_challenge(page.content()):
+            try:
+                page.wait_for_selector(ws, timeout=ws_ms, state="attached")
+                ws_found = True
+            except Exception:
+                ws_found = False
+        if not ws_found:
+            try:
+                page.wait_for_load_state("networkidle", timeout=networkidle_ms)
+            except Exception:
+                pass  # 超时不算失败（与原语义一致）
         html = page.content()
         # R119：挑战页完成等待——CF 等盾页 domcontentloaded+networkidle 常早于挑战
         # JS 跑完（初始 403 即返回），旧路径此时取 content 只拿到挑战页壳。检测到
@@ -202,7 +294,21 @@ def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
                 html = page.content()
             except Exception:
                 break
+        # R120③：收尾补等待——挑战轮询放行/SPA 拉数据后再给关键选择器一次机会
+        #（短窗 2.5s；仍未命中不强等，html 照常返回 + waitSelectorFound=false）
+        if ws and not ws_found and not _looks_like_challenge(html):
+            try:
+                page.wait_for_selector(ws, timeout=2500, state="attached")
+                ws_found = True
+            except Exception:
+                pass
+        if ws_found:
+            page.wait_for_timeout(300)  # 命中后短暂沉降：等选择器同批的相邻节点写完 DOM
+            html = page.content()
         html_warnings = []
+        if ws and not ws_found:
+            html_warnings.append(
+                f"waitSelector 未命中（等待后关键选择器仍未出现：JS 慢渲染/选择器失效/空壳）: {ws}")
         if len(html) > MAX_HTML_BYTES:
             html_warnings.append(
                 f"HTML 超过 {MAX_HTML_BYTES // (1024 * 1024)}MB 已截断（防异常大页滞留内存）")
@@ -235,6 +341,7 @@ def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
             pass
         out_q.put({"ok": True, "html": html, "status": status, "finalUrl": final_url,
                    "cookies": cookies_out, "elapsedMs": int((time.time() - t0) * 1000),
+                   **({"waitSelectorFound": bool(ws_found)} if ws else {}),
                    **({"warnings": html_warnings} if html_warnings else {})})
     except Exception as e:
         try:
@@ -380,30 +487,6 @@ def _browser_tree_roots(snapshot=None):
     return roots
 
 
-def _child_procs():
-    """枚举本进程的直接子进程 [(pid, comm, etime)]（读 /proc，无外部依赖；R111 保留兼容）。"""
-    import os as _os
-    me = _os.getpid()
-    out = []
-    for pid in _os.listdir("/proc"):
-        if not pid.isdigit():
-            continue
-        try:
-            with open(f"/proc/{pid}/stat", "rb") as f:
-                stat = f.read().decode("utf-8", "replace")
-            i = stat.index("(")
-            comm = stat[i + 1:stat.rindex(")")]
-            after = stat[stat.rindex(")") + 2:].split()
-            if int(after[1]) != me:
-                continue
-            # stat field 22 = starttime（clock ticks）：after 里下标 19
-            out.append((int(pid), comm, int(after[19])))
-        except (FileNotFoundError, ProcessLookupError, ValueError, IndexError):
-            continue
-        except Exception:
-            continue
-    return out
-
 
 def _janitor_kill_trees(roots, log_prefix):
     """R116-2：击杀一批驱动树根及其完整子树（R111 树补刀语义抽公共实现）。
@@ -496,17 +579,22 @@ def _driver_janitor():
             pass
 
 
-def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
+def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str,
+                wait_selector: str = "", ws_timeout_ms: int = 15000) -> dict:
     """CloakBrowser 整页渲染（R119：子进程隔离——spawn 独立解释器渲染，主进程只
     等 Queue 结果并兜底超时杀树）。跨请求 cookie 会话（R110）与 networkidle 自适应
-    （R108）在主进程按 host 记忆，随参数注入子进程。"""
+    （R108）在主进程按 host 记忆，随参数注入子进程。
+    R120：waitSelector 透传子进程（关键选择器等待，超时不失败）；host 记忆读写加锁
+    （ThreadingHTTPServer 并发请求线程）+ 落盘脏标记（重启不失忆）。"""
     import multiprocessing as _mp
     t0 = time.time()
     timeout_s = max(3.0, min(timeout_ms, MAX_TIMEOUT_MS) / 1000.0)
     host = _cloak_url_host(url)
-    nid_ms = _cloak_networkidle_ms(url)
-    initial_cookies = _CLOAK_COOKIE_MEM.get(host) or []
-    # 预算：page timeout + launch(≤90s，实测冷启 1-25s) + 挑战轮询 20s + import 余量
+    ws = (wait_selector or "").strip()
+    with _MEM_LOCK:
+        nid_ms = 8000 if _CLOAK_SERVED.get(host, 0) == 0 else 2500
+        initial_cookies = list(_CLOAK_COOKIE_MEM.get(host) or [])
+    # 预算：page timeout + launch(≤90s，实测冷启 1-25s) + 挑战轮询 20s + ws 等待 30s 上限 + import 余量
     budget = timeout_s + 150.0
     proc, out = None, None
     try:
@@ -514,7 +602,7 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
         out_q = ctx.Queue()
         proc = ctx.Process(target=_cloak_child_main,
                            args=(url, timeout_s, proxy, user_agent, nid_ms,
-                                 initial_cookies, out_q),
+                                 initial_cookies, out_q, ws, ws_timeout_ms),
                            daemon=True)
         proc.start()
         try:
@@ -541,11 +629,13 @@ def cloak_fetch(url: str, timeout_ms: int, proxy: str, user_agent: str) -> dict:
         return {"ok": False, "error": f"cloak 渲染超时（预算 {int(budget)}s）",
                 "elapsedMs": int((time.time() - t0) * 1000)}
     if out.get("ok"):
-        _CLOAK_SERVED[host] = _CLOAK_SERVED.get(host, 0) + 1
-        if out.get("cookies"):
-            _CLOAK_COOKIE_MEM[host] = out["cookies"]  # R110 快通道：过盾 cookie 供下次注入
-        else:
-            _CLOAK_COOKIE_MEM.pop(host, None)
+        with _MEM_LOCK:
+            _CLOAK_SERVED[host] = _CLOAK_SERVED.get(host, 0) + 1
+            if out.get("cookies"):
+                _CLOAK_COOKIE_MEM[host] = out["cookies"]  # R110 快通道：过盾 cookie 供下次注入
+            else:
+                _CLOAK_COOKIE_MEM.pop(host, None)
+        _MEM_DIRTY.set()  # R120：20s 周期线程异步落盘
     if out.get("warnings"):
         for w in out["warnings"]:
             print(f"[stealth-service] cloak 大页护栏：{w} url={url}", flush=True)
@@ -684,7 +774,13 @@ class Handler(BaseHTTPRequestHandler):
             if not HAS_CLOAK:
                 self._json(200, {"ok": False, "error": "cloakbrowser 未安装"})
                 return
-            self._json(200, cloak_fetch(url, timeout_ms, proxy, user_agent))
+            # R120：waitSelector/waitSelectorTimeoutMs 可选——JS 慢渲染站的关键选择器
+            # 等待（backend 规则提取选择器透传链：engine opts → /cloak → 子进程
+            # wait_for_selector；超时不失败，waitSelectorFound 随响应透出）
+            self._json(200, cloak_fetch(
+                url, timeout_ms, proxy, user_agent,
+                wait_selector=str(req.get("waitSelector") or "").strip()[:256],
+                ws_timeout_ms=int(req.get("waitSelectorTimeoutMs") or 15000)))
             return
         if self.path.rstrip("/") == "/iv8":
             if not HAS_IV8:
@@ -749,7 +845,9 @@ def _sweep_orphan_chromium():
 
 def main():
     _sweep_orphan_chromium()
+    _mem_load()
     threading.Thread(target=_driver_janitor, daemon=True).start()
+    threading.Thread(target=_mem_save_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", LISTEN_PORT), Handler)
     srv.daemon_threads = True
     print(f"[stealth-service] v{VERSION} listening on http://127.0.0.1:{LISTEN_PORT} "

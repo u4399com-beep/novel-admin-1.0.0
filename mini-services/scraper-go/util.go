@@ -231,6 +231,26 @@ func parseProxy(raw any) string {
 	return strings.Join(okParts, ",")
 }
 
+// ==================== waitSelector 安全过滤（R120） ====================
+
+// cssSafeWaitSelector waitSelector 透传安全性过滤：引擎 pickText 规则 DSL 的专有语法
+//（:contains() 文本锚 / aref 属性 DSL / ownText 关键字等）对 Playwright
+// wait_for_selector 非法——此类选择器不透传（返回 ""= cloak 不等待，行为与旧版一致）；
+// 纯 CSS（pilishuwu li.rank-item / div.read-content 等）原样放行。长度钳 256。
+func cssSafeWaitSelector(s string) string {
+        sel := strings.TrimSpace(s)
+        if sel == "" || len(sel) > 256 {
+                return ""
+        }
+        low := strings.ToLower(sel)
+        for _, tok := range []string{":contains(", "aref", "owntext", "text(", "@style", "attr("} {
+                if strings.Contains(low, tok) {
+                        return ""
+                }
+        }
+        return sel
+}
+
 // ==================== 超时钳制（clampTimeout） ====================
 
 // clampIntField R119: JSON 数值字段的安全钳取（缺省/非法/越界 → [lo,hi] 内收敛，
