@@ -112,18 +112,20 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | 章名 ownText 语义（R117） | `bookRule.chapterTitleSelector = "ownText"` 关键字：锚点直接文本（不含后代元素）——legado 书源 chapterName=ownText 直译，剥离章锚内嵌站方标记（书海阁 `<i class="red"> [免费]</i>` 实测）；backend fetchTocPage 目录页键白名单同步透传 |
 | E19 巡检长预算（R121） | 巡检与 fleet 任务竞争同一域槽队列——fleet 满载期默认 60s 预算被「排队+慢服务」吃穿 → 「全部策略 timeout」误判不健康 → E23 联动复活被压制（washai 实证：引擎侧同期 ok=634 而巡检报超时）。根修=双长预算：backend callEngineTimeout 逐调用超时（per-request context，不再依赖客户端级 Timeout 的 min 钳制）+ 巡检透传 body timeoutMs=60000（引擎 clampTimeout 上限，策略链预算放大 150s 取槽耐心排队而非 shed）。礼貌红线不受影响：巡检仍经同一 1.2s+ 域槽队列串行放行，零额外请求零并发 |
 | IM 网关吞 `a[h` 假象（R121 再实证） | 会话文本经 IM 网关时 `a[h` 片段可能被吞（Task 34 修复机制的同款病灶）——本轮 rule31 选择器 `a[href^=...]` 落库成 `aref^=...]` 后实测仍通过（extractList 多级回退救场），但规则语义已偏移。规避：新规则优先用无属性前缀的等价选择器（如 `.list-out a`），必须用属性选择器时以字符串拼接形态写入文件并字节级复核 |
-
-### 6.3 实测遗留问题（截至 24-d 审计）
-
-- **101kks**：系统 curl 200、引擎全策略 challenge-page——引擎传输指纹被站点针对性识别（非 CF IP 封锁），待指纹对策升级；listRule 已校准 `/last`。
-- **pilishuwu**：CF 对数据中心 IP 全 TLS 指纹 403（curl_chrome116/ff117/edge101、Playwright 真浏览器均 403），需住宅 IP。
-- **77shuku**：TCP 层不可达疑关停，策略链无解。
-
-### 6.4 合规红线（Go 版逐条继承，不可配置绕过）
-
-1. 默认每域名 ≥1.2 秒间隔，禁止并发轰炸；2. robots.txt 解析并对 Disallow 路径返回 warning（warn-only）；3. 不实现、不预留任何验证码破解、登录态伪造、付费内容绕过逻辑；4. 仅抓取规则中显式配置的公开页面。
 | E19 规则健康巡检（61-R4） | backend 后台 45min/轮（RULEHEALTH_INTERVAL_MIN 可调 [5,720]，RULEHEALTH_OFF=1 停用）遍历全部启用规则：走与真实采集同契约的 loadRule→engineRuleBody→/api/test(listRule) 路径探活，判定三态（传输失败/软拦截空壳/200 零条目=不健康，条目>0=健康）落 RuleHealth 表（连击计数 SQL 内维护）；规则面板「健康」列透出 + 「立即巡检」按钮手动触发（单飞闸防重叠）。E18 管出口死口，E19 管选择器漂移/入口下线/站点死亡——规则级病灶从被动踩坑变为面板一瞥可知 |
 | E23 巡检联动复活（61-R11） | 巡检实测健康的规则名下「限流软拦截」暂停任务（静默≥30min）自动重新入队——runner autoResume 4 次上限后的无人值守断流点闭环；频率受巡检轮间隔约束（45min 至多一轮），站点不健康永不复活 |
 | E25 多源延迟感知出口池（62-R29） | E18 升级：候选源 1→5 路（proxyscrape/TheSpeedX/monosans/openproxylist/geonode，单源失败不致命）；补位从「先到先得」改「最快先得」（探测记时延，时延升序取位）；候选按规则 id 轮转偏移防同质化；温和升级——死口=0 且最慢活口 >6s 时用 <2.5s 快口每轮至多置换一口（免费口「活着但 10s+」是代理站吞吐主瓶颈）；探测并发 24、候选批量 120 |
 | E26 舰队自持（62-R31） | backend 后台 5min/轮（FLEETKEEPER_OFF=1 停用）扫描 enabled 规则：无 pending/running/paused 任务且最近任务 updatedAt ≥45min 冷却 → 自动建 list 任务（targetUrl=siteUrl，pages=10，db 模式）——list 任务终态后域名断流的最后一环无人值守闭环，与 E21/E23（暂停复活）构成任务面完整生命周期自持 |
 | E20 引擎可观测统计（61-R5） | GET /api/stats（:3030）：主机×策略两维整链成功/失败/挑战页/连接层断网四类 atomic 计数 + 主机 Top32 fail 降序 + 策略命中率，自启动累计。与 E17 熔断/E19 巡检构成「探测→计数→自愈」闭环，运营面一端点看全景 |
+| 挑战特征强/弱分级（R122，stealth 对齐引擎） | stealth `_looks_like_challenge` 旧版把 `challenge-platform`/`jsd` 当强特征任意体积判定——但 CF 会向「过盾后的真实页面」也注入 jsd 信标脚本（pilishuwu 84KB 真实列表页实测含 /cdn-cgi/challenge-platform/scripts/jsd/main.js）→ 挑战轮询空转 20s + 收尾选择器等待被跳过（waitSelectorFound 恒 false）。修正为强/弱分级：强特征（Just a moment/cf_chl_ 等盾页专属词）任意体积判定，弱特征（challenge-platform/cdn-cgi/jsd）需近空正文（<80 可见字符）才判——与引擎 reChallengeEmbed 守卫同语义 |
+| 过盾后有效状态回报（R122，双车道） | 盾页 goto 响应恒 403，挑战 JS 过盾后页面原地 reload 拿真实内容（200）——旧版回报初始 goto 状态 → 引擎 assess 判 http-403 把真实 body 一并丢弃（「过盾成功反被判失败」，pilishuwu 实证三连：found=false + status=403 + body 真实）。修复=主框架导航响应状态跟踪（cloak+browser 双车道）：必须在 goto 之前注册监听器——goto(wait_until=domcontentloaded) 会等到过盾后第二个文档的 DCL 才返回，goto 后注册必错过 200 事件（实测踩坑）。修复后 pilishuwu /api/test 5.4s 提取 20 本零污染（fetch-cloak/wsFound=true/wsApplied=true） |
+
+### 6.3 实测遗留问题（截至 R122 复核）
+
+- **101kks**：CF 交互式挑战（Bot Fight Mode）当前风暴期——直连/curl-imp/新鲜代理出口均 403，cloak 90s 预算挑战壳不放行（R122 实测）；R122 修复后一旦放行结果可被正确识别（此前过盾成功也被丢弃），由任务级 bounded 自愈循环覆盖，若长期不放行再评估代理池补种。
+- **pilishuwu**：R122 双根修（jsd 信标误判+过盾有效状态）后 cloak 车道恢复可用（5.4s/20 本书实证）；CF 对 HTTP 层仍 403（数据中心 IP 信誉），快车道依赖过盾 cookie 回放，失效则回落 cloak 重过盾（任务级自愈）。
+- **77shuku**：TCP 层不可达疑关停，策略链无解。
+
+### 6.4 合规红线（Go 版逐条继承，不可配置绕过）
+
+1. 默认每域名 ≥1.2 秒间隔，禁止并发轰炸；2. robots.txt 解析并对 Disallow 路径返回 warning（warn-only）；3. 不实现、不预留任何验证码破解、登录态伪造、付费内容绕过逻辑；4. 仅抓取规则中显式配置的公开页面。

@@ -40,6 +40,7 @@ stealth-service —— iv8 / CloakBrowser 反检测抓取侧车（R101）。
 import json
 import os
 import queue
+import re
 import threading
 import time
 import urllib.request
@@ -223,15 +224,47 @@ def _cloak_url_host(url: str) -> str:
         return url[:64]
 
 
+# R122 挑战特征分级（对齐引擎 challenge.go 强/弱特征语义）：
+# - 强特征：盾页专属词（Just a moment/cf_chl_ 等），任意体积命中即判挑战——正常内容页
+#   不可能含这些 token（与引擎 reChallengePlatform 同表）；
+# - 弱特征：challenge-platform//cdn-cgi/challenge/jsd/main.js —— CF 会向「过盾后的
+#   真实页面」也注入 jsd 信标脚本（R122 实测：pilishuwu 84KB 真实列表页含
+#   /cdn-cgi/challenge-platform/scripts/jsd/main.js），旧版把真实页误判为挑战壳 →
+#   挑战轮询空转 20s + 收尾选择器等待被跳过（waitSelectorFound 恒 false）→ 引擎按
+#   wait-selector-missed/http-403 丢弃真实 body。对齐引擎 reChallengeEmbed 守卫：
+#   弱特征仅在近空正文（<80 可见字符）时才判挑战。
+_CHALLENGE_STRONG_TOKENS = (
+    "just a moment", "checking your browser", "cf-browser-verification",
+    "attention required", "cf_chl_", "__cf_chl",
+)
+_CHALLENGE_WEAK_TOKENS = ("challenge-platform", "/cdn-cgi/challenge", "jsd/main.js")
+
+_RE_SCRIPT_STYLE = re.compile(r"(?is)<script[\s\S]*?</script>|<style[\s\S]*?</style>")
+_RE_ANY_TAG = re.compile(r"<[^>]+>")
+_RE_HTML_ENTITY = re.compile(r"&[a-z]+;|&#[0-9]+;|&#x[0-9a-f]+;", re.I)
+
+
+def _visible_text_len(html: str) -> int:
+    """近似可见正文字符数（剥 script/style/标签/实体后压缩空白）——弱特征守卫用，
+    对齐引擎 looksLikeChallenge 的 visibleBodyText+nearEmpty 语义（<80 视为近空）。"""
+    s = _RE_SCRIPT_STYLE.sub(" ", html)
+    s = _RE_ANY_TAG.sub(" ", s)
+    s = _RE_HTML_ENTITY.sub(" ", s)
+    return len(re.sub(r"\s+", " ", s).strip())
+
+
 def _looks_like_challenge(html: str) -> bool:
-    """挑战页特征判定（对齐引擎 serverChallenge 语义的轻量版）：
-    小页面 + 挑战平台脚本/常见盾特征词。大页面（>100KB）视为真实内容不再轮询。"""
+    """挑战页特征判定（对齐引擎 challenge.go 四层语义的轻量版）：
+    强特征任意体积命中即判；弱特征需近空正文；大页面（>100KB）视为真实内容。
+    R122：弱特征/强特征分级修正 CF jsd 信标注入真实页的误判（详见上方注释）。"""
     if not html or len(html) > 100_000:
         return False
     low = html.lower()
-    return ("challenge-platform" in low or "/cdn-cgi/challenge" in low
-            or "cf-chl" in low or "jsd/main.js" in low
-            or ("just a moment" in low) or ("checking your browser" in low))
+    if any(tok in low for tok in _CHALLENGE_STRONG_TOKENS):
+        return True
+    if any(tok in low for tok in _CHALLENGE_WEAK_TOKENS):
+        return _visible_text_len(html) < 80
+    return False
 
 
 def _cloak_launch(proxy: str, user_agent: str):
@@ -263,6 +296,24 @@ def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
     try:
         browser = _cloak_launch(proxy, user_agent)
         page = browser.new_page()
+        # R122：主框架导航响应状态跟踪——盾页 goto 响应恒 403，挑战 JS 过盾后页面原地
+        # reload 拿真实内容（200）；旧版回报初始 goto 状态（403）→ 引擎 assess 判
+        # http-403 把真实 body 一并丢弃（过盾成功反被判失败）。必须在 goto 之前注册：
+        # goto(wait_until=domcontentloaded) 会等到过盾后第二个文档的 DCL 才返回，
+        # reload 的 200 响应事件发生在 goto 内部——goto 后才注册会错过（实测踩坑）。
+        _nav_log = []  # 主框架导航响应状态（时序保留，末尾取最后一个）
+
+        def _on_nav_response(r):
+            try:
+                if r.frame == page.main_frame and r.request.is_navigation_request():
+                    _nav_log.append(int(r.status or 0))
+            except Exception:
+                pass
+
+        try:
+            page.on("response", _on_nav_response)
+        except Exception:
+            pass
         if initial_cookies:
             try:
                 page.context.add_cookies(initial_cookies)
@@ -315,7 +366,11 @@ def _cloak_child_main(url: str, timeout_s: float, proxy: str, user_agent: str,
             html = html[:MAX_HTML_BYTES]
         status, final_url = 0, url
         try:
-            if resp is not None:
+            if _nav_log:
+                # R122：过盾后有效状态优先（主框架最近一次导航响应；挑战 reload 后为 200）
+                status = _nav_log[-1]
+                final_url = page.url
+            elif resp is not None:
                 status = int(resp.status or 0)
                 final_url = resp.url or page.url
             else:

@@ -4850,3 +4850,24 @@ Stage Summary:
 - 沙箱第 10 次自愈按手册 15 分钟完成；fleet paused 任务自动恢复机制运转实证（#6/#8 限流冷却自动归队）
 - 吞吐 11.3k 章/h 稳态（礼貌天花板+限流窗口相位正常）；iqxsw 单书任务填充中，fleetkeeper 冷却后自动扩列任务
 - 移交：①huangjinwu okr=90%（359/h）持续偏慢——出口池健康度与 aimd 深退避可再观测一轮，证据充分后按 R116 先例扩分桶②iqxsw 其他 9 分类（都市/言情等）可经 R104 {page} 范围任务手动建任务扩容③pilishuwu/101kks CF 风暴若长期不放行按 R120 移交①评估 proxy 池补种④duckduckgo pseo-suggest 737 fails（被墙环境性，非本轮引入）
+---
+Task ID: R122
+Agent: Z.ai Code (main)
+Task: 用户指令——①遗留问题（pilishuwu 200 空壳收口 + fleet paused 任务 + huangjinwu 偏慢）②章节采集效率（兼顾封禁）③强化采集与反反爬④完善精简代码（git 推送按既有惯例随轮提交）
+
+Work Log:
+- 【沙箱盘点】三服务存活（backend :3000 / scraper :3030 / stealth :3031，二进制 02:55-04:01 构建=HEAD 0633dbb 全量代码）；Go 工具链丢失按手册重装（**新发现：/usr/local 对海量小文件写入病理慢，69MB SDK 解压 5 分钟超时——改 /tmp 1.9s 完成**，GOCACHE/GOMODCACHE 同指 /tmp，GOPROXY=goproxy.cn（golang.google.cn 部分模块 zip 404））；git 凭据完好；fleet 18 任务（15 running/2 partial/2 paused），恢复后旧库快照（97 万章骨架/27.6k 已填充，ChapterContent 分表语义）
+- 【遗留① pilishuwu「200 空壳」双根因收口（本轮核心）】端到端取证链：cloak 实抓列表页=84KB/20 本书真实内容，但响应 status=403+waitSelectorFound=false → 引擎判失败——「过盾成功反被判失败」三连。根因两层：①stealth _looks_like_challenge 把 challenge-platform/jsd 当强特征——CF 会向过盾后的真实页面注入 jsd 信标（84KB 真实页实测含 /cdn-cgi/challenge-platform/scripts/jsd/main.js）→ 挑战轮询空转 20s+收尾选择器等待被跳过（found 恒 false）②cloak 回报初始 goto 状态（403）→ 引擎 assess http-403 丢弃真实 body。修复（stealth+render 双车道）：a) 挑战特征强/弱分级（弱特征需近空正文 <80 可见字符，对齐引擎 reChallengeEmbed 守卫；实测 8 用例全对——101kks 521 错误页正确不进挑战轮询，走状态码失败路径）b) 主框架导航响应状态跟踪回报过盾后有效状态（**必须 goto 前注册监听器：goto(wait_until=dcl) 等到过盾后第二个文档 DCL 才返回，goto 后注册必错过 200 事件——spawn 子进程探针 vs 真实子进程行为差异定位的实测踩坑**）。修复后 /api/test 实测 5.4s 提取 20 本零污染（fetch-cloak/wsFound=true/wsApplied=true），任务 #8 resume 继续研磨；规则 #19 notes+seed 固化 R122 证据链
+- 【遗留② 101kks 定性】CF 交互式挑战（Bot Fight Mode）风暴期：直连/curl-imp/新鲜代理出口全 403、cloak 90s 预算挑战壳不放行——站点侧 WAF 状态窗；R122 修复的价值=一旦放行结果可被正确识别（此前过盾成功也被丢弃），bounded 自愈覆盖；任务 #6 resume
+- 【任务② iqxsw 分类扩容暴露规则缺陷并根修】R104 {page} 范围任务建 9 分类（#19-27，cat2-10×10 页）→ 翻页机制全对（10 页全命中各 24 条）但 240 条去重仅 24 本——**.popular 是「最新入库」块与页码无关**（/sort/8/1..10 十页逐字节相同），R121 选择器选错块。根修：listRule 改 .lastupdate .list-out（「最后更新」块 24 条/页随页变化，p1/p2 书链零重叠实证）+ title/link=em:nth-child(2) a（书链；em:nth-child(3) a 是章链污染源；cascadia 离线验证 24 条/页零空链零章链）+ authorSelector 移除（span.gray.dispc 作者+日期双值污染，og:novel:author 权威）；live DB+seed 双落（**seed 契约陷阱再规避：listRule 必须紧凑 JSON 字符串形态，json 重序列化整文件改写首版即回退重做**）；失败任务 #22 restart 重发现
+- 【任务② huangjinwu 偏慢治理】日志定性：代理出口劣化（连接重置/超时/Too many open connections，EWMA 9.3s/章）；代理池 5 口逐个测活=4 活 1 死（188.246.186.54:8080 12s 超时拖累 ~20% 尝试）→ PUT 移除死口（直连实测 000×3 不可达，代理是必需的不能清）；EWMA 应随死口移除回落
+- 【吞吐】引擎 totalOK 27,929→45,300（50min +17,371 ≈ 20.8k 章/h，历史新高区间）；ruleHealth 14/17；admin 总览 1191 书/97.8 万章/28 任务/22 规则——礼貌天花板+多站点并行框架内运转，兼顾封禁红线（熔断保护实测拦住手动探测过载：连续整链失败→主机熔断 27s 冷却→排队请求收到结构化 502 熔断响应）
+- 【验证】双包全量测试两轮全绿（scraper 45.4s/backend 70.7s+seed 契约）+go vet 双净+py_compile 双文件过+_looks_like_challenge 模块级 8 用例断言过；Agent Browser 终验：首页 140 链接/37 封面零 console error、章页 /chapter/921797 真实正文 813 字渲染、/book/1104 书页正常、admin 总览实时数据、移动端 390px 零横向溢出（**556955「本章内容为空」为未填充骨架的正确前端语义，非回归——Chapter.content 恒空串设计+ChapterContent 分表实证**）
+- 【文档】anti-anti-crawl.md：§6.2 补 R122 两行（挑战特征强/弱分级/过盾后有效状态回报双车道）+ §6.3 遗留清单 R122 复核刷新 + **修复 §6.4 后 5 行孤儿表格行结构缺陷（前轮错位，归位 §6.2 表）**；recovery-playbook §1 补 Go 工具链 /tmp 快速路径+/usr/local 禁用说明+GOPROXY=goproxy.cn
+- 【git】单 commit 语义推送（stealth/render 双车道修复+seed 规则 19/31+文档两处）
+
+Stage Summary:
+- pilishuwu「200 空壳」彻底闭环：jsd 信标弱特征误判+过盾有效状态双根修，cloak 车道 5.4s/20 本实证——挑战型站点的「过盾成功被判失败」族缺陷（所有 CF 站通用）一并修复（render.py 同病同修）
+- iqxsw 发现源根修（.popular 页码无关块→.lastupdate 真分页块）：R104 范围采集机制本身零缺陷，9 分类后续可扩容至全站书目
+- 吞吐 20.8k 章/h 新高（4 满速主机+ixdzs8+5165+恢复中站点），huangjinwu 死代理移除、pilishuwu/101kks 回归研磨轨道
+- 移交：①九分类 iqxsw 范围任务当前各发现 24 本（旧选择器期），修正后 fleetkeeper 自动任务+新范围任务可扩展至 240 本/分类量级 ②101kks CF 风暴若长期不放行再评估代理池补种（R120 移交口径维持）③huangjinwu EWMA 观测死口移除效果 ④ChapterContent 分表 27.6k 章持续增长中（97 万骨架池待填充）

@@ -203,6 +203,23 @@ def main() -> int:
                         pass
                 page = context.new_page()
                 page.on("dialog", lambda d: d.dismiss())
+                # R122：主框架导航响应状态跟踪——盾页 goto 响应恒 403，挑战 JS 过盾后
+                # 页面 reload 拿真实内容（200）；旧版回报初始 goto 状态（403）→ 引擎
+                # assess 判 http-403 把真实 body 一并丢弃（与 stealth cloak 车道同族
+                # 缺陷同修）。主框架最近一次导航响应 = 过盾后有效状态。
+                last_nav = {"status": 0}
+
+                def _on_nav_response(r):
+                    try:
+                        if r.frame == page.main_frame and r.request.is_navigation_request():
+                            last_nav["status"] = int(r.status or 0)
+                    except Exception:
+                        pass
+
+                try:
+                    page.on("response", _on_nav_response)
+                except Exception:
+                    pass
 
                 def _route(route):
                     try:
@@ -246,7 +263,9 @@ def main() -> int:
                     except Exception:
                         ws_found = False
                 html = page.content()
-                status = resp.status if resp else 0
+                # R122：过盾后有效状态优先（主框架最近一次导航响应；挑战 reload 后为 200），
+                # 回退初始 goto 响应状态
+                status = last_nav.get("status") or (resp.status if resp else 0)
                 if len(html.encode("utf-8", errors="ignore")) > MAX_HTML_BYTES:
                     html = html[: MAX_HTML_BYTES // 3]  # 防止超大 DOM 撑爆 stdout 管道
                 # 渲染会话 cookie 回传引擎 jar（仅精简字段，防 payload 过大）

@@ -24,6 +24,19 @@ tar -xzf go.tgz && rm go.tgz
 
 后续所有 go 命令前：`export PATH=/home/z/go-sdk/go/bin:$PATH && export GOPATH=/home/z/go`
 
+**R122 沙箱实证修订（第 10 次恢复）**：解压目标**禁用 `/usr/local`**（rootfs overlay 对
+海量小文件写入病理慢，69MB Go SDK 解压 5 分钟超时未完成）；首选 `/home/z/go-sdk`，
+急用时 `/tmp`（tmpfs 1.9s 解压完成，GOCACHE/GOMODCACHE 同样指到 /tmp——home 目录
+写慢时 go build 会假死）。模块代理：`GOPROXY=https://goproxy.cn,direct`（golang.google.cn
+对部分模块 zip 404，go.dev 被墙；goproxy.cn 实测全量可用）：
+
+```bash
+# /tmp 快速路径（R122 实证）：
+curl -sL -o /tmp/go.tgz https://golang.google.cn/dl/go1.22.12.linux-amd64.tar.gz
+tar -xzf /tmp/go.tgz -C /tmp   # 1.9s
+export PATH=/tmp/go/bin:$PATH GOCACHE=/tmp/go-cache GOMODCACHE=/tmp/gomodcache GOPROXY=https://goproxy.cn,direct
+```
+
 ## 1.5 CloakBrowser 浏览器二进制恢复（R119 实证，约 5 分钟）
 
 stealth 侧车 venv 重建后 `~/.cloakbrowser/` 为空 → cloak launch 运行时自动下载被墙
