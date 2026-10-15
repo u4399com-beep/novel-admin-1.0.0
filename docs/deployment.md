@@ -914,7 +914,7 @@ sudo systemctl restart novel-backend.service novel-scraper.service
 
 ### 10.3 规则维护
 
-- 规则在 `ScrapeRule` 表 / 后台「采集规则」tab；当前 22 条（id 10-31：11 老站 10-20 + 4 新站 21-24 + 后增 25-30（含 R117 书海阁 washai 30）+ R121 求书阁 iqxsw 31），
+- 规则在 `ScrapeRule` 表 / 后台「采集规则」tab；当前 23 条（id 10-32：11 老站 10-20 + 4 新站 21-24 + 后增 25-31（含 R117 书海阁 washai 30、R121 求书阁 iqxsw 31）+ R123 笔趣阁 biqiuge8 32），
   站点实测结论见 [`scrape-rules.md`](scrape-rules.md)。
 - 改完想「随仓库分发」：把新值同步回 `mini-services/backend-go/seed/seed.json`（空库播种源）。
 - ⚠️ 后台规则表单是**全字段覆盖**式 PUT：传部分 JSON 会把未传的 bookRule/chapterRule 清空——

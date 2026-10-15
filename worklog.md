@@ -4871,3 +4871,25 @@ Stage Summary:
 - iqxsw 发现源根修（.popular 页码无关块→.lastupdate 真分页块）：R104 范围采集机制本身零缺陷，9 分类后续可扩容至全站书目
 - 吞吐 20.8k 章/h 新高（4 满速主机+ixdzs8+5165+恢复中站点），huangjinwu 死代理移除、pilishuwu/101kks 回归研磨轨道
 - 移交：①九分类 iqxsw 范围任务当前各发现 24 本（旧选择器期），修正后 fleetkeeper 自动任务+新范围任务可扩展至 240 本/分类量级 ②101kks CF 风暴若长期不放行再评估代理池补种（R120 移交口径维持）③huangjinwu EWMA 观测死口移除效果 ④ChapterContent 分表 27.6k 章持续增长中（97 万骨架池待填充）
+---
+Task ID: R123
+Agent: Z.ai Code (main)
+Task: 用户 4 项指令——①遗留问题（iqxsw 九分类扩容 + fleet paused 任务）②章节采集效率（兼顾封禁）③强化采集与反反爬④完善精简代码（git 推送按既有惯例随轮提交）
+
+Work Log:
+- 【沙箱第 11 次重置自愈】三服务全灭/Go 工具链丢/db 目录丢/stealth venv 丢/cloakbrowser 二进制丢/git 凭据丢：按手册恢复——Go 1.22.12（golang.google.cn /tmp 快速路径 1.9s 解压）→ curl-impersonate 21 二进制（ghfast.top）→ build-go.sh 双 bin → ensure-services 失败码收尾拉起 backend :3000 / scraper :3030 → stealth venv 重建（aliyun PyPI）→ cloakbrowser 216MB ghfast.top 断点续传 ~7 分钟恢复（chrome 146 实证）→ ~/.git-credentials 重建（600）。**stealth 重启踩坑**：15:36 的旧进程（系统 python3 非 venv）持有 flock，pkill -f "stealth-service/run.sh" 与 "venv" 均不匹配其 cmdline（bash ./run.sh + python3 server.py 相对路径）→ pkill 静默无效，新实例 flock 拒入，/health 恒 cloakBinary=false——按 PID 精确 kill 旧进程后 run.sh 自愈环拉起新 venv 实例，三能力全 true。空库 seed 自愈 22 规则 + fleet 2s 轮询自动重建 20 任务
+- 【任务② biqiuge8 规则 #32 全链落地（本轮核心，快车道扩容第 3 站）】候选站普查 20 站（R121 排除站复探 + 全新候选）：6 站可达（81zw2/biqiuge8/kanshuzu/shukeju/booktxt/dingdianla）；逐站四段深挖后 biqiuge8 入选（kanshuzu=凯硕文章网非小说站、dingdianla 已变 APP 下载页、81zw2/shukeju/booktxt 列表单页规模小备选）。实测链：列表 /{cat}xiaoshuo/ 单页 .up ul li 59 行（s2 a 书链/s4 纯作者零污染）→ 书页 og:novel:* meta 全套 + .intro 简介 + .image img 封面 → 目录内嵌 .listmain dl dd a（双段 dl：最新块倒序在前+升序全集在后，引擎「同 URL 去重保留后现者」+ sortChapterRefsByNo 编号排序原生兼容，实测《黜龙》593 章升序）→ 正文 #content 21KB/章（开头 <script>app2();read2(); 由引擎 noiseSelector 整块剥离实测零污染——4972 字「春雷滚滚」正文直接开始）。**charset=gbk 必配**（GBK 编码站）。引擎 /api/test 三段实测全通过后 POST 落库 #32 + seed.json 固化（_comment 计数 21→23 同步）
+- 【任务② 端到端任务编排】单书任务 #21《黜龙》/book/59052304/（592 章骨架 + 填充推进 87/592 @16:30）+ 七分类 list 任务 #31-37（xuanhuan 主力由 fleetkeeper 自建 + xiuzhen/dushi/chuanyue/wangyou/kehuan/qita/wanben 手动）；实测 #37 完本区 12 本发现（partial）、#32 都市 14 本、#33 穿越 5 本；同域 7 任务并发触发熔断防护为设计内（#34 网游 paused 瞬态语义待冷却自动恢复——**新修复语义的首个生产实证**）
+- 【遗留① iqxsw 九分类范围任务】cat2-10 共 9 个 R104 {page} 范围任务（pageFrom=1 pageTo=15，targetUrl %7Bpage%7D 编码形占位符——引擎 pagePlaceholderForms 双形态识别实证「范围采集·两阶段并发 页区间 1-15」日志）；首轮 7 任务同域启动风暴撞熔断窗口 failed（引出任务③根修，见下）；修复部署后 restart 全部归队，#27（cat7）total=264 本发现中
+- 【任务③ R123 根修：范围采集瞬态错误透传（本轮反反爬核心）】**缺陷图谱**：R104 三条翻页路径（collectListItemsPlaceholder/collectListItems pageFrom>1 跳首页/首页后逐页跟随）全部把 fetchListPage 的 per-page 错误串丢弃（pageItems, _ :=）——同域批量范围任务启动撞熔断窗口时全部页瞬态失败，空错误串返回让 runList 的 isTransientScrapeErr 把熔断误判为「规则失效」failed 终态（Task 33 瞬态保护被旁路，#22-30 一轮 7 任务全灭实证，恢复成本全由人工承担）。**修复**：捕获首个非空页错误（firstPageErr），全 items 空时透传——熔断词面「目标主机熔断中」命中 isRateLimitErrText、200 空壳档案命中 softBlockEmptyErrText，均照常归入 paused 可自动恢复（4 次额度）；部分成功场景零影响（错误仅在空集时消费）。**audit_r123_test 三测锁定**：占位符路径透传（stub 引擎 502 熔断信封 → errText 命中瞬态+含「熔断」词面）/pageFrom>1 跳首页透传/部分成功保空串+去重。测试踩坑双记：①stopState 对不存在任务返回 "canceled"（防孤儿语义）→ 测试任务必须先 insertRunningTaskAt 落库才能驱动循环 ②临时库 INSERT 列数手数错（7 列 6 值 SQL logic error 6）——VALUES 计数与列清单对齐后全绿
+- 【遗留② fleet paused 任务收口】#6（101kks）/#8（pilishuwu）/#16（washai）重启后 resumeRestartOrphans 自动归队 running（#16 washai 9473 章骨架推进）；唯一 paused #34 为新瞬态语义的自动恢复轨道
+- 【任务④ 代码精简】临时探针脚本归档 scripts/tmp/（probe-struct-r123/probe5-r123，probe-sites-r123.py 普查记录保留 scripts/）；scraper-go bin checkout 恢复（本轮未改其源码，重编译产物字节 diff 噪音剔除）；文档三处：scrape-rules.md 头部 22→23 条、deployment.md §10.3 规则清单 +biqiuge8 32、anti-anti-crawl.md §6.2 追加 R123 翻页瞬态透传行
+- 【验证】backend-go 全量 79.9s ok（含 audit_r123 三测+seed 23 条契约）、go build/vet 净；Agent Browser 终验：首页 140 链接/37 封面零 console error、章节页 /chapter/2323 真实正文 2917 字渲染（/chapter/911427「本章内容为空」为未填充骨架章的正确前端语义）、移动端 390px 零横向溢出、admin 总览 899 书/119.5 万章/38 任务/23 规则/引擎 ok=15067 爬坡中
+- 【git】credential-store 随沙箱重置丢失，按用户先前提供 token 重建 ~/.git-credentials（600）
+
+Stage Summary:
+- 快车道扩容第 3 站落地：笔趣阁 biqiuge8（规则 #32，GBK 站、og meta 全套、593 章内嵌目录、正文零 JS 污染），单书+七分类任务编排推进，admin 实证 23 规则入列
+- R123 翻页瞬态透传根修闭环：R104 三路径错误丢弃旁路 Task 33 保护的族缺陷修复，同域启动风暴不再烧成 failed 终态；audit 三测锁定 + 生产实证（#34 biqiuge8 网游 paused 待自动恢复，#23/#25 重启归队）
+- iqxsw 九分类扩容启动：cat2-10 范围任务 9 个（#27 cat7 已发现 264 本），修正后选择器下 240 本/分类量级扩展中
+- 沙箱第 11 次自愈 15 分钟路径走通（含 stealth flock 旧进程持有新形态踩坑归档）
+- 移交：①iqxsw 范围任务 fleetkeeper 冷却节流下逐步续传（9 任务×15 页×24 本/页 ≈ 3200 本潜力）②biqiuge8 七分类发现完成后单书填充持续放量③81zw2/shukeju/booktxt 三备选站（列表单页规模小）记录在案待后续评估④引擎 totalOK 爬坡观测（16:30 实测 15k，礼貌天花板+新站分摊相位）

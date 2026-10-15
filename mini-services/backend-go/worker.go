@@ -1877,6 +1877,11 @@ func firstChapterPreview(novelID int) string {
 // 返回 (条目, 最后命中的列表页 URL 作 referer)。
 // R104: TargetURL 含 {page} 占位符时按占位符语义展开（页区间 [pageFrom,pageTo]，
 // 任务级显式优先于规则模板/猜测变体，不做首页原样抓取）；未含时旧行为不变。
+// R123: 三条翻页路径（占位符/pageFrom>1 跳首页/逐页跟随）此前均丢弃 per-page 错误串
+// （pageItems, _ :=）——同域启动风暴撞上熔断窗口时全部页瞬态失败，空错误串返回让
+// runList 的 isTransientScrapeErr 把熔断误判为「规则失效」failed 终态（Task 33 瞬态
+// 保护被旁路，恢复成本全由人工承担）。修复：捕获首个非空错误，全 items 空时透传，
+// 熔断/软拦截形态照常归入 paused 可自动恢复；部分成功场景零影响（错误仅在空集时消费）。
 func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, string, string) {
         if hasPagePlaceholder(task.TargetURL) {
                 return collectListItemsPlaceholder(run, task, rule)
@@ -1888,6 +1893,7 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
                 items := []ListItem{}
                 currentListURL := task.TargetURL
                 consecutiveFails := 0
+                firstPageErr := "" // R123: 首个非空 per-page 错误（全空时透传给 runList 瞬态归因）
                 if hasPaginationTemplate(rule.ListRule) {
                         run.Log("分页模板生效: " + truncateRunes(rule.ListRule["paginationTemplate"], 120))
                 }
@@ -1898,7 +1904,10 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
                         got := 0
                         hit := false
                         for _, v := range buildPageVariants(rule.ListRule, task.TargetURL, k) {
-                                pageItems, _ := fetchListPage(run, v, rule, "")
+                                pageItems, pageErr := fetchListPage(run, v, rule, "")
+                                if pageErr != "" && firstPageErr == "" {
+                                        firstPageErr = pageErr // R123
+                                }
                                 if len(pageItems) > 0 {
                                         got = len(pageItems)
                                         hit = true
@@ -1921,7 +1930,7 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
                 }
                 if len(items) == 0 {
                         run.Log("列表页未提取到书籍条目")
-                        return nil, "", currentListURL
+                        return nil, firstPageErr, currentListURL // R123: 空错误串→首个页错误（熔断/软拦截词面可达 isTransientScrapeErr）
                 }
                 return mergeListItems(run, items), "", currentListURL
         }
@@ -1947,7 +1956,10 @@ func collectListItems(run *Run, task TaskRecord, rule LoadedRule) ([]ListItem, s
                 got := 0
                 hit := false
                 for _, v := range buildPageVariants(rule.ListRule, task.TargetURL, k) {
-                        pageItems, _ := fetchListPage(run, v, rule, "")
+                        pageItems, pageErr := fetchListPage(run, v, rule, "")
+                        if pageErr != "" && firstErr == "" {
+                                firstErr = pageErr // R123: 首页命中后的页失败也留给空集场景（防御首页 0 条 edge）
+                        }
                         if len(pageItems) > 0 {
                                 got = len(pageItems)
                                 hit = true
@@ -2005,12 +2017,16 @@ func collectListItemsPlaceholder(run *Run, task TaskRecord, rule LoadedRule) ([]
         items := []ListItem{}
         currentListURL := task.TargetURL
         consecutiveFails := 0
+        firstPageErr := "" // R123: 首个非空 per-page 错误（全空时透传给 runList 瞬态归因）
         for k := startPage; k <= endPage; k++ {
                 if stopState(run.TaskID) != "" {
                         break
                 }
                 pageURL := expandPagePlaceholder(task.TargetURL, k)
-                pageItems, _ := fetchListPage(run, pageURL, rule, "")
+                pageItems, pageErr := fetchListPage(run, pageURL, rule, "")
+                if pageErr != "" && firstPageErr == "" {
+                        firstPageErr = pageErr // R123
+                }
                 if len(pageItems) == 0 {
                         consecutiveFails++
                         run.Log(fmt.Sprintf("第 %d 页无结果（连续失败 %d）: %s", k, consecutiveFails, truncateRunes(pageURL, 90)))
@@ -2027,7 +2043,7 @@ func collectListItemsPlaceholder(run *Run, task TaskRecord, rule LoadedRule) ([]
         }
         if len(items) == 0 {
                 run.Log("列表页未提取到书籍条目")
-                return nil, "", currentListURL
+                return nil, firstPageErr, currentListURL // R123: 空错误串→首个页错误（熔断/软拦截词面可达 isTransientScrapeErr）
         }
         return mergeListItems(run, items), "", currentListURL
 }
