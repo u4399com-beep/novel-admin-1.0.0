@@ -1,5 +1,5 @@
 {
-  "_comment": "novel-admin 初始库种子（固化）：21 条精心校准采集规则 + 9 分类（其他 id=9999 恒末位）+ 站点默认配置。backend-go 启动时若对应表为空则自动导入（幂等，仅空表）。规则资产来源：git 4cb1619 快照 11 条 + c4dc1a4 新站 4 条（后增至 20 条）+ R117 书海阁 washai（legado 书源 yckceo#7948 直译+沙箱全链实测）。 | Task 59-R5: huangjinwu/xinjianpan 直连 SYN 黑洞的共享代理出口池固化（基建知识随二进制分发，DB 重建不再丢）",
+  "_comment": "novel-admin 初始库种子（固化）：21 条精心校准采集规则 + 9 分类（其他 id=9999 恒末位）+ 站点默认配置。backend-go 启动时若对应表为空则自动导入（幂等，仅空表）。规则资产来源：git 4cb1619 快照 11 条 + c4dc1a4 新站 4 条（后增至 20 条）+ R117 书海阁 washai（legado 书源 yckceo#7948 直译+沙箱全链实测）。 | Task 59-R5: huangjinwu/xinjianpan 直连 SYN 黑洞的共享代理出口池固化（基建知识随二进制分发，DB 重建不再丢） R121 新增规则 31 求书阁(iqxsw)。",
   "rules": [
     {
       "id": 10,
@@ -276,6 +276,19 @@
       "bookRule": "{\"authorSelector\":\"#bookAuthor\",\"catalogLinkSelector\":\"#allIndexLink\",\"categorySelector\":\"#bookCatBadge\",\"chapterLinkSelector\":\"#bookIndexList li a\",\"chapterListPaginationSelector\":\"a:contains(下一页)\",\"chapterTitleSelector\":\"ownText\",\"coverSelector\":\"#bookCoverImg@src, meta[property=\\\"og:image\\\"]@content\",\"descriptionSelector\":\"#bookDesc\",\"statusSelector\":\"#bookStatus\",\"titleSelector\":\"#bookName\"}",
       "chapterRule": "{\"contentSelector\":\".readChapterAppendBody\",\"nextSelector\":\"#nextLink, a:contains(下一章)\",\"titleSelector\":\"#indexName, h1\"}",
       "notes": "2026-10 由 legado 书源 yckceo#7948（书海阁 book.washai.net）直译+沙箱实测：列表=首页/分类页 article.classBookCard 卡片流（.classBookTitle a 书名链接、.classBookAuthor a 干净作者、.book-cover-badge 分类徽章）；siteUrl 指向全站书目 /book/bookclass.html（440 页×20 本，layui ?page=N 分页——与引擎猜测变体 ?page=k 语义天然吻合且保留 c=/k= 过滤参数，故不配 paginationTemplate，任务目标直接填分类页/全站页均可）；书页 #bookName/#bookAuthor/#bookDesc/#bookCoverImg(img 直挂 id)/#bookStatus/#bookCatBadge 全实测命中，书页仅最新 1 章 → catalogLinkSelector=#allIndexLink 二次抓 /book/indexList-{id}.html（对齐书源 tocUrl 流程）；目录 #bookIndexList li a 每页 100 章，indexPager 下一页锚为 /book/indexList/{bid}/{N}.html（URL 形态 第1页连字符→第2页起路径式，walker 锚跟随天然兼容，799 章实测 8 页齐全）；chapterTitleSelector=ownText（本次引擎增强：legado chapterName=ownText 语义，剥离锚内 <i class=red> [免费]</i> 站方标记）；正文 .readChapterAppendBody 纯 <p> 零广告零脚本（实测单章 2308 字），章节无内部分页，nextSelector=#nextLink 防御性配置（isSameChapterPagination 判定雪花 ID 不构成前缀续写 → 跨章自动截断零额外请求）；书源 wordCount(#bookWordCount)/lastChapter(#lastIndexLink) 引擎无对应字段（字数由 worker 自统计、最新章由目录推导），无需映射。沙箱直连 HTTP 200 全链路通过，无需代理。 R118 复验：任务实测目标 URL https://book.washai.net/book/bookclass.html?page=1 直采通过（2 页 × 20 本全提取，书名/干净作者/分类徽章字段零污染），分类过滤形态 ?c=3&page=1 同样命中（提取 20 本全为都市言情）；引擎未配 paginationTemplate 的猜测变体 ?page=k 与源站 layui 分页语义吻合且保留 c=/k= 过滤参数（显式模板反而会丢过滤参数，维持不配）；同域多任务并发触发主机熔断为防封禁设计（任务 auto-pause 冷却自动恢复，非规则缺陷）。"
+    },
+    {
+      "name": "求书阁(iqxsw)",
+      "siteUrl": "https://www.iqxsw.com/sort/1/1/",
+      "charset": "utf-8",
+      "enabled": true,
+      "listRule": "{\"itemSelector\":\".popular .list-out\",\"linkSelector\":\".list-out a\",\"titleSelector\":\".list-out a\",\"authorSelector\":\"span.gray\",\"paginationTemplate\":\"https://www.iqxsw.com/sort/1/{k}/\"}",
+      "bookRule": "{\"titleSelector\":\"meta[property=\\\"og:novel:book_name\\\"]@content, .info-main h1\",\"authorSelector\":\"meta[property=\\\"og:novel:author\\\"]@content\",\"descriptionSelector\":\".info-main-intro\",\"coverSelector\":\"meta[property=\\\"og:image\\\"]@content\",\"statusSelector\":\"meta[property=\\\"og:novel:status\\\"]@content\",\"categorySelector\":\"meta[property=\\\"og:novel:category\\\"]@content\",\"chapterLinkSelector\":\".border3-2.mb20 .info-chapters a\"}",
+      "chapterRule": "{\"titleSelector\":\".reader-main h1\",\"contentSelector\":\"#article\",\"nextSelector\":\"#next_url\"}",
+      "proxy": "",
+      "notes": "2026-10 R121 新增：求书阁 iqxsw.com（快车道扩容——R116 定性快车道礼貌天花板后唯一正道=新增站点，每站 +~1400 页/h 槽位潜力）。实测链：列表 /sort/{cat}/{page}/（10 分类，cat1 玄幻最大），itemSelector=.popular .list-out（最新入库区 24 本/页，span.gray 纯作者；.lastupdate 区含章链接+日期污染故排除）；书页 og:novel:* meta 全套（book_name/author/status/category/image 零污染）+ .info-main h1/介绍；目录内嵌书页 .border3-2.mb20 .info-chapters a（正文区升序全集 526+ 章，最新章节块 .mt8 无 mb20 天然排除）；正文 article#article 纯 <p> 零广告；章内分页 _N.html 后缀（每章 5 页，MAX_CHAPTER_PAGES=4 恰好覆盖 1+4），h1（N / M）后缀由引擎 reDePage 剥离，末页 #next_url 指向下一章 URL 由 isSameChapterPagination 前缀判定自动截断。paginationTemplate 锁定 cat1 玄幻（fleetkeeper 建任务用）；其他 9 分类可经 R104 范围采集 {page} 占位符手动建任务（如 /sort/8/{page}/ pageFrom=1 pageTo=20）。fetch-curl 直连 200 全链通过零代理依赖。单书任务 #17 实证：《仙人消失之后》3182 章骨架（多卷区块全捕获）+ 正文填充 2700+ 字/章 + 书名 reSeoSuffix 剥「最新章节」后缀零污染。",
+      "id": 31,
+      "insecureTLS": false
     }
   ],
   "categories": [

@@ -12,8 +12,9 @@
  * - 判定三态归一为二值+备注：传输失败/软拦截/0 条目=不健康（0 条目备注区分
  *   「选择器或入口漂移」），条目>0=健康。与 fetchListPage 的软拦截文案口径一致。
  * - 串行巡检（不并发轰炸引擎/站点，引擎内部另有域名限速≥1.2s 与 55s 预算）。
- * - 单轮总时长上界：规则数 × 60s（引擎客户端超时），17 规则最坏 ~17min，
- *   默认轮间隔 45min，重叠防护由 gPatrolRunning CAS 兜底（手动触发与循环互斥）。
+ * - 单轮总时长上界：规则数 × 100s（R121 巡检长预算 ENGINE_PATROL_TIMEOUT_MS——与
+ *   fleet 竞争域槽时耐心排队防误判），22 规则最坏 ~37min 仍小于默认轮间隔 45min，
+ *   重叠防护由 gPatrolRunning CAS 兜底（手动触发与循环互斥）。
  * - 幂等：RuleHealth upsert（INSERT ON CONFLICT DO UPDATE），连续计数在 SQL 内
  *   维护，巡检崩溃重启零状态损失。
  * - 停用开关 RULEHEALTH_OFF=1；轮间隔 RULEHEALTH_INTERVAL_MIN（分钟，[5,720] 夹取）。
@@ -220,14 +221,22 @@ func ruleHealthCheckOne(ruleID int64, siteURL string) (bool, int64, string) {
 	id := int(ruleID)
 	lr := loadRule(&id)
 	s0 := time.Now()
-	res := callEngine[struct {
+	// R121（巡检拥堵根修）：巡检与 fleet 任务竞争同一域槽队列，fleet 满载期默认 60s
+	// 预算被「排队等待+慢服务」吃穿 → 「全部策略 timeout」误判不健康 → E23 联动复活被
+	// 压制（washai 实证：引擎侧同期 ok=634 而巡检报超时）。改双长预算：引擎侧
+	// timeoutMs=60000（clampTimeout 上限，策略链预算放大到 150s——取槽耐心排队而非
+	// budget-shed）；backend HTTP 100s 兜住。礼貌红线不受影响：巡检仍经同一 1.2s+ 域
+	// 槽队列串行放行，只是排队耐心更长，零额外请求零并发。
+	body := engineRuleBodyWait(siteURL, map[string]any{"listRule": lr.ListRule}, lr, "", lr.ListRule["itemSelector"])
+	body["timeoutMs"] = 60_000
+	res := callEngineTimeout[struct {
 		List *struct {
 			Items []ListItem `json:"items"`
 		} `json:"list"`
 		// R120（遗留②降噪）：巡检探活同规则路径透传 itemSelector——JS 渲染列表站
 		//（pilishuwu）此前巡检固定撞「200 空壳（软拦截/挑战竞态）」假阴性；cloak 侧
 		// wait_for_selector 等条目渲染完成后，巡检判定的即真实渲染结果而非壳页
-	}]("/api/test", engineRuleBodyWait(siteURL, map[string]any{"listRule": lr.ListRule}, lr, "", lr.ListRule["itemSelector"]))
+	}]("/api/test", body, ENGINE_PATROL_TIMEOUT_MS)
 	latencyMs := time.Since(s0).Milliseconds()
 	if !res.OK {
 		return false, latencyMs, truncateRunes(res.Error, 200)

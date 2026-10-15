@@ -110,6 +110,8 @@ export PATH=$PATH:~/.local/bin   # 重启引擎（现行 scraper-go）后 GET /a
 | cloakbrowser 二进制丢失自愈说明 | cloakbrowser.dev/GitHub Releases 双被墙时运行时下载失败，且 /health cloakBinary 误报（binary_path 是期望路径恒非空，R119 已修为 installed 字段+文件存在复核）——恢复手册 §1.5：ghfast.top 镜像+断点续传循环 |
 | 目录序号三层根修 | 目录采集管线 reorderRefPairs 重排（最新块+目录混合 DOM 序 → 全局升序），繁体「節/話」先归一 |
 | 章名 ownText 语义（R117） | `bookRule.chapterTitleSelector = "ownText"` 关键字：锚点直接文本（不含后代元素）——legado 书源 chapterName=ownText 直译，剥离章锚内嵌站方标记（书海阁 `<i class="red"> [免费]</i>` 实测）；backend fetchTocPage 目录页键白名单同步透传 |
+| E19 巡检长预算（R121） | 巡检与 fleet 任务竞争同一域槽队列——fleet 满载期默认 60s 预算被「排队+慢服务」吃穿 → 「全部策略 timeout」误判不健康 → E23 联动复活被压制（washai 实证：引擎侧同期 ok=634 而巡检报超时）。根修=双长预算：backend callEngineTimeout 逐调用超时（per-request context，不再依赖客户端级 Timeout 的 min 钳制）+ 巡检透传 body timeoutMs=60000（引擎 clampTimeout 上限，策略链预算放大 150s 取槽耐心排队而非 shed）。礼貌红线不受影响：巡检仍经同一 1.2s+ 域槽队列串行放行，零额外请求零并发 |
+| IM 网关吞 `a[h` 假象（R121 再实证） | 会话文本经 IM 网关时 `a[h` 片段可能被吞（Task 34 修复机制的同款病灶）——本轮 rule31 选择器 `a[href^=...]` 落库成 `aref^=...]` 后实测仍通过（extractList 多级回退救场），但规则语义已偏移。规避：新规则优先用无属性前缀的等价选择器（如 `.list-out a`），必须用属性选择器时以字符串拼接形态写入文件并字节级复核 |
 
 ### 6.3 实测遗留问题（截至 24-d 审计）
 

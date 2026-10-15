@@ -62,10 +62,21 @@ func isDefaultEngineURL() bool { return engineBaseURL() == "http://127.0.0.1:303
 // ENGINE_TIMEOUT_MS 引擎策略链整体预算 55s，超时须 ≥ 预算否则慢站点会被提前切断
 const ENGINE_TIMEOUT_MS = 60_000
 
+// ENGINE_PATROL_TIMEOUT_MS E19 巡检专用预算（R121）：巡检与 fleet 任务竞争同一域槽
+// 队列——fleet 满载期槽队深度可达 10-16s×车道，巡检默认 60s HTTP 预算被排队+慢服务
+// 吃穿后「全部策略 timeout」误判不健康，连带 E23 联动复活被压制（washai 实证：引擎
+// 侧 ok=634 同期巡检仍报超时）。巡检透传 timeoutMs=60000（引擎 clampTimeout 上限，
+// 策略链预算放大到 150s，取槽耐心等待而非 shed），backend HTTP 预算 100s 兜住。
+// 礼貌红线不受影响：巡检仍经同一 1.2s+ 域槽队列串行放行，只是排队耐心更长，零额外请求。
+const ENGINE_PATROL_TIMEOUT_MS = 100_000
+
 // MAX_CHAPTER_PAGES 同章分页拼接上限（同一章最多翻 4 次内页，即 5 个分页）
 const MAX_CHAPTER_PAGES = 4
 
-var engineHTTPClient = &http.Client{Timeout: ENGINE_TIMEOUT_MS * time.Millisecond}
+// engineHTTPClient 引擎共享客户端（无客户端级超时——超时统一由 callEngineTimeout 的
+// per-request context 承担：客户端 Timeout 与 request context 双保险时生效值取 min，
+// 旧版固定 60s 会把巡检 100s 预算钳回 60s 形同虚设；R121 起逐调用显式传预算）
+var engineHTTPClient = &http.Client{}
 
 // engineResult 引擎调用结果（TS EngineResult<T> 联合类型 → struct + OK 标志）
 type engineResult[T any] struct {
@@ -123,6 +134,13 @@ func rawJSONString(r json.RawMessage) string {
 // return 路径可达性（对齐 TS 12-g2 核对）：①响应非合法 JSON → 失败；②!HTTP 2xx 或引擎
 // ok:false → 失败；③成功但缺 data 对象 → 失败；④正常成功。
 func callEngine[T any](path string, body map[string]any) engineResult[T] {
+        return callEngineTimeout[T](path, body, ENGINE_TIMEOUT_MS)
+}
+
+// callEngineTimeout R121：逐调用超时预算版 callEngine（超时经 per-request context 承担，
+// 不依赖客户端级 Timeout——客户端与 context 双保险时生效值取 min）。E19 巡检用
+// ENGINE_PATROL_TIMEOUT_MS 长预算排队等槽，其余调用方语义不变（默认 60s）。
+func callEngineTimeout[T any](path string, body map[string]any, timeoutMs int64) engineResult[T] {
         jb, err := json.Marshal(body)
         if err != nil {
                 return engineResult[T]{OK: false, Error: "引擎请求体序列化失败", Warnings: []string{}}
@@ -132,10 +150,13 @@ func callEngine[T any](path string, body map[string]any) engineResult[T] {
                 return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
         }
         req.Header.Set("Content-Type", "application/json")
+        ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
+        defer cancel()
+        req = req.WithContext(ctx)
         res, err := engineHTTPClient.Do(req)
         if err != nil {
                 if engineIsTimeout(err) {
-                        return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎请求超时(%ds)", ENGINE_TIMEOUT_MS/1000), Warnings: []string{}}
+                        return engineResult[T]{OK: false, Error: fmt.Sprintf("引擎请求超时(%ds)", timeoutMs/1000), Warnings: []string{}}
                 }
                 return engineResult[T]{OK: false, Error: "采集引擎不可达(3030)", Warnings: []string{}}
         }

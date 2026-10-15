@@ -4826,3 +4826,27 @@ Stage Summary:
 - 遗留③闭环：cloak 会话记忆落盘（重启不再失忆，pilishuwu/101kks cookie 已实证持久化）；遗留④ biqutu 分桶持续健康（294 ok 零 fail）
 - 吞吐处于礼貌天花板+挑战风暴相位（5 主机满速+bounded 自愈循环），pilishuwu 快车道化是本轮对「还是太慢」的结构性贡献
 - 移交：①pilishuwu CF 挑战风暴为站点侧 WAF 状态窗（bounded 重试自愈，无需人工；若长期不放行可考虑 proxy 池补种）②challenge-skip 的生产占比可经 attempts 注记观测③fleetkeeper 45min 冷却内手动建任务为标准运维路径
+
+---
+Task ID: R121
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题（fleet paused 任务处理 + 沙箱自愈）②章节采集效率（还是太慢，兼顾封禁）③强化采集与反反爬④完善精简代码⑤推送 git
+
+Work Log:
+- 【沙箱第 10 次重置自愈】三服务全灭/Go 工具链丢/curl-imp 丢/db 目录丢/stealth venv 丢/cloakbrowser 二进制丢：按手册恢复——Go 1.22.12（golang.google.cn）→ curl-impersonate 21 二进制（ghfast.top）→ 双 bin 重建 → 三服务拉起（backend :3000 / scraper :3030 engine.env 分桶注入 / stealth :3031 venv 重建 aliyun PyPI）；cloakbrowser 216MB ghfast.top 断点续传 ~8 分钟恢复（health 三能力全 true）；~/.git-credentials 重建（600）；本地 HEAD（沙箱 repo.tar 重提交的 b6edc51，树与远端仅差 cloak-mem.json 运行时噪声）reset --hard 对齐 origin/main c407ba3；fleet 自组织重建（16 任务 2s 轮询自动建，E26 自持实证）
+- 【候选站点普查（任务②扩容——R116 定性快车道礼貌天花板后唯一正道=新增站点）】30 候选连通性普查（fetch-curl）：9 站可达；逐站深挖列表/翻页/书页/目录/正文四段结构后定案：iqxsw 求书阁（/sort/{cat}/{page}/ 翻页实证 p1/p2 仅 27 重叠）入选；biquwo（/class/N_P.html 翻页 404）、81zw（分类页无翻页锚）、mbtxt（无翻页）、quanben.io（目录页 30s 超时不稳）、biqiuge/kanshuzu/shukeju（结构不符）、linovelib（CF 硬墙）排除
+- 【规则 #31 求书阁(iqxsw) 全链落地】listRule：siteUrl=/sort/1/1/（cat1 玄幻最大）+ itemSelector=.popular .list-out（最新入库区 24 本/页，span.gray 纯作者；.lastupdate 区含章链接+日期污染排除）+ paginationTemplate /sort/1/{k}/（引擎 ?page=k 猜测变体不适用路径式翻页；其他 9 分类可经 R104 {page} 范围任务手动采集，notes 留档）；bookRule：og:novel:* meta 全套（book_name/author/status/category/image 零污染）+ .info-main h1/.info-main-intro + 目录内嵌书页 .border3-2.mb20 .info-chapters a（正文区升序全集，最新章节块 .mt8 无 mb20 天然排除，3182 章多卷区块全捕获）；chapterRule：正文 article#article 纯 <p> 零广告 + 章内分页 _N.html 后缀（每章 5 页，MAX_CHAPTER_PAGES=4 恰好覆盖 1+4）+ h1（N / M）后缀引擎 reDePage 剥离 + 末页 #next_url 指向下一章 URL 由 isSameChapterPagination 前缀判定自动截断；书名「最新章节」SEO 后缀由 reSeoSuffix 剥除（任务实证《仙人消失之后》零污染）
+- 【端到端实证】单书任务 #17《仙人消失之后》（/xiaoshuo/589123.html）：3182 章骨架 + 填充 335 章 700KB+（正文 2700+ 字/章干净无广告）；引擎 /api/test 三段提取 24 本/528 章升序/正文含 next=_2 全对；fleetkeeper 将在冷却后自动建 list 任务
+- 【任务③：E19 巡检拥堵根修（本轮核心增强）】巡检与 fleet 任务竞争同一域槽队列——fleet 满载期默认 60s 预算被「排队+慢服务」吃穿 → 「全部策略 timeout」误判不健康 → E23 联动复活被压制（实证：引擎侧 washai 同期 ok=634 而巡检报超时）；根修=双长预算：①backend callEngineTimeout 逐调用超时（per-request context 承担，engineHTTPClient 去 60s 客户端级 Timeout——双保险取 min 会把长预算钳回形同虚设；callEngine 委托默认 60s 语义不变）②巡检透传 body timeoutMs=60000（引擎 clampTimeout 上限 → 策略链预算 150s，取槽耐心排队而非 budget-shed）+ ENGINE_PATROL_TIMEOUT_MS=100s；礼貌红线不受影响（巡检仍经同一 1.2s+ 域槽队列串行放行，零额外请求零并发）
+- 【巡检修复生产实证】手动触发巡检：washai（#30）从「超时误报 failStreak=1」转健康（okStreak=1，12.1s 延迟）；iqxsw（#31）首轮巡检即健康（7.7s）；huangjinwu/101kks（超时 50s）/pilishuwu（challenge-page）为真实站点故障如实报不健康——误报与真故障正确分离
+- 【遗留①收口：fleet paused 任务自动恢复实证】重启后 resumeRestartOrphans 全任务归队；#6（101kks）/#8（pilishuwu）paused → 「自动恢复（限流冷却结束）」running（机制运转正常）；#18（5165）限流窗口 paused 为设计内稳态流失衡；pilishuwu/101kks CF 风暴期 cloak 直探 403（69KB 挑战页）为站点侧 WAF 状态窗，bounded 自愈覆盖无需人工（R120 移交①口径维持）
+- 【IM 网关吞 a[h 假象再实证】rule31 选择器 a[href^=...] 经会话文本落库成 aref^=...]（Task 34 修复机制的同款病灶，本轮在 seed.json/DB/addrule.py 三处同时中招）；规避：改用无属性前缀等价选择器 .list-out a（item 内唯一锚即书锚，实测提取等价 24 项）；anti-anti-crawl.md 记录在案
+- 【任务④：代码卫生】gofmt -l 核对改动文件与 HEAD 同风格（engineclient HEAD 即 8 空格非 gofmt 风格，python 精准替换保持原风格零漂移——Edit 工具整文件重写陷阱规避）；新增 audit_r121_test.go 三测（预算常量关系/不可达快速失败/巡检 body 形态锁定）；文档三处（scrape-rules.md 21→22 条、deployment.md §10.3 规则清单 +iqxsw、anti-anti-crawl.md §6.2 补 E19 长预算与 IM 网关两行）；seed.json 规则 31 固化（对象→紧凑 JSON 字符串形态对齐存量，测试 TestSeedJSONCookiesChainInvariants 抓住首版形态错误后修正）
+- 【验证】backend-go 全量 51.8s ok、scraper-go 全量 44.7s ok（seed 变更契约全绿）、go vet 双净；Agent Browser 终验：首页 140 链接/38 封面零 console error、iqxsw 章节阅读页 /chapter/496675 真实正文 3825 字渲染、admin 规则健康可见、移动端 390px 零横向溢出；吞吐终测 11.3k 章/h（历史峰值区间 10.8-12k 上沿，全部在兼顾封禁的自动保护框架内）
+
+Stage Summary:
+- 章节采集扩容再+1 站：求书阁 iqxsw（快车道、10 分类、24 本/页、528+ 章/书、5 页/章由引擎原生拼接），规则 #31 全链实测入库 + seed 固化——R116「新增站点是唯一正道」路线的第 2 步落地（washai R117 后）
+- E19 巡检拥堵根修：巡检不再被自身 fleet 拥堵误伤，误报不健康→E23 联动复活链路重新畅通（washai 生产实证由误报转健康）；礼貌红线零妥协（同槽排队耐心更长，零额外请求）
+- 沙箱第 10 次自愈按手册 15 分钟完成；fleet paused 任务自动恢复机制运转实证（#6/#8 限流冷却自动归队）
+- 吞吐 11.3k 章/h 稳态（礼貌天花板+限流窗口相位正常）；iqxsw 单书任务填充中，fleetkeeper 冷却后自动扩列任务
+- 移交：①huangjinwu okr=90%（359/h）持续偏慢——出口池健康度与 aimd 深退避可再观测一轮，证据充分后按 R116 先例扩分桶②iqxsw 其他 9 分类（都市/言情等）可经 R104 {page} 范围任务手动建任务扩容③pilishuwu/101kks CF 风暴若长期不放行按 R120 移交①评估 proxy 池补种④duckduckgo pseo-suggest 737 fails（被墙环境性，非本轮引入）
