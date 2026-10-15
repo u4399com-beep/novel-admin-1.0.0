@@ -4801,3 +4801,28 @@ Stage Summary:
 - cloakbrowser 二进制丢失自愈路径固化（ghfast.top+断点续传）+ /health cloakBinary 误报修复
 - fleet 收口：trxsw 休眠、ixdzs8/pilishuwu 代理清理改直连、washai/5165/ixdzs8/101kks 全部恢复推进，吞吐 12k 章/h
 - 遗留移交：①任务 9 pilishuwu 的「200 空壳（JS 慢渲染）」需 waitSelector 增强（backend 三调用点传关键选择器→引擎 opts→stealth /cloak 参数→子进程 wait_for_selector，超时不失败）②巡检对 minTier 站的「空壳」判定可结合 waitSelector 结果降噪 ③stealth _CLOAK_COOKIE_MEM 重启失忆（可考虑落盘，同 cookie jar 先例）④biqutu 分桶 ok=1781 健康但慢站分桶收益需长周期观测
+---
+Task ID: R120
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题（pilishuwu「200 空壳」waitSelector 增强 + fleet paused 任务处理）②章节采集效率（兼顾封禁）③强化采集与反反爬④完善精简代码⑤推送 git
+
+Work Log:
+- 【并行工作线发现与验证】会话恢复后发现 HEAD 07c6497（UUID 消息、未推送）已含 R120 主体实现：backend engineRuleBodyWait+cssSafeWaitSelector+四调用点（fetchListPage/fetchBookPage/fetchTocPage/fetchChapter）+巡检 rulehealth 同步透传 itemSelector（遗留②降噪）、scraper fetchPageOptions.waitSelector 全链+cloak 未命中判失败（wait-selector-missed）、stealth /cloak waitSelector/waitSelectorTimeoutMs 子进程 wait_for_selector（挑战壳跳过优先等待/收尾 2.5s 补等/命中 300ms 沉降）+ cloak 会话记忆落盘（遗留③：_mem_load/_mem_save 脏标记 20s 周期+启动恢复过期剔除+_MEM_LOCK 并发保护+死代码 _child_procs 清理）。三端实现经逐行 diff 审阅+双包全量测试（backend 64.3s/scraper 44.8s 全绿）+py_compile 验证通过；`_CLOAK_COOKIE_MEMost]` 疑点经 py_compile+Read 实证为 IM 网关显示假象非代码损坏
+- 【部署验证】二进制 16:04 构建→进程 16:05 启动（先部署后 commit 时间线吻合）；cloak-mem.json 运行时落盘活跃（pilishuwu/101kks 会话 cookie 已持久化）=新 stealth 代码生效实证
+- 【pilishuwu「200 空壳」另一半根因发现】端到端实测暴露规则选择器整体过时：现网首页 rank 区块已是 ol.in-rank-list li + a.in-rank-name（无作者），旧 itemSelector（ol.custom-rank-list li.rank-item）与 titleSelector（p.rank-t a）在全量 231KB DOM 中零命中（此前 rank-item/rank-a 的 grep 命中均为 in-monrank-item/rank-award-name 子串假象）；custom-rank-list 实际仅存于分类页侧栏（R111 当年验证的正是分类页）
+- 【规则 #19 改版适配（live DB+seed.json 双落）】发现源切换为服务端渲染的全分类书列页 /0/list/1.html：listRule=ul.ret-search-list li + h3.ret-works-title a + p.ret-works-author（stripAuthorLabel 自动剥「作者：」）+ paginationTemplate 0_0_0_0_0_0_0_{k}.html（第 2 页 20 本实测）；bookRule 补 authorSelector .works-author-face@title/coverSelector .works-cover img@src/statusSelector label.works-intro-status/categorySelector a.works-intro-tags-item；minTier 3→0——四类页面（列表/书页/menu 目录/read 正文）逐一 fetch-curl 实测 200（正文 div.read-content 3547 字），全站恢复快车道，cloak+waitSelector 降级为 CF 挑战兜底
+- 【R120b：browser 策略 waitSelector 支持】render.py argv[4] 可选 waitSelector（domcontentloaded+400ms 沉降后 wait_for_selector，预算 min(15s,timeout-2s)，命中 300ms 沉降，waitSelectorFound 随 JSON 回传）；browser.go renderArgs 纯函数（DSL 二次防线过滤）+renderPayload.WaitSelectorFound+attemptResult.waitApplied 置位；陷阱记录：Go 不允许 exec.CommandContext(ctx,a,b,fn()...) 调用表达式直接展开（append(s,fn()...) 形式才合法）
+- 【R120b：waitSelectorApplied 观测语义】fetchPageResult.waitSelectorApplied（获胜策略是否真正消费等待）——cloak 恒消费/browser 消费/HTTP 系恒 false；handlers /api/test·/api/chapter 三字段回显（waitSelector/waitSelectorFound/waitSelectorApplied），applied=false 时 found=false 不再被误读为空壳证据
+- 【R120c：挑战风暴预算保护】pilishuwu CF 挑战风暴期实测：fetch-browser→cloak 相继挑战后，ua-rotate×3+mobile×2+spider×2+curl+fetch-curl 六策略对同一挑战页全 403，白烧 15-25s 恰好挤占 browser 兜底预算（链尾 budget-exhausted）；新增链内 challengeFails 计数+shouldSkipHTTPOnChallengeStorm 纯函数（≥2 次挑战失败+当前纯 HTTP 层+后序有重渲染层→跳过，challenge-skip 注记），iv8/cloak/browser 永不跳过、后序无重渲染层时不跳过（保留覆盖）
+- 【fleet paused 收口】旧任务 #6（101kks）/ #9（pilishuwu 旧 targetUrl）4/4 自动恢复额度耗尽后人工取消（设计内路径），fleetkeeper 45min 冷却改手动建任务：#38（pilishuwu 新 siteUrl）/ #39（101kks）；#38 实证新规则端到端：列表页 20 本提取成功+3 章正文入库（书目 月蚀记/刺猬某、网恋对象手好大/朴左右 等作者零污染）后撞 CF 挑战风暴 Phase 2 熔断（bounded 自愈循环中）；任务 #2（ddyueshu）等其余 paused 任务均在限流通道 3min 自动恢复设计内
+- 【吞吐定性】引擎重启爬坡后稳态窗口 2880-3456 章/h：5 快车道主机（biqutu/xinjianpan/washai/huangjinwu/min-yuan）全部跑在礼貌间隔天花板（~1300 ok/h），ixdzs8 慢速推进，5165/pilishuwu/101kks 三站 CF 挑战风暴中，8 任务在 bounded 自动恢复循环——天花板约束下的正常相位，非回归
+- 【代码卫生（任务④）】stealth data/ 运行时目录 gitignore+untrack（cookie 轮换态不再产生 diff 噪音）；dead code 已由并行线清理（_child_procs）；本轮 diff +201/-13 全语义
+- 【验证】双包全量测试两轮全绿（backend 63.1s/scraper 46.4s）+go vet 净+py_compile 过；Agent Browser 终验：首页 141 链接/38 封面零 console error、admin 总览 2583 书/239.1 万章/任务 39/规则健康 14/17（3 站挑战风暴如实反映）、章节页真实正文渲染正常
+- 【git】并行线 UUID commit 07c6497 改写规范消息（未推送历史安全改写），本轮 R120b/c+规则适配独立 commit
+
+Stage Summary:
+- pilishuwu「200 空壳」双根因收口：waitSelector 全链（并行线 R120 主体+本轮验证部署）×规则选择器改版适配（发现源切服务端渲染分类页+minTier 3→0 恢复快车道）——遗留①②闭环且站点从浏览器渲染专属转为快车道可用
+- R120b/c 增强：browser 策略获得与 cloak 同级的 waitSelector 等待能力（观测语义 applied/found 正交）；挑战风暴期 HTTP 层自动让路重渲染层，兜底预算不再被注定失败的 403 挤占
+- 遗留③闭环：cloak 会话记忆落盘（重启不再失忆，pilishuwu/101kks cookie 已实证持久化）；遗留④ biqutu 分桶持续健康（294 ok 零 fail）
+- 吞吐处于礼貌天花板+挑战风暴相位（5 主机满速+bounded 自愈循环），pilishuwu 快车道化是本轮对「还是太慢」的结构性贡献
+- 移交：①pilishuwu CF 挑战风暴为站点侧 WAF 状态窗（bounded 重试自愈，无需人工；若长期不放行可考虑 proxy 池补种）②challenge-skip 的生产占比可经 attempts 注记观测③fleetkeeper 45min 冷却内手动建任务为标准运维路径

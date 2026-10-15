@@ -111,11 +111,27 @@ type renderPayload struct {
         HTML    string         `json:"html"`
         Error   string         `json:"error"`
         Cookies []bridgeCookie `json:"cookies"`
+        // WaitSelectorFound R120b: render.py 对 waitSelector 的命中结果（请求带
+        // waitSelector 时必回；旧版脚本无该字段=false，调用方仅在 waitSelector!="" 消费）
+        WaitSelectorFound bool `json:"waitSelectorFound"`
+}
+
+// renderArgs R120b: render.py argv 组装（独立纯函数供测试锁定契约）——
+// argv[1..3]=url/timeoutMs/ua（既有契约），argv[4]=waitSelector（可选，仅非空时追加；
+// cssSafeWaitSelector 已在链上层过滤 DSL 语法，此处只做二次防线）。
+func renderArgs(targetURL string, timeoutMs int64, ua, waitSelector string) []string {
+        args := []string{targetURL, itoa(int(timeoutMs)), ua}
+        if ws := cssSafeWaitSelector(waitSelector); ws != "" {
+                args = append(args, ws)
+        }
+        return args
 }
 
 // renderViaPython 参数经 argv 传递（URL 不含换行；UA 含空格由 exec 正确转义）；
-// cookie/referer/proxy 走环境变量（cookie 头值可能较长，不适合 argv）。
-func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, explicitReferer, cookieEnv, proxy string) attemptResult {
+// cookie/referer/proxy 走环境变量（cookie 头值可能较长，不适合 argv）；
+// R120b: waitSelector 非 argv 追加第 4 参（render.py wait_for_selector 等待关键
+// 选择器渲染完成，超时不失败），waitApplied/waitSelectorFound 随 attemptResult 回传。
+func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, explicitReferer, cookieEnv, proxy, waitSelector string) attemptResult {
         renderPy := resolveRenderPy()
         pyBin := resolvePython()
         if pyBin == "" {
@@ -136,7 +152,8 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
         }
         ctx, cancel := contextWithTimeout(time.Duration(timeoutMs+4000) * time.Millisecond)
         defer cancel()
-        cmd := exec.CommandContext(ctx, pyBin, renderPy, targetURL, itoa(int(timeoutMs)), chromeUA)
+        cmdArgs := append([]string{renderPy}, renderArgs(targetURL, timeoutMs, chromeUA, waitSelector)...)
+        cmd := exec.CommandContext(ctx, pyBin, cmdArgs...)
         cmd.Env = env
         // R110 泄漏根修：render.py 的进程树是 python → node(playwright driver) → chromium。
         // CommandContext 超时只 SIGKILL 直接子进程 python，孙进程（node/chrome，各 ~60-100
@@ -185,9 +202,22 @@ func renderViaPython(targetURL string, timeoutMs int64, warnings *[]string, expl
         if a.warning != "" {
                 *warnings = append(*warnings, a.warning)
         }
+        // R120b: waitSelector 请求已下发（render.py 负责等待，超时不失败）——
+        // waitApplied 恒 true（含命中失败：found=false 是真实「慢渲染未完成」证据）；
+        // 命中时补一条 warning 证据链（与 cloak 侧车同风格）。
+        ws := cssSafeWaitSelector(waitSelector)
+        if ws != "" {
+                if payload.WaitSelectorFound {
+                        *warnings = append(*warnings, "[browser] waitSelector 命中（关键选择器渲染完成）: "+ws)
+                } else {
+                        *warnings = append(*warnings, "[browser] waitSelector 未命中（等待后关键选择器仍未出现：JS 慢渲染/选择器失效/空壳）: "+ws)
+                }
+        }
         return attemptResult{
                 ok: a.ok, status: payload.Status, bytes: bytes, contentType: "text/html; charset=utf-8",
                 warnings: *warnings, note: a.note,
+                waitSelectorFound: payload.WaitSelectorFound, // R120b: 命中结果回传链层
+                waitApplied:       ws != "",                 // R120b: argv 已下发=已消费
                 subAttempts: []SubAttempt{{Profile: "python-playwright", OK: a.ok, Status: payload.Status, Ms: 0, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
         }
 }
@@ -253,6 +283,6 @@ var browserStrategy = strategyDef{
                 // 渲染后把浏览器上下文 cookie 回存。命中「首访种 cookie、二访放行」的站点时，
                 // 前序 fetch 策略种下的会话在这里直接生效。
                 cookieEnv := browserCookieEnv(targetURL)
-                return renderViaPython(targetURL, timeoutMs, &warnings, ctx.referer, cookieEnv, ctx.proxy)
+                return renderViaPython(targetURL, timeoutMs, &warnings, ctx.referer, cookieEnv, ctx.proxy, ctx.waitSelector)
         },
 }

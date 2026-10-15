@@ -284,6 +284,7 @@ func handleTest(w http.ResponseWriter, body map[string]any) {
         if page.waitSelector != "" { // R120: 关键选择器命中结果透出（false+200=空壳抢跑证据）
                 resp["waitSelector"] = page.waitSelector
                 resp["waitSelectorFound"] = page.waitSelectorFound
+                resp["waitSelectorApplied"] = page.waitSelectorApplied // R120b: applied=false 时 found 不构成空壳证据
         }
 
         // Task 32-d（200 空壳早识别）：HTTP 200 但规则提取全空（列表 0 条且书籍标题空）——
@@ -339,6 +340,7 @@ func handleChapter(w http.ResponseWriter, body map[string]any) {
         if page.waitSelector != "" { // R120: 关键选择器命中结果透出
                 resp["waitSelector"] = page.waitSelector
                 resp["waitSelectorFound"] = page.waitSelectorFound
+                resp["waitSelectorApplied"] = page.waitSelectorApplied // R120b: applied=false 时 found 不构成空壳证据
         }
         if page.status == 200 && data.Content == "" {
                 // 标题呈 404/空壳特征时更明确；排除「第404章」这类标题里的数字巧合

@@ -70,6 +70,11 @@ type attemptResult struct {
         // waitSelectorFound R120: 侧车 cloak 渲染对 waitSelector 的命中结果（仅
         // fetch-cloak 置位；其余策略零值=false 但无 waitSelector 语义，不参与判定）
         waitSelectorFound bool
+        // waitApplied R120b: 获胜策略是否真正消费了 waitSelector（cloak 恒消费；
+        // browser 桥接经 render.py 消费；HTTP 系策略恒 false）。观测语义：响应
+        // waitSelectorApplied=false 时 waitSelectorFound=false 只是「该策略不等待」，
+        // 不构成「JS 空壳」证据——防止把 HTTP 快车道胜出误读为慢渲染未命中。
+        waitApplied bool
         // queueMs R114: 本次尝试在域槽上累计的排队等待（acquireDomainSlotBudgeted 返回的
         // waited 求和，跨内部画像梯子）。0=未排队或旧路径未埋点。用途：backend 车道控制
         // 的饱和感知 EWMA 改用「服务耗时=总耗时−排队」口径——车道自身造成的排队是

@@ -121,16 +121,16 @@
     {
       "id": 19,
       "name": "pilishuwu",
-      "siteUrl": "https://www.pilishuwu.com/",
+      "siteUrl": "https://www.pilishuwu.com/0/list/1.html",
       "enabled": true,
       "charset": "utf-8",
       "proxy": "",
       "insecureTLS": false,
-      "listRule": "{\"itemSelector\": \"ol.custom-rank-list li.rank-item\", \"titleSelector\": \"p.rank-t a\", \"linkSelector\": \"p.rank-t a\", \"authorSelector\": \"p.rank-a\"}",
-      "bookRule": "{\"titleSelector\": \"h2.works-intro-title strong\", \"descriptionSelector\": \"p.works-intro-short\", \"chapterLinkSelector\": \".chapter-page-new a\", \"catalogLinkSelector\": \"a[href*='/menu/']\", \"chapterListPaginationSelector\": \"a:contains(下一页),a:contains(下页),.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a\"}",
+      "listRule": "{\"itemSelector\": \"ul.ret-search-list li\", \"titleSelector\": \"h3.ret-works-title a\", \"linkSelector\": \"h3.ret-works-title a\", \"authorSelector\": \"p.ret-works-author\", \"paginationTemplate\": \"https://www.pilishuwu.com/0/list/0_0_0_0_0_0_0_{k}.html\"}",
+      "bookRule": "{\"titleSelector\": \"h2.works-intro-title strong\", \"descriptionSelector\": \"p.works-intro-short\", \"chapterLinkSelector\": \".chapter-page-new a\", \"catalogLinkSelector\": \"a[href*='/menu/']\", \"chapterListPaginationSelector\": \"a:contains(下一页),a:contains(下页),.pagelink a,.pageLink a,.pagination a,.pagination-list a,.pagelist a,#pages a,#pagelist a\", \"authorSelector\": \".works-author-face@title\", \"coverSelector\": \".works-cover img@src\", \"statusSelector\": \"label.works-intro-status\", \"categorySelector\": \"a.works-intro-tags-item\"}",
       "chapterRule": "{\"titleSelector\": \"h3.j_chapterName\", \"contentSelector\": \"div.read-content\"}",
-      "notes": "【R111 重推实测 2026-10-10】引擎探针逐段验证：分类页 rank 区块 ol.custom-rank-list li.rank-item（含作者）；书页 works-intro-title strong + /menu/ 目录分离页；目录 chapter-page-new a；正文 j_chapterName + read-content。charset gbk→utf-8 实测修正。\n【R119 路径切换 2026-10-14】102.244.78.61 系出口对浏览器渲染路径反而劣化（render.py render-error 21s、cloak 挑战拖延 403），直连+cloak/browser 渲染已实证可过 CF 挑战（cloak 直连 232KB rank-item 渲染成功）——清空 proxy 改直连，浏览器路径走 stealth 侧车。",
-      "minTier": 3
+      "notes": "【R111 重推实测 2026-10-10】引擎探针逐段验证：分类页 rank 区块 ol.custom-rank-list li.rank-item（含作者）；书页 works-intro-title strong + /menu/ 目录分离页；目录 chapter-page-new a；正文 j_chapterName + read-content。charset gbk→utf-8 实测修正。\n【R119 路径切换 2026-10-14】102.244.78.61 系出口对浏览器渲染路径反而劣化（render.py render-error 21s、cloak 挑战拖延 403），直连+cloak/browser 渲染已实证可过 CF 挑战（cloak 直连 232KB rank-item 渲染成功）——清空 proxy 改直连，浏览器路径走 stealth 侧车。\n【R120 改版适配 2026-10-14】站点首页 rank 区块已改版（ol.in-rank-list li + a.in-rank-name，无作者；custom-rank-list 仅存于分类页侧栏）。发现源切换为服务端渲染的全分类书列页 /0/list/1.html（ul.ret-search-list li，20 本/页带作者，分页 0_0_0_0_0_0_0_{k}.html 模板）。全链路（列表/书页/menu 目录/read 正文）实测 fetch-curl 直取 200——minTier 3→0 恢复快车道，cloak+waitSelector 降级为 CF 挑战兜底。",
+      "minTier": 0
     },
     {
       "id": 20,

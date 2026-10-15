@@ -130,6 +130,11 @@ def main() -> int:
     except ValueError:
         timeout_ms = 20000
     ua = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_UA
+    # R120b: argv[4] 可选 waitSelector（引擎 browser 策略透传的关键选择器，
+    # cssSafeWaitSelector 已在上游过滤 DSL 语法）——domcontentloaded+首屏 XHR 沉降后
+    # wait_for_selector 等待关键内容渲染完成（命中提前收尾，超时不失败），
+    # waitSelectorFound 随 JSON 回传（调用方区分「已等待未命中」与「未请求等待」）。
+    wait_selector = sys.argv[4].strip() if len(sys.argv) > 4 else ""
 
     if not url:
         emit({"status": 0, "html": "", "error": "missing url"})
@@ -225,6 +230,21 @@ def main() -> int:
                     page.wait_for_timeout(400)  # 让首屏 XHR 有机会落 DOM
                 except Exception:
                     pass
+                # R120b: 关键选择器等待（超时不失败；命中后再取 content——与 400ms
+                # 沉降合并的语义：选择器出现 ≈ 提取必然非空，天然对齐 softBlock 语义）。
+                # 预算上界取 min(15s, 剩余看门狗余量)，防长等待吃穿 SIGALRM。
+                ws_found = False
+                if wait_selector:
+                    ws_ms = min(15000, max(2000, timeout_ms - 2000))
+                    try:
+                        page.wait_for_selector(wait_selector, timeout=ws_ms, state="attached")
+                        ws_found = True
+                        try:
+                            page.wait_for_timeout(300)  # 命中后短暂沉降：等同批相邻节点写完 DOM
+                        except Exception:
+                            pass
+                    except Exception:
+                        ws_found = False
                 html = page.content()
                 status = resp.status if resp else 0
                 if len(html.encode("utf-8", errors="ignore")) > MAX_HTML_BYTES:
@@ -242,7 +262,8 @@ def main() -> int:
                     ]
                 except Exception:
                     back = []
-                emit({"status": status, "html": html, "cookies": back})
+                emit({"status": status, "html": html, "cookies": back,
+                      **({"waitSelectorFound": bool(ws_found)} if wait_selector else {})})
             finally:
                 try:
                     browser.close()

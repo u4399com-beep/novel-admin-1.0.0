@@ -83,12 +83,14 @@ func sidecarStrategyRun(kind, targetURL string, timeoutMs int64, ctx *strategyRu
                         warnings = append(warnings, "waitSelector 未命中（侧车等待后关键选择器仍未出现：JS 慢渲染/选择器失效/空壳）: "+ctx.waitSelector)
                         return attemptResult{ok: false, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
                                 warnings: warnings, note: "wait-selector-missed", queueMs: waited,
+                                waitApplied: true, // R120b: cloak 恒消费等待（未命中也是真实证据）
                                 subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: false, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: "wait-selector-missed"}},
                         }
                 }
                 return attemptResult{ok: a.ok, status: resp.Status, bytes: body, contentType: "text/html; charset=utf-8",
                         warnings: warnings, note: a.note, queueMs: waited, // R114: 侧车取槽排队计入饱和观测
                         waitSelectorFound: resp.WaitSelectorFound, // R120: 命中结果回传链层（fetchPageResult 回显）
+                        waitApplied:       ctx.waitSelector != "",  // R120b: cloak 恒消费等待
                         subAttempts: []SubAttempt{{Profile: "cloak-sidecar", OK: a.ok, Status: resp.Status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: a.note}},
                 }
         }

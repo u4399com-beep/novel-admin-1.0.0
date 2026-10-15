@@ -114,8 +114,11 @@ type fetchPageResult struct {
         debugHTML string
         // R120: waitSelector 回显与命中结果（handlers 透出 /api/test·/api/chapter 供观测；
         // waitSelectorFound=false + 200 = 「JS 空壳抢跑」的显式证据）
-        waitSelector       string
-        waitSelectorFound  bool
+        // R120b: waitSelectorApplied=false 时 found=false 仅是「获胜策略不消费等待」
+        //（HTTP 快车道胜出），不构成空壳证据——消费方先看 applied 再解读 found。
+        waitSelector        string
+        waitSelectorFound   bool
+        waitSelectorApplied bool
 }
 
 // listStrategies 可用抓取策略及状态（Task 102-a：含三层架构层级标注）
@@ -375,6 +378,10 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
         lastNote := ""
         var lastRetryAfterMs *int64
         sawChallenge := false
+        // R120c（挑战风暴预算保护）：链内命中挑战页而失败的策略计数——≥2 后剩余纯
+        // HTTP 层策略对同一页面已证明无效（同指纹族请求只会继续 403），跳过之把预算
+        // 留给重渲染层（cloak/browser）。
+        challengeFails := 0
         // R114: 链层域槽排队累计（每次取槽 granted 的 waited 求和，跨策略尝试）。成功路径
         // 与获胜策略自身的 queueMs 相加后进 fetchPageResult.queueMs——backend 车道 EWMA
         // 据此把「车道自排队」从饱和信号中剔除（见 attemptResult.queueMs 注）
@@ -441,6 +448,14 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                 }()
                 if !available {
                         attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "unavailable（探测失败，跳过）"})
+                        continue
+                }
+                // R120c（挑战风暴预算保护）：≥2 个策略连续命中挑战页后，跳过剩余纯 HTTP
+                // 层策略（重渲染策略仍保留在后）。实证形态：CF 风暴期 fetch-browser→cloak
+                // 相继挑战后，ua-rotate/mobile/spider/curl 六策略 × 1-2s + 域槽间隔白烧
+                // 15-25s，正好挤占 browser 兑底所需的剩余预算（pilishuwu 链实测）。
+                if shouldSkipHTTPOnChallengeStorm(challengeFails, strat.tier, order, si) {
+                        attempts = append(attempts, AttemptSummary{Strategy: strat.name, OK: false, Status: 0, Ms: 0, Note: "challenge-skip（连续挑战页：跳过 HTTP 层保预算给重渲染层）"})
                         continue
                 }
                 for attempt := 1; attempt <= maxAttempts; attempt++ {
@@ -564,6 +579,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                                         elapsedMs: nowMs() - t0,
                                         queueMs:   chainQueueMs + res.queueMs, // R114: 链层+获胜策略排队累计
                                         waitSelector: opts.waitSelector, waitSelectorFound: res.waitSelectorFound, // R120
+                                        waitSelectorApplied: res.waitApplied, // R120b: 获胜策略是否真正消费了等待
                                 }
                         }
 
@@ -572,6 +588,7 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                         lastRetryAfterMs = res.retryAfter
                         if lastNote == "challenge-page" || lastNote == "challenge-loop" {
                                 sawChallenge = true
+                                challengeFails++ // R120c: 挑战风暴计数（链内作用域）
                         }
                         if !res.ok {
                                 lastFailRes = &res
@@ -792,6 +809,23 @@ func tierName(tier int) string {
         default:
                 return "未知层"
         }
+}
+
+// shouldSkipHTTPOnChallengeStorm R120c（挑战风暴预算保护）判定：链内已有 ≥2 个策略
+// 命中挑战页而失败、当前策略属纯 HTTP 层、且后序仍保有重渲染层策略（iv8+）时，
+// 跳过当前策略——同指纹族 HTTP 请求对已确认的挑战页只会继续 403，继续尝试纯属
+// 白烧链预算并挤占 cloak/browser 的兜底窗口。challengeFails 阈值取 2（首个挑战
+// 命中可能是单策略指纹问题，第二个确认站点级挑战风暴）。
+func shouldSkipHTTPOnChallengeStorm(challengeFails int, tier int, order []strategyDef, si int) bool {
+        if challengeFails < 2 || tier != tierStrategyHTTP {
+                return false
+        }
+        for j := si + 1; j < len(order); j++ {
+                if order[j].tier > tierStrategyHTTP {
+                        return true
+                }
+        }
+        return false // 后序无重渲染层可接管：跳过无收益，照旧尝试（保留覆盖）
 }
 
 // safeStrategyRun 策略运行 + panic 兜底（TS 版以 try/catch 转 internal-error，语义对齐）
