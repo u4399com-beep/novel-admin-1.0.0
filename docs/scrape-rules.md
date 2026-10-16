@@ -12,7 +12,7 @@
 | 2 | ddyueshu.cc | ✅ 三段实测通过（800 章） | fetch-browser | 顶点系 GBK。书页内嵌 800 章全目录 `#list dl dd a`；正文 `#content`。个别失效章节站点自身返回 chaptererror() 空壳（非规则问题，worker 有软 404 哨兵提示） |
 | 3 | 23qb.net | ✅ 三段实测通过 | fetch-browser | 铅笔系 module 模板。书页最新 9 章 + `a.catalog-more` 整目；单章实测 26003 字 |
 | 4 | 101kks.com | ✅ 三段实测通过 | **curl-impersonate** | 繁体站。CF Bot Fight Mode 全页注入挑战前置脚本 + WAF 对 Bun fetch TLS 指纹 403 → 本次反反爬增强突破（见下）。og:meta 全套提取，目录 `#allchapter li a`，正文 `#txtcontent` |
-| 5 | huangjinwu.org | ✅ 三段实测通过 | fetch-browser | 书页内嵌 112 章全目录；正文实测 2107 字 |
+| 5 | huangjinwu.org | ✅ 三段实测通过 | fetch-browser | 书页 `#chapterList`=最新 12 章 + 无 id `ul.chapter-list`=升序 1-100（页 1/14），目录页 2-14 每页 100 章。R124b：chapterLinkSelector `#chapterList li a`→`.chapter-list li a`（旧选择器漏书页 1-100 + walker REPLACE 语义丢内嵌 → 全库 40+ 书从 第101章 开局，已重排+重扫修复）；正文实测 2107 字 |
 | 6 | ggd66.com | ✅ 三段实测通过 | fetch-browser | 列表页为 /sort/{cid}/{page}/（首页非列表页，勿用首页测 list）。书页 202 章；章节分页 `_2.html` 由 worker 自动跟随 |
 | 7 | xinjianpan.com | ✅ 三段实测通过 | fetch-browser | 章节 CMS 分页 (第1/2页)，nextSelector 跟随；标题分页后缀由引擎自动剥离（本次增强） |
 | 8 | x2552.com | ✅ 三段实测通过 | fetch-browser | 杰奇 GBK。列表 /list/{cid}_{page}.html 30 条/页；书页 /book/{id}.html h1 带「全文阅读」样板后缀（引擎自动剥离）；目录 a.read → /html/{a}/{b}/ #at td.L a；正文 dd#contents |

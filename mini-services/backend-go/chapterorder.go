@@ -23,6 +23,7 @@
 package main
 
 import (
+        "fmt"
         "regexp"
         "sort"
         "strconv"
@@ -142,24 +143,45 @@ func foldFullwidthDigits(s string) string {
 // chapterPrefixRe 「123.」「123、」「123:」纯数字前缀（后跟非空白内容；含全角数字形态）
 var chapterPrefixRe = regexp.MustCompile(`^([0-9０-９]{1,5})[.、:：]` + jsSpaceClass + `*\S`)
 
+// chapterPartSuffixRe R124 章内分片尾号（5165 站拆分转载形态：「第三十四章 未竟之局03」
+// 同章号多分片并列，尾缀 01/02/03… 是分片序）。取标题尾缀数字（无尾缀数字 = 0）。
+// 仅在分片转载信号（高重复率 + 尾缀覆盖率 + 键唯一性）三门槛全过时才作为次级排序键，
+// 误读面被门槛兜住（标题偶以年份等数字结尾的书不会同时满足高重复率前提）。
+var chapterPartSuffixRe = regexp.MustCompile(`([0-9０-９]{1,3})` + jsSpaceClass + `*$`)
+
 // parseChapterNo 解析章节标题中的序号：第N章/节/回/话（阿拉伯含全角或中文数字）、
 // 或「123.」「123、」纯数字前缀。解析失败返回 ok=false（序章/番外/未编号等，JS null）。
 func parseChapterNo(title string) (int64, bool) {
+        n, ok, _ := parseChapterNoPart(title)
+        return n, ok
+}
+
+// parseChapterNoPart 解析序号 + 章内分片尾号（R124）。分片号仅取「第N章」余部的尾缀数字
+//（0 = 无分片语义），供分片转载书（5165 实测同章号 3 分片并列）做次级排序键。
+func parseChapterNoPart(title string) (int64, bool, int64) {
         t := trimSpaceStr(title)
         if t == "" {
-                return 0, false
+                return 0, false, 0
         }
         if m := chapterNoRe.FindStringSubmatch(t); m != nil {
                 n, ok := chineseNumeralToInt(foldFullwidthDigits(m[1]))
                 if ok && n >= 0 && n <= 99_999_999 {
-                        return n, true
+                        return n, true, titlePartSuffix(t)
                 }
-                return 0, false
+                return 0, false, 0
         }
         if m := chapterPrefixRe.FindStringSubmatch(t); m != nil {
-                return parseInt10(foldFullwidthDigits(m[1])), true
+                return parseInt10(foldFullwidthDigits(m[1])), true, titlePartSuffix(t)
         }
-        return 0, false
+        return 0, false, 0
+}
+
+// titlePartSuffix 标题尾缀分片号（无尾缀数字 = 0）
+func titlePartSuffix(t string) int64 {
+        if m := chapterPartSuffixRe.FindStringSubmatch(t); m != nil {
+                return parseInt10(foldFullwidthDigits(m[1]))
+        }
+        return 0
 }
 
 // reorderRefsResult ReorderResult（JS refs/reordered/note 三元组）
@@ -254,18 +276,197 @@ func reorderChapterRefsImpl(refs []ChapterRef, threshold float64) reorderRefsRes
                 }
         }
 
-        // ---- 重复序号（分卷各自编号场景）：无分卷信息可用，只做保守修复——
-        // 「头部倒序块」整体后移（最新章节块形态）
+        // ---- 重复序号（分卷各自编号场景）：无分卷信息可用，先试噪声容忍路径，
+        // 再做保守修复——「头部倒序块」整体后移（最新章节块形态）
+        if rr, ok := reorderDupTolerant(refs, nums); ok {
+                return rr
+        }
         return fixLeadingDescendingBlock(refs, nums)
 }
 
-// fixLeadingDescendingBlock 保守修复（重复序号且无分卷信息可用）：头部严格倒序块
+// dupNoiseRatio 序号重复占比（重复行数/编号行数）≤该值视为源站噪声（同章多 URL 收录、
+// 站方重复 listing——书 564 实测 9988 编号章仅 2 处重复），走容忍性全局稳定重排；
+// 显著重复（分卷各自编号/拆分转载）不进该路径，由分片键/头部块保守路径兜底。
+const dupNoiseRatio = 0.02
+
+// canonicalParseRateMin 编号解析率下限：低于该值标题序号不可信，不做容忍性全局重排。
+const canonicalParseRateMin = 0.6
+
+// partSuffixCoverageMin 分片尾号覆盖率下限（有尾缀的编号行/编号行）：分片转载书的
+// 尾缀应覆盖绝大多数编号行（5165 书 578 实测 208/211）。
+const partSuffixCoverageMin = 0.6
+
+// partKeyCollisionMax (章号,分片) 键碰撞行占比上限：超过说明尾缀并非分片语义（随机
+// 数字尾缀/年份），整书按该键重排会打散正文，拒绝。
+const partKeyCollisionMax = 0.02
+
+// reorderDupTolerant 重复编号场景的两级容忍路径（R124，顺序即优先级）：
+//
+// ①分片转载键重排 reorderPartKeyRefs：高重复率 + 尾缀覆盖率达标 + (章号,分片) 键
+//   基本唯一 → 按（章号, 分片, 出现序）稳定重排（5165《千劫眉》211 行 52 个章号
+//   3 分片并列实测 208 键全唯一，DOM 乱序全量归位）。
+// ②噪声容忍全局重排 reorderCanonicalNoiseTolerant：重复占比极低（噪声）+ 解析率
+//   可信 + 确有位置错乱 → sortKeys 语义（编号主键、未编号锚定前编号之后）全局
+//   稳定重排（书 564 形态：[最新块(新→旧)] + [正文(旧→新)] + 少量同号异 URL 噪声，
+//   旧 fixLeadingDescendingBlock 因「其余部分严格非降」一行否决整书，阅读页从
+//   第13331章 开局；本路径把最新块归位、正文升序、噪声行按出现序相邻）。
+//
+// 两路径都持有保守门槛（解析率/占比/碰撞率），不满足返回 ok=false 由调用方回退
+// 旧保守路径；分卷各自编号书（重复占比高且无分片尾缀）两路径均不进，行为与旧版一致。
+func reorderDupTolerant(refs []ChapterRef, nums []numOpt) (reorderRefsResult, bool) {
+        if rr, ok := reorderPartKeyRefs(refs, nums); ok {
+                return rr, true
+        }
+        if rr, ok := reorderCanonicalNoiseTolerant(refs, nums); ok {
+                return rr, true
+        }
+        return reorderRefsResult{}, false
+}
+
+// reorderPartKeyRefs 分片转载键重排（门槛见 reorderDupTolerant①）
+func reorderPartKeyRefs(refs []ChapterRef, nums []numOpt) (reorderRefsResult, bool) {
+        if len(refs) < NUMBERED_MIN || len(refs) != len(nums) {
+                return reorderRefsResult{}, false
+        }
+        numbered := 0
+        dupRows := 0
+        seen := map[int64]int{}
+        withPart := 0
+        for _, n := range nums {
+                if !n.ok {
+                        continue
+                }
+                numbered++
+                if n.part > 0 {
+                        withPart++
+                }
+                seen[n.v]++
+                if seen[n.v] > 1 {
+                        dupRows++
+                }
+        }
+        if numbered < NUMBERED_MIN || float64(dupRows) <= dupNoiseRatio*float64(numbered) {
+                return reorderRefsResult{}, false // 重复不显著：非拆分转载形态
+        }
+        if float64(withPart) < partSuffixCoverageMin*float64(numbered) {
+                return reorderRefsResult{}, false
+        }
+        // 键唯一性：(章号,分片) 重复行占比 ≤ partKeyCollisionMax
+        keySeen := map[[2]int64]int{}
+        collisions := 0
+        for _, n := range nums {
+                if !n.ok {
+                        continue
+                }
+                k := [2]int64{n.v, n.part}
+                keySeen[k]++
+                if keySeen[k] > 1 {
+                        collisions++
+                }
+        }
+        if float64(collisions) > partKeyCollisionMax*float64(numbered) {
+                return reorderRefsResult{}, false
+        }
+        // 错乱检测：按（章号,分片）序与当前位序比较，0 错乱则无事可做
+        keys := make([]int64, len(refs))
+        orderedVals := make([]int64, 0, numbered)
+        for i, n := range nums {
+                if n.ok {
+                        keys[i] = n.v*1000 + n.part
+                        orderedVals = append(orderedVals, keys[i])
+                }
+        }
+        if disorderRatio(orderedVals) == 0 {
+                return reorderRefsResult{refs: refs, reordered: false, note: ""}, true
+        }
+        out := stableSortByNumKey(refs, nums, func(n numOpt) float64 { return float64(n.v*1000 + n.part) })
+        return reorderRefsResult{
+                refs:      out,
+                reordered: true,
+                note:      fmt.Sprintf("拆分转载形态（%d 编号章 %d 处同章号分片），已按（章号+分片尾号）重排", numbered, dupRows),
+        }, true
+}
+
+// reorderCanonicalNoiseTolerant 噪声容忍全局重排（门槛见 reorderDupTolerant②）
+func reorderCanonicalNoiseTolerant(refs []ChapterRef, nums []numOpt) (reorderRefsResult, bool) {
+        if len(refs) < NUMBERED_MIN || len(refs) != len(nums) {
+                return reorderRefsResult{}, false
+        }
+        numbered := 0
+        dupRows := 0
+        seen := map[int64]bool{}
+        vals := make([]int64, 0, len(nums))
+        for _, n := range nums {
+                if !n.ok {
+                        continue
+                }
+                numbered++
+                if seen[n.v] {
+                        dupRows++
+                }
+                seen[n.v] = true
+                vals = append(vals, n.v)
+        }
+        if numbered < NUMBERED_MIN {
+                return reorderRefsResult{}, false
+        }
+        if float64(dupRows) > dupNoiseRatio*float64(numbered) {
+                return reorderRefsResult{}, false // 重复显著：非噪声形态（分卷各自编号等）
+        }
+        if float64(numbered) < canonicalParseRateMin*float64(len(refs)) {
+                return reorderRefsResult{}, false // 解析率不足：序号不可信
+        }
+        if disorderRatio(vals) == 0 {
+                return reorderRefsResult{refs: refs, reordered: false, note: ""}, true
+        }
+        out := stableSortByNumKey(refs, nums, func(n numOpt) float64 { return float64(n.v) })
+        return reorderRefsResult{
+                refs:      out,
+                reordered: true,
+                note:      fmt.Sprintf("目录含源站噪声（%d 编号章 %d 处同号重复），已按章节序号全局重排", numbered, dupRows),
+        }, true
+}
+
+// stableSortByNumKey 按数值键稳定重排（键相同时保持原相对顺序）；未编号行沿用
+// sortKeys 语义：锚定前一编号行之后（+0.5 偏移），行间保持原序。
+func stableSortByNumKey(refs []ChapterRef, nums []numOpt, keyOf func(numOpt) float64) []ChapterRef {
+        keys := make([]float64, len(nums))
+        var last int64
+        for i, n := range nums {
+                if n.ok {
+                        last = n.v
+                        keys[i] = keyOf(n)
+                } else {
+                        keys[i] = float64(last) + 0.5
+                }
+        }
+        type pair struct {
+                r ChapterRef
+                k float64
+        }
+        ordered := make([]pair, len(refs))
+        for i := range refs {
+                ordered[i] = pair{refs[i], keys[i]}
+        }
+        sort.SliceStable(ordered, func(a, b int) bool { return ordered[a].k < ordered[b].k })
+        out := make([]ChapterRef, len(ordered))
+        for i, p := range ordered {
+                out[i] = p.r
+        }
+        return out
+}
+
+// fixLeadingDescendingBlock 保守修复（重复序号且容忍路径均不适用）：头部严格倒序块
 // （最新章节新→旧）且其余部分有序 → 块移到尾部升序。
+// R124 运行边界修复：倒序块检测在「块尾遇到正文首章」时必须终止——旧判定仅看「严格递减」，
+// [13331..13326] 后紧跟 第1章（1 < 13326 仍递减）会把正文首章吞进最新块，搬移后阅读页
+// 从 第2章 开局。新增边界：下一编号小于块首（runFirst）即视作正文起点，块到此为止。
 func fixLeadingDescendingBlock(refs []ChapterRef, nums []numOpt) reorderRefsResult {
         // 头部倒序块：自首位起连续的编号章节（不夹杂未编号，保守边界）序号严格递减
         k := 0
         blockEnd := 0
         var prev numOpt
+        runFirst := int64(0)
         overflow := false
         for i := 0; i < len(nums); i++ {
                 n := nums[i]
@@ -274,6 +475,15 @@ func fixLeadingDescendingBlock(refs []ChapterRef, nums []numOpt) reorderRefsResu
                 }
                 if prev.ok && n.v >= prev.v {
                         break
+                }
+                // R124：正文起点边界——编号跌幅已超过块自身跨度（runFirst-k）即视作
+                // 正文升序段起点（如 [13331..13326] 后遇 第1章：1 < 13331-6），不再
+                // 属于「最新章节块」。块内正常递减（每步 -1）恰不触发（n.v = runFirst-k）。
+                if k > 0 && n.v < runFirst-int64(k) {
+                        break
+                }
+                if k == 0 {
+                        runFirst = n.v
                 }
                 prev = n
                 k++
@@ -364,6 +574,9 @@ func reorderChapterRefsVols(refs []ChapterRef, vols []string, threshold float64)
         }
         if hasDuplicateNumbering(nums) {
                 if rr, engaged := volumeSegmentReorder(refs, vols, nums); engaged {
+                        return rr
+                }
+                if rr, ok := reorderDupTolerant(refs, nums); ok {
                         return rr
                 }
                 return fixLeadingDescendingBlock(refs, nums)
@@ -602,8 +815,18 @@ func reorderRefPairs(pairs []refPair) ([]refPair, string) {
 
 // parseNumOptAnywhere numOpt 版中段兜底解析
 func parseNumOptAnywhere(title string) numOpt {
-        v, ok := parseChapterNoAnywhere(title)
-        return numOpt{ok: ok, v: v}
+        v, ok, part := parseChapterNoPart(title)
+        if !ok {
+                // 中段兜底（「起步 第3章」形态）：序号取中段首个 token；分片尾号取标题尾缀
+                if m := chapterNoAnywhereRe.FindStringSubmatch(title); m != nil {
+                        n, pok := chineseNumeralToInt(foldFullwidthDigits(m[1]))
+                        if pok && n >= 0 && n <= 99_999_999 {
+                                return numOpt{ok: true, v: n, part: titlePartSuffix(trimSpaceStr(title))}
+                        }
+                }
+                return numOpt{}
+        }
+        return numOpt{ok: ok, v: v, part: part}
 }
 
 // distinctVolCount 非空卷去重计数辅助
@@ -619,13 +842,14 @@ func distinctVolCount(vols []string) map[string]bool {
 
 // numOpt 可空序号（JS number | null）
 type numOpt struct {
-        ok bool
-        v  int64
+        ok   bool
+        v    int64
+        part int64 // R124 章内分片尾号（0 = 无分片语义）
 }
 
 func parseNumOpt(title string) numOpt {
-        v, ok := parseChapterNo(title)
-        return numOpt{ok: ok, v: v}
+        v, ok, part := parseChapterNoPart(title)
+        return numOpt{ok: ok, v: v, part: part}
 }
 
 // sortKeys 稳定排序键：编号章节取序号；未编号锚定在前一编号章节之后（0.5 偏移，

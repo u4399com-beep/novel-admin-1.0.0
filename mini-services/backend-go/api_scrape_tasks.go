@@ -175,11 +175,15 @@ func bodyObjectOK(v any, ok bool) bool {
         return false
 }
 
-// taskRuleIDParam 提取可选 ruleId（undefined/null/” 均视为未提供）
+// taskRuleIDParam 提取可选 ruleId（undefined/null/'' 均视为未提供）
 // Task 30-b 修复：巨大数值（如 1e20）原路径 parsePositiveInt 内 int64(f) 转换是 Go 规范的
 // 「实现定义行为」（amd64 溢出得哨兵值 MinInt64，负值穿透后续判定）——与 Task 27-c
 // jsontoc jsonStr 同一类转换风险。改为 float 域先做 2^53 上限判定再转换（合法规则 id
 // 远小于该界，判定不影响任何真实输入；超界值与 TS 版行为对齐为「查不到规则」拒绝路径）。
+// R124 修复：id=0 是合法规则主键（biqiuge8 实存 id 0），旧 `f <= 0` 把 ruleId=0 误判
+// 为非法 → 规则 0 永远无法经 API 建任务（fleetkeeper 直写 DB 不受影响，admin UI 单本
+// 采集对规则 0 必 400「无效 ruleId」）。未提供语义已由 !present/nil/'' 三分支承载，
+// 0 应作为有效 id 放行。
 func taskRuleIDParam(body map[string]any) (int64, bool, bool) {
         val, present := body["ruleId"]
         if !present || val == nil {
@@ -189,7 +193,7 @@ func taskRuleIDParam(body map[string]any) (int64, bool, bool) {
                 return 0, false, true
         }
         f := jsNumber(val)
-        if !numIsInt(f) || f <= 0 || f > 9_007_199_254_740_992 {
+        if !numIsInt(f) || f < 0 || f > 9_007_199_254_740_992 {
                 return 0, false, false
         }
         return int64(f), true, true

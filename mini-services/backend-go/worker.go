@@ -601,13 +601,28 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
                                         walkerRefs, pagesWalked = fetchFullToc(run, seeds, rule, bookURL, false)
                                 }
                         }
-                        if pagesWalked > 0 && len(walkerRefs) > len(allRefs) {
-                                mu.Lock()
-                                sawCatalog++
-                                mu.Unlock()
-                                allRefs = walkerRefs
-                                run.Log(fmt.Sprintf("目录分页跟随生效 %d 页，《%s》目录 %d 条（书页内嵌 %d 条）",
-                                        pagesWalked, truncateRunes(book.Title, 24), len(walkerRefs), len(book.Chapters)))
+                        // R124 合并补漏：旧 REPLACE 语义（walkerRefs > 内嵌才整体替换）在
+                        // 「walker 首个种子页瞬态失败」时会把内嵌已有的头部章节一并丢弃
+                        //（实证 xinjianpan 书 566：书页内嵌 第1-100 章，walker list-1 瞬态失败
+                        // 只得 list-2..N → REPLACE 后目录从 第101章 开局，全书永失前 100 章）。
+                        // 改为 walker 优先 + 内嵌按 URL 补漏（mergeTocRefs）：walker 全序在前
+                        //（分页页序=站方权威序），内嵌独有章节（walker 漏抓的首页块）追加在后；
+                        // 随后 reorderRefPairs 按章节序号归位，追加块自动落回首部。仅当合并
+                        // 真正带来更多章节时采用（walker 全重复/退化时行为与旧版一致）。
+                        if pagesWalked > 0 && len(walkerRefs) > 0 {
+                                merged := mergeTocRefs(walkerRefs, allRefs)
+                                if len(merged) > len(allRefs) {
+                                        mu.Lock()
+                                        sawCatalog++
+                                        mu.Unlock()
+                                        run.Log(fmt.Sprintf("目录分页跟随生效 %d 页，《%s》目录 %d 条（书页内嵌 %d 条，内嵌补漏 %d 条）",
+                                                pagesWalked, truncateRunes(book.Title, 24), len(merged), len(book.Chapters), len(merged)-len(walkerRefs)))
+                                        allRefs = merged
+                                } else if len(seeds) > 0 && pageWarnedTocPagination(page.Warnings) && !walkerDegenerate(pagesWalked, walkerRefs) {
+                                        // 分页在、walker 正常跑完但没赢过内嵌：留痕（多为分页页章节全是重复或站点限流空壳）
+                                        run.Log(fmt.Sprintf("目录分页跟随未生效（《%s》walked %d 页得 %d 条 ≤ 内嵌 %d 条）",
+                                                truncateRunes(book.Title, 24), pagesWalked, len(walkerRefs), len(allRefs)))
+                                }
                         } else if len(seeds) > 0 && pageWarnedTocPagination(page.Warnings) && !walkerDegenerate(pagesWalked, walkerRefs) {
                                 // 分页在、walker 正常跑完但没赢过内嵌：留痕（多为分页页章节全是重复或站点限流空壳）
                                 run.Log(fmt.Sprintf("目录分页跟随未生效（《%s》walked %d 页得 %d 条 ≤ 内嵌 %d 条）",
