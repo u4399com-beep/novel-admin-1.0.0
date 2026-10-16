@@ -4893,3 +4893,27 @@ Stage Summary:
 - iqxsw 九分类扩容启动：cat2-10 范围任务 9 个（#27 cat7 已发现 264 本），修正后选择器下 240 本/分类量级扩展中
 - 沙箱第 11 次自愈 15 分钟路径走通（含 stealth flock 旧进程持有新形态踩坑归档）
 - 移交：①iqxsw 范围任务 fleetkeeper 冷却节流下逐步续传（9 任务×15 页×24 本/页 ≈ 3200 本潜力）②biqiuge8 七分类发现完成后单书填充持续放量③81zw2/shukeju/booktxt 三备选站（列表单页规模小）记录在案待后续评估④引擎 totalOK 爬坡观测（16:30 实测 15k，礼貌天花板+新站分摊相位）
+---
+Task ID: R124b
+Agent: Z.ai Code (main)
+Task: 用户指令——检查在库的所有采集规则：许多书籍不是从第一章开始的（全库首章审计与修复收口，接续并行线 R124 未推送工作）
+
+Work Log:
+- 【接续盘点】发现并行线 R124 已提交未推送（HEAD 0d59035 UUID 消息：chapterorder 两级容忍重排+mergeTocRefs 补漏+audit 脚本+测试，二进制已构建但 backend 进程 11:55 启动=旧代码仍在跑）；R124 全库审计（59 书窗口）已定位 9 本 notFromCh1
+- 【全库权威审计（DB 直查 1071→1383 书）】按规则分组：huangjinwu 42+4、5165 40+68、xinjianpan 7+8、ddyueshu 4+1 异常；其余 13 规则全绿。noSignal 大半为审计脚本格式误报（「1.第1章」「001章」「1、」等前缀形态 Go 引擎原生支持）——audit 脚本补 RE_PREFIX/RE_PLAIN_CH 形态降噪
+- 【huangjinwu 根因实锤（live 取证）】书页三 ul：#chapterList=最新 12 章倒序块、无 id ul.chapter-list=升序 1-100（页 1/14）、分页页 2-14 每页恰 100 章。规则 chapterLinkSelector=#chapterList li a 恒选 12 章块 → 书页 1-100 永不入库；walker 种子从「下一页」(2.html) 起（书页自身=页 1，visited 防环永不被重抓）→ 旧 REPLACE 语义得 [101..1366] 整体替换 → 全库 40+ 书从 第101章 开局。修复：chapterLinkSelector → .chapter-list li a（DB+seed 双落；三 ul 全命中、空模板 ul 零条目无害；实证 /novel/279 1394 章全捕获 vs 旧 1074）
+- 【570 类薄重号门槛标定】重扫后书 570 仍拒绝重排：1370 编号章 32 处作者方重号=2.34%，旧 dupNoiseRatio=0.02 门槛 27.4 行差一线拒绝。0.02→0.03（分卷各自编号签名 ≈(卷数-1)/卷数 ≥50%（580 实测 56%）保持 16 倍边距）；重排后首章 第1章。TestThinDupNoiseAdmittedR124b/TestVolumeRestartStillRejectedR124b 锁定
+- 【580 类分卷各自编号根修（站序合并）】6 卷书卷内重计章号、标题无卷信息（每卷 第1章 x6 异题）——全局排序会六卷交错，保守门槛正确拒绝；且 R124 mergeTocRefs「walker 在前+内嵌补漏追加在尾」对此类书重扫后仍错序（卷一页1块挂尾）。新 mergeTocRefsSiteOrder：内嵌独有章节（=walker 缺失的书页页 1 块）剔除 walker 已覆盖项后前置 + walker 全序随后 → 重扫直接落站方 DOM 序（阅读序权威）。TestMergeTocRefsSiteOrderVolumeRestart 锁定
+- 【存量数据修复三路】①全库 resort-chapters POST 两轮（200+20 本按 R124/R124b 算法就地重排，R101 锁语义任务并行安全）②volume-restart 类 11 本（701/580/618/693/652/613/1051/603/669/1267/601，filled=0 零内容损失）删除章节行+tocScannedAt 清零→干净重扫落站序 ③其余 40+ 本 tocScannedAt 清零交 fleet 有机重扫（list 任务 #4/#6 在跑，P3-4 窗口外自动全扫）
+- 【验证任务实证】单书任务 #28-32：书 570 目录 1074→1394（1-1366 全量）重排后首章 第一章 古古怪怪；书 566 418→518 重排后 第1章；书 580 删除重扫 829→1268 行首章 第一章 道人风雨山神庙（站序）；书 1267/613 重扫首章 第1章；书 618 首行=作者开篇说明（站方 DOM 序如实）
+- 【终态审计】DB 全库 1383 书：首章编号 ≤2 或前言/卷首类 1209 本；残差 147 中绝大多数为格式误报（「001 李知行」「1 第 1 章」「第1集」）与 5165 选集/分部结构书（第N章多卷异题——重排拒绝为正确行为）；真实待修复=huangjinwu/xinjianpan ~34 本已清零待 fleet 重扫（单书填充任务占用域槽中，bounded 有机推进）
+- 【测试/构建】backend 全量 70.7s ok（含 R124 六测+R124b 三新测）+go vet 净+bin 重建部署两轮（0.03 门槛+站序合并）
+- 【Agent Browser 终验】/chapter/1188621（书 570 首章）=「第一章 古古怪怪_《无敌从我看见BOSS血条开始》第1章」正文真实渲染；/chapter/1163832（书 566）=第1章 真龙归来 正文渲染；/book/570 章节列表含 第一章；首页 140 链接/38 封面零 console error；移动端 390px 零横向溢出
+- 【git】并行线 UUID commit 改写规范 R124 消息（amend，未推送安全）+R124b 独立 commit
+
+Stage Summary:
+- 「书籍不从第一章开始」三族根因全闭环：①规则选择器缺陷（huangjinwu #chapterList 恒选最新块）②walker REPLACE 语义丢内嵌头部（R124 mergeTocRefs）③分卷各自编号书的重扫站序（R124b mergeTocRefsSiteOrder——追加在尾对本类永远错序的结构性缺陷）
+- 重排算法门槛标定升级（dupNoiseRatio 0.03，16 倍安全边距）+ 站序合并新原语 + 五个新回归测试
+- 存量修复：200+20 本就地重排、11 本删除重扫落站序、~80 本清零重扫（fleet 有机推进中，34 本 huangjinwu/xinjianpa 残差在 bounded 队列）
+- 终态：1383 书全库首章健康 1209 本（残差=格式误报+5165 选集结构+待重扫队列），Agent Browser 三页实证
+- 移交：①fleet 重扫队列自然清空后可再跑一轮全库 resort+audit 终验 ②572/1014 类 5165 选集书（短篇集各卷独立编号、cc<60、重号异题）为源站结构限制，重排拒绝正确 ③audit 脚本前缀形态已降噪，后续可加「001」四位零填充与「第N集」覆盖进一步降误报
