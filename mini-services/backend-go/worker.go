@@ -605,17 +605,18 @@ func phase1Skeletons(run *Run, rule LoadedRule, items []ListItem, listURL string
                         // 「walker 首个种子页瞬态失败」时会把内嵌已有的头部章节一并丢弃
                         //（实证 xinjianpan 书 566：书页内嵌 第1-100 章，walker list-1 瞬态失败
                         // 只得 list-2..N → REPLACE 后目录从 第101章 开局，全书永失前 100 章）。
-                        // 改为 walker 优先 + 内嵌按 URL 补漏（mergeTocRefs）：walker 全序在前
-                        //（分页页序=站方权威序），内嵌独有章节（walker 漏抓的首页块）追加在后；
-                        // 随后 reorderRefPairs 按章节序号归位，追加块自动落回首部。仅当合并
-                        // 真正带来更多章节时采用（walker 全重复/退化时行为与旧版一致）。
+                        // R124b 升级为站序合并（mergeTocRefsSiteOrder）：内嵌独有章节（=walker
+                        // 缺失的书页「页 1 块」）置于 walker 序列之前——编号唯一书随后由
+                        // reorderRefPairs 按序号归位不变；分卷各自编号书（重排被保守门槛正确
+                        // 拒绝）由站方 DOM 序直接落位，不再停「卷一后段..卷N+卷一页1块(尾)」
+                        // 错序。仅当合并真正带来更多章节时采用（walker 全重复/退化时行为不变）。
                         if pagesWalked > 0 && len(walkerRefs) > 0 {
-                                merged := mergeTocRefs(walkerRefs, allRefs)
+                                merged := mergeTocRefsSiteOrder(walkerRefs, allRefs)
                                 if len(merged) > len(allRefs) {
                                         mu.Lock()
                                         sawCatalog++
                                         mu.Unlock()
-                                        run.Log(fmt.Sprintf("目录分页跟随生效 %d 页，《%s》目录 %d 条（书页内嵌 %d 条，内嵌补漏 %d 条）",
+                                        run.Log(fmt.Sprintf("目录分页跟随生效 %d 页，《%s》目录 %d 条（书页内嵌 %d 条，内嵌补漏 %d 条·站序前置）",
                                                 pagesWalked, truncateRunes(book.Title, 24), len(merged), len(book.Chapters), len(merged)-len(walkerRefs)))
                                         allRefs = merged
                                 } else if len(seeds) > 0 && pageWarnedTocPagination(page.Warnings) && !walkerDegenerate(pagesWalked, walkerRefs) {

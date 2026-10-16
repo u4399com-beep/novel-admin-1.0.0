@@ -285,9 +285,12 @@ func reorderChapterRefsImpl(refs []ChapterRef, threshold float64) reorderRefsRes
 }
 
 // dupNoiseRatio 序号重复占比（重复行数/编号行数）≤该值视为源站噪声（同章多 URL 收录、
-// 站方重复 listing——书 564 实测 9988 编号章仅 2 处重复），走容忍性全局稳定重排；
-// 显著重复（分卷各自编号/拆分转载）不进该路径，由分片键/头部块保守路径兜底。
-const dupNoiseRatio = 0.02
+// 站方重复 listing、作者方少量重号——书 564 实测 9988 编号章仅 2 处重复；R124b 书 570
+// 实测 1370 编号章 32 处重号=2.34%，为作者方重号噪声而非分卷各自编号），走容忍性全局
+// 稳定重排；显著重复（分卷各自编号/拆分转载）不进该路径，由分片键/头部块保守路径兜底。
+// 0.03 的标定依据：分卷各自编号书的重号占比签名 ≈(卷数-1)/卷数 ≥50%（6 卷书 580 实测
+// 56%），0.03 与该签名保持 16 倍安全边距，误放行面可忽略。
+const dupNoiseRatio = 0.03
 
 // canonicalParseRateMin 编号解析率下限：低于该值标题序号不可信，不做容忍性全局重排。
 const canonicalParseRateMin = 0.6

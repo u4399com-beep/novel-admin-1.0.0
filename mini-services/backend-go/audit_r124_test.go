@@ -167,16 +167,43 @@ func TestMergeTocRefsInlineFill(t *testing.T) {
                 {Title: "第2章", URL: "http://x/2"},
                 {Title: "第101章", URL: "http://x/101"},
         }
-        merged := mergeTocRefs(walker, inline)
+        merged := mergeTocRefsSiteOrder(walker, inline)
         if len(merged) != 4 {
-                t.Fatalf("合并后 = %d 条，期望 4（walker 2 + 内嵌独有 2）", len(merged))
+                t.Fatalf("合并后 = %d 条，期望 4（内嵌独有 2 + walker 2）", len(merged))
         }
-        // walker 优先在前，内嵌独有追加在后
-        if merged[0].Title != "第101章" || merged[1].Title != "第102章" {
-                t.Fatalf("walker 序应在前")
+        // R124b 站序语义：内嵌独有章节（walker 缺失的「页 1 块」）前置，walker 全序随后；
+        // 内嵌中 walker 已覆盖的（第101章 回链）被剔除，不在前缀残留
+        if merged[0].Title != "第1章" || merged[1].Title != "第2章" {
+                t.Fatalf("内嵌独有章节应站序前置，得 %q/%q", merged[0].Title, merged[1].Title)
         }
-        if merged[2].Title != "第1章" || merged[3].Title != "第2章" {
-                t.Fatalf("内嵌独有章节应被补漏保留，得 %q/%q", merged[2].Title, merged[3].Title)
+        if merged[2].Title != "第101章" || merged[3].Title != "第102章" {
+                t.Fatalf("walker 序应随后，得 %q/%q", merged[2].Title, merged[3].Title)
+        }
+}
+
+// TestMergeTocRefsSiteOrderVolumeRestart 分卷各自编号书的重扫站序落位（R124b）：
+// 书页内嵌=卷一页1块（第1-2章），walker=卷一后段+卷二（分页页序）。站序合并后
+// DOM 序即阅读序，无需（也不应）依赖重排。
+func TestMergeTocRefsSiteOrderVolumeRestart(t *testing.T) {
+        walker := []ChapterRef{
+                {Title: "第3章 卷一尾", URL: "http://x/3"},
+                {Title: "第1章 卷二", URL: "http://x/v2-1"},
+                {Title: "第2章 卷二", URL: "http://x/v2-2"},
+        }
+        inline := []ChapterRef{
+                {Title: "第1章 卷一", URL: "http://x/1"},
+                {Title: "第2章 卷一", URL: "http://x/2"},
+                {Title: "第3章 卷一尾", URL: "http://x/3"},
+        }
+        merged := mergeTocRefsSiteOrder(walker, inline)
+        if len(merged) != 5 {
+                t.Fatalf("合并后 = %d 条，期望 5", len(merged))
+        }
+        want := []string{"第1章 卷一", "第2章 卷一", "第3章 卷一尾", "第1章 卷二", "第2章 卷二"}
+        for i, w := range want {
+                if merged[i].Title != w {
+                        t.Fatalf("merged[%d] = %q，期望 %q", i, merged[i].Title, w)
+                }
         }
 }
 
@@ -199,5 +226,69 @@ func TestParseChapterNoPartSuffix(t *testing.T) {
                 if ok != c.ok || (ok && n != c.no) || part != c.part {
                         t.Fatalf("parseChapterNoPart(%q) = (%d,%v,%d)，期望 (%d,%v,%d)", c.title, n, ok, part, c.no, c.ok, c.part)
                 }
+        }
+}
+
+// TestThinDupNoiseAdmittedR124b 书 570 形态（R124b 门槛标定回归）：作者方少量重号噪声
+// （1370 编号章 32 处重号 = 2.34%）+ 乱序混排（尾部追加块）——旧 dupNoiseRatio=0.02 以
+// 27.4 行的门槛差一线拒绝（32 > 27.4），重排不生效，阅读页从 第1293章 开局；0.03 后进
+// 噪声容忍路径全局稳定重排，首章归位 第1章，重号行按出现序相邻。
+func TestThinDupNoiseAdmittedR124b(t *testing.T) {
+        titles := []string{}
+        // 头部：第1293..1366 章（74 行升序，旧 REPLACE 残留块）
+        for i := 1293; i <= 1366; i++ {
+                titles = append(titles, fmt.Sprintf("第%d章 事%d", i, i))
+        }
+        // 中段：第1195..399 混排块（乱序正文 + 模拟 32 处作者方重号：各带异题）
+        for i := 1195; i >= 399; i-- {
+                titles = append(titles, fmt.Sprintf("第%d章 事%d", i, i))
+        }
+        for i := 0; i < 32; i++ {
+                titles = append(titles, fmt.Sprintf("第%d章 异题%d", 400+i*30, i))
+        }
+        // 尾部：第1..100 章（重扫补漏追加块）
+        for i := 1; i <= 100; i++ {
+                titles = append(titles, fmt.Sprintf("第%d章 事%d", i, i))
+        }
+        refs, _ := mkR124Refs(titles)
+        vols := make([]string, len(refs))
+        rr := reorderChapterRefsVols(refs, vols, DISORDER_RATIO)
+        if !rr.reordered {
+                t.Fatalf("薄重号噪声（2.34%%）应进容忍路径全局重排")
+        }
+        if got := rr.refs[0].Title; got != "第1章 事1" {
+                t.Fatalf("重排后首章 = %q，期望 第1章 事1", got)
+        }
+        pn := make([]numOpt, len(rr.refs))
+        for i := range rr.refs {
+                pn[i] = parseNumOpt(rr.refs[i].Title)
+        }
+        // 主序严格升序（重号行仅与同号相邻）
+        last := int64(0)
+        for i := range pn {
+                if !pn[i].ok {
+                        continue
+                }
+                if pn[i].v < last {
+                        t.Fatalf("重排后序号回退：%q（%d < %d）", rr.refs[i].Title, pn[i].v, last)
+                }
+                last = pn[i].v
+        }
+}
+
+// TestVolumeRestartStillRejectedR124b 分卷各自编号书在 0.03 门槛下仍被拒绝（6 卷书 580
+// 实测签名 56% 重号）：容忍路径不进，保守行为不变（防全局排序打散分卷）。
+func TestVolumeRestartStillRejectedR124b(t *testing.T) {
+        titles := []string{}
+        for v := 0; v < 6; v++ {
+                for i := 1; i <= 30; i++ {
+                        titles = append(titles, fmt.Sprintf("第%d章 卷%d事%d", i, v, i))
+                }
+        }
+        refs, _ := mkR124Refs(titles)
+        vols := make([]string, len(refs))
+        rr := reorderChapterRefsVols(refs, vols, DISORDER_RATIO)
+        if rr.reordered {
+                t.Fatalf("分卷各自编号（56%% 重号签名）不得进容忍路径")
         }
 }

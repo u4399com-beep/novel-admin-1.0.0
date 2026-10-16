@@ -492,6 +492,45 @@ func mergeTocRefs(dst []ChapterRef, add []ChapterRef) []ChapterRef {
         return dst
 }
 
+// mergeTocRefsSiteOrder 站序合并（R124b）：书页内嵌独有章节在前 + walker 全序在后。
+//
+// 形态学：书页内嵌块 = 站方目录「第 1 页」（huangjinwu 实测：内嵌 无id ul.chapter-list
+// = 升序 1-100，分页页 2-14 每页 100 章；biquge 系书页内嵌首页块同理）。walker 种子
+// 从「下一页」起（书页自身即第 1 页，visited 防环标记使页 1 永不被 walker 重抓）→
+// 内嵌独有章节恰为 walker 缺失的「头部页 1 块」，置于 walker 序列之前即还原站方页序：
+// [页1(内嵌独有)] + [页2..N(walker)]。
+//
+// R124 版（walker 在前 + 内嵌补漏追加在尾）对编号唯一书无差（后续 reorderChapterRefs
+// 按序号归位），但分卷各自编号书（卷内重计章号，重排被保守门槛正确拒绝）会永远停在
+// 「卷一后段..卷N + 卷一页1块(尾)」的错序——顺序只能来自站方 DOM 序，本函数使重扫
+// 直接落站序，不依赖重排。内嵌块中 walker 已覆盖的章节（最新 12 章回链等）被剔除，
+// 不在前缀残留乱序段。
+func mergeTocRefsSiteOrder(walker []ChapterRef, embedded []ChapterRef) []ChapterRef {
+        walkerSeen := make(map[string]bool, len(walker))
+        for _, r := range walker {
+                if r.URL != "" {
+                        walkerSeen[stripURLHash(r.URL)] = true
+                }
+        }
+        head := make([]ChapterRef, 0, len(embedded))
+        headSeen := make(map[string]bool, len(embedded))
+        for _, r := range embedded {
+                if r.URL == "" {
+                        continue
+                }
+                key := stripURLHash(r.URL)
+                if walkerSeen[key] || headSeen[key] {
+                        continue
+                }
+                headSeen[key] = true
+                head = append(head, r)
+        }
+        if len(head) == 0 {
+                return mergeTocRefs(nil, walker)
+        }
+        return mergeTocRefs(head, walker)
+}
+
 // tocWalkerRetryBackoffMS walker 退化整轮重试退避（R86）
 const tocWalkerRetryBackoffMS = 5_000
 
