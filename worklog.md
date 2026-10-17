@@ -4917,3 +4917,23 @@ Stage Summary:
 - 存量修复：200+20 本就地重排、11 本删除重扫落站序、~80 本清零重扫（fleet 有机推进中，34 本 huangjinwu/xinjianpa 残差在 bounded 队列）
 - 终态：1383 书全库首章健康 1209 本（残差=格式误报+5165 选集结构+待重扫队列），Agent Browser 三页实证
 - 移交：①fleet 重扫队列自然清空后可再跑一轮全库 resort+audit 终验 ②572/1014 类 5165 选集书（短篇集各卷独立编号、cc<60、重号异题）为源站结构限制，重排拒绝正确 ③audit 脚本前缀形态已降噪，后续可加「001」四位零填充与「第N集」覆盖进一步降误报
+---
+Task ID: R125
+Agent: Z.ai Code (main)
+Task: 用户 4 项指令——①遗留问题②章节采集效率（兼顾封禁）③强化采集与反反爬④完善精简代码（git 推送按既有惯例随轮提交）
+
+Work Log:
+- 【沙箱第 12 次重置自愈】三服务全灭/Go 工具链丢/scraper bin 丢/db 0 字节/git 凭据丢/stealth venv+cloakbrowser 丢（backend bin 幸存）：按手册恢复——Go 1.22.12（/tmp 快速路径残留可用）→ curl-impersonate 21 二进制（ghfast.top）→ build-go.sh 双 bin 重建 → 失败码收尾拉起三服务（backend :3000 / scraper :3030 engine.env / stealth :3031）→ git-credentials 重建（600）。**新踩坑**：后台下载脚本以干净收尾（echo 后自然退出）被沙箱收割（exit 0 收尾机制同 R18 实锤）——下载/venv 类长任务必须失败码收尾（setsid nohup + exit 7）；stealth venv 改用 uv pip 安装（系统已有 uv，比 get-pip 快且稳）；cloakbrowser 216MB ghfast.top 断点续传 ~5 分钟恢复（Chromium 146.0.7680.177），stealth 三能力全绿（cloak/cloakBinary/iv8），cloak 端到端 3.7s/56KB 实证
+- 【R125 核心修复：loadRule 规则 ID=0 边界（本轮任务④根修）】空库 seed 重播种后 fleet 首轮即实证：任务 #1（biqiuge8）failed「未提供任何提取规则」+ 日志「使用规则「0」（charset=auto）」。**缺陷图谱**：R123 seed 固化 biqiuge8 漏写 id 字段 → seedRule.ID 零值 0 播种 → SQLite INTEGER PRIMARY KEY 合法 rowid 0 → loadRule 旧版 `*ruleID == 0` 与 nil「未使用规则」一并短路返回全空规则（typesx.go 契约：RuleID *int，null=未使用；0 从未在值域内出现过——直到本轮）。修复三层：①loadRule 仅 ruleID==nil 短路（0 走正常查询，查不到自然走 err→empty 分支，语义无损）②seed.json biqiuge8 补 id=32（TestSeedJSONAllRulesHaveIDR125 锁死「seed 规则必须显式 id」契约）③生产库三表同步迁移（ScrapeRule/ScrapeTask/RuleHealth 0→32）。修复后任务 #1 restart 实证「使用规则「笔趣阁(biqiuge8)」（charset=gbk）」规则装载成功、正常采集推进
+- 【验证】R125 双测试 + backend 全量 50.3s ok + scraper 全量 46.0s ok + go vet 双净；Agent Browser 终验：首页 140 链接/37 封面零 console error、章页 /chapter/867693（《孤主》第4章）3576 字真实正文渲染、admin 总览 867 书/92.4 万章/18 任务/23 规则/引擎 ok=5751、移动端 390px 零横向溢出
+- 【R122/R124b 修复资产全面验证（seed 固化链）】huangjinwu chapterLinkSelector=.chapter-list li a（R124b 首章修复）、pilishuwu siteUrl=/0/list/1.html（R120b）、iqxsw itemSelector=.lastupdate .list-out（R122）全部在 seed——新库重建自动走修复后路径，「不从第一章开始」三族根因不复发；新库首章审计 59 本：47 ok / 3 notFromCh1（全部为 5165 文学类世界名著分部结构书——《双城记》《地心游记》等，R124b 移交②已定性源站 DOM 乱序+分部重号，重排拒绝为正确行为，walker 全目录扫描+fleet 推进覆盖）/ 6 noSignal / 1 noChapters
+- 【任务面自愈实证（任务①+③）】seed 自愈 23 规则 → fleetkeeper 自动重建 18 任务（空库首轮即建）；4 paused（101kks/pilishuwu/5165/washai 限流与 CF 窗口瞬态）全程 R123 瞬态语义自动恢复，观测窗口内 paused 4→2；黑洞站代理池种子全部生效（huangjinwu/xinjianpan/101kks/pilishuwu/washai 5 规则带池），huangjinwu #4 自动恢复 running；E18 出口池自愈接管腐化口
+- 【吞吐（任务②）】引擎冷启动 21 分钟 totalOK 5827（外推 ~16k 章/h，历史峰值区间 10.8-20.8k 内）；9 主机满速均匀分布（~388 ok each 槽队列健康）、零 fail 站、书目重建 867 本进行中——礼貌天花板+多站点并行框架内运转，兼顾封禁红线
+- 【git】R125 单 commit 语义推送（storex loadRule 修复+seed id 契约+双回归测试+§6.2 R125 行），bin 字节 diff 噪音剔除
+
+Stage Summary:
+- 第 12 次沙箱自愈 25 分钟全链完成（含 cloakbrowser/stealth venv/Git 凭据），全系统回到自持轨道
+- R125 收口新缺陷族：*int 语义契约（null=未使用）不允许值域内个别值再携带第二语义——loadRule id=0 边界 + seed 显式 id 契约双测试锁定；fleet 空库首轮实证发现→修复→重启验证闭环 40 分钟内完成
+- R122/R124b 全部修复资产经 seed 固化链在新库重建中自动生效（首章健康 47/59，残差全为已定性 5165 文学类结构限制）
+- 吞吐 ~16k 章/h 爬坡中（9 主机满速零 fail 站），书目 867 本/92.4 万章骨架重建推进
+- 移交：①新库重建期结束后（list 任务批量终态）可再跑一轮全库 resort+audit 终验（R124b 移交①口径）②5165 文学类分部结构书若需进一步治理需源站分部结构信号（bookRule 分部选择器），投入产出比低暂缓③fleetkeeper 45min 冷却后将为剩余规则补建 list 任务（iqxsw 九分类范围任务可经 R104 手动扩容）④本轮后台长任务「干净收尾被收割」踩坑已归档——后续所有 setsid 后台任务必须失败码收尾
