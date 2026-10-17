@@ -291,6 +291,7 @@
       "insecureTLS": false
     },
     {
+      "id": 32,
       "name": "笔趣阁(biqiuge8)",
       "siteUrl": "https://www.biqiuge8.com/xuanhuanxiaoshuo/",
       "charset": "gbk",

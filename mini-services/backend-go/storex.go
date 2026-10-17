@@ -137,9 +137,13 @@ func safeParseRule(s string) RuleMap {
 }
 
 // loadRule 加载 ScrapeRule → LoadedRule（未配置/加载失败 → 全空规则，走引擎内置启发式）
+// R125: 仅 ruleID==nil 语义为「未使用规则」（typesx.go RuleID 契约）。旧版 *ruleID==0
+// 一并短路——但 0 是合法规则 ID（seed 固化漏写 id 字段时播种为 0，SQLite INTEGER
+// PRIMARY KEY 允许 rowid 0），实证 biqiuge8 规则 id=0 → 任务 loadRule 空规则 →
+// 「未提供任何提取规则」failed。查询不到时 err 分支本就返回 empty，语义无损。
 func loadRule(ruleID *int) LoadedRule {
         empty := LoadedRule{ListRule: RuleMap{}, BookRule: RuleMap{}, ChapterRule: RuleMap{}}
-        if ruleID == nil || *ruleID == 0 {
+        if ruleID == nil {
                 return empty
         }
         var name, charset, proxy, cookies, listRule, bookRule, chapterRule, mirrorHosts, siteURL sql.NullString
