@@ -46,16 +46,20 @@ trap 'rm -rf "$WORK"' EXIT
 TGZ="$WORK/main.tar.gz"
 
 say "下载源码 tarball ..."
+# R127 修复：旧版 `$TAR_OK` 未加测试语法（展开为 1 被 bash 当命令执行→「1: command not
+# found」→条件恒假，成功下载也被丢弃）且首次失败后 TGZ="" 使后续尝试 curl -o 空参数——
+# 远程一键命令自 R98 起潜伏损坏，/tmp 端到端演练实证后根修：TAR_OK 用 [ -eq ] 测试语法，
+# TGZ 全程恒定路径，每轮尝试前 rm -f 保证幂等重试。
 for u in "${REPO_TARBALL_BASES[@]}"; do
   say "  尝试: $u"
+  rm -f "$TGZ"
   # shellcheck disable=SC2086
-  if $FETCH "$TGZ" "$u" && $TAR_OK && tar -tzf "$TGZ" >/dev/null 2>&1; then
+  if $FETCH "$TGZ" "$u" && [ "$TAR_OK" -eq 1 ] && tar -tzf "$TGZ" >/dev/null 2>&1; then
     say "  下载成功"; break
   fi
   rm -f "$TGZ"
-  TGZ=""
 done
-[ -n "${TGZ:-}" ] && [ -s "$TGZ" ] || { echo "[bootstrap] FAIL: 全部下载源失败（ghfast.top/gh-proxy.com/ghproxy.net/直连均不可达，请检查网络或更换镜像前缀）" >&2; exit 1; }
+[ -s "$TGZ" ] || { echo "[bootstrap] FAIL: 全部下载源失败（ghfast.top/gh-proxy.com/ghproxy.net/直连均不可达，请检查网络或更换镜像前缀）" >&2; exit 1; }
 
 say "解压 ..."
 tar -C "$WORK" -xzf "$TGZ"
