@@ -12,10 +12,12 @@ import json, re, sys, time, urllib.request
 
 BASE = "http://127.0.0.1:3000"
 CN = "零〇一二两三四五六七八九十百千万"
-RE_NO = re.compile(r"^第\s*([0-9０-９]{1,7}|[%s]{1,12})\s*[章节回话]" % CN)
+RE_NO = re.compile(r"^第\s*([0-9０-９]{1,7}|[%s]{1,12})\s*[章节回话集]" % CN)
 # R124b: 与 backend-go parseChapterNo 同族的纯数字前缀形态（"123."/"123、"/"1 丶"/"001章"）——
 # 源站章名前缀格式多样，旧版只认 第N章 导致大量首章为 1 的书被误报 NOT_FROM_CH1
 RE_PREFIX = re.compile(r"^([0-9０-９]{1,5})\s*[.、丶]\s*\S")
+# R126: 空格分隔纯数字前缀（"001 李知行"/"12 大结局"）——零填充四位形态归一 int 后无歧义
+RE_SPACE_NO = re.compile(r"^([0-9０-９]{1,5})\s+(?!\d)\S")
 RE_PLAIN_CH = re.compile(r"^([0-9０-９]{1,5})\s*章")
 RE_PRELUDE = re.compile(r"^(序章?|楔子|前言|引子|Prologue|作品相关|内容简介|上架感言|完本感言|终章|尾声|番外)", re.I)
 
@@ -42,6 +44,12 @@ def cn2int(s):
     return total + section + num
 
 
+# R126: 倒装「章N」形态（"章一 绯色之夜"——烟雨江南系常见）与卷前缀复合形态
+#（"第一卷下视人间世 第1章 赌"——剥卷前缀后递归）均为实际 OK 书的误报降噪
+RE_HOU_ZHUANG = re.compile(r"^章\s*([0-9０-９]{1,7}|[%s]{1,12})(?!\S*[章节回话集])" % CN)
+RE_VOLUME_PREFIX = re.compile(r"^第\s*([0-9０-９]{1,4}|[%s]{1,8})\s*卷\s*\S{0,20}?\s+" % CN)
+
+
 def parse_no(title):
     t = (title or "").strip()
     m = RE_NO.match(t)
@@ -51,9 +59,14 @@ def parse_no(title):
             return v if 0 <= v < 99_999_999 else None
         except Exception:
             return None
-    m = RE_PREFIX.match(t) or RE_PLAIN_CH.match(t)
+    m = RE_PREFIX.match(t) or RE_PLAIN_CH.match(t) or RE_SPACE_NO.match(t)
     if m:
         return int(m.group(1).translate(str.maketrans("０１２３４５６７８９", "0123456789")))
+    m = RE_HOU_ZHUANG.match(t)
+    if m:
+        return cn2int(m.group(1))
+    if RE_VOLUME_PREFIX.match(t):
+        return parse_no(RE_VOLUME_PREFIX.sub("", t, count=1))
     return None
 
 

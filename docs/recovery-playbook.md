@@ -12,6 +12,23 @@
 > `bash scripts/build-go.sh` → `bash scripts/recover-r26.sh`（失败码收尾拉起双服务+看护）→
 > `python3 scripts/probe-sites.py`（连通性普查，可选）→ `python3 scripts/create-fleet.py`
 > （13 规则舰队重建）→ 1-2min 后观测骨架/填充即恢复增长。E18/E25 池自愈+E26 舰队自持随后接管。
+>
+> **⚠️ bin 与源码同步原则（R126 第 13 次恢复实证，血泪教训）**：`mini-services/backend-go/bin/backend-go`
+> 是被 git 跟踪的部署物——沙箱重置后 backend 二进制幸存**全靠 git 里的 bin**。改源码（含 seed.json）
+> 后 commit 时**禁止** `git checkout -- bin/*` 剔除字节 diff（R125 犯此错：storex.go+seed.json 修复
+> 已 commit，但 bin 被 checkout 回退成 R124b 旧版——内嵌旧 seed（go:embed 构建快照）+旧 loadRule；
+> 当时进程还在内存里跑新代码所以验证全绿，沙箱重置后旧 bin 暴露 → 任务「未提供任何提取规则」failed
+> 复现）。**正确姿势**：源码变更 → 重构建 → **新 bin 一并 commit**（bin 与源码原子同步）。
+> 仅重编译无源码变更时才可 checkout 剔噪（R123 口径）。
+>
+> **后台长任务收割（R126 再实证）**：`setsid nohup ... &` + 干净收尾（exit 0）→ 进程 40-115s 内被
+> 收割（R18 机制）。失败码收尾（exit 7）在本轮两次实测仍偶发失效——**长下载改前台同步**（Bash 工具
+> timeout 收尾即失败码，`curl -C -` 断点续传跨调用接力）最可靠。
+>
+> **IM 网关吞字符变体（R126 实锤）**：Bash 工具输出回传路径上 `[h` 等序列可能被吞（R121「吞 a」
+> 的变体）——肉眼看到「语法损坏」先别动手改文件：`python3 -c "import ast; ast.parse(...)"` 权威校验
+> + Read 工具（不同回传路径）复核。R126 实测：Bash 输出显示 `"headNums":  for h in...`（缺 `[h`），
+> 实际文件完好（ast.parse OK + Read 显示正常）。**写入用 Edit/Write 工具（不经 IM 文本）始终安全。**
 
 ## 1. Go 工具链重装（原路径）
 

@@ -4937,3 +4937,25 @@ Stage Summary:
 - R122/R124b 全部修复资产经 seed 固化链在新库重建中自动生效（首章健康 47/59，残差全为已定性 5165 文学类结构限制）
 - 吞吐 ~16k 章/h 爬坡中（9 主机满速零 fail 站），书目 867 本/92.4 万章骨架重建推进
 - 移交：①新库重建期结束后（list 任务批量终态）可再跑一轮全库 resort+audit 终验（R124b 移交①口径）②5165 文学类分部结构书若需进一步治理需源站分部结构信号（bookRule 分部选择器），投入产出比低暂缓③fleetkeeper 45min 冷却后将为剩余规则补建 list 任务（iqxsw 九分类范围任务可经 R104 手动扩容）④本轮后台长任务「干净收尾被收割」踩坑已归档——后续所有 setsid 后台任务必须失败码收尾
+---
+Task ID: R126
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题②章节采集效率（兼顾封禁）③强化采集与反反爬④完善精简代码⑤推送 git
+
+Work Log:
+- 【沙箱第 13 次重置自愈】全灭清单同前（db/scraper bin/cloakbrowser/凭据/Go 工具链；backend bin 幸存）；Go 1.22.12（golang.google.cn /tmp）→ curl-imp 21 二进制 → scraper bin 重建 → 三服务失败码拉起 → git-credentials 重建 → stealth venv（uv pip）+ cloakbrowser 216MB 前台同步下载恢复（Chromium 146 实证）→ seed 23 规则自愈 + fleetkeeper 自动重建 18 任务；stealth 三能力全绿 + cloak e2e 4.1s/55KB 实证
+- 【R125 修复失效根因实锤（本轮最重要发现）】任务 #1（biqiuge8）「未提供任何提取规则」在全新库复现——DB 里 biqiuge8 又是 id=0！根因：R125 commit 时 `git checkout -- bin/backend-go`（剔除字节 diff 噪音的旧惯例）把**部署的 bin 回退成 git 里的 R124b 旧版**——go:embed 构建快照内嵌旧 seed（无 id）+ 旧 loadRule（id=0 短路）；当时进程内存里还是新代码所以上轮验证全绿，沙箱重置后旧 bin 暴露。**修复**：重构建 bin（实测内嵌 `"id": 32`）+ DB 三表迁移（0→32）+ restart + 任务 #1 restart 实证「使用规则「笔趣阁(biqiuge8)」（charset=gbk）」；**bin 与源码同步原则写入 recovery-playbook 头部血泪教训**（源码变更→新 bin 一并 commit 原子同步；仅重编译无源码变更才可 checkout 剔噪）
+- 【后台长任务收割（R126 再实证）】setsid+exit 7 两次实测仍偶发被收割（cloakbrowser 下载两次夭折）——改**前台同步下载**（Bash timeout 收尾=失败码 + curl -C - 断点续传跨调用接力）一次到位；手册已记
+- 【IM 网关吞字符变体实锤】Bash 工具输出回传路径上 `[h` 序列被吞（R121「吞 a」变体）——audit 脚本肉眼「语法损坏」假象，ast.parse + Read 工具复核实为完好；手册已记「先权威校验再动手」守则
+- 【任务②效率：候选普查 + iqxsw 九分类扩容】19 站普查（fetch-curl）：6 站可达；81zw2 深挖=经典 biqiuge 系（.item 块 og 结构清晰）但**全站无翻页**（4 分类×66-100 本 ≈400 本封顶，ROI 低记录在案）；booktxt/uuxsw 直探不稳+规模小、shukeju TCP 不可达、zongheng/hongxiu 阅文系版权区暂缓——本轮无高价值新站（R116 路线诚实结论：普查接续，非每轮必得）。**主力扩容=iqxsw 九分类**：cat2-10 R104 范围任务 9 个（#19-27，pageFrom=1 pageTo=15，%7Bpage%7D 占位符形态），全部 running
+- 【任务③反反爬】E18 出口池自愈实证：huangjinwu 池扩至 10 口（种子 5+E18 补位 5）、xinjianpan 4 口、101kks 4 口（102.244.78.61 ×3 重复——候选去重可优化记录在案）；黑洞站 #6 xinjianpan running 46/192 推进、#4 huangjinwu partial 慢速推进（历史 okr=90% 口径维持）；101kks/pilishuwu CF 窗口 bounded 自愈轨道
+- 【任务④精简：审计脚本降噪增强（R124b 移交③闭环）】parse_no 三形态扩展：①空格分隔纯数字前缀（「001 李知行」）②倒装「章N」（「章一 绯色之夜」——烟雨江南系，负向先行断言防「章鱼哥」误判）③卷前缀复合递归（「第一卷下视人间世 第1章 赌」→剥卷→1）+「第N集」覆盖（RE_NO 字符类加集）；16/16 用例全过（含 4 负例）；**新库终验审计：60 本 → 59 ok / 0 notFromCh1 / 1 noSignal（天珠变作者公告混目录=源站结构如实）——R124/R124b 三族根因修复在新库全面生效的权威实证**
+- 【验证】Agent Browser 终验：首页 140 链接/38 封面零 console error、章页 /chapter/606668（书448 第67章）5867 字真实正文（867693 空骨架=新库 ID 复用未填充的正确语义）、移动端 390px 零横向溢出、admin 683 书/89.9 万章/23 规则；引擎 21.4min totalOK 6011（外推 ~16.8k 章/h 历史峰值区间内）
+- 【git】R126 单 commit（bin 与源码原子同步 + 审计脚本降噪 + 恢复手册三守则 + worklog）
+
+Stage Summary:
+- 第 13 次自愈 + R125 修复失效根因（bin checkout 回退）闭环——「bin 与源码同步原则」固化为手册头部守则，此类「验证全绿但部署物陈旧」的隐形地雷拆除
+- iqxsw 九分类全量扩容运行中（10 任务 cat1-10，3200 本/轮潜力），iqxsw 单站扩容至全分类
+- 新库首章终验 0 notFromCh1：R124/R124b 修复资产经 seed 固化链全面生效，审计脚本降噪三形态 16/16 用例
+- 吞吐 ~16.8k 章/h（9+ 主机满速，礼貌天花板框架内）；书目 683 本/89.9 万章重建爬坡
+- 移交：①iqxsw 九分类首轮 15 页/分类完成后可评估 pageTo 扩容（部分分类深度>15 页）②E25 候选去重（101kks 池同 IP 异端口 ×3）③新站普查每轮接续（81zw2 可作为「无翻页小站」兜底候选，规则成本低可随时补位）④5165 文学类分部结构定性维持（R124b 移交②）
