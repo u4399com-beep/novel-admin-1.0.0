@@ -2,23 +2,27 @@
 # =============================================================================
 # bootstrap-cn.sh —— novel-admin 零前提一键部署引导（服务器连 git 都没有也能跑）
 # =============================================================================
-# 一条命令完成「下载源码 → 部署」：
+# 一条命令完成「下载源码 → 部署」（R127 起预构建快速路径：glibc>=2.34 免装 Go 秒级起服务）：
 #   bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
-#   （无 curl 用 wget 变体：
+#   （ghfast.top 失效时实测可用镜像：gh-proxy.com / ghproxy.net，替换 URL 前缀即可；
+#   无 curl 用 wget 变体：
 #   bash -c "$(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"）
 # 可选参数：目标目录（默认 ~/novel-admin）：
 #   bash -c "$(curl -fsSL ... )" /opt/novel-admin   ← 经 bash -c 传参见 docs/deployment.md §0.1
 #
 # 行为：
-#   1. GitHub archive tarball 下载（ghfast.top 加速 → 直连兜底）
+#   1. GitHub archive tarball 下载（镜像候选链：ghfast.top → gh-proxy.com → ghproxy.net
+#      → 直连，任一成功即走——防单镜像死亡）
 #   2. 解压并覆盖安装到目标目录 —— db/、public/covers/、download/、.env 数据产物
 #      永不覆盖（重复执行 = 无 git 升级；有 git 服务器更推荐 bash scripts/upgrade.sh）
-#   3. 调用 scripts/deploy-cn.sh 完成依赖/Go/构建/启动/健康检查全链
+#   3. 调用 scripts/deploy-cn.sh 完成依赖/构建(或预构建直取)/启动/健康检查全链
 # =============================================================================
 set -euo pipefail
 
 REPO_TARBALL_BASES=(
   "https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz"
+  "https://gh-proxy.com/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz"
+  "https://ghproxy.net/https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz"
   "https://github.com/u4399com-beep/novel-admin-1.0.0/archive/refs/heads/main.tar.gz"
 )
 TARGET_DIR="${BOOTSTRAP_TARGET:-$HOME/novel-admin}"
@@ -51,7 +55,7 @@ for u in "${REPO_TARBALL_BASES[@]}"; do
   rm -f "$TGZ"
   TGZ=""
 done
-[ -n "${TGZ:-}" ] && [ -s "$TGZ" ] || { echo "[bootstrap] FAIL: 全部下载源失败（ghfast.top/直连均不可达）" >&2; exit 1; }
+[ -n "${TGZ:-}" ] && [ -s "$TGZ" ] || { echo "[bootstrap] FAIL: 全部下载源失败（ghfast.top/gh-proxy.com/ghproxy.net/直连均不可达，请检查网络或更换镜像前缀）" >&2; exit 1; }
 
 say "解压 ..."
 tar -C "$WORK" -xzf "$TGZ"

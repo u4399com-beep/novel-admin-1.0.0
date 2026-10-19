@@ -17,13 +17,19 @@
 
 ---
 
-## 0. 国内服务器一键部署（最快路径，R90）
+## 0. 国内服务器一键部署（最快路径，R90；R127 预构建快速路径）
 
 > 一条命令完成：系统依赖 → Go 1.22（阿里云镜像）→ Go 模块代理（goproxy.cn）→ 构建双服务 →
 > curl-impersonate 军火（GitHub 镜像候选链）→ 启动 + 看护 → 健康检查。**git clone 到任意路径均可**，
 > 路径由可执行文件位置自动推断（`paths.go` 解析链 + 脚本 `scripts/ensure-services.sh` 自适应）。
+>
+> **★ R127 预构建快速路径**：仓库自带 `bin/{backend-go,scraper-go}`（与源码原子同步提交的官方发布物）。
+> 服务器 **glibc ≥ 2.34**（Ubuntu 22.04+ / Debian 12+ / CentOS Stream 9+ / Rocky/Alma 9）时，
+> 部署脚本直接取用预构建二进制——**Go 都不用装、零编译，一键安装 ~6 分钟 → ~1 分钟**。
+> 架构不匹配（如 arm 服务器跑 x86 bin）/ glibc 过低（Debian 11、Ubuntu 20.04）/ 显式 `--build`
+> 时自动回退源码构建路线，行为与 R126 前完全一致，无需任何手工干预。
 
-### 0.1 一键命令（R98 重生成）
+### 0.1 一键命令（R127 重生成）
 
 > **零前提一条命令**（服务器连 git 都没有也行，curl/wget 有了就能跑；幂等：重复执行 = 升级，
 > db/、public/covers/、download/、.env 数据产物永不覆盖）：
@@ -39,6 +45,10 @@ bash -c "$(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/u4399c
 BOOTSTRAP_TARGET=/opt/novel-admin bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
 ```
 
+> ghfast.top 失效时（这类加速镜像时常换域名），把 URL 前缀替换为实测可用的
+> `https://gh-proxy.com/` 或 `https://ghproxy.net/` 即可（R127 起 bootstrap/deploy 内部
+> 下载也已内置同一镜像候选链，单镜像死亡不再阻塞安装）。
+>
 > 手动引导（等价于 ①，bootstrap-cn.sh 不可达时备用）：
 
 ```bash
@@ -62,23 +72,27 @@ git clone https://ghfast.top/https://github.com/u4399com-beep/novel-admin-1.0.0.
 # 生产推荐：systemd 托管（Restart=always，开机自启）
 bash scripts/deploy-cn.sh --systemd
 
-# 可选参数：--port 3000（改端口）、--skip-build（跳过构建复用既有二进制）
+# 可选参数：--port 3000（改端口）、--skip-build（跳过部署复用宿主既有 .bin）、
+#           --build（强制源码构建，忽略 R127 预构建快速路径）
 ```
 
 ### 0.2 脚本行为与国内加速点
 
 | 步骤 | 国内加速 | 兜底 |
 |---|---|---|
-| Go 下载 | `mirrors.aliyun.com/golang` | `golang.google.cn` → `go.dev` |
-| Go 模块 | `GOPROXY=https://goproxy.cn,direct` + `GOTOOLCHAIN=local` | direct 直连 |
+| 二进制获取（R127） | 仓库预构建 bin 直取（零编译，glibc≥2.34 时优先） | 源码构建（goproxy.cn，自动回退） |
+| Go 下载（仅源码构建时） | `mirrors.aliyun.com/golang` | `golang.google.cn` → `go.dev` |
+| Go 模块（仅源码构建时） | `GOPROXY=https://goproxy.cn,direct` + `GOTOOLCHAIN=local` | direct 直连 |
 | curl-impersonate | `ghfast.top` / `gh-proxy.com` / `ghproxy.net` 镜像链 | GitHub 直连 |
+| bootstrap tarball 下载（R127） | `ghfast.top` → `gh-proxy.com` → `ghproxy.net` 候选链 | GitHub 直连 |
 | git clone | 建议镜像前缀（见上） | 官方直连 |
 
-- **幂等**：重复执行 = 重新构建 + 滚动重启，DB/封面/TXT 数据在 repo 内不受影响。
-- **升级（推荐，R98 新增）**：`cd /opt/novel-admin && bash scripts/upgrade.sh`
-  （= git fetch/reset 到远程最新 + stash 本地改动 + 重建 + 幂等重启 + 健康检查 + **失败自动回滚**升级前 commit；
+- **幂等**：重复执行 = 预构建/重新构建 + 滚动重启，DB/封面/TXT 数据在 repo 内不受影响。
+- **升级（推荐，R98 新增；R127 预构建加速）**：`cd /opt/novel-admin && bash scripts/upgrade.sh`
+  （= git fetch/reset 到远程最新 + stash 本地改动 + 部署（glibc≥2.34 时直接用 git pull 同步拉到的新预构建 bin，零编译）+ 幂等重启 + 健康检查 + **失败自动回滚**升级前 commit；
   可指定目标：`bash scripts/upgrade.sh v1.0.1`；无 git 的 tarball 服务器：重跑 §0.1 引导命令，数据目录自动保留）。
-- **arm64**：全流程支持；仅 curl-impersonate 官方无 v0.6.1 arm64 构建，该策略自动降级（引擎多车道不受影响）。
+- **arm64**：全流程支持；仅 curl-impersonate 官方无 v0.6.1 arm64 构建，该策略自动降级（引擎多车道不受影响）。预构建 bin 按架构自动匹配（ELF e_machine 检测），arm 服务器自动走源码构建直至仓库提供 arm64 发布物。
+- **bin 与源码同步原则（R126 固化）**：仓库内 `bin/{backend-go,scraper-go}` 是与源码原子同步提交的官方发布物——源码变更时同 commit 内重构建 bin；这是预构建快速路径可信的前提（详见 docs/recovery-playbook.md 头部守则）。
 - **路径解析链**（backend-go `paths.go`）：环境变量（`DB_PATH`/`TXT_ROOT`/`COVERS_DIR`/`WEB_ROOT`）> 可执行文件位置推断 > 沙箱默认。与 `scripts/ensure-services.sh` 的注入同源，改端口/路径只需环境变量。
 
 ---

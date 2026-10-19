@@ -4959,3 +4959,22 @@ Stage Summary:
 - 新库首章终验 0 notFromCh1：R124/R124b 修复资产经 seed 固化链全面生效，审计脚本降噪三形态 16/16 用例
 - 吞吐 ~16.8k 章/h（9+ 主机满速，礼貌天花板框架内）；书目 683 本/89.9 万章重建爬坡
 - 移交：①iqxsw 九分类首轮 15 页/分类完成后可评估 pageTo 扩容（部分分类深度>15 页）②E25 候选去重（101kks 池同 IP 异端口 ×3）③新站普查每轮接续（81zw2 可作为「无翻页小站」兜底候选，规则成本低可随时补位）④5165 文学类分部结构定性维持（R124b 移交②）
+---
+Task ID: R127
+Agent: Z.ai Code (main)
+Task: 用户指令——更新一键安装命令，推送 git
+
+Work Log:
+- 【镜像实测】ghfast.top / gh-proxy.com / ghproxy.net 三镜像 raw+archive 双探针全 200（ghproxy.cc、gh.llkk.cc 超时不可用）；GitHub 直连 archive 302 正常——以此实测数据定候选链，不拍脑袋
+- 【核心发现：预构建 bin 已在库】git ls-files 实证 mini-services/{backend-go,scraper-go}/bin/* 双二进制自 R126 起「与源码原子同步」提交在库（x86-64 ELF），但 deploy-cn.sh 一直无视它们、每次都装 Go+源码构建（~6 分钟）；objdump 符号分析实证 glibc 依赖地板 = GLIBC_2.34（Ubuntu 22.04+/Debian 12+/CentOS Stream 9+ 满足；Debian 11/Ubuntu 20.04 不满足）
+- 【deploy-cn.sh R127 重生成】预构建快速路径：USE_PREBUILT 检测（双 bin 存在 + ELF e_machine 3e00/b700 匹配 GOARCH + getconf GNU_LIBC_VERSION ≥ 2.34，musl 无输出视为不满足）→ 命中则 bin/→.bin 直接 cp（零编译 ~10 秒，Go 工具链整个跳过）；[2/7] 条件化、[3/7][4/7] 三分支（--skip-build 复用宿主 .bin 优先 → 预构建 cp → 源码构建）、汇总区显示部署形态；新参数 --build 强制源码构建逃生舱（与 --skip-build 语义区分：前者强制构建，后者复用宿主既有 .bin）
+- 【bootstrap-cn.sh】tarball 下载扩为 4 候选镜像链（ghfast.top → gh-proxy.com → ghproxy.net → 直连，防单镜像死亡）；头注释同步快速路径说明与实测镜像提示
+- 【upgrade.sh 升级链路同吃红利】[3/6] 预构建分支（STASHED=0 + 双 bin + 架构 + glibc 检测 → git pull 已同步拉到新 bin，升级零编译；有本地 stash 强制源码构建防源码/bin 错位）+ [4/6]/rollback 按形态分派（预构建 → deploy-cn.sh 快速路径；源码 → build-go.sh + --skip-build）
+- 【端到端演练（干净环境实证）】①快速路径：/tmp 干净副本 FLEETKEEPER_OFF=1 --port 3999 全链跑通——[2/7]「预构建快速路径：跳过（arch=amd64 glibc=2.41）」→ [3/7,4/7] bin→.bin 零编译 → 健康检查 200、空库自动播种 23 规则、首页 200、--help 完整（单机沙箱 :3030 的 200 为生产引擎应答，真实服务器无此歧义）②回退路径：移走 bin 后重跑，正确进入 Go 安装分支（沙箱无 /usr/local 写权限致安装失败 = 环境限制非脚本缺陷，真实服务器该路线 13 次自愈实证）③演练零接触生产（3000/3030/3031 全程 200），事后清场净
+- 【文档】docs/deployment.md §0 标题/引言（R127 快速路径 + glibc 适用矩阵）、§0.1（R127 重生成 + 镜像失效换前缀指引）、§0.2 加速表（二进制获取/bootstrap 候选链两新行 + Go 行标注仅源码构建时）+ bin 与源码同步原则 + arm64 预构建匹配说明
+
+Stage Summary:
+- 一键安装命令 URL 形态不变（bash -c "$(curl -fsSL ghfast.top/.../bootstrap-cn.sh)"），但实质升级：glibc≥2.34 服务器免装 Go 零编译 ~6 分钟 → ~1 分钟；ghfast.top 死亡不再阻塞（bootstrap/部署内部双镜像候选链）
+- 预构建 bin 从「R126 的版本管理资产」升格为「R127 的分发渠道」——bin 与源码同步原则（R126 固化）成为快速路径可信前提，文档双向链接
+- 演练实证：快速路径全绿（健康 200/23 规则播种/首页 200），回退路径正确触发，生产零扰动
+- 移交：①真实服务器首次安装时长数据待用户反馈（预期 ~1 分钟内）②arm64 发布物（bin/linux-arm64/）可后续按同模式扩展，当前 arm 自动回退源码构建③upgrade.sh 有本地 stash 时强制源码构建是保守正确行为，若未来提供「stash 场景预构建+提示」需重新评估源码/bin 错位风险

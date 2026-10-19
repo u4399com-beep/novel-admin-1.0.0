@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy-cn.sh —— 国内服务器一键部署（novel-admin 全 Go 架构）R98 重生成
+# deploy-cn.sh —— 国内服务器一键部署（novel-admin 全 Go 架构）R127 重生成
 # =============================================================================
-# 适用：全新 Ubuntu 22.04+/Debian 11+/CentOS Stream 9+/Rocky/Alma 9（x86_64/arm64）
+# 适用：全新 Ubuntu 22.04+/Debian 12+/CentOS Stream 9+/Rocky/Alma 9（x86_64/arm64）
+#   ——预构建快速路径需 glibc >= 2.34；更低版本（Debian 11/Ubuntu 20.04）自动回退
+#   源码构建路线（行为与 R126 前一致），无需任何手工干预。
 # 做什么（全程国内镜像加速，可重复执行=幂等升级）：
 #   [1/7] 系统依赖     git/curl/tar（apt/dnf 自动装，缺什么补什么）
 #   [2/7] Go 工具链    >=1.22，阿里云镜像 mirrors.aliyun.com/golang，装 /usr/local/go
+#                      （预构建快速路径命中时整个跳过——Go 都不用装）
 #   [3/7] Go 模块代理  GOPROXY=https://goproxy.cn,direct（sumdb 校验经代理透传不降级）
-#   [4/7] 构建双服务   backend-go.bin(:3000 页面+API+采集runner) + scraper-go.bin(:3030 引擎)
-#   [5/7] 反反爬军火   curl-impersonate 21 二进制 → ~/.local/bin（GitHub 镜像候选链）
+#   [4/7] 部署双服务   backend-go.bin(:3000 页面+API+采集runner) + scraper-go.bin(:3030 引擎)
+#                      ★ R127 预构建快速路径：repo 自带 bin/{backend-go,scraper-go}
+#                      （与源码原子同步提交），架构+glibc 匹配即直接取用，零编译秒级起服务；
+#                      不匹配/过低 glibc/--build 显式指定 → 走源码构建（goproxy.cn）
+#   [5/7] 反反爬军火   curl-impersonate 21 二进制 → ~/.local/bin（GitHub 镜像候选链；
+#                      快速路径下仍会安装——引擎运行时依赖，与构建无关）
 #   [6/7] 启动 + 看护  默认 nohup+watchdog 自愈循环；--systemd 用 systemd 托管（推荐生产）
 #   [7/7] 健康检查     /api/health + /api/strategies，空库首次启动自动建表+播种
 # 数据安全：DB(db/custom.db)、封面(public/covers)、TXT(download/novels) 全在 repo 内，
@@ -16,8 +23,8 @@
 #
 # ★ 一键部署（零前提，服务器连 git 都不用，curl/wget 有了就能跑）：
 #   bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
-#   ★ wget 变体：
-#   bash -c "$(wget -qO- https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
+#   ★ wget 变体 / ghfast.top 失效时换镜像（实测可用：gh-proxy.com / ghproxy.net）：
+#   bash -c "$(wget -qO- https://gh-proxy.com/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
 #   ★ 指定安装目录（默认 ~/novel-admin）：
 #   BOOTSTRAP_TARGET=/opt/novel-admin bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"
 #
@@ -26,7 +33,8 @@
 #     && cd ~/novel-admin && bash scripts/deploy-cn.sh
 #
 # 日常升级（推荐）：cd ~/novel-admin && bash scripts/upgrade.sh
-#              （= git pull + 重建 + 重启 + 健康检查 + 失败自动回滚）
+#              （= git 拉取 + 构建/预构建部署 + 重启 + 健康检查 + 失败自动回滚；
+#               glibc>=2.34 时同样走预构建快速路径，升级零编译）
 #              无 git 的 tarball 服务器：重跑 bootstrap 一键命令（数据目录自动保留）
 # 卸载看护：--systemd 模式 systemctl disable --now novel-backend novel-scraper；
 #           默认模式 pkill -f watchdog-loop.sh
@@ -37,12 +45,14 @@ set -euo pipefail
 INSTALL_SYSTEMD=0
 PORT=3000
 SKIP_BUILD=0
+FORCE_BUILD=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --systemd)   INSTALL_SYSTEMD=1 ;;
     --port)      PORT="${2:?--port 需要端口号}"; shift ;;
     --skip-build) SKIP_BUILD=1 ;;
-    -h|--help)   sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --build)     FORCE_BUILD=1 ;;
+    -h|--help)   sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数: $1（--help 查看用法）" >&2; exit 2 ;;
   esac
   shift
@@ -103,8 +113,37 @@ command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1 \
   || die "git/curl/tar 不可用且无法自动安装，请手动安装后重试"
 ok "依赖就绪 (git=$(command -v git >/dev/null 2>&1 && echo yes || echo no) curl=$(command -v curl >/dev/null 2>&1 && echo yes || echo no))"
 
+# ---------- 预构建快速路径检测（R127） ----------
+# repo 自带 bin/{backend-go,scraper-go}（R126 起与源码原子同步提交，即官方发布物）。
+# 满足「双 bin 存在 + ELF 架构匹配本机 + glibc>=2.34」时直接取用：
+#   跳过 Go 工具链下载与全部编译，一键安装 ~6 分钟 → ~1 分钟。
+# 不满足或 --build 显式指定 → 自动回退源码构建（与 R126 前行为一致）。
+USE_PREBUILT=0
+GLIBC_VER=""
+if [ "$FORCE_BUILD" -eq 0 ] && [ "$SKIP_BUILD" -eq 0 ] \
+   && [ -x "$ROOT/mini-services/backend-go/bin/backend-go" ] \
+   && [ -x "$ROOT/mini-services/scraper-go/bin/scraper-go" ]; then
+  # ELF e_machine（小端 offset 18）：3e 00=x86-64 / b7 00=aarch64
+  em="$(od -An -tx1 -j18 -N2 "$ROOT/mini-services/backend-go/bin/backend-go" 2>/dev/null | tr -d ' \n')"
+  case "$em" in
+    3e00) PREBUILT_ARCH=amd64 ;;
+    b700) PREBUILT_ARCH=arm64 ;;
+    *)    PREBUILT_ARCH=unknown ;;
+  esac
+  # glibc 地板：bin 依赖 GLIBC_2.34 符号；getconf 无输出（musl/Alpine 等）视为不满足
+  GLIBC_VER="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+  if [ "$PREBUILT_ARCH" = "$GOARCH" ] && [ -n "$GLIBC_VER" ] \
+     && awk -v a="$GLIBC_VER" 'BEGIN{exit !(a>=2.34)}'; then
+    USE_PREBUILT=1
+  fi
+fi
+
 # ---------- [2/7] Go 工具链 ----------
-step "2/7" "Go 工具链（需 >= 1.22）"
+if [ "$USE_PREBUILT" -eq 1 ]; then
+  step "2/7" "Go 工具链（预构建快速路径：跳过）"
+  ok "仓库预构建二进制可用（arch=$GOARCH glibc=$GLIBC_VER）——Go 无需安装，稍后直接部署"
+else
+  step "2/7" "Go 工具链（需 >= 1.22）"
 go_ver_ge() { # go1.22.12 -> 1 22 ；与 1.22 比较
   local v
   v="$("$1" version 2>/dev/null | sed -n 's/^go version go\([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
@@ -171,9 +210,15 @@ export GOPATH="${GOPATH:-$HOME/go}"
 export GOPROXY="${GOPROXY:-https://goproxy.cn,direct}"
 export GOTOOLCHAIN=local   # 防 go 命令运行期自动下载工具链（国内网络卡死点）
 ok "模块代理: GOPROXY=$GOPROXY  GOPATH=$GOPATH"
+fi  # end 非预构建路径（Go 工具链）
 
-# ---------- [3/7]+[4/7] 构建 ----------
-if [ "$SKIP_BUILD" -eq 1 ]; then
+# ---------- [3/7]+[4/7] 部署双服务二进制 ----------
+if [ "$USE_PREBUILT" -eq 1 ]; then
+  step "3/7,4/7" "部署仓库预构建二进制（bin/ → .bin，零编译）"
+  cp -f "$ROOT/mini-services/backend-go/bin/backend-go" "$ROOT/mini-services/backend-go/backend-go.bin"
+  cp -f "$ROOT/mini-services/scraper-go/bin/scraper-go" "$ROOT/mini-services/scraper-go/scraper-go.bin"
+  ok "backend-go.bin / scraper-go.bin = 仓库预构建版（与源码原子同步，~10 秒完成）"
+elif [ "$SKIP_BUILD" -eq 1 ]; then
   step "3/7,4/7" "跳过构建（--skip-build）"
   [ -x "$ROOT/mini-services/backend-go/backend-go.bin" ] || die "--skip-build 但 backend-go.bin 不存在"
   [ -x "$ROOT/mini-services/scraper-go/scraper-go.bin" ] || die "--skip-build 但 scraper-go.bin 不存在"
@@ -294,6 +339,7 @@ echo " 管理后台    : http://<服务器IP>:$PORT/admin"
 echo " 健康检查    : curl http://127.0.0.1:$PORT/api/health"
 echo " 数据目录    : $ROOT/db/custom.db（SQLite，升级/迁移整目录拷走即备份）"
 echo " 日志        : /tmp/backend-go-api.log / /tmp/engine.log / /tmp/watchdog.log"
+echo " 部署形态    : $([ "$USE_PREBUILT" -eq 1 ] && echo '仓库预构建二进制（R127 快速路径，零编译）' || echo '源码构建')"
 echo " 对外发布    : 建议前置 Nginx/Caddy 80/443 反代 127.0.0.1:$PORT（见 docs/deployment.md §8）"
-echo " 日常升级    : cd $ROOT && bash scripts/upgrade.sh（git 拉取+构建+重启+失败回滚）"
+echo " 日常升级    : cd $ROOT && bash scripts/upgrade.sh（git 拉取+部署+重启+失败回滚）"
 echo "==============================================${C_0}"

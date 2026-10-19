@@ -9,10 +9,11 @@
 # 流程：
 #   [1/6] 环境自检      git 可用、仓库干净度（本地改动自动 stash，升级后提示恢复）
 #   [2/6] 拉取代码      git fetch + reset --hard 到目标（--ff-only 拒绝分叉历史）
-#   [3/6] 构建双服务    scripts/build-go.sh（goproxy.cn 加速）
-#   [4/6] 重启          deploy-cn.sh --skip-build 复用（幂等：杀旧进程+启动+看护）
+#   [3/6] 部署二进制    ★ R127：glibc>=2.34 且架构匹配 → 直接用仓库预构建 bin（git pull
+#                       同步拉到新 bin，升级零编译 ~10 秒）；否则源码构建 build-go.sh
+#   [4/6] 重启          deploy-cn.sh（预构建走快速路径 cp / 源码构建后 --skip-build 复用）
 #   [5/6] 健康检查      /api/health + /api/strategies（60s 窗口）
-#   [6/6] 失败回滚      健康检查不过 → git reset 回升级前 commit → 重建重启 → 再检
+#   [6/6] 失败回滚      健康检查不过 → git reset 回升级前 commit → 按同形态部署 → 再检
 #
 # 数据安全：db/、public/covers/、download/novels/ 全在仓库内但不受 git 管，
 #   git reset 不触碰数据；升级全程 SQLite WAL 进程级安全。
@@ -71,24 +72,54 @@ else
   ok "代码更新: $PREV_REV → $NEW_REV"
 fi
 
-# ---------- [3/6] 构建 ----------
-step "3/6" "构建双服务（backend-go + scraper-go）"
-bash "$ROOT/scripts/build-go.sh"
-ok "构建完成"
+# ---------- [3/6] 部署二进制（预构建快速路径优先，R127） ----------
+# 检测：无本地 stash（可能改过源码）+ repo 双 bin 存在 + ELF 架构匹配 + glibc>=2.34
+PREBUILT_UPGRADE=0
+ARCH=$(uname -m)
+case "$ARCH" in
+  x86_64)        GOARCH=amd64; EM_EXPECT=3e00 ;;
+  aarch64|arm64) GOARCH=arm64; EM_EXPECT=b700 ;;
+  *)             GOARCH=unknown; EM_EXPECT=none ;;
+esac
+GLIBC_VER="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')"
+if [ "$STASHED" -eq 0 ] && [ "$GOARCH" != "unknown" ] && [ -n "$GLIBC_VER" ] \
+   && [ -x "$ROOT/mini-services/backend-go/bin/backend-go" ] \
+   && [ -x "$ROOT/mini-services/scraper-go/bin/scraper-go" ] \
+   && [ "$(od -An -tx1 -j18 -N2 "$ROOT/mini-services/backend-go/bin/backend-go" 2>/dev/null | tr -d ' \n')" = "$EM_EXPECT" ] \
+   && awk -v a="$GLIBC_VER" 'BEGIN{exit !(a>=2.34)}'; then
+  PREBUILT_UPGRADE=1
+fi
+if [ "$PREBUILT_UPGRADE" -eq 1 ]; then
+  step "3/6" "部署双服务（仓库预构建 bin，零编译 ~10 秒；arch=$GOARCH glibc=$GLIBC_VER）"
+  ok "预构建快速路径命中——git pull 已同步拉到与源码原子提交的新 bin"
+else
+  step "3/6" "构建双服务（backend-go + scraper-go；$([ "$STASHED" -eq 1 ] && echo '检测到本地源码改动 stash，必须源码构建' || echo "预构建不可用 arch=$GOARCH glibc=${GLIBC_VER:-unknown}，回退源码构建")）"
+  bash "$ROOT/scripts/build-go.sh"
+  ok "构建完成"
+fi
 
 rollback() {
   echo ""
   warn "升级失败，回滚到 $PREV_REV ..."
   git reset --hard "$PREV_REV"
-  bash "$ROOT/scripts/build-go.sh" >/dev/null 2>&1 || true
-  bash "$ROOT/scripts/deploy-cn.sh" --skip-build >/dev/null 2>&1 || true
+  if [ "$PREBUILT_UPGRADE" -eq 1 ]; then
+    bash "$ROOT/scripts/deploy-cn.sh" >/dev/null 2>&1 || true
+  else
+    bash "$ROOT/scripts/build-go.sh" >/dev/null 2>&1 || true
+    bash "$ROOT/scripts/deploy-cn.sh" --skip-build >/dev/null 2>&1 || true
+  fi
   warn "已回滚并重启（$PREV_REV）。请检查网络/磁盘后重试升级。"
   exit 1
 }
 
-# ---------- [4/6] 重启（幂等，复用 deploy-cn.sh --skip-build） ----------
-step "4/6" "重启双服务（复用 deploy-cn.sh --skip-build）"
-bash "$ROOT/scripts/deploy-cn.sh" --skip-build || rollback
+# ---------- [4/6] 重启（幂等；预构建走 deploy-cn.sh 快速路径，源码构建后 --skip-build 复用） ----------
+if [ "$PREBUILT_UPGRADE" -eq 1 ]; then
+  step "4/6" "重启双服务（复用 deploy-cn.sh 预构建快速路径）"
+  bash "$ROOT/scripts/deploy-cn.sh" || rollback
+else
+  step "4/6" "重启双服务（复用 deploy-cn.sh --skip-build）"
+  bash "$ROOT/scripts/deploy-cn.sh" --skip-build || rollback
+fi
 
 # ---------- [5/6] 健康检查 ----------
 step "5/6" "健康检查（60s 窗口）"
