@@ -4994,3 +4994,22 @@ Stage Summary:
 - 一键安装命令双重升级收口：R127 预构建快速路径（~6 分钟 → ~1 分钟）+ R127b 下载循环根修（潜伏 13 轮的真 bug 在交付前被演练拦截——若不修，用户实际执行一键命令 100% 失败）
 - 「更新一键安装命令」以远程 canonical 命令端到端实证为终态，非仅本地推断
 - 移交：①真实服务器安装时长数据待用户反馈 ②镜像 CDN 缓存延迟为已知现象（分钟级），文档已有换前缀指引 ③未来任何引导/部署脚本改动必须走 /tmp 干净环境远程演练（本轮经验固化为隐性惯例，可考虑写入 recovery-playbook）
+---
+Task ID: R128
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题②采集效率（兼顾封禁）③反反爬强化④精简优化⑤一键安装命令+推送 git
+
+Work Log:
+- 【沙箱第 14 次重置自愈】快照回滚非容器重启（uptime 连续）：三服务全灭/Go/db/凭据/stealth venv+cloakbrowser 全丢；**双预构建 bin 首次在重置场景直接幸存（R126 入库策略兑现）**——backend/scraper 零编译直接拉起，Go 工具链后置到确有源码改动时再装。恢复链：Go 1.22.12（golang.google.cn→/tmp）→ curl-imp 21 二进制（ghfast.top）→ stealth venv（**uv 需 --index-url mirrors.aliyun.com/pypi/simple/**，直连 pypi.org 超时）→ cloakbrowser 216MB（**cloakbrowser.dev 源站仅 ~8KB/s 不可用 + ghfast.top 对 .dev 域 403；唯一可用路径 = GitHub fallback URL github.com/CloakHQ/cloakbrowser/releases/download/... 经 ghfast.top**，5 分钟）→ git 凭据重建
+- 【收割器机制五次死亡实证（本轮最重要发现）】重启的 backend/stealth 连续 5 次 ~60-90s 静默死亡（无 panic/OOM/日志截断）：持久壳 `false` 收尾不保活、30s timeout-kill 不保活、持久壳子进程不保活；**唯一可靠模式 = `bash -c 'setsid nohup ... & sleep 3; exit 7'`**（子壳失败码退出，孤儿 +150s 三服务全绿）——与 R125「失败码收尾」经验吻合，与 dev-go.sh 头注释「交互会话直接派生的进程会被沙箱收割器清理」机制互证；`/start.sh` 开机链（tini 树）进程天然免疫（14:45 幸存对实证）。手册 §1.7 已写入并**修正**本轮早前误记的「false 收尾」教训
+- 【任务②效率：瞬时 ~19-20k 章/h 历史峰值区间上沿】9+ 主机满速均匀分布（8 主机零 fail），礼貌天花板框架内；均值 15.7k/h 含进程死亡窗口拖累。**iqxsw 深度普查（R126 移交①收口）**：sort/1/{15,20,30,50} 页探针实证——每页 ~48 块/53 链接，页间仅 24 本固定推荐块重叠、~29 本/页新内容直至 p50 仍延续（无限列表形态）——R126 pageTo=15 确定 undershoot，**扩容为 pageTo=30 九分类范围任务 #20-28**（分两波创建避开同域启动风暴，全部 running；潜力 ~750 本/分类）
+- 【任务③反反爬：E25 主机级多样性帽收口】R126 移交②（101kks 池 102.244.78.61 ×3 同 IP 异端口）根修：`proxyMaxExitsPerHost=2` + 纯函数 `proxyHostDiversityFilter`（host:port 取 LastIndex 冒号前；异形串保守放行）三接入点——refreshRuleProxyPool 补位/upgradeRuleProxyPool 温和升级（以剔除最慢口后池为基线）/assignNeededRuleProxies 补种 Top-4；3 测试锁定（帽语义/nil 池保序/异形串）；backend 全量 77.4s 绿 + go vet 净。**另观测**：duckduckgo pseo 710 fail 为引擎熔断保护自限（「目标主机熔断中」瞬态信封），pseo 缓存建议照常生成——健康自保护循环，零代码干预
+- 【任务④精简】手册 §1.7 R128 三坑（存活模式/uv 镜像/cloakbrowser GitHub fallback URL）+ MultiEdit 非原子两次实证（deployment.md 部分应用 + proxywatch helpers 重复插入致 build redeclared——失败即重读铁律）；「池 300 活 0 死」日志语义澄清（=活 300 死 0，非池全灭）
+- 【任务⑤一键安装命令】R127/R127b 上一轮已完成（远程 canonical 命令端到端终验过）；本轮随轮推送
+- 【验证】Agent Browser：首页「青阅文学」140 链接/36 图/正文 2317 字、零 console error、移动端 390px 零横向溢出；舰队 29 任务 28 running（暂停清零）；引擎 totalOK 19.1k+ 爬升
+
+Stage Summary:
+- 第 14 次自愈完成且首次吃到 R126 bin 入库红利（零编译拉起）；服务存活机制根因定位并固化正确模式（bash -c + exit 7），手册误记已修正
+- iqxsw 九分类 pageTo 15→30 扩容运行中（无限列表形态实证，潜力翻倍）；瞬时吞吐 ~19-20k 章/h 历史峰值区间上沿
+- E25 主机多样性帽三接入点全量部署（同 IP 同生死风险拆除），三测试锁定
+- 移交：①iqxsw 九分类首轮 30 页/分类完成后评估再扩容（p50 仍新鲜，深度可能远超 30）②01kks/pilishuwu CF 挑战站随 stealth 回归观测自动恢复③huangjinwu #3 partial（30 本连败中止）待代理池+stealth 协同自愈④真实服务器一键安装时长数据仍待用户反馈

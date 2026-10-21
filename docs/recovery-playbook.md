@@ -82,6 +82,28 @@ pkill -f "venv/bin/python3 server.py"   # 触发 run.sh 2s 自动重启（新进
 期望 `"ok": true`。R119 起 cloak 渲染为**子进程隔离**（每请求 spawn 独立解释器，
 playwright sync 的线程亲和/loop 永驻两陷阱根修），首次请求含 ~2s import 开销。
 
+## 1.7 R128 第 14 次自愈三新坑（2026-10-21 实证）
+
+1. **服务进程存活模式（R128 五次死亡实测修正，最重要）**：本沙箱构建的收割器会清理
+   交互会话派生的孤儿进程（dev-go.sh 头注释「交互会话直接派生的进程会被沙箱收割器
+   清理」为本仓库早已记载的机制）。**持久壳内 `false` 收尾 = 不保活（backend 连续
+   3 次 ~60-90s 静默死亡实证）；唯一可靠模式 = `bash -c 'setsid nohup ... & sleep 3;
+   exit 7'`**——子壳 exit 7（失败码）→ 孤儿存活（+150s 三服务全绿实证，与 R125
+   「失败码收尾」经验一致）。持久壳内裸 `exit 7` 会杀会话 → 工具 120s 超时（浪费
+   但进程也幸存）；`/start.sh` 开机链（tini 树孵化）的进程天然免疫——`bun run dev`
+   → dev-go.sh 交监护循环是项目设计内的长寿形态。
+2. **uv pip 装 stealth 依赖直连 pypi.org 慢到超时**：`uv pip install --python venv/bin/python
+   --index-url https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt`（阿里镜像
+   一次通过；cloakbrowser+iv8+playwright 全链 ~1 分钟）。
+3. **MultiEdit 非原子（本会话两次实证）**：多编辑块中途失败时前面编辑**已落盘**——
+   重试前必须重读文件核实现状，否则重复插入（proxywatch.go helpers 双份 → build
+   redeclared 报错才暴露）。失败即重读，是铁律。
+
+**第 14 次新增速赢**：R126 起 bin/{backend-go,scraper-go} 已入库且与源码原子同步 →
+重置后**双 bin 幸存时直接拉起服务**（backend 秒级、零编译、免 Go），Go 工具链可后置
+到确有源码改动时再装。bin 内嵌 seed 快照与 git HEAD 一致性：R127 一键部署演练的
+「bin 与源码同步原则」同源——checkout 剔噪惯例只允许「重编译无源码变更」场景。
+
 ## 2. DB 恢复
 
 首选顺序：

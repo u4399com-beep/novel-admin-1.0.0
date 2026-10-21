@@ -283,13 +283,15 @@ func assignNeededRuleProxies() int {
                 }
                 okProbes := proxyProbeAll(cands, rr.siteURL)
                 proxyProbesSortByMs(okProbes) // 快口优先
+                // R128 E25 收尾：补种 Top-4 主机级多样性帽（同 IP 至多 2 口，防单 IP 同生死）
+                diverseProxies := proxyHostDiversityFilter(nil, probeProxies(okProbes))
                 seeded := make([]string, 0, proxyPoolSeedPerRule)
-                for _, pr := range okProbes {
+                for _, p := range diverseProxies {
                         if len(seeded) >= proxyPoolSeedPerRule {
                                 break
                         }
-                        seeded = append(seeded, pr.proxy)
-                        used[pr.proxy] = true
+                        seeded = append(seeded, p)
+                        used[p] = true
                 }
                 for _, c := range cands { // 未通过站测的候选本轮不再给后续规则重复试（预算共享）
                         used[c] = true
