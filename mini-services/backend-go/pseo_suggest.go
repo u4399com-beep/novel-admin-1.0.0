@@ -453,7 +453,17 @@ func suggestFetchViaEngineStrategy(ctx context.Context, targetURL, strategy stri
 // 与直连引擎「HTTP 非 2xx 静默留空」不同：经引擎的新路径失败时如实报错
 // （fetchSuggestions 会把 fetchErr 写入 results[].error；TS 版 duckduckgo 从未
 // 真正成功过，无历史语义可破坏，以诚实报错优先）。
+//
+// R128 连败熔断：DDG 的 /ac/ 在 CF 后面，curl-impersonate 指纹对它从未稳定成功
+// （Task 18/83 两代路径均未打通），而 pseo 富集循环 12s×4 并发持续重试——每分钟
+// ~20 次死请求空烧引擎预算+占用引擎车道排队（引擎 host stats 实测 duckduckgo
+// fail 380/netErr 375、lastMs 44s）。连续 ddgBreakerThreshold 次失败后熔断
+// ddgBreakerCooldown，期间直接返回错误不发网络请求；任一次成功即清零，冷却结束
+// 自动恢复探测（站点侧恢复无需人工）。
 func suggestFetchDuckDuckGo(ctx context.Context, url string) ([]string, error) {
+	if remain := ddgBreakerRemainMs(); remain > 0 {
+		return nil, fmt.Errorf("duckduckgo 连败熔断冷却中（剩 %d 分钟，冷却后自动恢复探测）", remain/60000+1)
+	}
 	body, err := func() ([]byte, error) {
 		// 子死线：首选策略最多 3.5s（且给全链兜底留 ≥1.5s），防慢响应吃光整体预算
 		sub := ctx
@@ -485,6 +495,7 @@ func suggestFetchDuckDuckGo(ctx context.Context, url string) ([]string, error) {
 		}
 	}
 	if err != nil {
+		ddgBreakerRecord(false)
 		return nil, err
 	}
 	var j [2]json.RawMessage
@@ -498,7 +509,47 @@ func suggestFetchDuckDuckGo(ctx context.Context, url string) ([]string, error) {
 	if json.Unmarshal(j[1], &arr) != nil {
 		return nil, errors.New("duckduckgo 下拉词数组解析失败")
 	}
+	ddgBreakerRecord(true)
 	return filterNonEmpty(arr), nil
+}
+
+// ddgBreaker duckduckgo 连败熔断器（R128，详见 suggestFetchDuckDuckGo 注释）。
+// 进程内状态（不落库）：重启即清零重新探测——与引擎 host 熔断/aimd 同一风格。
+var (
+	ddgBreakerMu    sync.Mutex
+	ddgBreakerFails int
+	ddgBreakerUntil time.Time
+)
+
+const (
+	ddgBreakerThreshold = 5                // 连败阀值
+	ddgBreakerCooldown  = 30 * time.Minute // 熔断冷却时长
+)
+
+// ddgBreakerRemainMs 熔断剩余冷却毫秒数（>0 表示冷却中，调用方应直接放弃本次请求）
+func ddgBreakerRemainMs() int {
+	ddgBreakerMu.Lock()
+	defer ddgBreakerMu.Unlock()
+	if ddgBreakerUntil.IsZero() {
+		return 0
+	}
+	return int(time.Until(ddgBreakerUntil).Milliseconds())
+}
+
+// ddgBreakerRecord 记录一次结果：成功清零；连败达阀值则进入冷却期
+func ddgBreakerRecord(ok bool) {
+	ddgBreakerMu.Lock()
+	defer ddgBreakerMu.Unlock()
+	if ok {
+		ddgBreakerFails = 0
+		ddgBreakerUntil = time.Time{}
+		return
+	}
+	ddgBreakerFails++
+	if ddgBreakerFails >= ddgBreakerThreshold {
+		ddgBreakerUntil = time.Now().Add(ddgBreakerCooldown)
+		ddgBreakerFails = 0
+	}
 }
 
 // suggestCtxRemainMs 剩余预算毫秒数（无 deadline 返回极大值）

@@ -104,6 +104,18 @@ playwright sync 的线程亲和/loop 永驻两陷阱根修），首次请求含 
 到确有源码改动时再装。bin 内嵌 seed 快照与 git HEAD 一致性：R127 一键部署演练的
 「bin 与源码同步原则」同源——checkout 剔噪惯例只允许「重编译无源码变更」场景。
 
+**⚠️ stealth 进程清场陷阱（R128 第 14 次恢复实证）**：
+1. pkill 模式必须覆盖裸 `run[.]sh`——最早实例 cmdline 是 `bash ./run.sh`（相对路径启动），
+   `pkill -f "stealth-service/run.sh"` 匹配不到它（cmdline 不含 stealth-service 前缀）。
+   正确姿势：`pkill -9 -f "run[.]sh"; pkill -9 -f "server[.]py"` + `pgrep` 死透确认。
+2. **锁文件删除会致多 inode 锁并存**：`rm -f /tmp/stealth-service.lock` 后新 run.sh
+   `exec 9>` 创建新 inode 并 flock 成功，旧 run.sh 仍持旧 inode 锁——两实例并存，
+   新实例 server.py `Address already in use` 崩溃重启循环，旧实例（系统 python）占
+   3031 持续服务但 cloak/iv8 全 false。清场顺序：先杀进程 → pgrep 确认死透 → 再清锁。
+3. venv 重建后必须整杀 run.sh 重启（PY 变量在 while 循环外判定，循环内不会重测 venv）。
+4. PyPI 镜像：清华源对 cloakbrowser wheel 403（R128 实测），官方 PyPI 直装即成；
+   uv 走阿里镜像更快（见 §1.7-2）。
+
 ## 2. DB 恢复
 
 首选顺序：

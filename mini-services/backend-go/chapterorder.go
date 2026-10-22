@@ -745,23 +745,6 @@ func reorderChapterRefsForceVols(refs []ChapterRef, vols []string) (res reorderR
 // DISORDER_RATIO 阈值），误提取面被卷分段路径的四重前置条件兜住。
 var chapterNoAnywhereRe = regexp.MustCompile(`第` + jsSpaceClass + `*([0-9０-９]{1,7}|[零〇一二两三四五六七八九十百千万]{1,12})` + jsSpaceClass + `*[章节回话]`)
 
-// parseChapterNoAnywhere parseChapterNo 的中段兜底版：先走原锚定解析（覆盖绝大多数形态），
-// 未命中再找首个中段「第N[章节回话]」token。
-func parseChapterNoAnywhere(title string) (int64, bool) {
-        if n, ok := parseChapterNo(title); ok {
-                return n, true
-        }
-        m := chapterNoAnywhereRe.FindStringSubmatch(title)
-        if m == nil {
-                return 0, false
-        }
-        n, ok := chineseNumeralToInt(foldFullwidthDigits(m[1]))
-        if !ok || n < 0 || n > 99_999_999 {
-                return 0, false
-        }
-        return n, true
-}
-
 // reorderRefPairs refPair 版薄适配（phase1Skeletons 接线点；note 非空 = 已重排）。
 // R108（序号排序缺口②统一）：卷信息从标题 detectVolume 就地派生，并把卷前缀从参与
 // 重排的标题上剥除（与 storeChapter 落库口径一致：rest 作 title、vol 落 volume 列）。

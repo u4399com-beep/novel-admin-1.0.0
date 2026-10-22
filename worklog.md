@@ -5013,3 +5013,40 @@ Stage Summary:
 - iqxsw 九分类 pageTo 15→30 扩容运行中（无限列表形态实证，潜力翻倍）；瞬时吞吐 ~19-20k 章/h 历史峰值区间上沿
 - E25 主机多样性帽三接入点全量部署（同 IP 同生死风险拆除），三测试锁定
 - 移交：①iqxsw 九分类首轮 30 页/分类完成后评估再扩容（p50 仍新鲜，深度可能远超 30）②01kks/pilishuwu CF 挑战站随 stealth 回归观测自动恢复③huangjinwu #3 partial（30 本连败中止）待代理池+stealth 协同自愈④真实服务器一键安装时长数据仍待用户反馈
+
+---
+Task ID: 14th-reset (R128 自愈)
+Agent: main (Z.ai Code)
+Task: 第 14 次沙箱重置全链自愈（R127 预构建快速路径首次实战）
+
+Work Log:
+- 开局健康检查：三服务全灭、Go 工具链丢失、db/ 目录不存在、stealth venv 被清——第 14 次重置确认
+- **R127 快速路径首次实战兑现**：x86_64 + glibc 2.41 + bin e_machine 3e00（amd64）双命中 → cp bin/{backend-go,scraper-go} → .bin/ 约 1 秒完成部署（对比源码构建 2-3 分钟+装 Go 1-2 分钟）；ensure-services.sh 按 bin/ 路径拉起即用——R127「一键安装 ~6 分钟 → ~1 分钟」的价值在沙箱自身重置场景同获验证
+- curl-impersonate 重装（ghfast.top 镜像一次成功，21 binaries）
+- DB 走全新空库路线（/tmp 与 db-backup 均无遗留，手册预警属实）：backend 启动自动 DDL + seed 播种——**23 规则全部到位**（R125 显式 id 契约第 3 次实战验证）
+- fleetkeeper 空库首轮自愈建 18 任务（16 running + 2 paused），list 任务批量推进中 done 增长正常
+- stealth venv 重建踩坑三连：①清华 PyPI 镜像 403 → 官方 PyPI 一次成功（cloakbrowser 0.6.3 + iv8 0.1.4）②进程清场陷阱：最早实例 cmdline 为 `bash ./run.sh` 不含 stealth-service 字样致 pkill 模式漏杀 + rm 锁文件后新旧 run.sh 各持不同 inode 锁并存 → server.py「Address already in use」重启循环 + 旧系统 python 实例占 3031 持续服务（能力全 false）；根修 = pkill -f "run[.]sh" + "server[.]py" 全杀 → 死透确认 → 清锁 → 单实例重启③终态 cloak=true cloakBinary=true iv8=true 单实例 venv/bin/python3
+- cloakbrowser 216MB 二进制 ghfast.top 镜像断点续传一次到位（timeout 收尾模式）；cloak 冒烟实测 aijjxs 过盾 56KB HTML ok=true
+
+Stage Summary:
+- 自愈总耗时约 8 分钟（其中 stealth 清场踩坑占 3 分钟）；三服务 200 健康、23 规则、18 任务自愈推进
+- **新增手册素材**：stealth 进程清场必须 `pkill -f "run[.]sh"`（裸 `run.sh` cmdline 不含路径前缀）+ 锁文件删除会致多 inode 锁并存——补入 recovery-playbook §1.5
+- R127 预构建快速路径从「交付物」升级为「实战验证过的自愈利器」
+
+---
+Task ID: R128
+Agent: Z.ai Code (main)
+Task: 用户 5 项清单——①遗留观测②章节效率③反反爬④代码精简（⑤推送 git 随轮）
+
+Work Log:
+- 【第 14 次沙箱自愈】R127 预构建快速路径首次实战（详见上节 14th-reset 记录）：bin 复制 1 秒部署、23 规则播种、fleetkeeper 18 任务自愈、stealth venv 重建+清场陷阱三连修复（playbook §1.5 已补）
+- 【任务②③ DDG 死引擎熔断（本轮主修复）】引擎 host stats 实测 duckduckgo fail 500/netErr 487、lastMs 44-50s——pseo 富集循环 12s×4 并发持续打一个从未成功过的端点（Task 18/83 两代路径均未打通），每分钟 ~20 次死请求空烧引擎预算+占用引擎车道排队。修复=pseo_suggest.go 连败熔断器（30 行）：ddgBreakerRemainMs/Record + 5 连败→30min 冷却，冷却期直接返回错误零网络调用，成功清零，重启即清零重新探测（与引擎 host 熔断同风格）。部署后 60s 窗口 fail 零增长实证生效
+- 【任务④ 代码精简】Explore 代理 deadcode+staticcheck+rg 三重验证审查：删 parseChapterNoAnywhere（chapterorder.go -17 行，parseNumOptAnywhere 内联取代，chapterNoAnywhereRe 保留仍被引用）+ 删 scripts/probe-toc-r124.py 与 scripts/tmp/ 11 个零引用归档项（保留 worklog 有记载的 deploy-r115/probe5-r123/probe-struct-r123 三个）；全量测试 57.5s 全绿
+- 【检测方法学教训】strings 不输出 UTF-8 中文——搜二进制中文串必须 rg -a；Go linker 对无调用方包级函数自动 DCE，二进制搜不到≠源码没删；md5sum /proc/PID/exe vs 磁盘 bin 是部署一致性权威校验（pkill 模式假部署第 4 次潜在踩坑被 md5 校验拦截）
+- 【吞吐观测（任务②基线）】重建期 35min +243 本（413 本/h list 期）；4min 窗口 Chapter +16.7k（25.1 万目录/h）+ ChapterContent +812（**12,180 章/h 正文**，历史区间 10.8-20.8k 中段）；引擎 19.7k req/h 全网成功率 90.1%；慢站：xinjianpan/huangjinwu ~7% fail 自愈中，101kks 代理穿透恢复 ok 0→95（58% 成功率），pilishuwu 1 ok/13 fail/13 chal（minTier=3 cloak 过盾间歇成功，老难题维持）
+- 【bin 同步说明】DDG 熔断已构建进 bin 并部署验证；chapterorder 死代码删除后 linker DCE 语义等价（bin 字节未变），下次源码变更时随构建自然同步
+
+Stage Summary:
+- DDG 连败熔断：pseo suggest 层首个熔断器，消除每分钟 ~20 次死请求（引擎车道排队 44s 元凶），任务②③交汇点精准修复
+- 代码精简 -17 行 +12 脚本，deadcode/staticcheck 双净；检测方法学三教训入库（rg -a/Go DCE/md5 部署校验）
+- 第 14 次自愈创最快纪录（~8 分钟，R127 快速路径红利首兑）
