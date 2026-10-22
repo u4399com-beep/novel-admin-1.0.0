@@ -302,6 +302,19 @@
       "proxy": "",
       "notes": "2026-10 R123 新增：笔趣阁 biqiuge8.com（快车道扩容第 3 站——R116 定性新增站点=唯一正道，每站 +~1400 页/h 槽位潜力）。实测链：列表 /{cat}xiaoshuo/ 单页 .up ul li 59 行（s2 a 书链+书名 / s4 纯作者零污染；精选卡 .item 6 本在 .up 外不干扰）；书页 og:novel:* meta 全套 + .intro 简介（尾部 SEO 串由 introClean 自愈）+ .image img 封面；目录内嵌书页 .listmain dl dd a（双段 dl：最新块倒序在前+升序全集在后，引擎同 URL 去重保留后现者+sortChapterRefsByNo 编号排序原生兼容，实测《黜龙》593 章升序）；正文 #content 21KB/章，开头 <script>app2();read2(); 由引擎 noiseSelector 整块剥离实测零污染，br→段落收割；无章内分页。charset=gbk 必配（GBK 编码站，UTF-8 解码全乱码）。fetch-curl 直连 200 全链通过零代理依赖。分类 6 个：xuanhuan/xiuzhen/dushi/chuanyue/wangyou/kehuan xiaoshuo + qitaxiaoshuo + wanben，siteUrl 锁定主力 xuanhuanxiaoshuo（fleetkeeper 建任务用），其余分类经 list 任务手动扩容。R123 同轮：范围采集三条翻页路径的瞬态错误透传根修（占位符/pageFrom>1/逐页跟随此前丢弃 per-page 错误串，同域启动风暴撞熔断窗口被误判 failed 终态，Task 33 瞬态保护被旁路）——audit_r123_test 三测锁定。",
       "insecureTLS": false
+    },
+    {
+      "id": 33,
+      "name": "蕃茄小说(dzrjk)",
+      "siteUrl": "https://m.dzrjk.com/xuanhuan_wap/1.html",
+      "enabled": true,
+      "charset": "utf-8",
+      "proxy": "",
+      "insecureTLS": false,
+      "listRule": "{\"itemSelector\":\"#list article\",\"linkSelector\":\".image a\",\"titleSelector\":\"h2.title\"}",
+      "bookRule": "{\"titleSelector\":\"h2.title\",\"coverSelector\":\".image img@src\",\"categorySelector\":\".info p:nth-of-type(2) a\",\"statusSelector\":\".info p:nth-of-type(3)\",\"descriptionSelector\":\".introbar\",\"chapterLinkSelector\":\"ul.chapter li a\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#text\"}",
+      "notes": "2026-10 由 legado 书源 yckceo#7981（蕃茄小说 m.dzrjk.com，PC 站 www.dzrjk.com 同库）直译+沙箱实测：发现页 /{分类}_wap/1.html 每分类固定 30 本 article 卡片（页码数字无意义，上滑重复同批书，站点限制）；书页 ul.chapter 全量内嵌目录（实测 668-988 章无分页，无需二次抓+nextTocUrl）；正文 #text 纯 p 段无章内分页（实测 122 段 3344 字）；作者/状态/简介前缀由引擎 stripAuthorLabel/stripFieldLabel/cleanDescription 自动清洗（类别前缀经 CSS 取 a 内纯文本规避）；站点按 IP 限频严格（搜索 3s/次、concurrentRate 1/2000——引擎 aimd 自适应兜底）；搜索 /api/search 需 31 混淆变量+sign 不复刻（发现页入口足够）；简介站点自身截断属数据限制；末章偶发重复前一章链接（引擎 URL 去重）。"
     }
   ],
   "categories": [
