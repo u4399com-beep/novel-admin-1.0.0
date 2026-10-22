@@ -5067,3 +5067,22 @@ Work Log:
 Stage Summary:
 - 两条并行 R128 工作线无损合并：E25 多样性帽 + DDG 连败熔断共存于单一 bin（功能正交），手册/worklog 双方知识全保留
 - 引擎成功率 90.1%→95.4%；正文填充进入 list/content 交替调度期（12.2k→5.3k 章/h 波动为调度形态非退化）
+
+---
+Task ID: R129
+Agent: Z.ai Code (main)
+Task: 用户指令——根据 legado 书源 yckceo#7981（蕃茄小说 m.dzrjk.com）编写适配本系统的采集规则（直译+四段实测+入库+seed 固化）
+
+Work Log:
+- 【书源解析】7981.json 单书源数组：蕃茄小说 m.dzrjk.com（PC 站 www.dzrjk.com 同库同模板）——搜索 /api/search 需 31 混淆校验变量+sign+bgt 截断（Legado 用 JS 预抓 search.html 正则提取）**不复刻**（发现页入口足够）；发现页 17 入口（6 分类+11 排行榜）纯 HTML；concurrentRate 1/2000（每 2s 1 次）按 IP 限频严格；Android UA
+- 【四段实测（沙箱直连全过）】①发现页 xuanhuan_wap/1.html 30 张 article 卡片（.image img 封面/h2.title 书名/p 作者/p.intro 简介，页码数字无意义上滑重复同批书站点限制）②书页 h2.title/p.0 作者/p.1 类别（a 包裹）/.introbar/p.newest a 最新章 + **ul.chapter 全量内嵌 668 章**（实测 988/670 章均无分页，无需 catalogLink 二次抓——与 washai #30 的二次抓形态关键差异）③正文 #text 122 段 3344 字纯 p 无章内分页④类别/最新章真实结构复核（p.1 内 a 包裹、newest em 包裹）
+- 【规则映射】#33蕃茄小说(dzrjk)：listRule(itemSelector=#list article/linkSelector=.image a/titleSelector=h2.title，弃 authorSelector——列表作者 p 纯文本前缀无法 CSS 剥离，book 段补全) + bookRule(chapterLinkSelector=ul.chapter li a 直接内嵌目录+categorySelector=.info p:nth-of-type(2) a 取 a 内纯文本规避「类别：」前缀——stripFieldLabel 不识该标签) + chapterRule(h1/#text)；minTier=0 直连
+- 【引擎自带清洗三连验证】stripAuthorLabel 剥「作者：」/stripFieldLabel 剥「状态：」/cleanDescription 剥「简介：」——Legado ## 清洗语法零复刻；PUT 修正路由教训：PUT /api/scrape-rules（无 ID 后缀，body 带 id）
+- 【真实任务验证】任务 19/20（玄幻+都市 pages=1 错峰 20s）43 书 37196 章入库正文 75 章填充中（站点 2s 限频引擎 aimd 自适应）；落库终态：作者干净/分类映射玄幻奇幻/serial 正确
+- 【seed 固化】seed.json 24 条（规则 33 显式 id）+ bin 原子重建（go:embed 契约）+ seed 契约回归绿；backend 重启加载
+- 【穿插】第 15 次沙箱重置自愈（bin 快速路径第 2 次实战秒级拉起/23 规则第 4 次播种/stealth venv uv 阿里镜像一次过）——详细数据并入 R128 系列记录
+
+Stage Summary:
+- 蕃茄小说规则 #33 全链收口：Legado 书源直译（发现页+内嵌目录+正文三段）+ 引擎清洗零复刻红利 + 双任务真实采集验证，第 24 条 seed 固化
+- 形态学收获：dzrjk「目录内嵌书页」vs washai「目录二次抓」两类目录形态的规则映射样板；Legado p.N 索引选择器→CSS nth-of-type 转译法；纯文本前缀无法 CSS 剥离时弃列表字段由书页清洗补全的取舍
+- 遗留移交：①任务 19/20 推进与 fleetkeeper 45min 冷却补建观测②站点 2s 限频下正文填充速率预期偏低（每 IP 每秒 0.5 req 上限），若需提速评估 per-IP 分桶（engine.env SCRAPE_PROXY_BUCKET_HOSTS opt-in 先例）③排行榜入口（11 个 paihang_wap）未建任务，分类优先
