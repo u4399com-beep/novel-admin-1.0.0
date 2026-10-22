@@ -5050,3 +5050,20 @@ Stage Summary:
 - DDG 连败熔断：pseo suggest 层首个熔断器，消除每分钟 ~20 次死请求（引擎车道排队 44s 元凶），任务②③交汇点精准修复
 - 代码精简 -17 行 +12 脚本，deadcode/staticcheck 双净；检测方法学三教训入库（rg -a/Go DCE/md5 部署校验）
 - 第 14 次自愈创最快纪录（~8 分钟，R127 快速路径红利首兑）
+
+---
+Task ID: R128-merge
+Agent: Z.ai Code (main)
+Task: 并行会话工作线合并（rebase 331f8e2 + 本线 9c27458 推送）
+
+Work Log:
+- push 被拒发现远程并行会话已推 331f8e2（其 R128：收割器五次死亡实证 §1.7/iqxsw 深度普查+九分类扩容 pageTo=30/E25 主机级多样性帽 proxyMaxExitsPerHost+DDG 零代码干预观测/stealth uv 阿里镜像坑）
+- rebase 冲突三件：worklog.md（双方 R128 段互补全保留）、recovery-playbook.md（其 §1.7 + 本线 stealth 清场四条合并）、bin/backend-go（其版含 E25 无熔断 vs 本线相反）
+- bin 处置：取其版过 rebase → 本地源码已含双方 → 重新 build-go.sh → rg -a 验证 ddgBreaker（var 符号 ×2）+ proxyHostDiversityFilter（func 符号 ×2）双在 → amend 9c27458 → push 成功（331f8e2..9c27458）
+- 合并后重启 backend（bash -c exit 7 模式按其 §1.7 实证），md5sum /proc/exe=磁盘 bin 一致；backend 全量关键测试 TestProxy/TestDdg/TestParse 绿
+- 合并后全景：任务 18（17 running/1 paused）、Novel 1359、Chapter 142.2 万、ChapterContent 14,027；引擎 95.4% 成功率（自愈后最优，101kks 恢复+DDG 止损双贡献）；duckduckgo fail 稳定 500 零增长（熔断持续生效）
+- 符号检索方法学补充：Go const 编译期内联（proxyMaxExitsPerHost 等常量名不进二进制），函数/var 名进 pclntab 可 rg -a 检索
+
+Stage Summary:
+- 两条并行 R128 工作线无损合并：E25 多样性帽 + DDG 连败熔断共存于单一 bin（功能正交），手册/worklog 双方知识全保留
+- 引擎成功率 90.1%→95.4%；正文填充进入 list/content 交替调度期（12.2k→5.3k 章/h 波动为调度形态非退化）
