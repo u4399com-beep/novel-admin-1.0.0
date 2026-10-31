@@ -5086,3 +5086,22 @@ Stage Summary:
 - 蕃茄小说规则 #33 全链收口：Legado 书源直译（发现页+内嵌目录+正文三段）+ 引擎清洗零复刻红利 + 双任务真实采集验证，第 24 条 seed 固化
 - 形态学收获：dzrjk「目录内嵌书页」vs washai「目录二次抓」两类目录形态的规则映射样板；Legado p.N 索引选择器→CSS nth-of-type 转译法；纯文本前缀无法 CSS 剥离时弃列表字段由书页清洗补全的取舍
 - 遗留移交：①任务 19/20 推进与 fleetkeeper 45min 冷却补建观测②站点 2s 限频下正文填充速率预期偏低（每 IP 每秒 0.5 req 上限），若需提速评估 per-IP 分桶（engine.env SCRAPE_PROXY_BUCKET_HOSTS opt-in 先例）③排行榜入口（11 个 paihang_wap）未建任务，分类优先
+
+---
+Task ID: R130
+Agent: Z.ai Code (main)
+Task: 用户指令「继续修复遗留问题」——R129 移交三项承接（重置自愈/规则33活库验证+分类扩容/2s限频效率定性）+ 随轮推送
+
+Work Log:
+- 【第 15/16 次沙箱重置自愈（R129 收口后的又一次全灭）】三服务全灭+db 消失+venv 消失+Go 消失+curl-imp 消失；双 bin 幸存（md5 与 HEAD bin 一致）→ 快速路径部署：backend 秒级拉起（空库 DDL+24 规则自动播种）→ ensureEngine 双保险拉起 scraper → stealth 清场四条流程（pkill 裸 run[.]sh+server[.]py→pgrep 死透→清锁→重启）→ venv 重建（uv 阿里镜像一次过）→ cloakbrowser chromium 216MB ghfast 断点续传（~5 分钟）→ curl-impersonate 重装 → Go 1.22.12 重装（golang.google.cn 直连）。全程 ~20 分钟三服务全绿：cloak=true/cloakBinary=true/iv8=true，cloak 冒烟过盾 56KB
+- 【规则 #33 活库独立复核（R129 并行线产物首次跨会话验证）】本轮开局发现 git HEAD 已含 R129 全链（8b937dd 规则+e174207 worklog，0/0 与远程同步）——7981.json 适配任务已被并行会话收口。独立重探源站交叉验证：分类页 30 article/翻页页码无意义、书页 ul.chapter 内嵌 423 章全量、正文 #text 161 段 p 标签单页无分页——与 R129 实测吻合；活库 24 规则含 #33 enabled
+- 【fleetkeeper E26 首轮自愈实证】空库首轮自动重建 19 任务（16 running/3 paused），规则 33 自动获得任务 19（玄幻）；任务 19 message「E26 舰队自持：规则无活跃任务，自动重建范围采集」
+- 【分类扩容（移交③分类部分落地）】错峰 25s 间隔补建任务 20-24（xiuzhen/dushi/chuanyue/kehuan/wangyou 各 1 页 pages=1）——防 R128 同域启动风暴教训；90s 后观测：19-24 全 running，dzrjk 书目 26→68 爬升
+- 【首章健康抽查】dzrjk 8/8 样本书首章全过（第一章/第1章/001 三种编号形态均 idx=1）——内嵌目录+URL 去重链路健康
+- 【移交②效率定性（决策：暂缓分桶）】m.dzrjk.com 引擎实测 488 ok/0 fail 完美纪录——aimd 2s 框架下零封禁零失败；判定：per-IP 分桶（SCRAPE_PROXY_BUCKET_HOSTS opt-in）收益 ×3-4 正文速率 vs 风险（番茄系镜像内容保护意识强——搜索 API 都做 31 变量混淆；数据中心 IP 更易触发内容页静默污染/封禁；E18 出口池为共享稀缺资源，分流稀释 77shuku/biqutu 刚需站点配额）。**决策：维持直连，观测正文填充稳态速率后再评估**——本站单 IP ~1800 章/h 理论上限，24 规则中占比小，非当前全局瓶颈（正文瓶颈在 list/toc 交替调度形态）
+- 【工作区清理】R128 已删 tmp 脚本以未跟踪残影复活（8 个）+R124 一次性探针文件 4 个（probe564_temp_test.go 等自述「调查后删除」）——全部清理，工作区归零（scripts/tmp 仅剩 worklog 有记载的 3 个保留件）
+- 【引擎全景（本轮收口时点）】7258 ok/264 fail=96.5% 成功率（历史最优，超越 R128 的 95.4%）；duckduckgo 0 ok/16 fail 为重启后熔断清零重探测→再熔断设计行为；101kks aimd 1650ms 自适应中
+
+Stage Summary:
+- R129 移交三项收口：①重置自愈（双 bin 快速路径第 3 次实战）+规则 33 跨会话活库验证+E26 自愈实证 ②2s 限频效率决策落档（暂缓分桶，礼貌优先，488/0 完美纪录背书）③分类扩容 5 任务落地（6/6 分类全覆盖；11 个排行榜入口维持缓建——与分类书目高度重叠，待分类稳态后评估增量）
+- 移交下一轮：①list 任务批量终态后全库 resort+audit 终验（R124b 口径）②dzrjk 排行榜 11 入口增量评估 ③正文填充稳态吞吐再评估（含 dzrjk 单 IP ~1800 章/h 实测校准）④GitHub PAT 轮换提醒（用户侧）
