@@ -315,6 +315,19 @@
       "bookRule": "{\"titleSelector\":\"h2.title\",\"coverSelector\":\".image img@src\",\"categorySelector\":\".info p:nth-of-type(2) a\",\"statusSelector\":\".info p:nth-of-type(3)\",\"descriptionSelector\":\".introbar\",\"chapterLinkSelector\":\"ul.chapter li a\"}",
       "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#text\"}",
       "notes": "2026-10 由 legado 书源 yckceo#7981（蕃茄小说 m.dzrjk.com，PC 站 www.dzrjk.com 同库）直译+沙箱实测：发现页 /{分类}_wap/1.html 每分类固定 30 本 article 卡片（页码数字无意义，上滑重复同批书，站点限制）；书页 ul.chapter 全量内嵌目录（实测 668-988 章无分页，无需二次抓+nextTocUrl）；正文 #text 纯 p 段无章内分页（实测 122 段 3344 字）；作者/状态/简介前缀由引擎 stripAuthorLabel/stripFieldLabel/cleanDescription 自动清洗（类别前缀经 CSS 取 a 内纯文本规避）；站点按 IP 限频严格（搜索 3s/次、concurrentRate 1/2000——引擎 aimd 自适应兜底）；搜索 /api/search 需 31 混淆变量+sign 不复刻（发现页入口足够）；简介站点自身截断属数据限制；末章偶发重复前一章链接（引擎 URL 去重）。"
+    },
+    {
+      "id": 34,
+      "name": "笔趣阁(blqiuge)",
+      "siteUrl": "https://www.blqiuge.cc/xuanhuanxiaoshuo/",
+      "charset": "gbk",
+      "enabled": true,
+      "listRule": "{\"itemSelector\":\".up ul li\",\"linkSelector\":\"span.s2 a\",\"titleSelector\":\"span.s2 a\",\"authorSelector\":\"span.s4\",\"categorySelector\":\"span.s1\"}",
+      "bookRule": "{\"titleSelector\":\"meta[property=og:novel:book_name]@content\",\"authorSelector\":\"meta[property=og:novel:author]@content\",\"descriptionSelector\":\".intro\",\"coverSelector\":\".image img@src\",\"statusSelector\":\"meta[property=og:novel:status]@content\",\"categorySelector\":\"meta[property=og:novel:category]@content\",\"chapterLinkSelector\":\".listmain dl dd a\"}",
+      "chapterRule": "{\"titleSelector\":\"h1\",\"contentSelector\":\"#content\"}",
+      "proxy": "",
+      "notes": "2026-11 R132 新增：笔趣阁 blqiuge.cc（与规则 32 biqiuge8.com 同杰奇模板，全链结构一致）。实测链：列表 /{cat}xiaoshuo/ 单页 .up ul li 60 行（s1 分类/s2 书链+书名/s4 作者，精选卡在 .up 外不干扰；无分页 index_2 404）；书页 og:novel:* meta 全套 + .intro 简介 + .image img 封面；目录内嵌书页 .listmain dl dd a（双段 dl：最新块在前+升序全集在后）；正文 #content 21KB 级/章，正文混 <script>app2();read2();</script> 埋点与章末 <!-115-> 非法注释、请记住本书首发域名尾注——R132 引擎侧三类新规（reJSCallLine/reBadComment/reDescReprint）+URL 行规则全接，实测零残留；无章内分页（page_chapter 仅上一章/下一章）。charset=gbk 必配。分类 7+1：xuanhuan/xiuzhen/dushi/chuanyue/wangyou/kehuan/qita xiaoshuo + wanben，siteUrl 锁定主力 xuanhuanxiaoshuo，其余分类经 list 任务手动扩容。",
+      "insecureTLS": false
     }
   ],
   "categories": [

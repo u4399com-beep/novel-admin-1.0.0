@@ -5125,3 +5125,26 @@ Stage Summary:
 - 一键安装补齐 stealth 侧车（第 6/8 步）——R127 快速路径+R131 全能力部署，新服务器 CF 挑战站开箱可用
 - 反反爬语义强化：恢复预算按故障归属精确计量（源站瞬态 4 次 vs 引擎故障零预算探活门控），防自家抖动烧穿任务预算
 - 移交下一轮：①稳态吞吐校准（车道 10-12 满预约形态的主机占空比观测；修复前 12.9k vs 修复后待长窗复测）②list 终态后全库 resort+audit 终验③dzrjk 排行榜 11 入口维持缓建④GitHub PAT 轮换提醒（用户侧，已多轮暴露）
+
+---
+Task ID: R132
+Agent: Z.ai Code (main)
+Task: 用户指令——①更新数据清洗（范围包括所有采集获取到的数据）②更新所有在库采集规则③新增 https://www.blqiuge.cc/ 采集规则
+
+Work Log:
+- 【开局】沙箱未重置（16 次重置后首个全绿开局）：三服务 health 200+双 bin 在跑+git HEAD 已含并行会话 R131（3da55ec 效率根修/一键安装/锁版三交付）
+- 【数据清洗全库审计（四字段横向扫描）】书名 2 本 SEO 拼接（顺藤挖出 iqxsw《一剑霸天》同书 8 条 SEO 变体重复：605/607/614/632/635/639/995/1208，源站同一本书 4 个 SEO 页+标题变体，全部 0 正文纯目录 4083-4084 章）；作者字段 0 脏；**简介 98 本转载声明尾注**（blqiuge.cc/biqiuge8.com 同模板站族：「 作者：X所写的《Y》无弹窗…转载作品,章节由网友发布。无弹窗推荐地址：URL」）；章节标题 2 假阳性排除（同人命名/编号风格，非脏数据）
+- 【引擎侧清洗强化（scraper-go）】cleanx.go +2 类行级规：reJSCallLine（独立行 JS 函数调用残迹 app2();/read2();/chaptererror();——杰奇系 script 埋点跨行/转义逃逸容错）+reBadComment（<!-115-> 非法注释残行，单横杠不构成合法注释节点、内部数字骗过纯符号判定）；extract.go +3 处：reDescReprint 转载声明尾注锚点（作者标签+所写的《书名》+转载作品|网友发布 四特征联合防误伤）+reSeoSuffix 补「在线阅读」词+「无弹窗」尾缀独立可选+**ListItem 三字段清洗接线**（list 模式直接建 Novel 的 title/author/category 此前零清洗——书 614/635 入库残留的直接根因）
+- 【RE2 语义坑（实验锁定）】`阅读?` 尾缀可选在 (?:...)+$ 迭代组内不回跳：「X无弹窗」不命中而「X无弹窗阅读」命中；必须写显式分组 `(?:阅读)?`。5 种写法对照实验存档 audit_r132_test 注释
+- 【backend 存量回填（introx.go）】+introReprintRE 同族锚点（双侧闭环：引擎侧挡新数据、backend boot 回填洗存量）——重启触发回填 **76 行修正、转载尾注残留 0**、书 29 简介干净收尾实证；introx_test +4 case（3 真实存量样本+叙事不误伤）
+- 【存量数据修复】iqxsw《一剑霸天》8 条 SEO 变体删除（UNIQUE(title,author) 实证同书；保留别站正确名条目 64+同作者真书 625）；259「九天斩神诀免费阅读小说」撞名删除（库内 395/294 已有正确名）；505「苏婳顾北弦小说免费阅读完整版」→「苏婳顾北弦」（源站三字段全 SEO 拼接无真名，保守剥尾不虚构）
+- 【在库规则面复核】RuleHealth 19 条活跃全绿（rule 19 pilishuwu CF 瞬态已知，autoResume 覆盖）；5 条禁用规则源站直连探测：23qb/cunshu 000 死链、trxs/kelexs/dwxwc 403 CF——禁用状态维持正确；seed.json 同步规则 34
+- 【新增规则 34 笔趣阁(blqiuge)】源站结构全链实测：与规则 32 biqiuge8.com **同杰奇模板**（列表 /{cat}xiaoshuo/ 单页 .up ul li 60 行 s1/s2/s4 字段、书页 og:novel:* 全套 meta+.intro+.listmain dl dd a 双段目录、正文 #content 单页无分页、charset=gbk）——规则形状直接复用+categorySelector 增配 span.s1；POST /api/scrape-rules 入库 id=34+list 任务 20 实测（玄幻 60 本，total=60 与实测 li 数吻合）
+- 【blqiuge 新数据质量验证】首书 #1618《反派：开局PUA女剑仙》入库：书名无 SEO 尾/作者纯净/简介正常叙事收尾——新清洗链（含 reDescReprint/reJSCallLine）对 blqiuge 流量生效实证
+- 【运维三坑（本轮踩坑存档）】①bin 部署路径：restart 脚本调模块根 backend-go.bin 而 go build -o bin/ 产物在子目录——旧版本静默在跑（首轮回填无效的根因），必须 cp bin/ 产物到运行位再重启 ②Text file busy：运行进程持有 bin 文件，先 pkill 再 cp ③**exit 7 保活教训重蹈**：命令行直接 `setsid nohup &` 启动被会话回收（03:16:10 崩溃零日志实证）——必须 bash 脚本+exit 7 模式；重启 scraper 打断任务 20 in-flight 请求→「正文连续失败 60 章」自动暂停（防烧穿保护正确工作）→ resume-paused 复活 11 条（含 R130 遗留 pilishuwu）
+- 【质量基线】scraper-go 全量 go test 通过（46.6s）；backend introx 测试通过；staticcheck 双端 R132 新文件零报错（存量基线维持）；audit_r132_test.go 专项锁定 4 组新规（reDescReprint 4 case/reSeoSuffix 4 case/行级误杀面 4 case/cleanx 28a 回归锚点扩充）
+
+Stage Summary:
+- 数据清洗强化完成「全字段覆盖」闭环：正文（既有 cleanx 体系）+书名（reSeoSuffix 扩词+ListItem 接线）+作者/分类（ListItem 接线）+简介（reDescReprint 双侧）+行级新规（JS 调用残迹/非法注释）——引擎挡新+回填洗存+存量手修三层
+- 新增规则 34 blqiuge.cc 并实测入库质量达标；在库规则面复核：19 活跃全绿+5 禁用维持
+- 移交下一轮：①任务 20（blqiuge 玄幻 60 本）list 终态后评估其余 6 分类扩容（错峰 25s 惯例）②blqiuge 正文任务开跑后抽验 reJSCallLine 实战残留③全库 resort+audit 终验维持待办④GitHub PAT 轮换提醒（用户侧）
