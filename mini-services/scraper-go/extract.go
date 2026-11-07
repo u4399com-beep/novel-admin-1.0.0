@@ -166,6 +166,12 @@ var reDescTag = regexp.MustCompile(`(?i)</?[a-z][^>]{0,80}>`)
 // 与 backend introReprintRE 同族双侧闭环：引擎挡新数据，backend 回填洗存量。
 var reDescReprint = regexp.MustCompile(`\s*作\s*者\s*[:：]\s*.{1,30}所写的《[^》]{1,60}》.{0,100}(?:转载作品|网友发布).{0,80}$`)
 
+// R132b: 尾部「各位书友」推荐语（与 backend introShuyouPromoRE 同族）：
+// 「各位书友要是觉得《书名》还不错的话请不要忘记向您QQ群和微博里的朋友推荐哦！」——
+// 「QQ群」后跟「和」不带标点，既有 URL/promo 规则均不命中（存量 13 本实证）。
+// 锚定「各位书友…推荐」收尾强模板特征。
+var reDescShuyou = regexp.MustCompile(`(?s)\s*各位书友.{0,80}推荐[哦！。!~\s]*$`)
+
 func cleanDescription(t string) string {
         // Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
         // 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
@@ -177,6 +183,8 @@ func cleanDescription(t string) string {
         t = trimJSSpace(reDescPrefix.ReplaceAllString(t, ""))
         // R132: 转载声明尾注截断（先于 boilerplate——两模板可叠加出现，先截长尾）
         t = trimJSSpace(reDescReprint.ReplaceAllString(t, ""))
+        // R132b: 「各位书友」推荐语截断（同族下层模板）
+        t = trimJSSpace(reDescShuyou.ReplaceAllString(t, ""))
         return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }
 

@@ -5142,6 +5142,7 @@ Work Log:
 - 【新增规则 34 笔趣阁(blqiuge)】源站结构全链实测：与规则 32 biqiuge8.com **同杰奇模板**（列表 /{cat}xiaoshuo/ 单页 .up ul li 60 行 s1/s2/s4 字段、书页 og:novel:* 全套 meta+.intro+.listmain dl dd a 双段目录、正文 #content 单页无分页、charset=gbk）——规则形状直接复用+categorySelector 增配 span.s1；POST /api/scrape-rules 入库 id=34+list 任务 20 实测（玄幻 60 本，total=60 与实测 li 数吻合）
 - 【blqiuge 新数据质量验证】首书 #1618《反派：开局PUA女剑仙》入库：书名无 SEO 尾/作者纯净/简介正常叙事收尾——新清洗链（含 reDescReprint/reJSCallLine）对 blqiuge 流量生效实证
 - 【运维三坑（本轮踩坑存档）】①bin 部署路径：restart 脚本调模块根 backend-go.bin 而 go build -o bin/ 产物在子目录——旧版本静默在跑（首轮回填无效的根因），必须 cp bin/ 产物到运行位再重启 ②Text file busy：运行进程持有 bin 文件，先 pkill 再 cp ③**exit 7 保活教训重蹈**：命令行直接 `setsid nohup &` 启动被会话回收（03:16:10 崩溃零日志实证）——必须 bash 脚本+exit 7 模式；重启 scraper 打断任务 20 in-flight 请求→「正文连续失败 60 章」自动暂停（防烧穿保护正确工作）→ resume-paused 复活 11 条（含 R130 遗留 pilishuwu）
+- 【R132b 第二层尾注模板（E2E 抽验驱动发现）】书 29 详情 API 抽验暴露转载尾注洗后的**下层同族模板**：「各位书友要是觉得《书名》还不错的话请不要忘记向您QQ群和微博里的朋友推荐哦！」——「QQ群」后跟「和」不带标点，introPromoCutRE（要求群词后跟标点）不命中；全库扫出 13 本同形态。补双侧锚点 introShuyouPromoRE/reDescShuyou（「各位书友…推荐」收尾强模板特征+叙事不误伤 case）——backend 回填 18 行修正、残留 0、书 29 简介干净收尾「有我一日，人族不灭！」
 - 【质量基线】scraper-go 全量 go test 通过（46.6s）；backend introx 测试通过；staticcheck 双端 R132 新文件零报错（存量基线维持）；audit_r132_test.go 专项锁定 4 组新规（reDescReprint 4 case/reSeoSuffix 4 case/行级误杀面 4 case/cleanx 28a 回归锚点扩充）
 
 Stage Summary:

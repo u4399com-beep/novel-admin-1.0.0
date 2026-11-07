@@ -150,6 +150,8 @@ func cleanNovelIntro(desc string) (string, []string) {
         out = introTailCraftRE.ReplaceAllString(out, "")
         // R132: 尾部转载声明截断（98 本存量实证，见 introReprintRE 注）
         out = introReprintRE.ReplaceAllString(out, "")
+        // R132b: 尾部「各位书友」推荐语截断（13 本存量实证，见 introShuyouPromoRE 注）
+        out = introShuyouPromoRE.ReplaceAllString(out, "")
         out = strings.TrimSpace(out)
         // 整段壳简介拒收（首尾锚定全串模板，introMetaTplRE 同哲学；语料实形 #71/#240）
         if introShellMetaRE.MatchString(out) {
@@ -180,6 +182,13 @@ var introTailCraftRE = regexp.MustCompile(`[^\s，。！？]{1,50}是(?:原作�
 // 锚点多特征联合（作者标签+所写的《书名》+转载作品|网友发布，缺一不截）防误伤叙事；
 // (?s) 允许跨行（html.UnescapeString 后 <br> 已转换行，尾注可能在第二行）。
 var introReprintRE = regexp.MustCompile(`(?s)\s*作\s*者\s*[:：]\s*.{1,30}所写的《[^》]{1,60}》.{0,100}(?:转载作品|网友发布).{0,80}$`)
+
+// R132b: 尾部「各位书友」推荐语（存量 13 本实证，转载尾注洗后暴露的下层同族模板）：
+// 「各位书友要是觉得《书名》还不错的话请不要忘记向您QQ群和微博里的朋友推荐哦！」。
+// ⚠ 与 introPromoCutRE 互补：该样本「QQ群」后跟「和」不带标点，PromoCutRE 要求群词后
+// 跟 [：:【(（\[] 不命中。本锚点「各位书友…推荐」收尾强模板特征，正常叙事简介不会以
+// 此形态收尾。
+var introShuyouPromoRE = regexp.MustCompile(`(?s)\s*各位书友.{0,80}推荐[哦！。!~\s]*$`)
 
 // extractIntroWords 从「相关小说：」清单尾块提取长尾词条目（顿号/逗号/分号/换行分隔）。
 // 质量闸门：2..30 rune、含文字、非 URL/纯数字/推广形态、kwNormalize 归一去重、上限
