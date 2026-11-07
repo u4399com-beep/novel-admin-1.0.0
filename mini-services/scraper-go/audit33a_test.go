@@ -154,7 +154,7 @@ func TestHostSlotIntervalBoundedWithEnv(t *testing.T) {
 	slot.mu.Unlock()
 	acquireDomainSlot("clamp33a.test")
 	slot.mu.Lock()
-	gap := slot.nextAt.Sub(time.Now())
+	gap := time.Until(slot.nextAt)
 	slot.mu.Unlock()
 	if gap <= 0 {
 		t.Fatalf("nextAt 应前跳，got %v", gap)

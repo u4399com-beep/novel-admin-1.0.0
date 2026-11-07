@@ -132,6 +132,19 @@ func runningDelete(taskID int) {
         gRunningMu.Unlock()
 }
 
+// runningIDs 本进程在跑任务 id 快照（R133 per-host 任务准入用：triggerScrapeTask 已
+// 登记 gRunning 但 runTask 的 pending→running 条件更新尚未落库的窗口内，这些任务
+// 同样占用 host 并发额度，只数 DB running 行会低估导致同 host 超发）。
+func runningIDs() []int {
+        gRunningMu.Lock()
+        defer gRunningMu.Unlock()
+        ids := make([]int, 0, len(gRunning))
+        for id := range gRunning {
+                ids = append(ids, id)
+        }
+        return ids
+}
+
 // lastLines 保留最后 n 行（与 Run 同规约：只保留最近 MAX_LOG_LINES 行）
 func lastLines(s string, n int) string {
         lines := strings.Split(s, "\n")

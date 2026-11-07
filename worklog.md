@@ -5149,3 +5149,24 @@ Stage Summary:
 - 数据清洗强化完成「全字段覆盖」闭环：正文（既有 cleanx 体系）+书名（reSeoSuffix 扩词+ListItem 接线）+作者/分类（ListItem 接线）+简介（reDescReprint 双侧）+行级新规（JS 调用残迹/非法注释）——引擎挡新+回填洗存+存量手修三层
 - 新增规则 34 blqiuge.cc 并实测入库质量达标；在库规则面复核：19 活跃全绿+5 禁用维持
 - 移交下一轮：①任务 20（blqiuge 玄幻 60 本）list 终态后评估其余 6 分类扩容（错峰 25s 惯例）②blqiuge 正文任务开跑后抽验 reJSCallLine 实战残留③全库 resort+audit 终验维持待办④GitHub PAT 轮换提醒（用户侧）
+
+---
+Task ID: R133
+Agent: Z.ai Code (main)
+Task: 用户 5 项清单——①遗留问题②章节效率③反反爬④代码精简⑤一键安装
+
+Work Log:
+- 【开局·第 17 次沙箱重置（全量形态）】三服务全灭且双 bin 运行位+bin/ 子目录+Go/venv/db/curl-imp 全消失（git-only 幸存）——R127「bin 快速路径」首次失效形态。走完整链：Go 1.22.12 /tmp 快速装（golang.google.cn 直连）→ build-go.sh 双产物（goproxy.cn 全量拉模块）→ db 目录重建+backend 秒起（空库自动 DDL+播种 25 规则含 #34）→ ensureEngine 自动拉起 scraper → stealth venv uv 阿里镜像+chromium 146.0.7680.177.5 断点续传（216MB）全绿 → curl-imp 21 二进制装好 → cloak 冒烟过盾（aijjxs 200）。E26 fleetkeeper 5min 周期自动重建 20 任务全 running——零手工建任务，舰队自持第 3 次实战
+- 【R133 核心：runner per-host 任务并发准入（效率×源站保护双目标根修）】实证链：blqiuge 7 分类任务齐发 → 引擎域限速队列饱和 → 「未预约槽位快速失败（backend 请降并发）」→ 全策略 timeout-budget → plain 策略全灭滑落 fetch-browser（37s/请求）→ 书目连败 30 熔断 partial/暂停循环空烧。runner.go 派发块重写：pending+running 一查（targetUrl 优先/规则 siteUrl 兜底 COALESCE NULLIF 防 NULL）→ hostRunning 记账（DB running ∪ gRunning in-flight 窗口，新增 runningIDs() helper）→ 同 host 达上限新任务留队 pending；SCRAPE_TASK_PER_HOST_LIMIT 默认 2、0=不限（envIntAllowZero）；ruleHostOf 无 host 脏数据不卡舰队。准入日志仅状态跃迁打（runnerHeldPrev 防每 2s 刷屏）。实战验证：7 blqiuge 任务自动改排队消化、单发直测 fetch-ua-rotate 复活（plain 策略回归）、partial 任务 PATCH restart 续传
+- 【R133 数据清洗第三轮强化（四字段横扫驱动，3 漏网实样）】①reSeoSuffix +完整版/无删减版/精校版/完结版/全文/全本/正版（#63 尾「完整版」#464 尾「全文」实证）②「小说」尾缀**代码级保守剥**——不直接入词表（防《AI写小说》《写小说》误伤），reSeoMarker（原始标题含其它 SEO 词=确认拼接形态）守卫；⚠ 踩坑：marker 必须测剥前原貌（origTitle），剥完再测 SEO 词已不在永不命中（独立 Go 程序 8 case 实验锁定）③简介截断容错起点锚 reDescShuyouTrunc（blqiuge 885《劫天运》简介止于「…《劫天运》还」——源站截断致旧「…推荐$」尾锚永不命中；样板起点即垃圾起点）+微博空占位孤儿尾 reDescWeiboOrphan，双侧闭环（backend introShuyouTruncRE/introWeiboOrphanRE 回填 1 行修正，885 简介干净收尾「全都送下地狱。」）
+- 【存量数据手修（R132 同口径）】#63 改名「苏婳顾北弦」；一剑霸天 iqxsw 6 条同书 SEO 变体删除（413/417/448/464/477/491，保留 #85 别站正确名）——UNIQUE(title,author) 撞名实锤新 bin 重刷已产出干净条目。终扫：书名 SEO 0/简介尾注 0/全库 1165 书
+- 【staticcheck 双端清零（任务④）】9 处残留全修：backend audit83 SA4006 死赋值删除/chapterorder S1016×3 结构字面量转类型转换/pool_lane_test S1038+fmt import 清理；scraper audit33a S1024 time.Until/audit57a S1009×2/jsontoc ST1012 errNoTransport 重命名（含 test 引用+注释）。双端 staticcheck 0 输出+go vet 净+全量 go test 通过（scraper 46s/backend 69s）
+- 【任务⑤一键安装时效核对】bootstrap-cn.sh（R127 修复版 TAR_OK/tgz 恒路径）+deploy-cn.sh（R131 stealth 侧车 6/8+镜像链+预构建快速路径）审阅通过，无需改动；本轮第 17 次重置的完整恢复链本身即 install 路径的实战回归
+- 【E2E 浏览器自验（agent-browser）】6 项全过：首页渲染（42 本唯一书目/11 分类导航）、详情页 /book/4 全链（标题/作者/简介/26 章链）、零 console error、移动端 390px 零溢出（scrollWidth=390）、页脚双端 0px 贴底
+- 【库/引擎状态】库 761→1165 书、150 万章（+40 万章/25min）；引擎成功率 96.2%（重置后新账本）；规则面 20 enabled+5 disabled 维持（13/19/30 已知瞬态，E18/E21/E23 接管）；blqiuge 书目 34→148+、四分类任务排队消化中（准入 2/host）
+
+Stage Summary:
+- per-host 任务准入落地：同 host 任务齐发→域限速排队饱和→全策略饿死→熔断循环的根因消除，「效率与源站封禁兼顾」从口号变机制（env 可调 0=旧行为）
+- 数据清洗第三轮：SEO 尾缀词表扩充+「小说」保守剥（marker 测原貌坑存档）+简介截断容错起点锚+微博孤儿尾，双侧闭环，全库终扫 0 残留
+- 第 17 次重置全量形态自愈流程走通（bin 全灭→源码构建路径），一键安装链审阅确认时效
+- 移交下一轮：①blqiuge 余下分类任务消化+reJSCallLine 实战残留抽验（待实正文落地）②全库 resort+audit 终验维持待办③任务 20/22 Phase 2 正文填充速率观测（chDone 慢起步，准入后应回升）④GitHub PAT 轮换提醒（用户侧，已多轮暴露）

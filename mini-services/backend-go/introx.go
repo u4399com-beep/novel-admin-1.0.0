@@ -152,6 +152,9 @@ func cleanNovelIntro(desc string) (string, []string) {
         out = introReprintRE.ReplaceAllString(out, "")
         // R132b: 尾部「各位书友」推荐语截断（13 本存量实证，见 introShuyouPromoRE 注）
         out = introShuyouPromoRE.ReplaceAllString(out, "")
+        // R133: 截断容错起点锚 + 微博空占位孤儿尾（与 scraper reDescShuyouTrunc/reDescWeiboOrphan 同族双侧）
+        out = introShuyouTruncRE.ReplaceAllString(out, "")
+        out = introWeiboOrphanRE.ReplaceAllString(out, "")
         out = strings.TrimSpace(out)
         // 整段壳简介拒收（首尾锚定全串模板，introMetaTplRE 同哲学；语料实形 #71/#240）
         if introShellMetaRE.MatchString(out) {
@@ -189,6 +192,14 @@ var introReprintRE = regexp.MustCompile(`(?s)\s*作\s*者\s*[:：]\s*.{1,30}所�
 // 跟 [：:【(（\[] 不命中。本锚点「各位书友…推荐」收尾强模板特征，正常叙事简介不会以
 // 此形态收尾。
 var introShuyouPromoRE = regexp.MustCompile(`(?s)\s*各位书友.{0,80}推荐[哦！。!~\s]*$`)
+
+// R133: 截断容错起点锚——源站简介在样板段中途截断时（实证 blqiuge 885《劫天运》
+// 止于「…《劫天运》还」）旧尾锚永不命中；样板起点即垃圾起点，起点锚命中则起点到
+// 末尾整段截。可选拉入前置「微博连接：」空占位。与 scraper reDescShuyouTrunc 同族。
+var introShuyouTruncRE = regexp.MustCompile(`(?s)\s*(?:微博连接[:：]?\s*)?各位书友要是觉得《[^》]{1,60}》.{0,120}$`)
+
+// R133: 「微博连接：/链接：」空占位孤儿尾（与 scraper reDescWeiboOrphan 同族）。
+var introWeiboOrphanRE = regexp.MustCompile(`\s*微博(?:连接|链接)[:：]?\s*$`)
 
 // extractIntroWords 从「相关小说：」清单尾块提取长尾词条目（顿号/逗号/分号/换行分隔）。
 // 质量闸门：2..30 rune、含文字、非 URL/纯数字/推广形态、kwNormalize 归一去重、上限

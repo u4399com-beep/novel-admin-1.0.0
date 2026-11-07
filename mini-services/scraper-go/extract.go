@@ -99,7 +99,9 @@ var (
         // R132: 「无弹窗」尾缀独立可选（书 635「苏信赵凌免费阅读无弹窗」——旧词表要求后跟「阅读」
         //        致剥不掉）。⚠ RE2 语义坑：`阅读?` 尾缀可选在 (?:...)+$ 迭代下不回跳（实测
         //        「X无弹窗」不命中），必须写显式分组 `(?:阅读)?`（实验锁定，见 audit_r132_test）。
-        reSeoSuffix  = regexp.MustCompile(`(?i)(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?(?:阅读)?|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt|在线阅读))+$`)
+        reSeoSuffix  = regexp.MustCompile(`(?i)(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?(?:阅读)?|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt|在线阅读|完整版|无删减版|精校版|完结版|全文|全本|正版))+$`)
+        // reSeoMarker 「小说」尾缀保守判定的样板标记（任意位置命中即视标题为 SEO 拼接形态）
+        reSeoMarker  = regexp.MustCompile(`(?i)最新章节|免费阅读|全文阅读|在线阅读|无弹窗|笔趣阁|完整版|txt下载`)
         reAuthorTail = regexp.MustCompile(`(?i)作者[:：][^《》]{1,30}$`)
         reBookTitle  = regexp.MustCompile(`^《(.+?)》$`)
 )
@@ -110,6 +112,7 @@ func cleanBookTitle(t string) string {
         if s == "" {
                 return ""
         }
+        origTitle := s // R133:「小说」保守剥的 marker 判定基准（剥前原貌）
         if reTxtDownload.MatchString(s) {
                 // 仅当存在下载站样板词时才按分隔符拆段，避免误伤含「_/-」的正常书名
                 seg := strings.SplitN(s, "_", 2)[0]
@@ -126,6 +129,17 @@ func cleanBookTitle(t string) string {
         stripped := trimJSSpace(reSeoSuffix.ReplaceAllString(s, ""))
         if stripped != "" && runeLen(stripped) >= 2 {
                 s = stripped
+        }
+        // R133: 「小说」尾缀保守剥（实证 iqxsw「苏婳顾北弦小说免费阅读完整版」剥掉
+        // 免费阅读/完整版后残留「小说」）。不直接入 reSeoSuffix 词表——《AI写小说》
+        // 《写小说》类真书名会被误伤；改为代码级守卫：仅当**原始标题**含其它 SEO 样板词
+        // （reSeoMarker 任意位置命中=确认 SEO 拼接形态）时才视「小说」尾为样板。
+        // ⚠ marker 必须测原始输入：剥完再测则 SEO 词已被剥掉永远不命中（R133 实测踩坑）。
+        if strings.HasSuffix(s, "小说") {
+                trimmed := trimJSSpace(strings.TrimSuffix(s, "小说"))
+                if trimmed != "" && runeLen(trimmed) >= 2 && reSeoMarker.MatchString(origTitle) {
+                        s = trimmed
+                }
         }
         // 新模板 h1 内嵌作者行（如 trxsw：h1.f21h 文本 = 「书名作者:某某」）→ 剥「作者:某某」尾巴
         noAuthor := trimJSSpace(reAuthorTail.ReplaceAllString(s, ""))
@@ -172,6 +186,16 @@ var reDescReprint = regexp.MustCompile(`\s*作\s*者\s*[:：]\s*.{1,30}所写的
 // 锚定「各位书友…推荐」收尾强模板特征。
 var reDescShuyou = regexp.MustCompile(`(?s)\s*各位书友.{0,80}推荐[哦！。!~\s]*$`)
 
+// R133: 源站截断容错——「各位书友要是觉得《书名》」样板**起点锚**。源站简介常在样板段
+// 中途截断（实证 blqiuge 885《劫天运》简介止于「…《劫天运》还」），旧「…推荐$」尾锚
+// 永不命中。样板起点即垃圾起点：命中起点锚则起点到末尾整段截（含截断残段），
+// 叙事简介不可能含「各位书友要是觉得《书名》」强模板。可选拉入前置「微博连接：」空占位。
+var reDescShuyouTrunc = regexp.MustCompile(`(?s)\s*(?:微博连接[:：]?\s*)?各位书友要是觉得《[^》]{1,60}》.{0,120}$`)
+
+// R133: 「微博连接：/链接：」空占位孤儿尾（杰奇系模板 URL 未拼入，前面样板段被
+// 其它规则截断后残留）。
+var reDescWeiboOrphan = regexp.MustCompile(`\s*微博(?:连接|链接)[:：]?\s*$`)
+
 func cleanDescription(t string) string {
         // Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
         // 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
@@ -185,6 +209,9 @@ func cleanDescription(t string) string {
         t = trimJSSpace(reDescReprint.ReplaceAllString(t, ""))
         // R132b: 「各位书友」推荐语截断（同族下层模板）
         t = trimJSSpace(reDescShuyou.ReplaceAllString(t, ""))
+        // R133: 截断容错起点锚（先截长尾，再收孤儿）
+        t = trimJSSpace(reDescShuyouTrunc.ReplaceAllString(t, ""))
+        t = trimJSSpace(reDescWeiboOrphan.ReplaceAllString(t, ""))
         return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }
 

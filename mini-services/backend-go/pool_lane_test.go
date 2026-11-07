@@ -7,7 +7,6 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -196,7 +195,7 @@ func TestLaneLimiterConcurrent(t *testing.T) {
 					return
 				}
 				if lim.limitVal() > 4 {
-					t.Error(fmt.Sprintf("limit 越界: %d", lim.limitVal()))
+					t.Errorf("limit 越界: %d", lim.limitVal())
 					lim.release()
 					return
 				}

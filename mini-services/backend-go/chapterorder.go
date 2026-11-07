@@ -763,7 +763,7 @@ func reorderRefPairs(pairs []refPair) ([]refPair, string) {
                 if vol != "" && rest != p.Title {
                         refs[i] = ChapterRef{Title: rest, URL: p.URL} // 剥卷前缀（纯卷行 rest==原标题不动）
                 } else {
-                        refs[i] = ChapterRef{Title: p.Title, URL: p.URL}
+                        refs[i] = ChapterRef(p)
                 }
         }
         // 卷可分 + 重复序号（分卷各自编号的标志信号）→ 卷内分段重排（nums 中段兜底解析）
@@ -785,7 +785,7 @@ func reorderRefPairs(pairs []refPair) ([]refPair, string) {
                         if rr, engaged := volumeSegmentReorder(refs, vols, nums); engaged {
                                 out := make([]refPair, len(rr.refs))
                                 for i, r := range rr.refs {
-                                        out[i] = refPair{Title: r.Title, URL: r.URL}
+                                        out[i] = refPair(r)
                                 }
                                 return out, rr.note
                         }
@@ -794,7 +794,7 @@ func reorderRefPairs(pairs []refPair) ([]refPair, string) {
         rr := reorderChapterRefsVols(refs, vols, DISORDER_RATIO)
         out := make([]refPair, len(rr.refs))
         for i, r := range rr.refs {
-                out[i] = refPair{Title: r.Title, URL: r.URL}
+                out[i] = refPair(r)
         }
         return out, rr.note
 }

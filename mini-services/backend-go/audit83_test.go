@@ -155,14 +155,6 @@ func TestNovelPseoTagsDerivedFallback(t *testing.T) {
 	if len(tags) < 12 {
 		t.Fatalf("血缘词应占满榜单，got %d: %v", len(tags), tags)
 	}
-	has = func(kw string) bool {
-		for _, x := range tags {
-			if x == kw {
-				return true
-			}
-		}
-		return false
-	}
 	for _, x := range tags {
 		if x == "孤例之书 小说" || x == "作者甲 小说" {
 			t.Errorf("血缘充足时衍生词应退场，tags=%v", tags)

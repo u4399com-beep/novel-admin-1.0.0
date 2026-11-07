@@ -18,6 +18,7 @@ import (
         "fmt"
         "log"
         "net/http"
+        "net/url"
         "os"
         osexec "os/exec"
         "path/filepath"
@@ -57,6 +58,21 @@ func killTSScrapeRunner() {
 }
 
 var runnerHTTPClient = &http.Client{Timeout: 8 * time.Second}
+
+// runnerHeldPrev 上一轮 per-host 准入留队的任务集合（单 runner goroutine 专属，
+// 无锁访问）——准入日志只在状态跃迁（首次留队）时打，防 2s 轮询刷屏。
+var runnerHeldPrev = map[int]bool{}
+
+// ruleHostOf 从任务抓取地址（targetUrl 优先，规则 siteUrl 兼底）提取小写 host——
+// R133 per-host 任务并发的记账键。无地址/解析失败返回空串=该任务不受准入约束
+// （保持旧派发行为，不因脏数据卡死舰队）。
+func ruleHostOf(siteURL string) string {
+        u, err := url.Parse(strings.TrimSpace(siteURL))
+        if err != nil || u.Host == "" {
+                return ""
+        }
+        return strings.ToLower(u.Host)
+}
 
 // recategorizeOne 未分类书慢速归类（每轮 0-1 本）。返回是否处理了一本。
 // Task 27-b 收编修复：LLM 失败（冷却/401）时旧实现 LIMIT 1 无轮转 → 永久卡死在同一本
@@ -496,27 +512,81 @@ func startRunner() {
                                 killTSScrapeRunner() // TS runner 防复活护栏（低频）
                         }
 
-                        // 轮询 pending 任务（R111：每轮派发 5→10——任务均为独立 goroutine
-                        // 并发执行（triggerScrapeTask go runTask），互不排队；加大批量只是把
-                        // 大舰队（10+ 规则）的起步等待从多轮压到 1-2 轮，无并发语义变化）
-                        var ids []int
-                        err := queryList(`SELECT id FROM ScrapeTask WHERE status = 'pending' ORDER BY id ASC LIMIT 10`,
+                        // 轮询 pending 任务（R111：每轮派发批量加大无并发语义变化；R133：
+                        // per-host 任务并发准入——任务均为独立 goroutine 并发执行
+                        // （triggerScrapeTask go runTask），互不排队，但同 host 任务齐发会把
+                        // 引擎域限速队列打饱和（R133 实证：rule34 7 任务齐发 → 引擎「限速排队
+                        // 饱和」未预约槽位快速失败 → 全策略 timeout-budget → 书目连败熔断
+                        // partial/暂停循环空烧预算）。准入=同 host 在跑任务达上限时新任务留队
+                        // pending，按域限速自然消纳，契合「兼顾源站封禁」约束。
+                        // SCRAPE_TASK_PER_HOST_LIMIT 调整，0=不限恢复旧行为。
+                        type taskHostRow struct {
+                                id     int
+                                status string
+                                host   string
+                        }
+                        live := make([]taskHostRow, 0, 32)
+                        err := queryList(`SELECT t."id", t."status", COALESCE(NULLIF(t."targetUrl",''), r."siteUrl", '')
+                                 FROM "ScrapeTask" t LEFT JOIN "ScrapeRule" r ON t."ruleId" = r."id"
+                                 WHERE t."status" IN ('pending','running') ORDER BY t."id" ASC`,
                                 func(rows *sql.Rows) error {
-                                        var id int
-                                        if err := rows.Scan(&id); err != nil {
+                                        var r taskHostRow
+                                        if err := rows.Scan(&r.id, &r.status, &r.host); err != nil {
                                                 return err
                                         }
-                                        ids = append(ids, id)
+                                        live = append(live, r)
                                         return nil
                                 })
                         if err != nil {
                                 log.Printf("[backend-go-runner] poll error: %v", err)
                         } else {
-                                for _, id := range ids {
-                                        triggerScrapeTask(id)
+                                perHostLimit := envIntAllowZero("SCRAPE_TASK_PER_HOST_LIMIT", 2)
+                                hostRunning := make(map[string]int, 8)
+                                inFlight := make(map[int]bool, 8)
+                                for _, id := range runningIDs() {
+                                        inFlight[id] = true
                                 }
-                                if len(ids) > 0 {
-                                        log.Printf("[backend-go-runner] dispatched %d task(s)", len(ids))
+                                for _, r := range live {
+                                        if r.status == "running" || inFlight[r.id] {
+                                                hostRunning[ruleHostOf(r.host)]++
+                                        }
+                                }
+                                dispatched := 0
+                                pendSkipped := make(map[string][]int, 4)
+                                for _, r := range live {
+                                        if r.status != "pending" {
+                                                continue
+                                        }
+                                        h := ruleHostOf(r.host)
+                                        if perHostLimit > 0 && h != "" && hostRunning[h] >= perHostLimit {
+                                                pendSkipped[h] = append(pendSkipped[h], r.id)
+                                                continue
+                                        }
+                                        hostRunning[h]++
+                                        triggerScrapeTask(r.id)
+                                        dispatched++
+                                }
+                                for h, ids := range pendSkipped {
+                                        // R133：仅在状态跃迁时记日志（新入队的任务首次被留队），
+                                        // 防每 2s 轮询同批任务刷屏淹没有效日志
+                                        newly := make([]int, 0, len(ids))
+                                        for _, id := range ids {
+                                                if !runnerHeldPrev[id] {
+                                                        newly = append(newly, id)
+                                                }
+                                        }
+                                        if len(newly) > 0 {
+                                                log.Printf("[backend-go-runner] per-host 准入：host %s 在跑已达上限 %d，任务 %v 留队 pending", h, perHostLimit, newly)
+                                        }
+                                }
+                                runnerHeldPrev = make(map[int]bool, 8)
+                                for _, ids := range pendSkipped {
+                                        for _, id := range ids {
+                                                runnerHeldPrev[id] = true
+                                        }
+                                }
+                                if dispatched > 0 {
+                                        log.Printf("[backend-go-runner] dispatched %d task(s)", dispatched)
                                 }
                         }
 

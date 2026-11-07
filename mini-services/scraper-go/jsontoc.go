@@ -270,22 +270,22 @@ func encodeURIComp(s string) string {
 	return b.String()
 }
 
-// tocErrNoTransport 伪装传输不可用哨兵（curl-impersonate 二进制缺失时回退 Go 原生）
-var tocErrNoTransport = errors.New("no curl-impersonate transport")
+// errNoTransport 伪装传输不可用哨兵（curl-impersonate 二进制缺失时回退 Go 原生）
+var errNoTransport = errors.New("no curl-impersonate transport")
 
 // tocFetchImpersonate R103：目录接口的 JA3 伪装传输。Go net/http 的 TLS ClientHello
 // 是知名机器人指纹，CF 系 WAF 对「浏览器 UA + Go TLS」的 AJAX 请求直接 403
 // （101kks 实测：同头族 curl 200 / Go 403，增删 Referer/XHR 头族均不改变结果）——
 // 书页主抓取走策略链可用 curl-impersonate 穿透，同源的目录接口却因独立发请求
 // 恒 403，chapterListApi 能力形同虚设。二进制可用时经 curl-impersonate 发送
-// （TLS/JA3 指纹级伪装 + 同一套请求头），缺失时返回 tocErrNoTransport 由调用方
+// （TLS/JA3 指纹级伪装 + 同一套请求头），缺失时返回 errNoTransport 由调用方
 // 回退 Go 原生（非 CF 站不受影响）。
 // 不带 --location：同源校验仅覆盖首跳（与 tocHTTPClient.CheckRedirect 同姿态），
 // 3xx 原样返回交调用方拒绝；Set-Cookie 逐行返回供会话桶回存。
 func tocFetchImpersonate(req *http.Request, budgetMs int64) (body []byte, status int, setCookies []string, err error) {
 	bins := detectCurlImpersonates()
 	if len(bins) == 0 {
-		return nil, 0, nil, tocErrNoTransport
+		return nil, 0, nil, errNoTransport
 	}
 	curlCursorMu.Lock()
 	bin := bins[curlBinCursor%len(bins)]
@@ -293,7 +293,7 @@ func tocFetchImpersonate(req *http.Request, budgetMs int64) (body []byte, status
 	curlCursorMu.Unlock()
 	tu, perr := urlParse(req.URL.String())
 	if perr != nil {
-		return nil, 0, nil, tocErrNoTransport
+		return nil, 0, nil, errNoTransport
 	}
 	maxSec := budgetMs / 1000
 	if maxSec < 3 {
@@ -519,7 +519,7 @@ func extractJsonTocBudgeted(root *goquerySelection, cfg chapterListApiConfig, ba
 	}
 	// R103：优先走 curl-impersonate JA3 伪装传输（CF 系对 Go TLS 指纹 AJAX 恒 403），
 	// 二进制缺失/执行失败回退 Go 原生。预算口径同 tocHTTPClient（max-time 由 slotBudget 推导）。
-	if ib, istatus, isc, ierr := tocFetchImpersonate(req, slotBudget); ierr != tocErrNoTransport {
+	if ib, istatus, isc, ierr := tocFetchImpersonate(req, slotBudget); ierr != errNoTransport {
 		if ierr != nil {
 			*warnings = append(*warnings, "chapterListApi：伪装传输失败，回退原生（"+truncateStr(ierr.Error(), 120)+"）")
 		} else {

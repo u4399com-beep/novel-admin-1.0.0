@@ -175,7 +175,7 @@ func TestChapterListApiBookIdPlaceholderInURL(t *testing.T) {
 
 func TestTocFetchImpersonateFallbackNoBinary(t *testing.T) {
 	// 二进制缺失路径：PATH 清空（+ HOME 兜底目录指向空临时目录）→ detectCurlImpersonates 空
-	// → tocErrNoTransport，调用方回退 Go 原生
+	// → errNoTransport，调用方回退 Go 原生
 	tmpEmpty := t.TempDir()
 	t.Setenv("PATH", tmpEmpty)
 	t.Setenv("HOME", tmpEmpty)
@@ -191,8 +191,8 @@ func TestTocFetchImpersonateFallbackNoBinary(t *testing.T) {
 	}()
 	req, _ := http.NewRequest("GET", "https://example.invalid/a", nil)
 	_, _, _, err := tocFetchImpersonate(req, 5000)
-	if err != tocErrNoTransport {
-		t.Fatalf("无二进制应返回 tocErrNoTransport，got %v", err)
+	if err != errNoTransport {
+		t.Fatalf("无二进制应返回 errNoTransport，got %v", err)
 	}
 }
 

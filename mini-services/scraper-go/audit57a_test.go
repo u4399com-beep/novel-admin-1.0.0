@@ -280,7 +280,7 @@ func TestApiTestSuccessEnvelopeContract(t *testing.T) {
 	if rawJSONString57a(env.Strategy) != "fetch-ua-rotate" {
 		t.Fatalf("顶层 strategy 应为命中策略名，got %q", rawJSONString57a(env.Strategy))
 	}
-	if env.Attempts == nil || len(env.Attempts) == 0 {
+	if len(env.Attempts) == 0 {
 		t.Fatalf("成功响应必须携带 attempts 明细（backend 记「尝试 N 次」），got nil")
 	}
 	if env.Warnings == nil {
@@ -410,7 +410,7 @@ func TestApiTestChainFailure502EnvelopeContract(t *testing.T) {
 	if v, ok := raw["elapsedMs"].(float64); !ok || v < 0 {
 		t.Fatalf("502 信封应携带 elapsedMs 数值，got %v", raw["elapsedMs"])
 	}
-	if env.Attempts == nil || len(env.Attempts) == 0 {
+	if len(env.Attempts) == 0 {
 		t.Fatalf("失败响应也必须携带 attempts 明细（契约：成功与失败都带），got nil")
 	}
 	if env.Warnings == nil {
