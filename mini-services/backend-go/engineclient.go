@@ -763,7 +763,14 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
                 return first
         }
         // R99: 各分页引擎耗时的最大值作为本章饱和信号（任一页排长队都说明域槽饱和）
+        // R131 修复：随 maxElapsed 配对携带 QueueMs——旧实现重组返回值时丢弃 QueueMs（恒 0），
+        // ServiceElapsedMs 对 queue<=0 回退总耗时口径 → R114 服务耗时修复对章填充主消费者
+        // 静默失效：多任务共享域槽的排队深度（9-12s 实测）全部计入 EWMA → laneBumpFrozen
+        // 恒真 → 车道永久冻结在软起步 4（每任务仅预约约 1/3 域槽位，全库吞吐锁死在可达值
+        // 的约 1/3）。语义：取 max-elapsed 那一页的配对 queue（该页的排队解释该页的总耗时），
+        // 非跨页求和
         maxElapsed := first.ElapsedMs
+        maxQueue := first.QueueMs
         data := first.Data
         warnings := append([]string(nil), first.Warnings...)
         strategy := first.Strategy
@@ -798,6 +805,10 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
                 warnings = append(warnings, sub.Warnings...)
                 strategy = sub.Strategy
                 attempts = sub.Attempts
+                if sub.ElapsedMs > maxElapsed {
+                        maxElapsed = sub.ElapsedMs
+                        maxQueue = sub.QueueMs
+                }
                 next = sub.Data.NextURL
         }
         // warnings 去重保序（[...new Set(warnings)] 语义）
@@ -809,5 +820,5 @@ func fetchChapterPaged(u string, rule LoadedRule, referer string) engineResult[C
                         uniq = append(uniq, w)
                 }
         }
-        return engineResult[ChapterData]{OK: true, Data: data, Warnings: uniq, Strategy: strategy, Attempts: attempts, ElapsedMs: maxElapsed}
+        return engineResult[ChapterData]{OK: true, Data: data, Warnings: uniq, Strategy: strategy, Attempts: attempts, ElapsedMs: maxElapsed, QueueMs: maxQueue}
 }

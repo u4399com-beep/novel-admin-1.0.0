@@ -5105,3 +5105,23 @@ Work Log:
 Stage Summary:
 - R129 移交三项收口：①重置自愈（双 bin 快速路径第 3 次实战）+规则 33 跨会话活库验证+E26 自愈实证 ②2s 限频效率决策落档（暂缓分桶，礼貌优先，488/0 完美纪录背书）③分类扩容 5 任务落地（6/6 分类全覆盖；11 个排行榜入口维持缓建——与分类书目高度重叠，待分类稳态后评估增量）
 - 移交下一轮：①list 任务批量终态后全库 resort+audit 终验（R124b 口径）②dzrjk 排行榜 11 入口增量评估 ③正文填充稳态吞吐再评估（含 dzrjk 单 IP ~1800 章/h 实测校准）④GitHub PAT 轮换提醒（用户侧）
+
+---
+Task ID: R131
+Agent: Z.ai Code (main)
+Task: 用户 5 项指令——①遗留问题②章节内容获取效率（兼顾封禁）③强化采集与反反爬④完善精简代码⑤更新一键安装命令
+
+Work Log:
+- 【第 17 次沙箱重置自愈】三服务+db+venv+Go+curl-imp+cloakbrowser 全灭+**git 工作区回滚到 R129**（R130 提交 c339d9f 仅存远程）——新形态：重置不只杀进程还回滚 .git；恢复=git fetch+reset --hard origin/main（先 stash 工作区残影）。双 bin 幸存快速路径第 4 次实战；R128 临时脚本残影以未跟踪文件复活第 2 次（再清理）。全程 ~20 分钟三服务全绿+cloak 冒烟 56KB
+- 【⑤一键安装更新——stealth 侧车缺口补全】deploy-cn.sh 发现无 stealth 安装步骤（ensure/watchdog 尽力拉起但依赖永不安装→新服务器 CF 能力静默缺失）：新增 [6/8] 步（venv+python3-venv 检测→cloakbrowser/iv8 PyPI 镜像链 aliyun→官方→CloakBrowser chromium GitHub 镜像候选链 ghfast/gh-proxy/ghproxy+断点续传+架构选包）+全脚本 7 步→8 步重编号+docs/deployment.md 刷新；隔离演练幂等路径双「已就绪」绿
+- 【⑤部署级根修：cloakbrowser 版本上界】requirements.txt 裸 >=0.5.12 重装拉到 0.7.0 → API 断裂（get_chromium_version 移除/binary_info 改 manifest 驱动 cloakbrowser.dev/latest 被墙下载/结构变化）→ cloakBinary 恒 false 且 §1.5 恢复链全失效（「不报错的坏」最难排查形态）；锁 cloakbrowser>=0.5.12,<0.7（0.6.3 已知稳态）+playbook §1.5 第 5 条症状识别+修复路径；实测 0.6.3 降级后 binary_info installed=True+冒烟过盾 56KB
+- 【②效率根修：fetchChapterPaged QueueMs 丢失】R131 最重发现——fetchChapterPaged 重组返回值丢弃 QueueMs（恒 0）→ ServiceElapsedMs 对 queue<=0 回退总耗时 → **R114 服务耗时修复对章填充主消费者静默失效**：实测任务日志 EWMA 9.5s（真实服务 195ms+引擎排队 11.5s）→ laneBumpFrozen 恒真 → 车道永久冻结软起步 4（任务日志 250 次冻结零回升实证）→ 每任务仅预约 ~1/3 域槽位。修复：max-elapsed 页配对携带 QueueMs（+12/-1 干净 diff）。**修复实证：车道回升 4→6→8→10 恢复工作（原 250 次冻结），冻结从「永久锁死」变「呼吸式饱和收敛」**；吞吐窗口 12.2k/h（混合调度期，历史 10.8-20.8k 区间中段）
+- 【③反反爬/反脆弱：引擎不可达零预算恢复通道】双服务同时重启的 2s 竞态窗（backend runner 已派发、scraper 未 listening）把 10 任务首抓全烧「引擎不可达」→ 旧词表转入源站瞬态预算（每任务 4 次）白烧 1/4。根修三件套：worker.go pausedEngineDownMsg 专属文案（含「引擎不可达」字样契约、不含「限流…软拦截」防双通道竞争）+三处 finalize 分类点 isEngineDownErr 先行分流+runner.go autoResumeEngineTasks（/api/strategies 探活门控/静默 60s/每轮至多 10 条/零预算）；契约锁 TestEngineDownMsgContract 三断言（正匹配/负互斥/分类器不误吞）
+- 【④代码精简】staticcheck 双端生产代码 7 处修复：chain.go egresses 死存储删除（SA4006，下游零读取全函数核查+注释存档直连兜底意图）、pseo_suggest/clampIntField 零值 var 化（×2）、cookies.go delete 幂等卫语句简化、httpguard.go ==false→!、web.go 403→http.StatusForbidden、runner.go 裸接收；deadcode 全表审计（backend 10 hits+scraper 3 hits 全部 test-referenced 或文档化契约锚点/设计入口——零误删）；gofmt 全文件重排踩坑 1 次（checkout 回滚重做，守住 R128 噪音惯例）
+- 【观测与决策】dzrjk 六分类 6/6 running（fleetkeeper E26+R130 遗产）；CF 站快照（101kks 本轮零流量/washai ok=4）；库重建 1,203 书/152.6 万章/7,031 正文；引擎自愈后 17 running/2 paused
+
+Stage Summary:
+- 三大根修交付：①fetchChapterPaged QueueMs（R114 修复真正落地章路径，车道解冻实证）②cloakbrowser<0.7 锁版（一键部署静默断雷）③引擎不可达零预算通道（基础设施故障与源站故障语义分离）
+- 一键安装补齐 stealth 侧车（第 6/8 步）——R127 快速路径+R131 全能力部署，新服务器 CF 挑战站开箱可用
+- 反反爬语义强化：恢复预算按故障归属精确计量（源站瞬态 4 次 vs 引擎故障零预算探活门控），防自家抖动烧穿任务预算
+- 移交下一轮：①稳态吞吐校准（车道 10-12 满预约形态的主机占空比观测；修复前 12.9k vs 修复后待长窗复测）②list 终态后全库 resort+audit 终验③dzrjk 排行榜 11 入口维持缓建④GitHub PAT 轮换提醒（用户侧，已多轮暴露）

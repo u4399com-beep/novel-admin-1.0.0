@@ -17,10 +17,12 @@
 
 ---
 
-## 0. 国内服务器一键部署（最快路径，R90；R127 预构建快速路径）
+## 0. 国内服务器一键部署（最快路径，R90；R127 预构建快速路径；R131 补 stealth 侧车）
 
 > 一条命令完成：系统依赖 → Go 1.22（阿里云镜像）→ Go 模块代理（goproxy.cn）→ 构建双服务 →
-> curl-impersonate 军火（GitHub 镜像候选链）→ 启动 + 看护 → 健康检查。**git clone 到任意路径均可**，
+> curl-impersonate 军火（GitHub 镜像候选链）→ **stealth 侧车（R131 新增：venv + cloakbrowser/iv8
+> PyPI 镜像链 + CloakBrowser chromium 二进制镜像候选链+断点续传，CF 挑战站能力，可选，失败不阻塞）**
+> → 启动 + 看护 → 健康检查。**git clone 到任意路径均可**，
 > 路径由可执行文件位置自动推断（`paths.go` 解析链 + 脚本 `scripts/ensure-services.sh` 自适应）。
 >
 > **★ R127 预构建快速路径**：仓库自带 `bin/{backend-go,scraper-go}`（与源码原子同步提交的官方发布物）。

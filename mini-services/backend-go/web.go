@@ -400,7 +400,7 @@ func handleStatic(w http.ResponseWriter, r *http.Request) {
         rel = filepath.Clean("/" + rel) // 防穿越：强制根相对
         abs := filepath.Join(webRoot, "static", rel)
         if !strings.HasPrefix(abs, filepath.Join(webRoot, "static")+string(os.PathSeparator)) {
-                http.Error(w, "forbidden", 403)
+                http.Error(w, "forbidden", http.StatusForbidden) // R131（staticcheck ST1013）
                 return
         }
         st, err := os.Stat(abs)

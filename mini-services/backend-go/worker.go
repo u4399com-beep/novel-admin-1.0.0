@@ -811,6 +811,13 @@ func isTransientScrapeErr(err string) bool {
                 strings.Contains(err, "引擎不可达") || strings.Contains(err, "引擎请求超时")
 }
 
+// isEngineDownErr R131: 自家引擎侧故障判定（错误文案出自 engineclient.go 的两个结构化
+// 包装：「采集引擎不可达(3030)」/「引擎请求超时(Ns)」）。命中时任务应转 pausedEngineDownMsg
+// （健康门控零预算恢复），而非计入源站瞬态恢复预算——基础设施抖动不该烧任务预算。
+func isEngineDownErr(err string) bool {
+        return strings.Contains(err, "引擎不可达") || strings.Contains(err, "引擎请求超时")
+}
+
 // Task 57-b: 限流类 paused 终态文案提为包级常量——这些文案与 runner.go
 // autoResumePausedTasks 的 SQL LIKE '%限流%软拦截%' 词表构成隐式契约（文案措辞
 // 单方面漂移会让「自动恢复重新入队」静默失效），worker_autorecovery_test 的契约
@@ -824,6 +831,15 @@ const (
         pausedTransientBooksMsg = "书目抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
         // pausedTransientSingleMsg runSingle Phase 1 书页失败（瞬态）终态文案
         pausedTransientSingleMsg = "书页抓取失败（源站限流/空壳软拦截或引擎主机熔断冷却中，按错误形态判为瞬态而非确认封禁）：任务已自动暂停，冷却后自动恢复重新入队（每任务至多 4 次，多次未果请人工检查源站；已采进度保留）"
+        // pausedEngineDownMsg 自家引擎不可达/请求超时形态的 paused 终态文案（R131 新增）：
+        // 语义分流——引擎侧故障（引擎不可达/引擎请求超时，自家基础设施）与源站瞬态
+        // （限流/空壳）不同类：不该消耗任务的源站恢复预算（autoResumeMaxPerTask=4），
+        // 由引擎健康门控的专用通道恢复（autoResumeEngineTasks：/api/strategies 探活 ok
+        // 即恢复，零预算；R131 实证：双服务同时重启的 2s 竞态窗把 10 任务首抓全烧成
+        // paused，每任务白白烧 1/4 预算）。
+        // 契约红线（同 pausedTransient* 家族）：文案必须含「引擎不可达」字样供
+        // autoResumeEngineTasks 的 SQL LIKE 匹配；不含「限流…软拦截」字样（不进源站预算词表）
+        pausedEngineDownMsg = "采集引擎不可达（引擎重启窗口/进程异常，自家基础设施故障非源站问题）：任务已暂停，引擎恢复后自动重新入队（不消耗源站瞬态恢复预算；已采进度保留）"
         // pausedPhase2RateLimitFmt Phase 2 连败熔断·限流形态终态文案模板（ConsecFails, Filled）
         pausedPhase2RateLimitFmt = "正文连续失败 %d 章（源站限流/空壳软拦截：429/503 或 200 空壳，判为瞬态非确认封禁），已自动暂停防烧穿（成功 %d 章，进度保留；自动恢复每任务至多 4 次，多次未果请人工检查源站；引擎 AIMD+车道降档已自动放缓节奏）"
         // pausedPhase2BlockedFmt Phase 2 连败熔断·封禁/不可达形态终态文案模板（ConsecFails, Filled）
@@ -2079,6 +2095,11 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 // Task 33: 首页抓取失败若是熔断/软拦截形态（引擎主机冷却中，瞬态非真失效），任务转
                 // paused 而非 failed——resume/自动恢复冷却后重新入队即可续传；旧逻辑把带 2.5 万章
                 // 进度的任务打成 failed 终态（列表重入撞 60s 熔断窗口），恢复成本全由人工承担
+                if isEngineDownErr(firstListErr) {
+                        // R131: 引擎侧故障分流——健康门控零预算恢复（不烧源站瞬态预算）
+                        finalize(run, "paused", pausedEngineDownMsg)
+                        return
+                }
                 if isTransientScrapeErr(firstListErr) {
                         finalize(run, "paused", pausedTransientListMsg)
                         return
@@ -2120,6 +2141,11 @@ func runList(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 }
                 // Task 35-b: 书目全败若是瞬态（引擎熔断冷却/不可达/限流软拦截），转 paused
                 // 而非 failed（同 Phase 0 口径；列表成功但 Phase 1 撞熔断窗口同样可自动恢复）
+                // R131: 引擎侧故障先行分流——健康门控零预算恢复
+                if isEngineDownErr(msg) {
+                        finalize(run, "paused", pausedEngineDownMsg)
+                        return
+                }
                 if isTransientScrapeErr(msg) {
                         finalize(run, "paused", pausedTransientBooksMsg)
                         return
@@ -2220,6 +2246,11 @@ func runSingle(run *Run, task TaskRecord, rule LoadedRule, storageMode string) {
                 }
                 // Task 35-b: 同 runList——单书重入撞引擎熔断冷却/不可达/限流软拦截（瞬态）转
                 // paused 而非 failed；旧逻辑把带数千章进度的单书任务打成 failed 终态
+                // R131: 引擎侧故障先行分流——健康门控零预算恢复
+                if isEngineDownErr(msg) {
+                        finalize(run, "paused", pausedEngineDownMsg)
+                        return
+                }
                 if isTransientScrapeErr(msg) {
                         finalize(run, "paused", pausedTransientSingleMsg)
                         return

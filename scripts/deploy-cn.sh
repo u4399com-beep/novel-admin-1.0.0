@@ -6,18 +6,22 @@
 #   ——预构建快速路径需 glibc >= 2.34；更低版本（Debian 11/Ubuntu 20.04）自动回退
 #   源码构建路线（行为与 R126 前一致），无需任何手工干预。
 # 做什么（全程国内镜像加速，可重复执行=幂等升级）：
-#   [1/7] 系统依赖     git/curl/tar（apt/dnf 自动装，缺什么补什么）
-#   [2/7] Go 工具链    >=1.22，阿里云镜像 mirrors.aliyun.com/golang，装 /usr/local/go
+#   [1/8] 系统依赖     git/curl/tar（apt/dnf 自动装，缺什么补什么）
+#   [2/8] Go 工具链    >=1.22，阿里云镜像 mirrors.aliyun.com/golang，装 /usr/local/go
 #                      （预构建快速路径命中时整个跳过——Go 都不用装）
-#   [3/7] Go 模块代理  GOPROXY=https://goproxy.cn,direct（sumdb 校验经代理透传不降级）
-#   [4/7] 部署双服务   backend-go.bin(:3000 页面+API+采集runner) + scraper-go.bin(:3030 引擎)
+#   [3/8] Go 模块代理  GOPROXY=https://goproxy.cn,direct（sumdb 校验经代理透传不降级）
+#   [4/8] 部署双服务   backend-go.bin(:3000 页面+API+采集runner) + scraper-go.bin(:3030 引擎)
 #                      ★ R127 预构建快速路径：repo 自带 bin/{backend-go,scraper-go}
 #                      （与源码原子同步提交），架构+glibc 匹配即直接取用，零编译秒级起服务；
 #                      不匹配/过低 glibc/--build 显式指定 → 走源码构建（goproxy.cn）
-#   [5/7] 反反爬军火   curl-impersonate 21 二进制 → ~/.local/bin（GitHub 镜像候选链；
+#   [5/8] 反反爬军火   curl-impersonate 21 二进制 → ~/.local/bin（GitHub 镜像候选链；
 #                      快速路径下仍会安装——引擎运行时依赖，与构建无关）
-#   [6/7] 启动 + 看护  默认 nohup+watchdog 自愈循环；--systemd 用 systemd 托管（推荐生产）
-#   [7/7] 健康检查     /api/health + /api/strategies，空库首次启动自动建表+播种
+#   [6/8] stealth 侧车 R131 新增（可选，失败不阻塞）：venv + cloakbrowser/iv8 依赖
+#                      （PyPI 镜像链 aliyun→官方）+ CloakBrowser chromium 二进制
+#                      （GitHub 镜像候选链+断点续传）；CF 挑战站渲染能力，
+#                      缺失时引擎自动跳过 cloak/iv8 策略不阻塞主链路
+#   [7/8] 启动 + 看护  默认 nohup+watchdog 自愈循环；--systemd 用 systemd 托管（推荐生产）
+#   [8/8] 健康检查     /api/health + /api/strategies，空库首次启动自动建表+播种
 # 数据安全：DB(db/custom.db)、封面(public/covers)、TXT(download/novels) 全在 repo 内，
 #   重复执行 / git pull 升级均不触碰数据。
 #
@@ -85,7 +89,7 @@ echo "==============================================${C_0}"
 echo ""
 
 # ---------- [1/7] 系统依赖 ----------
-step "1/7" "系统依赖检测（git/curl/tar）"
+step "1/8" "系统依赖检测（git/curl/tar）"
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
   SUDO="$(command -v sudo 2>/dev/null || true)"
@@ -140,10 +144,10 @@ fi
 
 # ---------- [2/7] Go 工具链 ----------
 if [ "$USE_PREBUILT" -eq 1 ]; then
-  step "2/7" "Go 工具链（预构建快速路径：跳过）"
+  step "2/8" "Go 工具链（预构建快速路径：跳过）"
   ok "仓库预构建二进制可用（arch=$GOARCH glibc=$GLIBC_VER）——Go 无需安装，稍后直接部署"
 else
-  step "2/7" "Go 工具链（需 >= 1.22）"
+  step "2/8" "Go 工具链（需 >= 1.22）"
 go_ver_ge() { # go1.22.12 -> 1 22 ；与 1.22 比较
   local v
   v="$("$1" version 2>/dev/null | sed -n 's/^go version go\([0-9]*\)\.\([0-9]*\).*/\1 \2/p')"
@@ -214,23 +218,23 @@ fi  # end 非预构建路径（Go 工具链）
 
 # ---------- [3/7]+[4/7] 部署双服务二进制 ----------
 if [ "$USE_PREBUILT" -eq 1 ]; then
-  step "3/7,4/7" "部署仓库预构建二进制（bin/ → .bin，零编译）"
+  step "3/8,4/8" "部署仓库预构建二进制（bin/ → .bin，零编译）"
   cp -f "$ROOT/mini-services/backend-go/bin/backend-go" "$ROOT/mini-services/backend-go/backend-go.bin"
   cp -f "$ROOT/mini-services/scraper-go/bin/scraper-go" "$ROOT/mini-services/scraper-go/scraper-go.bin"
   ok "backend-go.bin / scraper-go.bin = 仓库预构建版（与源码原子同步，~10 秒完成）"
 elif [ "$SKIP_BUILD" -eq 1 ]; then
-  step "3/7,4/7" "跳过构建（--skip-build）"
+  step "3/8,4/8" "跳过构建（--skip-build）"
   [ -x "$ROOT/mini-services/backend-go/backend-go.bin" ] || die "--skip-build 但 backend-go.bin 不存在"
   [ -x "$ROOT/mini-services/scraper-go/scraper-go.bin" ] || die "--skip-build 但 scraper-go.bin 不存在"
   ok "使用既有二进制"
 else
-  step "3/7,4/7" "构建 backend-go + scraper-go（goproxy.cn 加速，首次 1-3 分钟）"
+  step "3/8,4/8" "构建 backend-go + scraper-go（goproxy.cn 加速，首次 1-3 分钟）"
   bash "$ROOT/scripts/build-go.sh"
   ok "backend-go.bin / scraper-go.bin 构建完成"
 fi
 
-# ---------- [5/7] curl-impersonate ----------
-step "5/7" "反反爬军火 curl-impersonate（TLS/JA3 指纹伪装二进制）"
+# ---------- [5/8] curl-impersonate ----------
+step "5/8" "反反爬军火 curl-impersonate（TLS/JA3 指纹伪装二进制）"
 if [ "$GOARCH" != "amd64" ]; then
   warn "arm64 服务器无官方 v0.6.1 构建：curl-impersonate 策略自动降级不可用（引擎策略链仍有 got-scraping 等多车道，不影响部署）"
 elif [ "$(ls "$HOME/.local/bin" 2>/dev/null | grep -c '^curl_' || true)" -ge 10 ]; then
@@ -239,8 +243,65 @@ else
   bash "$ROOT/scripts/install-curl-impersonate.sh" || warn "curl-impersonate 安装失败（引擎多车道降级可用，可稍后重跑 scripts/install-curl-impersonate.sh）"
 fi
 
-# ---------- [6/7] 启动 ----------
-step "6/7" "启动服务（端口 $PORT，模式: $([ "$INSTALL_SYSTEMD" -eq 1 ] && echo systemd || echo nohup+watchdog)）"
+# ---------- [6/8] stealth 侧车（R131 新增，可选，失败不阻塞） ----------
+step "6/8" "stealth 侧车（可选：CF 挑战站 cloakbrowser/iv8 渲染能力）"
+STEALTH_DIR="$ROOT/mini-services/stealth-service"
+if [ ! -f "$STEALTH_DIR/requirements.txt" ]; then
+  warn "stealth-service 目录缺失，跳过（引擎自动跳过 cloak/iv8 策略，不阻塞主链路）"
+elif ! command -v python3 >/dev/null 2>&1; then
+  [ -n "$SUDO" ] && [ -n "$PKG_MGR" ] && $SUDO "$PKG_MGR" install -y python3 >/dev/null 2>&1
+  command -v python3 >/dev/null 2>&1 || warn "python3 不可用且自动安装失败：跳过 stealth 侧车（引擎自动降级，可重跑本脚本补装）"
+fi
+if [ -f "$STEALTH_DIR/requirements.txt" ] && command -v python3 >/dev/null 2>&1; then
+  # ① venv 模块（Debian/Ubuntu 需显式 python3-venv 包）
+  if ! python3 -c "import venv" >/dev/null 2>&1 && [ -n "$SUDO" ] && [ -n "$PKG_MGR" ]; then
+    $SUDO "$PKG_MGR" install -y python3-venv >/dev/null 2>&1 || true
+  fi
+  # ② venv + 依赖（幂等：已可导入则跳过；PyPI 镜像链 aliyun → 官方，R128 实证清华源 403）
+  [ -x "$STEALTH_DIR/venv/bin/python" ] || python3 -m venv "$STEALTH_DIR/venv" >/dev/null 2>&1 \
+    || warn "venv 创建失败（stealth 将尝试以系统 python 运行）"
+  PYPY="$STEALTH_DIR/venv/bin/python"
+  if [ -x "$PYPY" ]; then
+    if "$PYPY" -c "import cloakbrowser, iv8" >/dev/null 2>&1; then
+      ok "stealth 依赖已就绪（cloakbrowser+iv8），跳过"
+    elif [ -x "$STEALTH_DIR/venv/bin/pip" ]; then
+      echo "  安装 stealth 依赖（cloakbrowser/iv8+playwright 链，PyPI 镜像链）..."
+      "$STEALTH_DIR/venv/bin/pip" install -q -i https://mirrors.aliyun.com/pypi/simple/ -r "$STEALTH_DIR/requirements.txt" >/dev/null 2>&1 \
+        || "$STEALTH_DIR/venv/bin/pip" install -q -r "$STEALTH_DIR/requirements.txt" >/dev/null 2>&1
+      "$PYPY" -c "import cloakbrowser, iv8" >/dev/null 2>&1 \
+        && ok "stealth 依赖就绪（cloakbrowser+iv8）" \
+        || warn "stealth 依赖安装失败（/health cloak/iv8 将为 false，引擎自动降级；可重跑本脚本补装）"
+    fi
+    # ③ CloakBrowser chromium 二进制（R131：GitHub 镜像候选链+断点续传；按架构选包）
+    CB_VER="$($PYPY -c "import cloakbrowser.download as dl; print(dl.get_chromium_version())" 2>/dev/null || true)"
+    case "$(uname -m)" in x86_64) CB_ARCH=linux-x64 ;; aarch64|arm64) CB_ARCH=linux-arm64 ;; *) CB_ARCH="" ;; esac
+    CB_DIR="$HOME/.cloakbrowser/chromium-$CB_VER"
+    if [ -n "$CB_VER" ] && [ -x "$CB_DIR/chrome" ]; then
+      ok "CloakBrowser chromium 已就绪"
+    elif [ -n "$CB_VER" ] && [ -n "$CB_ARCH" ]; then
+      echo "  下载 CloakBrowser chromium $CB_VER（~216MB，镜像候选链+断点续传，最长数分钟）..."
+      mkdir -p "$CB_DIR"; CB_OK=0
+      for CB_MIR in "https://ghfast.top/" "https://gh-proxy.com/" "https://ghproxy.net/" ""; do
+        for CB_TRY in 1 2 3; do
+          timeout 560 curl -fsSL -C - -o /tmp/cb.tar.gz \
+            "${CB_MIR}https://github.com/CloakHQ/cloakbrowser/releases/download/chromium-v${CB_VER}/cloakbrowser-${CB_ARCH}.tar.gz" >/dev/null 2>&1
+          tar -tzf /tmp/cb.tar.gz >/dev/null 2>&1 && { CB_OK=1; break 2; }
+        done
+      done
+      if [ "$CB_OK" = 1 ] && tar -xzf /tmp/cb.tar.gz -C "$CB_DIR" 2>/dev/null && chmod +x "$CB_DIR/chrome" 2>/dev/null \
+         && [ -x "$CB_DIR/chrome" ]; then
+        ok "chromium $CB_VER 就绪（cloak 过盾可用）"
+      else
+        warn "chromium 下载失败（cloak 渲染不可用，其余能力不受影响；可重跑本脚本补装）"
+      fi
+    elif [ -n "$CB_VER" ]; then
+      warn "非常见架构（$(uname -m)）：无预编译 chromium 包，cloak 渲染降级不可用"
+    fi
+  fi
+fi
+
+# ---------- [7/8] 启动 ----------
+step "7/8" "启动服务（端口 $PORT，模式: $([ "$INSTALL_SYSTEMD" -eq 1 ] && echo systemd || echo nohup+watchdog)）"
 # 数据/运行时目录（幂等）
 mkdir -p "$ROOT/db" "$ROOT/public/covers" "$ROOT/download/novels"
 
@@ -312,8 +373,8 @@ EOF
   ok "双服务已启动 + watchdog 自愈循环运行中（可选: crontab 加 '* * * * * bash $ROOT/scripts/ensure-services.sh' 三重保险）"
 fi
 
-# ---------- [7/7] 健康检查 ----------
-step "7/7" "健康检查（空库首次启动含建表+播种，稍等）"
+# ---------- [8/8] 健康检查 ----------
+step "8/8" "健康检查（空库首次启动含建表+播种，稍等）"
 health_ok=0
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:$PORT/api/health" || true)

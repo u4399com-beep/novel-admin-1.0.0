@@ -116,9 +116,8 @@ func (j *cookieJar) touchHostLocked(host string) *cookieBucket {
                 }
                 oldest := j.order[0]
                 j.order = j.order[1:]
-                if _, exists := j.hosts[oldest]; exists {
-                        delete(j.hosts, oldest)
-                }
+                // R131（staticcheck S1033）：delete 对不存在键幂等，存在性卫语句冗余
+                delete(j.hosts, oldest)
                 // order 可能含陈旧条目（测试直接替换 hosts 等非常规路径）：队首是陈旧条目时
                 // 只弹序不删桶，继续下一轮直至淘汰到真实桶
         }

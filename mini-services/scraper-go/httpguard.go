@@ -550,7 +550,7 @@ func transportFor(proxy string, insecure, noH2 bool) (*http.Transport, string) {
                 ForceAttemptHTTP2:     !noH2,
                 DisableCompression:    false,
         }
-        if tr.ForceAttemptHTTP2 == false && noH2 {
+        if !tr.ForceAttemptHTTP2 && noH2 {
                 // 显式禁用 HTTP/2（got-scraping http1.1 降级画像）
                 tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
         }

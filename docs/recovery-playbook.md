@@ -115,6 +115,15 @@ playwright sync 的线程亲和/loop 永驻两陷阱根修），首次请求含 
 3. venv 重建后必须整杀 run.sh 重启（PY 变量在 while 循环外判定，循环内不会重测 venv）。
 4. PyPI 镜像：清华源对 cloakbrowser wheel 403（R128 实测），官方 PyPI 直装即成；
    uv 走阿里镜像更快（见 §1.7-2）。
+5. **cloakbrowser 版本上界（R131 新增，部署级根修）**：requirements.txt 已锁
+   `cloakbrowser>=0.5.12,<0.7`——0.7.0 起 API 断裂（`download.get_chromium_version()`
+   移除；`binary_info()` 改 manifest 驱动 cloakbrowser.dev/latest 下载，国内/沙箱被墙；
+   binary_path/installed/cache_dir 结构变化）。裸 `>=0.5.12` 重装 venv 会拉到 0.7.0 →
+   cloakBinary 恒 false 且 §1.5 的 ghfast+chromium-146 恢复链完全失效（/health 不报错、
+   cloak 冒烟静默失败，属「不报错的坏」最难排查形态）。症状识别：binary_info() 返回
+   `download_url: https://cloakbrowser.dev/api/download/latest` 即 0.7.0。修复：
+   `uv pip install --python venv/bin/python --index-url https://mirrors.aliyun.com/pypi/simple/ "cloakbrowser==0.6.3"`
+   → 重启 run.sh（PY 判定在循环外，见上第 3 条）。
 
 ## 2. DB 恢复
 

@@ -130,3 +130,38 @@ func TestSoftBlockShellNotMisjudgedFailed(t *testing.T) {
 		t.Fatalf("无 softBlock 的空提取应保持空错误串且不命中瞬态（原「规则失效」语义），got %q", errText2)
 	}
 }
+
+// likeEngineDown 按 autoResumeEngineTasks 同口径匹配（R131）：消息含「引擎不可达」。
+// 与 SQL LIKE '%引擎不可达%' 等价（无 % _ 字面量）。
+func likeEngineDown(msg string) bool {
+	return strings.Contains(msg, "引擎不可达")
+}
+
+// TestEngineDownMsgContract R131: pausedEngineDownMsg 与恢复通道的双向契约——
+// ①正向：引擎不可达形态文案必须被 autoResumeEngineTasks 词表命中（零预算通道）；
+// ②负向：该文案不得含「限流…软拦截」字样（不进源站瞬态预算词表，防止双重恢复
+// 通道竞争——预算通道 3min 静默 + 4 次上限，健康门控通道 60s 静默零预算，双匹配
+// 会让先跑的通道消耗语义混乱）；③isEngineDownErr 对两类引擎侧错误文案命中。
+func TestEngineDownMsgContract(t *testing.T) {
+	if !likeEngineDown(pausedEngineDownMsg) {
+		t.Errorf("pausedEngineDownMsg 未被 autoResumeEngineTasks 词表命中（'%%引擎不可达%%'），零预算恢复链路断裂：%q", pausedEngineDownMsg)
+	}
+	if likeAutoResume(pausedEngineDownMsg) {
+		t.Errorf("pausedEngineDownMsg 不应进源站瞬态预算词表（'%%限流%%软拦截%%'），双通道会竞争消耗语义：%q", pausedEngineDownMsg)
+	}
+	for _, c := range []struct {
+		name string
+		err  string
+	}{
+		{"引擎不可达", "列表页抓取失败(https://x/): 采集引擎不可达(3030)"},
+		{"引擎请求超时", "引擎请求超时(60s)"},
+	} {
+		if !isEngineDownErr(c.err) {
+			t.Errorf("%s: isEngineDownErr 应命中：%q", c.name, c.err)
+		}
+	}
+	// 源站瞬态文案不得被引擎侧分类器误吞（词表互斥性）
+	if isEngineDownErr(pausedTransientListMsg) {
+		t.Error("源站瞬态文案被 isEngineDownErr 误命中，分流语义失效")
+	}
+}

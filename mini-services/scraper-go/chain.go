@@ -262,7 +262,9 @@ func fetchPage(rawURL string, opts fetchPageOptions) fetchPageResult {
                         if len(proxyPool) > 0 && egressAllAuthBroken(host, egresses) {
                                 warnings = append(warnings, "[chain] 全部代理出口因 HTTP 407（代理要求认证或已失效）熔断，本次追加直连出口兑底（代理池将由出口池自愈清洗死口）")
                                 proxyPool = append(append([]string{}, proxyPool...), "")
-                                egresses = append(append([]string{}, egresses...), "")
+                                // R131（staticcheck SA4006）：此处的 egresses 追加为死存储——下游候选
+                                // 迭代只消费 proxyPool（直连兑底经 264 行 "" 追加已生效），egresses
+                                // 自本行后零读取（全函数核查）；出口记账语义不受影响
                         } else {
                                 detail := "主机 " + host + " 连续整链失败已达熔断阈值，剩余冷却 " +
                                         strconv.Itoa(int((circuitMs+999)/1000)) + "s 后自动恢复尝试（一次成功即复位）"

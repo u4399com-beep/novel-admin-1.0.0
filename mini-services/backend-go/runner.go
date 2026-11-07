@@ -229,7 +229,7 @@ func runBashSync(cmd string, timeout time.Duration) error {
         case err := <-done:
                 return err
         case <-time.After(timeout):
-                go func() { _ = <-done }() // 超时后由 goroutine 收尾，防 zombie
+                go func() { <-done }() // R131（staticcheck S1005）：裸接收即排空，无需空白赋值；超时后收尾防 zombie
                 return nil
         }
 }
@@ -248,6 +248,11 @@ func runBashSync(cmd string, timeout time.Duration) error {
 const (
         autoResumeSilentMs   = 3 * 60 * 1000 // 熔断后静默等待（引擎冷却 60s × 3 冗余）
         autoResumeMaxPerTask = 4             // 每任务自动恢复上限（进程生命周期内）
+
+        // R131 引擎不可达零预算通道参数：静默 60s（引擎重启窗口量级，远短于源站冷却）
+        // + 每轮至多 10 条（重启风暴一次性全回）
+        engineDownResumeSilentMs = 60 * 1000
+        engineDownResumePerSweep = 10
 )
 
 var autoResumeAttempts = map[int]int{}
@@ -289,6 +294,64 @@ func autoResumePausedTasks() {
                         if cnt, _ := res.RowsAffected(); cnt > 0 {
                                 _ = writeTaskLog(int64(id), logv) // R102-b: 日志落拆表
                                 log.Printf("[backend-go-runner] task %d 限流熔断自动恢复（第 %d 次）", id, n)
+                        }
+                }
+        }
+}
+
+// autoResumeEngineTasks R131: 引擎不可达形态 paused 的健康门控零预算恢复通道。
+// 背景：双服务同时重启的竞态窗（backend runner 已派发、scraper 尚未 listening 的 ~2s）
+// 会把整队任务首抓打成「采集引擎不可达(3030)」→ 旧逻辑落入 isTransientScrapeErr 词表
+// → 转入源站瞬态预算通道（每任务 4 次），自家基础设施抖动白白烧掉预算（R131 实证：
+// 一次双重启烧掉 10 任务 × 1/4 预算）。
+// 语义：引擎侧故障是基础设施问题，恢复门控=引擎探活（/api/strategies 可达即恢复），
+// 不占用任务的源站预算、无静默冷却需求（引擎健康时重新入队即正常采集）；
+// 每轮至多 10 条（重启风暴一次性全回，健康引擎下无踩踏风险）。
+// 匹配词表：pausedEngineDownMsg 的「引擎不可达」字样（契约见 worker.go 常量注）。
+func autoResumeEngineTasks() {
+        // 引擎探活门控：不可达时本轮跳过（任务继续静默，下轮再试）
+        resp, err := runnerHTTPClient.Get(engineBaseURL() + "/api/strategies")
+        if err != nil {
+                return
+        }
+        _ = resp.Body.Close()
+        if resp.StatusCode < 200 || resp.StatusCode >= 500 {
+                return
+        }
+        var ids []int
+        err = queryList(
+                `SELECT "id" FROM "ScrapeTask"
+                 WHERE "status" = 'paused' AND "message" LIKE '%引擎不可达%'
+                   AND "updatedAt" <= ?`,
+                func(rows *sql.Rows) error {
+                        var id int
+                        if err := rows.Scan(&id); err != nil {
+                                return err
+                        }
+                        ids = append(ids, id)
+                        return nil
+                }, nowMillis()-engineDownResumeSilentMs)
+        if err != nil {
+                return
+        }
+        if len(ids) > engineDownResumePerSweep {
+                ids = ids[:engineDownResumePerSweep]
+        }
+        for _, id := range ids {
+                var logv string
+                logv = readTaskLog(int64(id))
+                line := "[" + runTs() + "] 自动恢复（引擎已恢复可达，基础设施故障不消耗采集预算）：重新入队继续采集"
+                if logv != "" {
+                        logv += "\n"
+                }
+                logv = lastLines(logv+line, MAX_LOG_LINES)
+                res, err := exec(
+                        `UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（引擎恢复可达），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+                        nowMillis(), id)
+                if err == nil {
+                        if cnt, _ := res.RowsAffected(); cnt > 0 {
+                                _ = writeTaskLog(int64(id), logv)
+                                log.Printf("[backend-go-runner] task %d 引擎恢复自动重新入队（零预算通道）", id)
                         }
                 }
         }
@@ -465,6 +528,7 @@ func startRunner() {
                         if tick%15 == 0 {
                                 autoResumePausedTasks()
                                 autoResumeBlockedTasks()
+                                autoResumeEngineTasks() // R131: 引擎不可达零预算通道（探活门控）
                         }
 
                         // Task 44-b: 进程内 running 孤儿自查（每 5 轮≈10s）——running 且不在
