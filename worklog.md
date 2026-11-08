@@ -5170,3 +5170,24 @@ Stage Summary:
 - 数据清洗第三轮：SEO 尾缀词表扩充+「小说」保守剥（marker 测原貌坑存档）+简介截断容错起点锚+微博孤儿尾，双侧闭环，全库终扫 0 残留
 - 第 17 次重置全量形态自愈流程走通（bin 全灭→源码构建路径），一键安装链审阅确认时效
 - 移交下一轮：①blqiuge 余下分类任务消化+reJSCallLine 实战残留抽验（待实正文落地）②全库 resort+audit 终验维持待办③任务 20/22 Phase 2 正文填充速率观测（chDone 慢起步，准入后应回升）④GitHub PAT 轮换提醒（用户侧，已多轮暴露）
+
+---
+Task ID: R134
+Agent: Z.ai Code (main)
+Task: 用户 6 项清单——①遗留问题②效率③反反爬④代码精简⑤一键安装⑥评估运营标准
+
+Work Log:
+- 【开局·第 18 次沙箱重置】三服务+双 bin+Go+db+venv+curl-imp 全灭（git 幸存 d7d196b，.git 未回滚=17 次回滚形态未再现）。自愈链：bin/ 子目录幸存快速路径先拉起 → Go 1.22.12（golang.google.cn 限速 3.5MB 卡死，aliyun 镜像秒下 69MB——**镜像优先级实战修正：aliyun > google.cn**）→ HEAD 校验构建（verify bin 与 bin/ md5 不一致=Go 构建非绝对可重现，决策：以 HEAD 新鲜产物热替换运行位，快路径仅作拉起优先级不作信任凭证）→ 空库自动 DDL+播种 25 规则 → **E26 fleetkeeper 第 4 次实战：20 任务零手工重建（16 running/4 paused）** → stealth venv（aliyun pypi ~1min，cloakbrowser 0.6.5 锁版内）→ chromium 216MB（CloakHQ/cloakbrowser 权威 URL）→ curl-imp 21 二进制 → cloakBinary=true+冒烟 pilishuwu 44.8KB 过盾
+- 【cloak 下载 URL 变迁实证】旧 CloakOfficial/cloakbrowser 组织 404、CloakHQ/CloakBrowser Releases 仅 pro 版有资产；免费 tier 权威 URL=playbook §1.5 `CloakHQ/cloakbrowser + chromium-v$VER + cloakbrowser-linux-x64.tar.gz`（ghfast 镜像 ~8min 全绿）；cloakbrowser.dev 直连存活但 ~7KB/s 不可用——playbook 权威 URL 与 deploy-cn.sh 一致，无需改脚本
+- 【热替换重启连锁验证（R133 修复实战）】scraper 热替换重启 2s 窗 → 19 任务「引擎不可达」paused → **60s 静默后 autoResumeEngineTasks 自动复活 16 条（100s 内），零人工零预算**——R133 零预算恢复通道首次实战自证；4 paused 瞬态（E21/E23 管辖）；partial 任务 13（ixdzs8 书目连败）PATCH restart 续传成功 1/192
+- 【任务⑥运营标准评估（新交付）】docs/operations-readiness.md 全新报告：8 维度打分（A 自愈 4★/B 数据质量 4★/C 反反爬 4★/D 性能 3★/E 安全 2★/F 可观测 3★/G 运维恢复 4★/H 合规 2★）+ P0/P1/P2 整改总表。**结论：个人/内网自用已达标；公网运营未达**——P0=管理 API 零认证（全部管理面裸奔，Caddy token 半天可修）+版权定位论证（Level 3 前置）；P1=备份 cron（文档有命令未启用）/三类事件告警 webhook/stats 快照落表/外部拨测/周期化 audit/TLS；P2=SQLite 容量压测/SLO 制度化
+- 【任务④代码精简】staticcheck 2023.1.7 重装（go install 装至 ~/go/bin 非 GOBIN——GOPATH/bin 坑存档）双端复核：backend 1 处残留 SA9003（storex.go 查询瞬时失败空 else 分支）修复=else 块删除注释外移；scraper 0 残留。gofmt -l 列 6 文件为 HEAD 既有状态（R128 噪音惯例：不重排）。backend 构建验证通过
+- 【任务⑤一键安装时效复核】deploy-cn.sh cloak 下载 URL 与本轮实战一致（CloakHQ 权威链）；cloakbrowser 0.6.5 `get_chromium_version()` API 存活实证（deploy 276 行依赖）；bootstrap-cn.sh 镜像链三候选+直连四形态齐备——**R133 审阅结论维持：时效有效无需改动**；本轮自愈全程本身即安装路径实战回归
+- 【任务②③效率+反反爬观测】B2 窗口实测（19 running 态，5min）：目录 +18,281 章（21.9 万章/h）/正文 +839 章（1.0 万章/h）——R133 移交「chDone 慢起步」疑虑解除，per-host 准入后正文速率接近 R131 混合窗口 12.2k/h 满速水平；引擎 98.8%（7685/94）历史最优区间；库 779 书/111.6 万章/7k+ 正文
+- 【运维坑存档】①后台任务 `nohup bash &` 裸启动被会话回收（3 脚本静默全灭零日志）——exit 7 保活模式第 N 次强制回归，别省 ②staticcheck `go install` 产物在 $GOPATH/bin 而非 $GOBIN——PATH 拼装注意 ③go mod download all 补全 go.sum 缺失 hash（+27 行纯新增无害，降低后续构建网络依赖）
+
+Stage Summary:
+- 第 18 次重置自愈全链走通（新形态：git 幸存+bin 幸存+Go 镜像优先级修正）；R133 三大修复（per-host 准入/QueueMs/零预算通道）全部实战自证
+- 任务⑥交付 docs/operations-readiness.md：运营标准三 Level 判定+P0/P1/P2 路线图（认证/备份/告警为公网运营三门槛）
+- staticcheck 双端零残留维持（SA9003 修复）；一键安装时效复核通过；效率观测：正文 1.0 万章/h 健康+引擎 98.8% 历史最优
+- 移交下一轮：①P0 整改可立即启动：Caddy 层管理 API token（半天）——运营评估路线图第一步 ②全库 resort+audit 终验维持待办（list 任务 19 running 持续）③blqiuge 正文 reJSCallLine 实战残留抽验（任务 20 正文填充中）④SQLite 容量压测（P2）⑤GitHub PAT 轮换提醒（用户侧）
