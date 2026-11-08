@@ -48,3 +48,4 @@ mini-services/backend-go/db/
 
 # stealth 运行时会话记忆（cookie 轮换态，本地持久化；服务对缺失文件优雅降级）
 mini-services/stealth-service/data/
+.admin-token
