@@ -17,6 +17,13 @@
 
   /* ==================== 工具（与 admin.js 同款，独立 IIFE 无法复用其私有函数） ==================== */
 
+  // R135 P0：令牌捕获与 admin.js 同语义（两脚本均可能先行加载，双写幂等）
+  try {
+    var qs = new URLSearchParams(location.search);
+    var qtok = qs.get('token');
+    if (qtok && !localStorage.getItem('adminToken')) { localStorage.setItem('adminToken', qtok); }
+  } catch (e) { /* 降级为无令牌 */ }
+
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
@@ -29,6 +36,10 @@
 
   async function api(method, url, body) {
     var opt = { method: method, headers: {} };
+    try {
+      var tk = localStorage.getItem('adminToken');
+      if (tk) opt.headers['X-Admin-Token'] = tk; // R135 P0：写保护令牌
+    } catch (e) { /* 降级 */ }
     if (body !== undefined && body !== null) {
       opt.headers['Content-Type'] = 'application/json';
       opt.body = JSON.stringify(body);

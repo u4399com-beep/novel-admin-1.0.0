@@ -310,10 +310,26 @@ pkill -f 'backend-go[.]bin'  2>/dev/null || true
 pkill -f 'scraper-[g]o.bin'  2>/dev/null || true
 sleep 1
 
+# R135 P0：管理面写保护令牌（operations-readiness §E）。
+# 公网部署默认安全：优先复用既有 token（幂等重部署不换锁钥），首次生成随机值。
+# 自用/内网不想启用：部署后从 env 行删掉 ADMIN_TOKEN 即可（缺省空=关闭，行为同历史）。
+ADMIN_TOKEN_VAL=""
+if [ -f "$ROOT/.admin-token" ]; then
+  ADMIN_TOKEN_VAL="$(cat "$ROOT/.admin-token")"
+else
+  if command -v openssl >/dev/null 2>&1; then
+    ADMIN_TOKEN_VAL="$(openssl rand -hex 16)"
+  else
+    ADMIN_TOKEN_VAL="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  fi
+  printf '%s' "$ADMIN_TOKEN_VAL" > "$ROOT/.admin-token" && chmod 600 "$ROOT/.admin-token"
+fi
+
 ENV_LINES=(BACKEND_PORT=$PORT BACKEND_MODE=all
   DB_PATH=$ROOT/db/custom.db
   TXT_ROOT=$ROOT/download/novels
-  COVERS_DIR=$ROOT/public/covers)
+  COVERS_DIR=$ROOT/public/covers
+  ADMIN_TOKEN=$ADMIN_TOKEN_VAL)
 
 if [ "$INSTALL_SYSTEMD" -eq 1 ]; then
   [ "$(id -u)" -eq 0 ] || [ -n "$SUDO" ] || die "--systemd 需要 root 或 sudo"
@@ -333,6 +349,7 @@ Environment=BACKEND_MODE=all
 Environment=DB_PATH=$ROOT/db/custom.db
 Environment=TXT_ROOT=$ROOT/download/novels
 Environment=COVERS_DIR=$ROOT/public/covers
+Environment=ADMIN_TOKEN=$ADMIN_TOKEN_VAL
 ExecStart=$3
 Restart=always
 RestartSec=3
@@ -372,6 +389,7 @@ EOF
   setsid nohup bash "$ROOT/.watchdog-loop.sh" >> /tmp/watchdog-loop.log 2>&1 </dev/null &
   ok "双服务已启动 + watchdog 自愈循环运行中（可选: crontab 加 '* * * * * bash $ROOT/scripts/ensure-services.sh' 三重保险）"
 fi
+ok "管理面写保护已启用（ADMIN_TOKEN 存于 $ROOT/.admin-token，写接口需 X-Admin-Token 头或 ?token= 参数；公开读接口不受影响；自用模式删除该文件与 env 行可关闭）"
 
 # ---------- [8/8] 健康检查 ----------
 step "8/8" "健康检查（空库首次启动含建表+播种，稍等）"

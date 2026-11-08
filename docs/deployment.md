@@ -413,6 +413,8 @@ cd /opt/novel-admin && ls
 | `PROXYWATCH_OFF` | backend-go E18 出口池自愈 | `=1` 停用后台出口池换血循环（自建稳定代理出口时使用）；缺省开启，10min/轮 |
 | `FLEETKEEPER_OFF` | backend-go E26 舰队自持 | `=1` 停用终态任务自动补建循环（想完全手动控制任务面时使用）；缺省开启，5min/轮、45min 冷却 |
 | `COVERS_DIR` | backend-go 封面落盘目录 | 同上，缺省向上查找 `public/covers` |
+| `ADMIN_TOKEN` | backend-go R135 管理面写保护 | 非空=启用：所有非 GET 请求需 `X-Admin-Token` 头或 `?token=` 参数；空/缺省=关闭（自用模式，行为同历史）。deploy-cn.sh 新部署默认生成随机值存 `.admin-token`；轮换=换值重启。**管理后台用法**：启用态访问 `/admin?token=<值>`（首次进入自动记入 localStorage 并从 URL 去痕，之后正常使用；token 值见部署终端输出或 `.admin-token` 文件） |
+| `BACKUP_OFF` / `BACKUP_INTERVAL_H` / `BACKUP_KEEP` / `DB_BACKUP_DIR` | backend-go R135 内建自动备份 | `=1` 停用；间隔小时 [1,168] 缺省 12；保留份数缺省 7；备份目录缺省 `<db目录>/backups`。详见 §10.4 |
 | `SCRAPER_PYTHON` | scraper-go browser 策略 | 同上，自定义 python 路径；缺省从 PATH 找 |
 | `SCRAPER_MIN_INTERVAL_MS` | scraper-go 域名限速 | 同上，缺省 1200，**不允许低于 1000** |
 | `GOPROXY` | go 工具链 | shell / `go env -w`，国内必配 `https://goproxy.cn,direct` |
@@ -942,6 +944,13 @@ sudo systemctl restart novel-backend.service novel-scraper.service
 
 **备份对象**：`db/custom.db`（正文/规则/任务全在里面）+ `public/covers/`（封面图片）。
 WAL 模式下库由 `custom.db + -shm + -wal` 三文件组成，**不要直接拷主文件**，用在线备份：
+
+**方式 0（R135 起，进程内建自动备份——默认已启用，零配置）**：
+backend 内建循环每 12h 用 `VACUUM INTO` 产出原子一致性快照到 `<db目录>/backups/novel-*.db`，
+boot 后 90s 跑首轮（重启即有当日备份），自动保留最近 7 份。产物为无 WAL 伴生的独立
+SQLite 文件，恢复=停服后 cp 覆盖。可用 env 调整：`BACKUP_INTERVAL_H`（[1,168]）、
+`BACKUP_KEEP`（默认 7）、`DB_BACKUP_DIR`（默认 `<db目录>/backups`）；`BACKUP_OFF=1` 停用
+（改用下方 cron 方案）。首次启用验证：启动日志出现 `[backup] 快照完成` 且目录有文件。
 
 ```bash
 # 方式 A（推荐，热备单文件、免停服）：SQLite 在线备份 API

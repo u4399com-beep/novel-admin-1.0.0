@@ -5191,3 +5191,25 @@ Stage Summary:
 - 任务⑥交付 docs/operations-readiness.md：运营标准三 Level 判定+P0/P1/P2 路线图（认证/备份/告警为公网运营三门槛）
 - staticcheck 双端零残留维持（SA9003 修复）；一键安装时效复核通过；效率观测：正文 1.0 万章/h 健康+引擎 98.8% 历史最优
 - 移交下一轮：①P0 整改可立即启动：Caddy 层管理 API token（半天）——运营评估路线图第一步 ②全库 resort+audit 终验维持待办（list 任务 19 running 持续）③blqiuge 正文 reJSCallLine 实战残留抽验（任务 20 正文填充中）④SQLite 容量压测（P2）⑤GitHub PAT 轮换提醒（用户侧）
+
+---
+Task ID: R135
+Agent: Z.ai Code (main)
+Task: 用户 5 项清单——①遗留问题②章节效率③反反爬④代码精简⑤一键安装
+
+Work Log:
+- 【开局·第 19 次沙箱重置】全灭形态（bin/ 子目录幸存+git 幸存 f421aa4）。快速路径第 5 次实战：双服务秒起 → **E26 第 5 次实战 20 任务零手工重建** → Go（aliyun 镜像）→ stealth venv+chromium → curl-imp → watchdog；/tmp/restart-*.sh、install-go.sh、setup-stealth.sh（含 cloak 下载全链）四脚本模板化重建入 /tmp
+- 【②效率主菜：per-IP 分桶扩容（R130 暂缓决策正式推翻）】论证链：①正文填充已成主要矛盾（库 112 万章+、list 面铺完）②引擎快照显示 10 主机健康但单 IP 域槽串行（lastMs 1-12s 全是排队）③单任务章节吞吐=单 host 域槽速率，并发只加深排队——提升总吞吐唯有「更多 IP 分槽」④池 300 活口余量足+机制现成（E 分桶+E17 按出口记账 aimd 自动降权烂口）⑤合规：每 IP 仍 <1 req/s（红线是「不轰炸单点」，非「总量封顶」），R116 biqutu 4 桶实证在案。执行：engine.env 扩 SCRAPE_PROXY_BUCKET_HOSTS 至 5 主机（77shuku:3/biqutu:4/23uswx:3/dzrjk:3/biqiuge8:3）→ scraper 重启 → **实测正文 1,404/h → 4,908/h（3.5 倍）**，目录 14.5 万/h 同步维持
+- 【①P0 整改：管理面写保护（operations-readiness §E 第一件交付）】/app/Caddyfile root600 无 sudo 不可改 → 改走 backend 内建：adminauth.go（ADMIN_TOKEN env 非空启用；非 GET 全拦 deny-by-default；X-Admin-Token 头或 ?token= 参数；subtle.ConstantTimeCompare 防时序；atomic 启动装载）+ router.go dispatch 单点注入 + adminauth_test.go 5 测锁定契约（关闭态全放行/启用态 GET-HEAD 放行写 401/头与 query 双通道/异长错误令牌）。**沙箱实战：无 token 401、带 token 进业务层（409=巡检单飞闸正确工作）、读 200**
+- 【①P0 配套：管理页 token 接入（前端 fetch 仅 2 处全走 api() 封装的理想结构）】admin.js：URL ?token= 捕获→localStorage→URL history.replaceState 去痕→api() 统一携带 X-Admin-Token（未启用态后端忽略零副作用）；admin-fleet.js 同语义双写幂等；node --check 语法过。agent-browser E2E：?token= 进管理页→localStorage 落位→URL 已去痕→点「立即巡检」POST 放行进业务层→零 401/零 console error→移动端 390px 零溢出
+- 【①P1 整改：DB 自动备份（§G 第一件交付）】沙箱无 crontab → 进程内建循环（fleetkeeper 同模式）：backupx.go VACUUM INTO 原子快照（12h/轮+boot 90s 首轮+保留 7 份+单飞闸+独立连接执行——不占共享池 4 连接，兼修「大导出挤压查询面」潜在性能点）+ backupx_test.go 2 测（快照可读/prune 语义）。全量 go test 通过；实战 boot 首轮 638ms/49.2MB 快照 integrity ok
+- 【④代码质量】staticcheck 双端 0 输出维持（backend 全量 test 68.7s 通过含新 7 测）；gofmt 新文件全过；HEAD 既有 6 文件未格式化维持 R128 噪音惯例不动
+- 【⑤一键安装】deploy-cn.sh R135 增强：7/8 步生成/复用 ADMIN_TOKEN（openssl rand -hex 16 存 .admin-token 600 权限，幂等重部署不换锁钥）+ systemd unit 与 nohup 双路径 env 注入 + ok 提示语；bootstrap-cn.sh 引导链无冲突；deployment.md §4.1 env 表增 ADMIN_TOKEN/BACKUP_* 四行 + §10.4 备份「方式 0」段 + 管理页 token 用法——**新部署默认安全（公网 P0 关闭）**
+- 【③反反爬】stealth 全链重建（cloakBinary=true）+ cloak 冒烟过盾；E18/E19/E23/E26 全家族随进程恢复；duckduckgo 37 fail 为 pseo 探测墙已知熔断行为；101kks/pilishuwu/huangjinwu/xinjianpan 挑战与黑洞站 bounded 自愈管辖维持
+- 【坑存档】①staticcheck go install 产物在 $GOPATH/bin（GOBIN 未设）——PATH 拼装要点 ②重启 backend 的任务保护链（运行中任务自动暂停→孤儿唤醒重新入队）在重启风暴期会与 E26 冷却竞合产生 partial 态—— bounded 自愈管辖，无需人工
+- 【库/引擎终态】分桶后正文 4,908/h；全库新正文抽验 3 连全净（reJSCallLine/注释/尾注/书友语零残留）；blqiuge 任务 20 Phase2 推进中（chaptersDone 135/30573，list 23/67）
+
+Stage Summary:
+- 运营就绪 P0/P1 三件套落地：管理面写保护（后端+前端+部署+文档全链）、DB 自动备份（内建循环零配置）、per-IP 分桶扩容（正文 3.5 倍提速）——operations-readiness.md 路线图第一批执行完毕
+- 五项清单全覆盖：①P0/P1 整改+任务保护链验证②分桶 3.5 倍③stealth/家族恢复④7 新测+双端 staticcheck 零残留⑤deploy 认证集成
+- 移交下一轮：①运营评估 P1 剩余：告警 webhook（规则不健康/任务批量 paused/服务重启三类事件）/stats 快照落表/外部拨测 ②blqiuge 正文落库后 reJSCallLine 专项抽验（本轮全库抽验已零残留）③list 批量终态后全库 resort+audit 终验 ④SQLite 容量压测（P2）⑤管理页 token UI 输入框（现 ?token= URL 方式已可用，UI 化为锦上添花）⑥GitHub PAT 轮换提醒（用户侧）

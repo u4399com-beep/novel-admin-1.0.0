@@ -20,6 +20,22 @@
 
   /* ==================== 工具 ==================== */
 
+  // R135 P0：管理令牌接入——URL ?token=xxx 首次访问时写入 localStorage，
+  // 之后 api() 封装统一携带 X-Admin-Token 头（后端 ADMIN_TOKEN 启用态必需；
+  // 未启用态后端忽略该头，零副作用）。
+  try {
+    var qs = new URLSearchParams(location.search);
+    var qtok = qs.get('token');
+    if (qtok) { localStorage.setItem('adminToken', qtok); qs.delete('token');
+      var clean = location.pathname + (qs.toString() ? '?' + qs.toString() : '') + location.hash;
+      history.replaceState(null, '', clean); // URL 去痕（token 不进历史/分享链接）
+    }
+  } catch (e) { /* localStorage 不可用环境降级为无令牌（后端关闭态不受影响） */ }
+
+  function adminToken() {
+    try { return localStorage.getItem('adminToken') || ''; } catch (e) { return ''; }
+  }
+
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
@@ -33,6 +49,8 @@
   /** fetch 封装：502 → 后端不可达；非 2xx → 读 JSON error/detail 抛错；成功返回解析后的 JSON */
   async function api(method, url, body) {
     var opt = { method: method, headers: {} };
+    var tk = adminToken();
+    if (tk) opt.headers['X-Admin-Token'] = tk; // R135 P0：写保护令牌（未启用态后端忽略）
     if (body !== undefined && body !== null) {
       opt.headers['Content-Type'] = 'application/json';
       opt.body = JSON.stringify(body);

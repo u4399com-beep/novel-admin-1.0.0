@@ -130,6 +130,11 @@ func dispatch(w http.ResponseWriter, r *http.Request) {
 	if matchPrefix(w, r) {
 		return
 	}
+	// R135 P0：管理面写保护（ADMIN_TOKEN 启用态拦截非授权写方法；缺省关闭零破坏，
+	// 见 adminauth.go 头注释——deny-by-default，公开读 API 全为 GET 不受影响）
+	if adminWriteBlocked(w, r) {
+		return
+	}
 	if r.Method == http.MethodOptions {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")

@@ -51,6 +51,11 @@ func main() {
 	mode := parseMode()
 	port := parsePort()
 
+	initAdminToken() // R135 P0：管理面写保护令牌装载（ADMIN_TOKEN 空=关闭零破坏）
+	if adminTokenEnabled() {
+		log.Printf("[backend-go] ADMIN_TOKEN 已启用：写接口需 X-Admin-Token（公开读接口不受影响）")
+	}
+
 	if _, err := getDB(); err != nil {
 		log.Fatalf("[backend-go] DB 初始化失败: %v", err)
 	}
@@ -71,6 +76,7 @@ func main() {
 		go startRuleHealthLoop()      // E19 规则健康巡检（45min/轮，RULEHEALTH_OFF=1 停用，见 rulehealth.go）
 		go startFleetKeeper()         // E26 舰队自持（5min/轮，FLEETKEEPER_OFF=1 停用，见 fleetkeeper.go）
 		go startCoverSweepLoop()      // 封面巡检自愈（30min/轮，COVERSWEEP_OFF=1 停用，见 api_noveltools.go）
+		go startBackupLoop()          // R135 P1：DB 自动备份（VACUUM INTO 原子快照，12h/轮，BACKUP_OFF=1 停用，见 backupx.go）
 		go startPseoReenrichSweep()   // 种子重富集自愈（60min/轮，PSEO_REENRICH_OFF=1 停用，见 pseo_reenrich.go）
 		go cleanupFinishedTasksLoop() // R102-b 任务历史清理（6h/轮，见 tasklogx.go）
 	}
