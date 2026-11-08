@@ -5238,3 +5238,19 @@ Stage Summary:
 - P1 三件套全部落地并 E2E 实证：告警四类事件+冷却去抖、stats 30 天历史、拨测三内建+自定义目标——运营评估 F 维度 4★，公网运营门槛仅剩 P0 认证+TLS+备份 cron
 - blqiuge reJSCallLine 正文零残留双轮抽验收口（R133 移交项完成）；全库 resort 终验 0 候选收敛（R134 移交项完成）
 - 移交下一轮：①P0 整改：管理 API 认证（Caddy token）+备份 cron 启用（10min）+恢复演练 ②stealth venv+chromium 本轮未重建（第 19 次重置自愈链后半段）——下轮开局按 playbook §1.5 补齐 ③resort 周期化可选项 ④SQLite 容量压测（P2）⑤GitHub PAT 轮换提醒（用户侧，已多轮暴露）
+## R136（2026-11-08）TLS 收官 + 备份内置化 + 恢复演练 + SQLite 容量压测 + 第 19 次重置自愈
+
+Work Log:
+- 【开局·第 19 次沙箱重置（最彻底形态）】三服务全灭+db/ 整目录消失（含 backups/ 快照）+Go/stealth/chromium 全灭；bin/ 双产物幸存。开局本地视图（origin/main=f421aa4=R134、worklog 无 R135 段）判定「R135 工作全部丢失」——**push 时反转为真：并行会话 R135 已推送远程（9ba5820 管理面写保护+内建备份+分桶扩容 / 86ad334 可观测三件套+blqiuge 抽验+resort 终验 / R135b 合并验证+.admin-token 治理）**，rebase 顺利融合。教训保留：沙箱内未推送窗口的工作面确实会丢，运维件 git 化铁律不变
+- 【第 19 次自愈链】bin 快速路径双服务拉起（backend dbOk+scraper ok 双 200）→ Go 1.22.12（aliyun 19.6MB/s 秒下）→ HEAD 基线构建双端 OK → 空库自动播种 25 规则 → fleetkeeper 首轮建队+重启孤儿唤醒 15 任务 → 17 running 舰队重建（10min 内 68.5 万章/514 书回填）→ stealth venv（aliyun pypi，cloakbrowser 期望 chromium 146.0.7680.177.5 与下载版本精确匹配）
+- 【①TLS（P1 最后一件·交付）】backend-go 原生 HTTPS：BACKEND_TLS_CERT/BACKEND_TLS_KEY env 同时非空即 ListenAndServeTLS（main.go R136）。实测：自签证书起 3443 实例 → `listening on :3443 (TLS cert=...)` → curl -sk https 200 JSON → 明文 HTTP 打同端口 400 拒绝。配套：仓库 Caddyfile 顶部生产 TLS 终结样例（真实域名自动 HTTPS；沙箱网关为宿主 /app/Caddyfile root 600 不可改——本轮实证其与仓库副本 DIFF）+ deployment.md §8.4 内网自签形态
+- 【③备份循环重建（与 R135 融合）+ 恢复演练 PASS】开局独立实现了 backupx.go（boot 立即首备 286ms/32.7MB 实证）→ rebase 发现 R135 已有同功能内建实现（VACUUM INTO 12h/轮/单飞闸/独立连接防挤压/novel-* 命名）→ **融合：以 R135 为骨架，吸收 R136 增量=.tmp 原子改名（快照失败不残留半成品，prune 过滤天然排除）**；scripts/verify-backup-r136.sh 三级演练 PASS（L1 integrity ok / L2 五表行数快照=活库 / L3 restore 库起临时 api 实例 health dbOk+/api/novels 200）+ 兼容 novel-*/custom-* 双命名+.tmp 残留巡检
+- 【④SQLite 容量压测（P2·交付）】scripts/stress-sqlite-r136.py：backup API 结构克隆（DDL/索引 100% 同真）+ 10x R134 量级合成注入（1 万书/1000 万章/10 万正文，1.24GB）→ 全程 1.0 分钟。结果：Q1 首页书链 0.03ms/Q2 深分页 0.37ms/Q3 目录单页 0.05ms/Q4 目录全量 1000 章 0.48ms/Q5 正文单章 0.01ms/Q7 联合聚合 0.70ms——索引命中实证（Chapter_novelId_idx_key）；唯一两位数=全表 COUNT 39ms（非热路径）；写吞吐 11.6 万行/s（超采集需求 3 个数量级）；VACUUM 19.6s@1.24GB（30min 备份周期无压）。结论：SQLite 支撑三年期增长无需迁移。报告 docs/sqlite-capacity-r136.md
+- 【②stealth 重建】venv 重建完成（cloakbrowser<0.7 锁版内 + iv8 0.1.4，get_chromium_version()=146.0.7680.177.5 与 chromium 精确匹配）；服务已拉起 /health ok:true+iv8:true+cloakBinary:false（R119 installed 检查如实报待装）；chromium 216MB ghfast 链路今晚不稳（多轮中断重来）→ 换多镜像轮换+300s 断点续传竞争（ghfast/gh-proxy/ghproxy.net/直连）——**补录：8 段并行（ghfast×4+gh-proxy×4，单连接 ~220KB/s 限速下并行 1.7MB/s）+ 真实大小修正（Content-Range 216890134 vs 估算 216006656 尾差 863KB 补段）→ tar 全量校验 OK → Chromium 146.0.7680.177 落位 ~/.cloakbrowser → /health cloakBinary:true+iv8:true → /cloak 冒烟 aijjxs.com ok:true 真实 HTML**（playbook §1.5 可补 8 段并行法+Content-Range 定容法）
+- 【文档/评估同步】operations-readiness.md 整改总表升级为状态跟踪版：备份✅R136/TLS✅R136/压测✅R136；webhook/stats 落表/拨测标⚠️"R135 已做未推送随重置丢失待重做"；deployment.md §10.4 备份节改为「方式 A0 内置循环（默认）+ 恢复演练脚本」三方案并列
+
+Stage Summary:
+- P1 清单终态：**P1 全绿**——TLS（最后一件）R136 交付实战验证；webhook/stats/拨测 R135 交付（rebase 确认）；备份=R135 循环+R136 演练脚本+融合增强；audit R135 终验完成（723 书 0 候选）；P0 剩版权定位论证（决策级，用户侧）
+- P2 压测交付：千万章量级全毫秒级+写吞吐 11.6 万行/s——SQLite 形态天花板远超采集增长曲线，容量焦虑解除
+- 第 19 次自愈闭环（最快记录之一：拉起→构建→舰队→stealth venv 全链 ~10min）；R135 丢失教训固化为「运维件必须 git 化」铁律
+- 移交下一轮：①PAT 轮换（用户侧，多轮提醒）②chromium 8 段并行下载法+Content-Range 定容法补录 playbook §1.5（可选）③全库 resort 周期化（可选，R135 已终验一轮）④观测 R135 observability 拨测/告警在沙箱的实战表现

@@ -89,6 +89,11 @@ func runBackupCycle(trigger string) {
 	}
 	name := fmt.Sprintf("novel-%s.db", time.Now().Format("20060102-150405"))
 	dest := filepath.Join(dir, name)
+	// R136 吸收：先写 .tmp 再原子 rename——快照失败/中途崩溃不残留半成品，
+	// 恢复演练方（scripts/verify-backup-r136.sh）永远不会捡到撕裂副本。
+	// .db.tmp 不匹配 pruneOldBackups 的 novel-*.db 前缀过滤，天然免于误清理。
+	tmp := dest + ".tmp"
+	_ = os.Remove(tmp)
 	// VACUUM INTO：目标文件必须不存在（SQLite 语义），原子完成快照。
 	// 源侧只读快照：journal_mode 保持默认（导出连接不做写者）、busy_timeout 5s 与主连接同口径
 	src := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)", dbPath())
@@ -97,10 +102,15 @@ func runBackupCycle(trigger string) {
 		log.Printf("[backup] 快照连接失败（%s）: %v", trigger, err)
 		return
 	}
-	_, err = sdb.Exec("VACUUM INTO ?", dest)
+	_, err = sdb.Exec("VACUUM INTO ?", tmp)
 	_ = sdb.Close()
 	if err != nil {
 		log.Printf("[backup] 快照失败（%s）: %v", trigger, err)
+		os.Remove(tmp)
+		return
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		log.Printf("[backup] 快照原子改名失败（%s → %s）: %v", tmp, dest, err)
 		return
 	}
 	sz, _ := os.Stat(dest)

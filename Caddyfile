@@ -1,23 +1,31 @@
+# 沙箱网关由宿主 /app/Caddyfile 管理（root:root 600，随沙箱重置还原，勿改此副本）。
+# 生产 TLS 终结样例（P1 运营整改，docs/operations-readiness.md）：部署机有真实域名时
+# 将站点地址 :81 换为域名（Caddy 自动签发续期 Let's Encrypt，需 80/443 公网可达）：
+#   example.com {
+#     ...下方 handle 块原样...
+#   }
+# 内网无域名形态：backend-go 原生 HTTPS 直连——
+#   BACKEND_TLS_CERT=/path/cert.pem BACKEND_TLS_KEY=/path/key.pem（main.go R136 起）
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+        @transform_port_query {
+                query XTransformPort=*
+        }
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle @transform_port_query {
+                reverse_proxy localhost:{query.XTransformPort} {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 
-	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 }

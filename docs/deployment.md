@@ -787,6 +787,23 @@ sudo systemctl reload caddy   # Caddy 自动申请/续期 HTTPS 证书
 > 本仓库自带的 `Caddyfile`（`:81 → localhost:3000`）是沙箱预览面板的形态：本机 81 口反代
 > 3000，生产可参考其 header 透传写法。
 
+### 8.4 内网/无域名形态：backend 原生 TLS（自签，R136 起）
+
+无域名或纯内网部署时，可跳过反代，由 backend-go 直接以 HTTPS 监听（`BACKEND_TLS_CERT`/`BACKEND_TLS_KEY` 同时非空即启用）：
+
+```bash
+# 自签证书（CN 换成访问用主机名/IP）
+mkdir -p /opt/novel-admin/tls && cd /opt/novel-admin/tls
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes \
+  -subj '/CN=novel.internal'
+# 启动时叠加（systemd 用户写入 Environment= 行；手动启动则前置 env）
+export BACKEND_TLS_CERT=/opt/novel-admin/tls/cert.pem
+export BACKEND_TLS_KEY=/opt/novel-admin/tls/key.pem
+```
+
+**验证**：`curl -sk https://127.0.0.1:3000/api/health` → 200；明文 HTTP 打同端口被拒（400）。
+> 公网运营标准形态仍为反代层 TLS 终结（§8.2/§8.3）；原生 TLS 面向内网加密与无反代部署形态。
+
 ---
 
 ## 9. 部署验证清单 + 采集冒烟测试
@@ -953,7 +970,16 @@ SQLite 文件，恢复=停服后 cp 覆盖。可用 env 调整：`BACKUP_INTERVA
 （改用下方 cron 方案）。首次启用验证：启动日志出现 `[backup] 快照完成` 且目录有文件。
 
 ```bash
-# 方式 A（推荐，热备单文件、免停服）：SQLite 在线备份 API
+# 方式 A0（R135 默认内置 + R136 增强，免配置）：backend-go 自带快照循环（backupx.go）
+#   boot 90s 后首轮，之后每 12h 一轮（VACUUM INTO 在线快照 + 轮转保留 7 份）
+#   R136 增强：先写 .tmp 再原子改名——快照失败/中途崩溃不残留半成品撕裂副本
+#   落盘位置：<db 目录>/backups/novel-YYYYMMDD-HHMMSS.db
+#   可调：BACKUP_INTERVAL_H（默认 12，[1,168]）/ BACKUP_KEEP（默认 7）/
+#         DB_BACKUP_DIR（默认 <db 目录>/backups）/ BACKUP_OFF=1 停用
+#   首备后跑一次恢复演练（三级验证：完整性/一致性/restore 实例可服务性）：
+bash scripts/verify-backup-r136.sh          # 自动取最新快照，PASS/FAIL 退出码
+
+# 方式 A（外挂补充，热备单文件、免停服）：SQLite 在线备份 API
 sqlite3 /opt/novel-admin/db/custom.db ".backup '/opt/backup/novel-$(date +%F).db'"
 
 # 方式 B（冷备）：先停唯一写者再整体拷贝

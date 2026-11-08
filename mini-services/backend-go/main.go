@@ -109,9 +109,20 @@ func main() {
 			defer cancel()
 			_ = srv.Shutdown(ctx)
 		}()
-		log.Printf("[backend-go] listening on :%d", port)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("[backend-go] HTTP 服务退出: %v", err)
+		// P1 运维整改（R136）：BACKEND_TLS_CERT/BACKEND_TLS_KEY 同时非空 → 原生 HTTPS
+		// 直连（自签内网/内网加密形态）；公网运营标准形态仍为反代层 TLS 终结
+		// （仓库 Caddyfile 顶部样例 / docs/deployment.md §8.4）
+		tlsCert, tlsKey := os.Getenv("BACKEND_TLS_CERT"), os.Getenv("BACKEND_TLS_KEY")
+		if tlsCert != "" && tlsKey != "" {
+			log.Printf("[backend-go] listening on :%d (TLS cert=%s)", port, tlsCert)
+			if err := srv.ListenAndServeTLS(tlsCert, tlsKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalf("[backend-go] HTTPS 服务退出: %v", err)
+			}
+		} else {
+			log.Printf("[backend-go] listening on :%d", port)
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalf("[backend-go] HTTP 服务退出: %v", err)
+			}
 		}
 	} else {
 		// runner-only：阻塞直到信号
