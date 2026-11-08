@@ -994,6 +994,51 @@ curl -s http://127.0.0.1:3000/api/health | grep -o '"ok":true'   # 收尾验证
 
 > 升级不会动 `db/custom.db`；若新版本改了表结构，先备份（§10.4）再按新版 README/迁移说明操作。
 
+### 10.6 可观测与告警（R135 三件套）
+
+backend-go 内建可观测循环（`OBS_OFF=1` 可整体停用）：页面拨测 5min/轮、stats 快照 10min/行、
+批量 paused 检测 60s/轮。全部零配置可用，接告警只需一步：
+
+```bash
+# ① 配置告警 webhook（钉钉/飞书/企微自定义机器人地址均可——通用 JSON POST）
+curl -X PATCH http://127.0.0.1:3000/api/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"alertWebhookURL":"https://oapi.dingtalk.com/robot/send?access_token=xxx"}'
+
+# ② 验证通路（异步发送，成功/失败看 backend 日志 [alert] 行）
+curl -X POST http://127.0.0.1:3000/api/alert/test \
+  -H 'Content-Type: application/json' -d '{"summary":"部署后首验"}'
+
+# ③（可选）公网部署加自定义拨测目标——填你的对外域名即获得「外部视角」拨测
+curl -X PATCH http://127.0.0.1:3000/api/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"probeTargets":"https://your-domain.com/,https://your-domain.com/api/health"}'
+```
+
+**告警事件类型**（payload：`{service, kind, summary, detail, host, ts}`；同 kind 10min 冷却去抖，
+发送失败自动重试）：
+
+| kind | 触发条件 | 说明 |
+|------|----------|------|
+| `service_restart` | backend-go 启动完成 | 服务重启即知（配合 autoResume，重启不再静默） |
+| `rule_unhealthy` | 巡检健康→不健康跃迁 | 源站改版/封禁第一时间知道（长期故障不重复轰炸） |
+| `tasks_paused` | ≥5 个任务停摆 ≥5min 未恢复 | 批量熔断/封禁事件（60s 内检出，短于巡检周期） |
+| `probe_down` | 同拨测目标连败 3 次 | 页面白屏/挂掉（进程活着但站点不可用） |
+
+**数据接口**：
+
+| 端点 | 用途 |
+|------|------|
+| `GET /api/stats-history?limit=144` | 核心计数时间线（正序，画图友好；10min/行 30 天保留）——「上周成功率多少」从此可答 |
+| `GET /api/probe-log?limit=100` | 拨测记录（7 天保留；含 httpStatus/latencyMs/error） |
+
+**手动全库章序审计/重排**（可选，非周期任务）：
+
+```bash
+curl 'http://127.0.0.1:3000/api/novels/resort-chapters'        # 只读审计：列出乱序候选
+curl -X POST 'http://127.0.0.1:3000/api/novels/resort-chapters' # 按审计结果重排（幂等，可与任务并行）
+```
+
 ---
 
 ## 11. 故障排查

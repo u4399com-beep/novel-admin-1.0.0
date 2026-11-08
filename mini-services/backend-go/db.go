@@ -152,6 +152,18 @@ func getDB() (*sql.DB, error) {
                         `ALTER TABLE "SiteSetting" ADD COLUMN "coversDir" TEXT NOT NULL DEFAULT ''`); err != nil {
                         log.Printf("[db] SiteSetting.coversDir 加列失败（封面自定义目录不可用，按默认路径运行）: %v", err)
                 }
+
+                // R135: SiteSetting 告警/拨测两列（可观测三件套，见 observability.go）。
+                // alertWebhookURL 告警 webhook（空=全链静默零成本）；probeTargets 自定义拨测
+                // 目标（逗号分隔 http/https，空=仅内建三目标）。存量库幂等加列。
+                if err := ensureColumn(db, "SiteSetting", "alertWebhookURL",
+                        `ALTER TABLE "SiteSetting" ADD COLUMN "alertWebhookURL" TEXT NOT NULL DEFAULT ''`); err != nil {
+                        log.Printf("[db] SiteSetting.alertWebhookURL 加列失败（告警 webhook 不可用，不影响主流程）: %v", err)
+                }
+                if err := ensureColumn(db, "SiteSetting", "probeTargets",
+                        `ALTER TABLE "SiteSetting" ADD COLUMN "probeTargets" TEXT NOT NULL DEFAULT ''`); err != nil {
+                        log.Printf("[db] SiteSetting.probeTargets 加列失败（自定义拨测目标不可用，仅内建目标）: %v", err)
+                }
                 // Task 60-R18: ScrapeRule.insecureTLS 跳过证书校验开关（存量库幂等加列）。
                 // 历史缺陷：列缺失时 web_data 的 SELECT 中带引号标识符 "insecureTLS" 被 SQLite
                 // DQS 特性当字符串字面量返回（每行值='insecureTLS'）→ /api/scrape-rules Scan

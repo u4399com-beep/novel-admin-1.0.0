@@ -5213,3 +5213,28 @@ Stage Summary:
 - 运营就绪 P0/P1 三件套落地：管理面写保护（后端+前端+部署+文档全链）、DB 自动备份（内建循环零配置）、per-IP 分桶扩容（正文 3.5 倍提速）——operations-readiness.md 路线图第一批执行完毕
 - 五项清单全覆盖：①P0/P1 整改+任务保护链验证②分桶 3.5 倍③stealth/家族恢复④7 新测+双端 staticcheck 零残留⑤deploy 认证集成
 - 移交下一轮：①运营评估 P1 剩余：告警 webhook（规则不健康/任务批量 paused/服务重启三类事件）/stats 快照落表/外部拨测 ②blqiuge 正文落库后 reJSCallLine 专项抽验（本轮全库抽验已零残留）③list 批量终态后全库 resort+audit 终验 ④SQLite 容量压测（P2）⑤管理页 token UI 输入框（现 ?token= URL 方式已可用，UI 化为锦上添花）⑥GitHub PAT 轮换提醒（用户侧）
+
+---
+Task ID: R135b
+Agent: Z.ai Code (main)
+Task: 用户指令——P1 剩余三件套（告警 webhook/stats 落表/外部拨测）+ blqiuge 正文专项抽验 + 全库 resort+audit 终验
+
+Work Log:
+- 【开局·第 19 次沙箱重置】形态同 18th（git 幸存 f421aa4+bin/ 幸存，db/Go/venv/cloak/tmp 全灭）。自愈链全程并行化：bin 快速路径拉起双服务 → E26 fleetkeeper 第 5 次实战（空库→25 规则/20 任务舰队 16 running 零手工）→ Go 1.22.12 aliyun 秒下 → stealth/cloak 本轮未及重建（无 stealth 需求路径，移交下轮开局检查）
+- 【P1 三件套落地（新文件 observability.go，+test 全绿）】
+  - 告警 webhook：fireAlert 通用 JSON POST（service/kind/summary/detail/host/ts 五字段）；四类事件=service_restart（boot 完成）/rule_unhealthy（E19 巡检健康→不健康跃迁，首轮无历史不告警防风暴）/tasks_paused（≥5 任务停摆 ≥5min 未恢复且 ≤30min——5min 静默窗精确排除 autoResume 60s 瞬态）/probe_down（拨测连败 3 次）；10min 冷却去抖+失败不记冷却下轮重试+force 通道；配置 SiteSetting.alertWebhookURL（http/https 保存端校验），OBS_OFF=1 全链停用
+  - stats 快照落表：StatsSnapshot 表（schema.go DDL）10min/行（书/章/正文/任务态/规则健康/引擎吞吐 11 字段）+30 天保留；GET /api/stats-history?limit=N 正序时间线（DESC 取样反转为 ASC，画图友好）
+  - 页面拨测：ProbeLog 表 5min/轮真实 HTTP 探测（内建三目标=首页/health/最新书详情页动态 ID+SiteSetting.probeTargets 自定义逗号分隔）；连败内存 map 恰达 3 触发告警+恢复自动清零；7 天保留；GET /api/probe-log
+  - 接线：main.go（loop 挂 api/all+重启告警全模式）/rulehealth.go（ruleHealthPrevOK 跃迁判定+degraded 清单汇总一条告警）/api_settings.go（GET 回显+PATCH 两键校验：webhook 仅 http/https、probeTargets 逐项校验违规拒整键）/scrapesettings.go（缓存失效钩扩两键）；POST /api/alert/test 手动验证通道（未配置 400 提示）
+- 【测试与三检】observability_test.go 5 组用例全绿（payload 形态/去抖/空 URL noop/快照落表+保留清理/拨测落表+连败告警+恢复清零/limit 参数/PATCH 两键校验）；全量回归 70s 通过；vet 零告警；staticcheck 全包零告警；新文件 gofmt 标准 tab（HEAD 既有空格风格文件维持 R128 不重排惯例）
+- 【E2E 实证】本地 sink 收包五字段齐全；probe 2 轮周期在跑；首轮快照落表（668 书/98.4 万章/16 规则健康）；重启后 stats 历史保留（「重启不失忆」价值即刻体现）；alert/test 未配置 400+配置后 200 推送双态验证
+- 【缩进事故与修复（流程坑存档）】Edit/MultiEdit 空格缩进串改写 tab 文件（main.go/rulehealth.go）→ gofmt -w 修复回归 tab；db.go/scrapesettings.go HEAD 本身空格风格（R128 既有噪音）gofmt 反放大 diff → checkout 回退后 python 脚本按原风格精确重插（最终 diff +187/-17 全真实逻辑）。教训：**改混合风格仓库，先探明单文件 HEAD 缩进（cat -A），Edit 串按同风格书写；gofmt -w 仅用于新文件**
+- 【blqiuge 正文专项抽验（两轮）】任务 20（blqiuge 玄幻分类 list）在跑 16/68 页；在库 3 书/116 章正文全量抽验：reJSCallLine/JS 残迹/广告尾注/推荐语 16 类特征**零残留**；书 70《道友，这逆天机缘我笑纳了》样章 95 行首末行纯正文；章节标题无尾缀、书名无 SEO 尾缀、简介四族尾注清洗无误伤（【传统玄幻】标签系源站原生保留）——R133 reJSCallLine 正文直调通道+三轮清洗链全链实战自证
+- 【全库 resort+audit 终验】GET 审计 716 书 27 乱序候选（重启重建中间态为主）→ POST 重排 27 本（万古第一神 moved 7953/万道龙皇 6194 等，与 16 running 并行无冲突）→ 复验 **723 书 0 候选完美收敛**；周期化建议留档（任务持续入库再产生新候选时 fleet 触发式或 cron GET）
+- 【文档同步】operations-readiness.md：F 维度 3★→4★、§A/§B/§F Gap 三处 P1 标注已落地、整改总表三行 ✅、Level 2 判定更新「接近达标」；deployment.md 新增 §10.6 可观测与告警（三步配置 curl/四类事件表/数据接口表/resort 手动命令）
+- 【一键安装（清单⑤）】本轮零安装链改动（backend-go 单二进制自持，observability 随主程序部署无新依赖）——R134 复核结论维持有效
+
+Stage Summary:
+- P1 三件套全部落地并 E2E 实证：告警四类事件+冷却去抖、stats 30 天历史、拨测三内建+自定义目标——运营评估 F 维度 4★，公网运营门槛仅剩 P0 认证+TLS+备份 cron
+- blqiuge reJSCallLine 正文零残留双轮抽验收口（R133 移交项完成）；全库 resort 终验 0 候选收敛（R134 移交项完成）
+- 移交下一轮：①P0 整改：管理 API 认证（Caddy token）+备份 cron 启用（10min）+恢复演练 ②stealth venv+chromium 本轮未重建（第 19 次重置自愈链后半段）——下轮开局按 playbook §1.5 补齐 ③resort 周期化可选项 ④SQLite 容量压测（P2）⑤GitHub PAT 轮换提醒（用户侧，已多轮暴露）

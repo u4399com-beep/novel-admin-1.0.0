@@ -312,9 +312,9 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 	}
 	var siteName, activeTheme, notice string
 	var seoConfig, footerConfig, homeConfig sql.NullString
-	var proxyPool, txtDir, coversDir sql.NullString
-	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir" FROM "SiteSetting" WHERE "id" = 1`,
-		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir})
+	var proxyPool, txtDir, coversDir, alertWebhookURL, probeTargets sql.NullString
+	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir","alertWebhookURL","probeTargets" FROM "SiteSetting" WHERE "id" = 1`,
+		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir, &alertWebhookURL, &probeTargets})
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -334,6 +334,9 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 		"proxyPool": proxyPool.String,
 		"txtDir":    txtDir.String,
 		"coversDir": coversDir.String,
+		// R135: 可观测设置（告警 webhook + 自定义拨测目标；空=默认行为）
+		"alertWebhookURL": alertWebhookURL.String,
+		"probeTargets":    probeTargets.String,
 	})
 }
 
@@ -423,6 +426,46 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 		}
 		sets = append(sets, `"coversDir" = ?`)
 		args = append(args, d)
+	}
+	// R135: 可观测设置两键（宽松语义同 proxyPool：键缺失=不动；非法值拒绝该键）。
+	// alertWebhookURL：仅 http/https 绝对地址（钉钉/飞书/企微机器人均为 https；
+	// 错误协议会让 fireAlert 每次事件都白打 5s 超时，保存端拦截）。空串=清除。
+	if v, exists := body["alertWebhookURL"]; exists {
+		s, isStr := v.(string)
+		if !isStr {
+			writeJSON(w, 400, map[string]string{"error": "alertWebhookURL 必须是字符串"})
+			return
+		}
+		t := trimSpaceStr(s)
+		if t != "" && !strings.HasPrefix(t, "http://") && !strings.HasPrefix(t, "https://") {
+			writeJSON(w, 400, map[string]string{"error": "alertWebhookURL 仅支持 http/https 绝对地址"})
+			return
+		}
+		sets = append(sets, `"alertWebhookURL" = ?`)
+		args = append(args, t)
+	}
+	// probeTargets：逗号分隔 http/https 绝对地址（逐个校验，允许空串=清除）。
+	// 违规项直接拒绝整键（与 proxyPool 逐口校验同口径——静默丢弃会让用户误以为已生效）。
+	if v, exists := body["probeTargets"]; exists {
+		s, isStr := v.(string)
+		if !isStr {
+			writeJSON(w, 400, map[string]string{"error": "probeTargets 必须是字符串"})
+			return
+		}
+		cleaned := []string{}
+		for _, raw := range strings.Split(s, ",") {
+			t := trimSpaceStr(raw)
+			if t == "" {
+				continue
+			}
+			if !strings.HasPrefix(t, "http://") && !strings.HasPrefix(t, "https://") {
+				writeJSON(w, 400, map[string]string{"error": "probeTargets 仅支持逗号分隔的 http/https 绝对地址: " + t})
+				return
+			}
+			cleaned = append(cleaned, t)
+		}
+		sets = append(sets, `"probeTargets" = ?`)
+		args = append(args, strings.Join(cleaned, ","))
 	}
 
 	// seoConfig 为「读旧 JSON → 合并 → 写回」的读改写，与 PSEO 配置共用一行存储，

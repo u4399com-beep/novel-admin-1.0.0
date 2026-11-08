@@ -71,10 +71,13 @@ var (
 
 // invalidateScraperSettings 保存端失效钩子（api_settings.go PATCH 成功后调用）；
 // loaded=false 后下次 get 重新查库。另设 10s TTL 兜底防漏钩路径。
+// R135: 告警 webhook/拨测目标缓存同钩失效（observability.go 消费同款缓存类型）。
 func invalidateScraperSettings() {
         proxyPoolCache.invalidate()
         txtDirCache.invalidate()
         coversDirCache.invalidate()
+        alertWebhookCache.invalidate()
+        probeTargetsCache.invalidate()
 }
 
 // loadSettingColumn 单列读取（SiteSetting id=1 不存在/列缺失/查询失败 → ""）。

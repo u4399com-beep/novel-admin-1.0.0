@@ -211,12 +211,45 @@ CREATE TABLE IF NOT EXISTS "ProxyExit" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "ProxyExit_proxy_key" ON "ProxyExit" ("proxy");
 CREATE INDEX IF NOT EXISTS "ProxyExit_dead_ms_idx" ON "ProxyExit" ("dead", "ms");
+
+-- R135（可观测三件套，见 observability.go）: stats 快照落表 —— 10min 一行核心计数，
+-- 30 天保留（observability.statsSnapshotOnce 清理）。运营评估 F 维度缺口根修：
+-- 统计不再只存在内存，重启不失忆，历史趋势可回放（GET /api/stats-history）。
+CREATE TABLE IF NOT EXISTS "StatsSnapshot" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "takenAt" INTEGER NOT NULL DEFAULT 0,
+        "novels" INTEGER NOT NULL DEFAULT 0,
+        "chapters" INTEGER NOT NULL DEFAULT 0,
+        "contents" INTEGER NOT NULL DEFAULT 0,
+        "tasksRunning" INTEGER NOT NULL DEFAULT 0,
+        "tasksPaused" INTEGER NOT NULL DEFAULT 0,
+        "rulesTotal" INTEGER NOT NULL DEFAULT 0,
+        "rulesHealthy" INTEGER NOT NULL DEFAULT 0,
+        "engineOK" BOOLEAN NOT NULL DEFAULT false,
+        "engineTotalOK" INTEGER NOT NULL DEFAULT 0,
+        "engineTotalFail" INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS "StatsSnapshot_takenAt_idx" ON "StatsSnapshot" ("takenAt" DESC);
+
+-- R135: 页面拨测日志 —— 5min 一轮逐目标真实 HTTP 探测（内建首页/health/最新书详情页 +
+-- SiteSetting.probeTargets 自定义目标），7 天保留（observability.probeRunOnce 清理）。
+-- 连败告警联动 fireAlert("probe_down")。GET /api/probe-log 查询。
+CREATE TABLE IF NOT EXISTS "ProbeLog" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "takenAt" INTEGER NOT NULL DEFAULT 0,
+        "target" TEXT NOT NULL,
+        "ok" BOOLEAN NOT NULL DEFAULT false,
+        "httpStatus" INTEGER NOT NULL DEFAULT 0,
+        "latencyMs" INTEGER NOT NULL DEFAULT 0,
+        "error" TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS "ProbeLog_takenAt_idx" ON "ProbeLog" ("takenAt" DESC);
 `
 
 // ensureBaseSchema 全量基础 schema 幂等引导（全新库建表，存量库空操作）。
 // ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训：
 // 严禁 once 外经 exec/query 助手再入 getDB）。
 func ensureBaseSchema(db *sql.DB) error {
-        _, err := db.Exec(baseSchemaDDL)
-        return err
+	_, err := db.Exec(baseSchemaDDL)
+	return err
 }

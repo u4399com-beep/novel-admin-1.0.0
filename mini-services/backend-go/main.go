@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -80,6 +81,14 @@ func main() {
 		go startPseoReenrichSweep()   // 种子重富集自愈（60min/轮，PSEO_REENRICH_OFF=1 停用，见 pseo_reenrich.go）
 		go cleanupFinishedTasksLoop() // R102-b 任务历史清理（6h/轮，见 tasklogx.go）
 	}
+	// R135 可观测三件套（api/all 模式挂载：拨测自探需要本进程 HTTP 面）。
+	// runner-only 模式无 HTTP 监听，拨测/快照无意义，故不挂载。
+	if mode == "api" || mode == "all" {
+		go startObservabilityLoop() // 拨测 5min/stats 快照 10min/批量paused检测 60s（OBS_OFF=1 停用，见 observability.go）
+	}
+	// R135: 服务重启告警（boot 完成后一次；webhook 未配置时 fireAlert 零成本直返）。
+	// 异步发送不阻塞启动序列；runner 模式同样覆盖（runner 重启也是值得知道的事件）。
+	go fireAlert("service_restart", fmt.Sprintf("backend-go 启动（mode=%s port=%d）", mode, port), dbPath())
 	// startDevWatcher 已随 Next.js 退役（Task 27）：3000 端口由本进程直接承载，
 	// 看护职责归沙箱 dev 链路 / systemd（见 scripts/dev-go.sh 与 deployment.md）。
 	if mode == "api" || mode == "all" {

@@ -23,6 +23,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -134,7 +135,9 @@ func ruleHealthRun(mode string) {
 	}
 	okN, failN := 0, 0
 	started := time.Now()
+	degraded := []string{} // R135: 健康→不健康跃迁规则（巡检完汇总一条告警，见 observability.go）
 	for _, rr := range rules {
+		prevOK, hadPrev := ruleHealthPrevOK(rr.id)
 		ok, latencyMs, note := ruleHealthCheckOne(rr.id, rr.siteURL)
 		if err := ruleHealthUpsert(rr.id, ok, latencyMs, note); err != nil {
 			log.Printf("[rulehealth] 规则#%d 结果落库失败: %v", rr.id, err)
@@ -145,9 +148,18 @@ func ruleHealthRun(mode string) {
 		} else {
 			failN++
 			log.Printf("[rulehealth] 规则#%d 不健康: %s", rr.id, note)
+			// 仅「上一轮健康、本轮转差」的跃迁才入告警清单（长期故障的规则不重复轰炸，
+			// 冷却去抖兜底；首轮无历史（hadPrev=false）不入——新库播种首巡全量探测
+			// 不该触发一轮告警风暴）
+			if hadPrev && prevOK {
+				degraded = append(degraded, fmt.Sprintf("规则#%d %s: %s", rr.id, rr.siteURL, note))
+			}
 		}
 	}
 	log.Printf("[rulehealth] %s巡检完成：%d 规则，健康 %d / 不健康 %d，耗时 %s", mode, len(rules), okN, failN, time.Since(started).Round(time.Second))
+	if len(degraded) > 0 {
+		go fireAlert("rule_unhealthy", fmt.Sprintf("%d 条规则巡检转为不健康", len(degraded)), strings.Join(degraded, "\n"))
+	}
 
 	// E23（61-R11）: 巡检联动复活——闭环「限流熔断暂停 × runner 自动恢复 4 次上限」
 	// 的无人值守断流点：巡检实测健康的规则，其限流类暂停任务（静默 ≥30min）自动
@@ -256,6 +268,16 @@ func ruleHealthCheckOne(ruleID int64, siteURL string) (bool, int64, string) {
 		return false, latencyMs, "HTTP 200 空壳（软拦截/挑战竞态）"
 	}
 	return false, latencyMs, "入口可访问但 0 条目（选择器或入口页漂移）"
+}
+
+// ruleHealthPrevOK 读规则上一轮巡检结果（R135 跃迁告警判定用）。
+// 无历史行（首次巡检/表未建）返回 hadPrev=false——调用方不把首轮探测当「转差」。
+func ruleHealthPrevOK(ruleID int64) (ok bool, hadPrev bool) {
+	var lastOK bool
+	if err := queryOne(`SELECT "lastOK" FROM "RuleHealth" WHERE "ruleId" = ?`, []any{&lastOK}, ruleID); err == nil {
+		return lastOK, true
+	}
+	return false, false
 }
 
 // ruleHealthUpsert 巡检结果落库（幂等 upsert，连击计数在 SQL 内维护）。
