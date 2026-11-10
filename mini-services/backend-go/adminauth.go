@@ -66,12 +66,22 @@ func adminRequestAuthorized(r *http.Request) bool {
 // adminWriteBlocked dispatch 总入口调用：写方法（非 GET/HEAD/OPTIONS）在启用态
 // 校验令牌，未授权直接写 401 并返回 true（调用方直接 return）。
 // deny-by-default：管理 API 与未来新增写接口默认安全；公开读接口全为 GET 不受影响。
+// R137 豁免：/api/translate —— 读者侧翻译功能（前台无 token，绕行不可得）。豁免前提
+// 是该接口自身闭环防滥用面：请求体/段数/字数上限 + per-IP 滑窗限流 + 上游仅内网可达
+// + 只写 TranslationCache（无业务数据变更面），见 api_translate.go 头注释。
+var adminWriteExempt = map[string]bool{
+	"/api/translate": true,
+}
+
 func adminWriteBlocked(w http.ResponseWriter, r *http.Request) bool {
 	if !adminTokenEnabled() {
 		return false
 	}
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	if adminWriteExempt[strings.TrimRight(r.URL.Path, "/")] {
 		return false
 	}
 	if adminRequestAuthorized(r) {

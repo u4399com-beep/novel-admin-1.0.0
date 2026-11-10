@@ -129,6 +129,12 @@ func TestExtractHtmlTocFragment(t *testing.T) {
 func TestChapterListApiBookIdPlaceholderInURL(t *testing.T) {
 	// 端到端：httptest 起同源书页+片段端点，走 extractBookBudgeted 全链路验证
 	// {bookId} 占位符替换与 html 片段目录增益（书页内嵌 1 条 → 片段 3 条胜出）
+	// R137: Task 26-d 起 ssrfDialControl 挂载直连传输——httptest 127.0.0.1 目标会被
+	// DNS rebinding 闸拦截（"ssrf dial control: 内网 IPv4 被拒绝"），测试环境放行
+	// 私网（audit32d_test.go 同款 saved/restore 惯例）。
+	savedPrivate := allowPrivate
+	allowPrivate = true
+	defer func() { allowPrivate = savedPrivate }()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/book/6527.html", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

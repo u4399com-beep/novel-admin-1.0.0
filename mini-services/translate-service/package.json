@@ -1,0 +1,15 @@
+{
+  "name": "translate-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "novel-admin 翻译侧车：繁体 OpenCC 本地转换 + 英文 LLM 文学翻译（R137）",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run index.ts",
+    "start": "bun run index.ts"
+  },
+  "dependencies": {
+    "opencc-js": "^1.0.5",
+    "z-ai-web-dev-sdk": "^0.0.18"
+  }
+}

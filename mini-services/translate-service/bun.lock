@@ -1,0 +1,18 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "translate-service",
+      "dependencies": {
+        "opencc-js": "^1.0.5",
+        "z-ai-web-dev-sdk": "^0.0.18",
+      },
+    },
+  },
+  "packages": {
+    "opencc-js": ["opencc-js@1.4.2", "https://registry.npmmirror.com/opencc-js/-/opencc-js-1.4.2.tgz", {}, "sha512-EdcspgdROiCCZDM+jZR6Pa670xW+EW2QhctPBQ8gRjg6lrx4IHEl+2s+kt5izk/TkxVRgdWuFgaGkaEdIUfdaw=="],
+
+    "z-ai-web-dev-sdk": ["z-ai-web-dev-sdk@0.0.18", "https://registry.npmmirror.com/z-ai-web-dev-sdk/-/z-ai-web-dev-sdk-0.0.18.tgz", { "bin": { "z-ai": "dist/cli.js", "z-ai-generate": "dist/cli.js" } }, "sha512-xVoZIEME2F+/Z06orHCgUKzOMuFPhoHuzN4ZFZqcD71g11nzbzq2jKSP53igi3lJFE8ZbMB4WKb4gp6lCGrMXQ=="],
+  }
+}

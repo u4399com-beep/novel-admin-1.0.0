@@ -5254,3 +5254,27 @@ Stage Summary:
 - P2 压测交付：千万章量级全毫秒级+写吞吐 11.6 万行/s——SQLite 形态天花板远超采集增长曲线，容量焦虑解除
 - 第 19 次自愈闭环（最快记录之一：拉起→构建→舰队→stealth venv 全链 ~10min）；R135 丢失教训固化为「运维件必须 git 化」铁律
 - 移交下一轮：①PAT 轮换（用户侧，多轮提醒）②chromium 8 段并行下载法+Content-Range 定容法补录 playbook §1.5（可选）③全库 resort 周期化（可选，R135 已终验一轮）④观测 R135 observability 拨测/告警在沙箱的实战表现
+
+---
+Task ID: R137
+Agent: Z.ai Code (main)
+Task: 用户 6 项清单——①遗留问题②章节效率③反反爬④代码精简⑤翻译功能（繁体+英文，可扩展语种）⑥一键安装更新
+
+Work Log:
+- 【开局·第 20 次沙箱重置 + R135/R136 对齐】远程领先 5 commit（9ba5820..08ffe10：R135 P1 三件套/管理写保护/备份 + R136 TLS 收官/恢复演练/SQLite 压测/stealth 8 段重建）——git pull --ff-only 同步。三服务全灭+db 全空=全量形态重置，自愈链：Go 1.22.12（aliyun 秒下）→ build-go.sh 双产物 → backend 空库自动 DDL+播种 → scraper → E26 任务舰队自持（22 任务零手工，17 running）→ stealth 后台重建 → curl-imp
+- 【任务⑤翻译功能（本轮核心交付，全新能力）】三层架构落地：
+  ① translate-service 侧车（mini-services/translate-service，:3032，Bun+TS）——zh-Hant=OpenCC s2twp 本地词典转换（秒级零成本，词组级：修炼→修煉）+ en=z-ai-web-dev-sdk LLM 文学翻译（段落编号 8 段/批+行号解析容错+失败段单段降级重试）；429 限流退避重试链（2s/6s/15s/30s/60s，共享上游配额的常态瞬态从「段失败」升级为「延迟后成功」）；进程内 LRU 2000；语种注册表 TARGETS 表驱动（加语种只动一处，API 契约不变）；SDK 缺失时 llm=false 503 明确报错不阻塞繁体
+  ② backend-go 集成——TranslationCache SQLite 持久缓存表（key=sha256(text)+"|"+target 全文寻址，随 db 快照进备份体系）/api/translate 代理 API（缓存批查 IN 90 分批→未命中转发上游→回写；首译后重复阅读零上游调用）/api/translate/health 上游透传；安全闭环=MaxBytesReader 4MB+items≤300+单段≤1万字（显式拒绝而非 strField 静默截断——残缺译文不可接受）+总量 12 万字+per-IP 滑窗限流 60req/10min+惰性 90 天清理；ADMIN_TOKEN 写保护豁免单条 /api/translate（读者侧功能，豁免前提=自身防滥用面闭环）；单测 6 个全绿（校验/缓存闭环/失败段留空/豁免/限流/key 稳定）
+  ③ reader 前端——web/static/js/translator.js（8.7KB 零依赖）+ renderPage 渲染层统一注入（chapter 页 </body> 前插 script，obfMaybe 后置注入，12 主题零模板改动）；正文容器探测链（候选选择器→p 最多兜底）主题无关；译文 textContent 赋值 XSS 免疫；localStorage 缓存+前缀对齐（段数漂移不触发全章重翻）；en 6 段/批进度显示+渐进渲染（每批即时上屏）
+- 【E2E 三态循环实战（agent-browser，暴露并修复 3 个真实缺陷）】①items≤96 上限被 109 段长章触发 400——后端放宽 300（成本主闸=总字数），前端统一分批 ②进度消息被 8s toast 清空——setMsg sticky 参数（进度持久/终态自动清）③**inflight 守卫两处漏复位**（缓存命中分支+miss 完成回调均未复位）——后续所有切换被永久拦截，加 window.__trState 调试探针一锤定音后修复；终态：原文↔繁體↔English 三态循环+缓存秒回+移动端 390px 零溢出全绿，console/errors 零输出
+- 【第 20 次重置 stealth 侧车新形态坑】venv 重装后 cloakbrowser human 模块崩（playwright 1.65.0 内部重构 _js_handle.py→js_handle.py 去下划线，cloakbrowser 0.6.5 硬编码旧 import 路径）——playwright pin >=1.53,<1.54 落 requirements.txt（1.53=cloakbrowser Requires-Dist 下限）；chromium 216MB 下载（binary_info 直接给版本+路径，~/.cloakbrowser/ 目录，R136 的 ~/.cache/cloakbrowser/ 旧目录不读）；重启后 health cloak/cloakBinary/iv8 三 true+aijjxs 冒烟过盾 200
+- 【任务⑥一键安装更新（R134 维持「无需改动」结论被本轮新能力打破）】deploy-cn.sh 8→9 步：[7/9] 翻译侧车（bun 运行时三路探测+npmmirror 依赖安装+幂等判断）；启动段 nohup+systemd 双模式加 novel-translate（run.sh 自带 flock+崩溃重启，systemd Restart=always 兜底）；[9/9] 健康检查加 :3032 探测（warn 级不阻塞）；ensure-services.sh watchdog 加 translate 拉起（与 stealth 同构：进程存活判断防 flock 竞争）；bash -n 双脚本语法通过
+- 【任务④代码精简】staticcheck 2023.1.7 双端复核零残留（新增 api_translate.go 无任何告警）；gofmt 新文件干净（HEAD 既有 6 文件噪音维持 R128 惯例不重排）；scraper TestChapterListApiBookIdPlaceholderInURL 环境态失败修复——Task 26-d ssrfDialControl 挂直连传输后 httptest 127.0.0.1 被闸拦截，测试内置 allowPrivate=true saved/restore（audit32d 同款惯例）；backend 全量 test 59s PASS
+- 【任务②③效率+反反爬观测】开局 1h 实测：库 815→1072 书（+257）、104.7 万→132.8 万章（目录 +28 万/h 起步爬坡）、正文 3803→8008 章；17 running/3 paused/1 partial 舰队健康；per-host 准入+per-IP 分桶维持（engine.env 单一来源未动）；规则面 E18/E21/E23 瞬态自动接管维持
+- 【遗留承接状态】全库 resort+audit：R135 已终验（723 书 0 候选）维持；blqiuge 抽验：R135 双轮零残留维持；备份循环：R135 内建循环（本轮 db 重建后自动恢复运转）；P0 版权论证/PAT 轮换：用户侧决策项持续提醒
+
+Stage Summary:
+- 翻译功能三层架构全链交付并 E2E 实证：OpenCC 繁体秒级+LLM 英文文学级（"Thunderfire Pavilion, a divine arts training ground."）+双级缓存（LRU/SQLite）+语种注册表可扩展（后续语种零架构改动）
+- 第 20 次重置自愈闭环（含 stealth playwright 兼容性新坑存档）；四服务全绿+cloak 过盾恢复
+- 一键安装 9 步新形态：翻译侧车进安装链，国内镜像全链（npmmirror+PyPI aliyun+ghfast）
+- 移交下一轮：①PAT 轮换（用户侧，第 7 次提醒）②admin 面可加翻译缓存管理页（可选：按书清理/命中率统计——TranslationCache novelId 索引已备好）③更多语种按需注册（ja/ko 一行配置）④翻译体验可加 TXT 导出译文（api_export.go 已有 TXT 通道可复用）

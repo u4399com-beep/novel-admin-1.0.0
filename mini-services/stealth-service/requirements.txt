@@ -3,3 +3,7 @@
 # 会静默破坏「ghfast 镜像 + chromium-146 本地二进制」的恢复链——锁 0.6.3 已知稳态。
 cloakbrowser>=0.5.12,<0.7
 iv8>=0.1.4
+# R137: playwright pin——1.65.0 内部重构（playwright/_impl/_js_handle.py → js_handle.py，
+# 去下划线前缀），cloakbrowser 0.6.5 human/engine.py 硬编码旧路径 import 崩溃（stealth
+# venv 全灭）。1.53 是 cloakbrowser Requires-Dist 下限（>=1.53），实测导入+过盾恢复。
+playwright>=1.53,<1.54

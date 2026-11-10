@@ -15,6 +15,16 @@ if ! curl -s --max-time 2 http://127.0.0.1:3031/health | rg -q '"ok":true'; then
     (cd "$ROOT/mini-services/stealth-service" && nohup ./run.sh >>/tmp/stealth.log 2>&1 &)
   fi
 fi
+# translate（R137：阅读页翻译侧车 :3032，OpenCC 繁体 + LLM 英文；可选组件不进 OK 早退，
+# 拉起模式与 stealth 同构：进程存活判断防 flock 竞争，缺失依赖时 run.sh 日志明示）
+if [ -f "$ROOT/mini-services/translate-service/index.ts" ] \
+   && [ -f "$ROOT/mini-services/translate-service/node_modules/opencc-js/package.json" ]; then
+  if ! curl -s --max-time 2 http://127.0.0.1:3032/api/health | rg -q '"ok":true'; then
+    if ! pgrep -f 'translate-service/run.sh' >/dev/null 2>&1; then
+      (cd "$ROOT/mini-services/translate-service" && nohup ./run.sh >>/tmp/translate-service.log 2>&1 &)
+    fi
+  fi
+fi
 [ "$OK" = "1" ] && exit 0
 # backend
 if ! curl -s --max-time 2 http://127.0.0.1:3000/api/health | rg -q '"ok":true'; then

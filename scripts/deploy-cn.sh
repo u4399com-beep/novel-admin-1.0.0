@@ -16,12 +16,15 @@
 #                      不匹配/过低 glibc/--build 显式指定 → 走源码构建（goproxy.cn）
 #   [5/8] 反反爬军火   curl-impersonate 21 二进制 → ~/.local/bin（GitHub 镜像候选链；
 #                      快速路径下仍会安装——引擎运行时依赖，与构建无关）
-#   [6/8] stealth 侧车 R131 新增（可选，失败不阻塞）：venv + cloakbrowser/iv8 依赖
+#   [6/9] stealth 侧车 R131 新增（可选，失败不阻塞）：venv + cloakbrowser/iv8 依赖
 #                      （PyPI 镜像链 aliyun→官方）+ CloakBrowser chromium 二进制
 #                      （GitHub 镜像候选链+断点续传）；CF 挑战站渲染能力，
 #                      缺失时引擎自动跳过 cloak/iv8 策略不阻塞主链路
-#   [7/8] 启动 + 看护  默认 nohup+watchdog 自愈循环；--systemd 用 systemd 托管（推荐生产）
-#   [8/8] 健康检查     /api/health + /api/strategies，空库首次启动自动建表+播种
+#   [7/9] 翻译侧车 R137 新增（可选，失败不阻塞）：bun + opencc-js/z-ai-web-dev-sdk
+#                      （npmmirror 镜像）——阅读页繁体（OpenCC 本地）/英文（LLM）翻译，
+#                      缺失时 /api/translate 返回 503 阅读功能不受影响
+#   [8/9] 启动 + 看护  默认 nohup+watchdog 自愈循环；--systemd 用 systemd 托管（推荐生产）
+#   [9/9] 健康检查     /api/health + /api/strategies + translate :3032，空库首次启动自动建表+播种
 # 数据安全：DB(db/custom.db)、封面(public/covers)、TXT(download/novels) 全在 repo 内，
 #   重复执行 / git pull 升级均不触碰数据。
 #
@@ -244,7 +247,7 @@ else
 fi
 
 # ---------- [6/8] stealth 侧车（R131 新增，可选，失败不阻塞） ----------
-step "6/8" "stealth 侧车（可选：CF 挑战站 cloakbrowser/iv8 渲染能力）"
+step "6/9" "stealth 侧车（可选：CF 挑战站 cloakbrowser/iv8 渲染能力）"
 STEALTH_DIR="$ROOT/mini-services/stealth-service"
 if [ ! -f "$STEALTH_DIR/requirements.txt" ]; then
   warn "stealth-service 目录缺失，跳过（引擎自动跳过 cloak/iv8 策略，不阻塞主链路）"
@@ -300,8 +303,44 @@ if [ -f "$STEALTH_DIR/requirements.txt" ] && command -v python3 >/dev/null 2>&1;
   fi
 fi
 
-# ---------- [7/8] 启动 ----------
-step "7/8" "启动服务（端口 $PORT，模式: $([ "$INSTALL_SYSTEMD" -eq 1 ] && echo systemd || echo nohup+watchdog)）"
+# ---------- [7/9] 翻译侧车（R137 新增，可选，失败不阻塞） ----------
+# translate-service(:3032)：zh-Hant=OpenCC 本地词典转换（零外部依赖）+ en=LLM 文学翻译
+#（z-ai-web-dev-sdk；公网 npm 可装）。缺失时 backend /api/translate 返回 503 明确报错，
+# 阅读页工具条隐藏错误提示不阻塞阅读；重跑本脚本可补装。
+step "7/9" "翻译侧车（可选：阅读页繁体/英文翻译）"
+TRANS_DIR="$ROOT/mini-services/translate-service"
+if [ ! -f "$TRANS_DIR/index.ts" ]; then
+  warn "translate-service 目录缺失，跳过（/api/translate 返回 503，阅读功能不受影响）"
+else
+  # ① bun 运行时（已有则用；无则 npm 全局装（npmmirror 镜像）→ 官方脚本兜底）
+  BUN_BIN=""
+  if command -v bun >/dev/null 2>&1; then
+    BUN_BIN="$(command -v bun)"
+  elif [ -x "$HOME/.bun/bin/bun" ]; then
+    BUN_BIN="$HOME/.bun/bin/bun"
+  elif command -v npm >/dev/null 2>&1; then
+    echo "  安装 bun 运行时（npmmirror 镜像）..."
+    npm i -g bun --registry=https://registry.npmmirror.com >/dev/null 2>&1 \
+      && BUN_BIN="$(command -v bun)" || true
+  fi
+  if [ -n "$BUN_BIN" ]; then
+    ok "bun 就绪（$BUN_BIN）"
+    # ② 依赖安装（opencc-js + z-ai-web-dev-sdk；lockfile 保障可重现）
+    if [ -f "$TRANS_DIR/node_modules/opencc-js/package.json" ]; then
+      ok "translate 依赖已就绪，跳过"
+    else
+      echo "  安装 translate 依赖（npmmirror 镜像）..."
+      (cd "$TRANS_DIR" && "$BUN_BIN" install --registry=https://registry.npmmirror.com >/dev/null 2>&1) \
+        && ok "translate 依赖就绪（opencc-js + z-ai-web-dev-sdk）" \
+        || warn "translate 依赖安装失败（繁体/英文翻译不可用；可重跑本脚本补装）"
+    fi
+  else
+    warn "bun 运行时不可用且自动安装失败：跳过 translate 侧车（阅读功能不受影响，可重跑补装）"
+  fi
+fi
+
+# ---------- [8/9] 启动 ----------
+step "8/9" "启动服务（端口 $PORT，模式: $([ "$INSTALL_SYSTEMD" -eq 1 ] && echo systemd || echo nohup+watchdog)）"
 # 数据/运行时目录（幂等）
 mkdir -p "$ROOT/db" "$ROOT/public/covers" "$ROOT/download/novels"
 
@@ -363,9 +402,15 @@ UNIT
   }
   write_unit "novel-backend" "$ROOT/mini-services/backend-go" "$ROOT/mini-services/backend-go/backend-go.bin"
   write_unit "novel-scraper" "$ROOT/mini-services/scraper-go" "$ROOT/mini-services/scraper-go/scraper-go.bin"
+  # R137 翻译侧车（run.sh 自带 flock 单实例闸 + 崩溃自动重启；bun 缺失时脚本内明确报错退出，
+  # systemd Restart=always 拉起重试——依赖缺失场景日志可见，不阻塞主服务）
+  if [ -f "$TRANS_DIR/run.sh" ] && [ -f "$TRANS_DIR/node_modules/opencc-js/package.json" ]; then
+    write_unit "novel-translate" "$ROOT/mini-services/translate-service" "$ROOT/mini-services/translate-service/run.sh"
+  fi
   ${SUDO:+$SUDO }systemctl daemon-reload
   ${SUDO:+$SUDO }systemctl enable --now novel-backend novel-scraper
-  ok "systemd 单元已安装并启动: novel-backend / novel-scraper"
+  [ -f "/etc/systemd/system/novel-translate.service" ] && ${SUDO:+$SUDO }systemctl enable --now novel-translate
+  ok "systemd 单元已安装并启动: novel-backend / novel-scraper $([ -f /etc/systemd/system/novel-translate.service ] && echo '/ novel-translate')"
 else
   # 默认模式：setsid 托孤 + watchdog 自愈循环（60s/轮，复用 ensure-services.sh）
   cd "$ROOT/mini-services/backend-go"
@@ -374,6 +419,10 @@ else
   setsid nohup env "${ENV_LINES[@]}" ./backend-go.bin >> /tmp/backend-go-api.log 2>&1 </dev/null &
   cd "$ROOT/mini-services/scraper-go"
   setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 </dev/null &
+  # R137 翻译侧车（run.sh 自带 flock 单实例闸+崩溃自动重启；bun 缺失时 run.sh 日志明示）
+  if [ -f "$TRANS_DIR/run.sh" ] && [ -f "$TRANS_DIR/node_modules/opencc-js/package.json" ]; then
+    setsid nohup bash "$TRANS_DIR/run.sh" >> /tmp/translate-service.log 2>&1 </dev/null &
+  fi
   cd "$ROOT"
   # watchdog 循环（幂等：先清旧）
   pkill -f 'watchdog-loop[.]sh' 2>/dev/null || true
@@ -392,7 +441,7 @@ fi
 ok "管理面写保护已启用（ADMIN_TOKEN 存于 $ROOT/.admin-token，写接口需 X-Admin-Token 头或 ?token= 参数；公开读接口不受影响；自用模式删除该文件与 env 行可关闭）"
 
 # ---------- [8/8] 健康检查 ----------
-step "8/8" "健康检查（空库首次启动含建表+播种，稍等）"
+step "9/9" "健康检查（空库首次启动含建表+播种，稍等）"
 health_ok=0
 for i in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:$PORT/api/health" || true)
@@ -406,6 +455,13 @@ if [ "$eng_code" = "200" ]; then
   ok "scraper-go :3030 /api/strategies = 200"
 else
   warn "引擎 :3030 未就绪（$eng_code）——watchdog/互监护会自动拉起，稍后 curl http://127.0.0.1:3030/api/strategies 复查"
+fi
+# R137 翻译侧车健康（warn 级不阻塞；/api/translate/health 透传上游可用性）
+tr_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:3032/api/health || true)
+if [ "$tr_code" = "200" ]; then
+  ok "translate-service :3032 /api/health = 200（阅读页繁体/英文翻译可用）"
+else
+  warn "translate-service :3032 未就绪（$tr_code）——阅读功能不受影响；重跑本脚本可补装"
 fi
 
 # ---------- 汇总 ----------

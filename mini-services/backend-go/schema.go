@@ -244,6 +244,18 @@ CREATE TABLE IF NOT EXISTS "ProbeLog" (
         "error" TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS "ProbeLog_takenAt_idx" ON "ProbeLog" ("takenAt" DESC);
+
+-- R137: 翻译持久缓存 —— 章节翻译结果跨会话复用（LLM 英文翻译成本高，结果只生成一次）。
+-- key = sha256(text)+"|"+target 全文寻址；novelId 冗余供管理面按书清理/统计；
+-- 惰性清理 90 天（api_translate.go 回写时 2% 概率触发）。随 db 快照进备份体系。
+CREATE TABLE IF NOT EXISTS "TranslationCache" (
+        "key" TEXT NOT NULL PRIMARY KEY,
+        "target" TEXT NOT NULL,
+        "content" TEXT NOT NULL,
+        "novelId" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS "TranslationCache_novelId_idx" ON "TranslationCache" ("novelId");
 `
 
 // ensureBaseSchema 全量基础 schema 幂等引导（全新库建表，存量库空操作）。
