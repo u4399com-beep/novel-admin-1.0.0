@@ -1,0 +1,40 @@
+{{/* jiuxiao PSEO 长尾词落地页：关键词头 + 主打书 + 结果网格。 */}}
+{{define "content"}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>关于「{{.Keyword}}」的小说推荐</h2></div>
+  <div class="jx-card"><p style="margin:0;font-size:14px;line-height:1.8;color:var(--muted)">{{.Description}}</p></div>
+</section>
+
+{{if .Featured}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>《{{.Featured.title}}》主打推荐</h2></div>
+  <div class="jx-hero">
+    <a class="jx-hero-cover {{gcls .Featured.cover}}" href="{{bookURL .Featured.id}}" aria-label="{{.Featured.title}}封面">{{if isLocalCover .Featured.cover}}<img src="{{.Featured.cover}}" alt="{{.Featured.title}}封面" loading="lazy">{{else}}{{title0 .Featured.title}}{{end}}</a>
+    <div class="jx-hero-info">
+      <h1 style="font-size:18px"><a href="{{bookURL .Featured.id}}">{{.Featured.title}}</a></h1>
+      <div class="jx-meta">
+        <div>作者：<b>{{.Featured.author}}</b>　分类：<b>{{.Featured.categoryName}}</b>　状态：<b>{{if eq .Featured.status "finished"}}完本{{else}}连载{{end}}</b></div>
+        {{if .Featured.wordCount}}<div>字数：<b>{{wcFmt .Featured.wordCount}}</b>　共 {{.FeaturedChaptersTotal}} 章</div>{{end}}
+        {{if .FeaturedLastChapter}}<div>最新章节：<a href="{{chapterURL .FeaturedLastChapter.id}}" style="color:var(--accent)">{{.FeaturedLastChapter.title}}</a></div>{{end}}
+      </div>
+      <div class="jx-desc" id="jx-pseo-desc" style="margin-bottom:8px">{{if .Featured.description}}{{.Featured.description}}{{else}}作者尚未填写简介。{{end}}</div>
+      <div class="jx-actions">
+        {{if .FeaturedChapters}}<a class="jx-btn jx-btn-primary" href="{{with $fc := index .FeaturedChapters 0}}{{chapterURL $fc.id}}{{end}}">开始阅读</a>{{end}}
+        <a class="jx-btn jx-btn-ghost" href="{{tocURL .Featured.id}}">查看目录</a>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}
+
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>相关书籍</h2></div>
+  <div class="jx-grid">
+    {{range .Novels}}<article class="jx-novel">
+      <a href="{{bookURL .id}}" class="jx-cover-sm {{gcls .cover}}" aria-label="{{.title}}">{{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy">{{else}}{{title0 .title}}{{end}}</a>
+      <a class="jx-novel-t" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="jx-novel-m">{{.author}} · {{.categoryName}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</p>
+    </article>{{else}}<p style="color:var(--muted)">暂无匹配书籍</p>{{end}}
+  </div>
+</section>
+{{end}}

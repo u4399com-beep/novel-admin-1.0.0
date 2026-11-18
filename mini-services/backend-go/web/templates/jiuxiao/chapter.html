@@ -1,0 +1,25 @@
+{{/* jiuxiao 阅读页：纸面卡片 + 居中正文 + A-/A+/夜间快捷 + 上一章/目录/下一章（键盘 ←/→ 支持）。
+字号调节与阅读历史复用 app.js（fb-chapter-content/fb-font-* 契约）；夜间模式走本主题 html[data-night] 令牌。 */}}
+{{define "content"}}
+<div class="jx-reader-top">
+  <a href="{{bookURL .Novel.id}}">← {{.Novel.title}}</a>
+  <span>{{if .Chapter.wordCount}}{{wcFmt .Chapter.wordCount}}{{end}}</span>
+</div>
+<div class="jx-paper">
+  <h1>{{.Chapter.title}}</h1>
+  <p class="jx-paper-meta">{{.Novel.title}} · {{.Novel.author}}{{if .Chapter.wordCount}} · {{wcFmt .Chapter.wordCount}}{{end}}</p>
+  <div class="jx-content" id="fb-chapter-content" data-novel-id="{{.Novel.id}}" data-chapter-idx="{{.Chapter.idx}}" data-chapter-title="{{.Chapter.title}}">
+    {{range .Paragraphs}}<p>{{.}}</p>{{else}}<p style="text-align:center;color:var(--muted)">本章内容为空，正文正在后台采集中，请稍后返回阅读。</p>{{end}}
+  </div>
+  <div class="jx-tools">
+    <button type="button" id="fb-font-dec" aria-label="减小字号">A-</button>
+    <button type="button" id="fb-font-inc" aria-label="增大字号">A+</button>
+    <button type="button" class="jx-night-toggle" style="width:auto;height:auto;border-radius:999px;padding:7px 18px" aria-label="切换日间/夜间模式">日/夜</button>
+  </div>
+</div>
+<div class="jx-chapter-nav">
+  {{if .Prev}}<a class="jx-btn jx-btn-ghost" href="{{chapterURL .Prev.id}}" data-nav="prev">上一章</a>{{else}}<span class="jx-btn jx-btn-ghost" style="opacity:.4" aria-disabled="true">上一章</span>{{end}}
+  <a class="jx-btn jx-btn-primary" href="{{tocURL .Novel.id}}">目录</a>
+  {{if .Next}}<a class="jx-btn jx-btn-ghost" href="{{chapterURL .Next.id}}" data-nav="next">下一章</a>{{else}}<span class="jx-btn jx-btn-ghost" style="opacity:.4" aria-disabled="true">下一章</span>{{end}}
+</div>
+{{end}}

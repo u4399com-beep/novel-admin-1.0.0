@@ -1,0 +1,62 @@
+[
+  {
+    "bookSourceUrl": "https://qingyue.example.com",
+    "bookSourceName": "青阅文学",
+    "bookSourceGroup": "小说",
+    "bookSourceType": 0,
+    "bookSourceComment": "青阅文学（novel-admin 自建站书源，R140）\n· 使用前把 bookSourceUrl 改成你的实际部署域名（如 https://books.example.com），其余规则全部相对路径，零改动可用\n· 后端既有公开只读 API 直接映射，无需新增端点：\n  - 搜索   GET /api/novels?q=&page=&pageSize=（q 同时匹配书名/作者/简介；pageSize 上限 60）\n  - 详情   GET /api/novels/{id}\n  - 目录   GET /api/novels/{id}/chapters（一次性全量数组，长篇免翻页）\n  - 正文   GET /api/chapters/{id}\n· 发现页用部署无关参数：sort=clicks|words|featured|latest、status=serial|finished\n· 分类 id 各部署不同，如需按分类发现可把 /api/categories 返回的 id 拼进 exploreUrl\n· concurrentRate 5/1000：自建站也请勿高并发，保护 SQLite 读写",
+    "enabled": true,
+    "enabledExplore": true,
+    "enabledCookieJar": false,
+    "concurrentRate": "5/1000",
+    "customOrder": 0,
+    "weight": 0,
+    "respondTime": 180000,
+    "lastUpdateTime": "1795019800000",
+    "searchUrl": "/api/novels?q={{key}}&page={{page}}&pageSize=20",
+    "ruleSearch": {
+      "bookList": "$.list[*]",
+      "name": "$.title",
+      "author": "$.author",
+      "intro": "$.description",
+      "kind": "@js:var c=String(java.getString(\"$.categoryName\")||\"\");var s=String(java.getString(\"$.status\")||\"\");var st=s==\"finished\"?\"完本\":(s==\"serial\"?\"连载\":s);[c,st].filter(function(x){return x}).join(\",\")",
+      "lastChapter": "$.lastChapterTitle",
+      "updateTime": "$.updatedAt",
+      "coverUrl": "$.cover",
+      "bookUrl": "/api/novels/{{$.id}}",
+      "wordCount": "$.wordCount"
+    },
+    "exploreUrl": "热门点击::/api/novels?sort=clicks&page={{page}}&pageSize=20\n字数最多::/api/novels?sort=words&page={{page}}&pageSize=20\n编辑推荐::/api/novels?sort=featured&page={{page}}&pageSize=20\n最近更新::/api/novels?sort=latest&page={{page}}&pageSize=20\n完本精选::/api/novels?status=finished&sort=clicks&page={{page}}&pageSize=20\n连载新作::/api/novels?status=serial&sort=latest&page={{page}}&pageSize=20",
+    "ruleExplore": {
+      "bookList": "$.list[*]",
+      "name": "$.title",
+      "author": "$.author",
+      "intro": "$.description",
+      "kind": "@js:var c=String(java.getString(\"$.categoryName\")||\"\");var s=String(java.getString(\"$.status\")||\"\");var st=s==\"finished\"?\"完本\":(s==\"serial\"?\"连载\":s);[c,st].filter(function(x){return x}).join(\",\")",
+      "lastChapter": "$.lastChapterTitle",
+      "updateTime": "$.updatedAt",
+      "coverUrl": "$.cover",
+      "bookUrl": "/api/novels/{{$.id}}",
+      "wordCount": "$.wordCount"
+    },
+    "ruleBookInfo": {
+      "name": "$.title",
+      "author": "$.author",
+      "intro": "$.description",
+      "kind": "@js:var c=String(java.getString(\"$.categoryName\")||\"\");var s=String(java.getString(\"$.status\")||\"\");var st=s==\"finished\"?\"完本\":(s==\"serial\"?\"连载\":s);[c,st].filter(function(x){return x}).join(\",\")",
+      "lastChapter": "$.lastChapterTitle",
+      "updateTime": "$.updatedAt",
+      "wordCount": "$.wordCount",
+      "coverUrl": "$.cover",
+      "tocUrl": "/api/novels/{{$.id}}/chapters"
+    },
+    "ruleToc": {
+      "chapterList": "$[*]",
+      "chapterName": "$.title",
+      "chapterUrl": "/api/chapters/{{$.id}}"
+    },
+    "ruleContent": {
+      "content": "$.content"
+    }
+  }
+]

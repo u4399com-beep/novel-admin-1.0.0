@@ -1,0 +1,73 @@
+{{/* jiuxiao 书籍详情页：面包屑 → 书籍 hero 卡（封面/标题/作者/分类/状态/数据/操作）→ 简介（可展开）→ 标签 → 最新章节 → 猜你喜欢。
+对齐 jiuxiaozw.com book-latest/book-synopsis/book-hero 分区与「开始阅读」朱红主按钮。 */}}
+{{define "content"}}
+<nav class="jx-crumb" aria-label="位置">
+  <a href="/">首页</a><span aria-hidden="true">/</span>
+  {{if .Novel.categoryName}}<a href="{{catURL .Novel.categoryId}}">{{.Novel.categoryName}}</a><span aria-hidden="true">/</span>{{end}}
+  <span aria-current="page">{{.Novel.title}}</span>
+</nav>
+
+<div class="jx-hero">
+  <a class="jx-hero-cover {{gcls .Novel.cover}}" href="{{bookURL .Novel.id}}" aria-label="{{.Novel.title}}封面">{{if isLocalCover .Novel.cover}}<img src="{{.Novel.cover}}" alt="{{.Novel.title}}封面">{{else}}{{title0 .Novel.title}}{{end}}</a>
+  <div class="jx-hero-info">
+    <h1>{{.Novel.title}}</h1>
+    <div class="jx-meta">
+      <div>作者：<b><a href="{{searchURL .Novel.author}}">{{.Novel.author}}</a></b></div>
+      <div>分类：<b>{{.Novel.categoryName}}</b>　状态：<b>{{if eq .Novel.status "finished"}}已完本{{else}}连载中{{end}}</b></div>
+    </div>
+    <dl class="jx-stats" aria-label="作品数据">
+      <div><dt>字数</dt><dd>{{if .Novel.wordCount}}{{wcFmt .Novel.wordCount}}{{else}}—{{end}}</dd></div>
+      <div><dt>章节</dt><dd>{{.ChaptersTotal}}<small>章</small></dd></div>
+      <div><dt>浏览</dt><dd>{{.Novel.clicks}}</dd></div>
+    </dl>
+    <div class="jx-actions">
+      {{if .LastChapter}}<a class="jx-btn jx-btn-primary" href="{{chapterURL .LastChapter.id}}"><span>开始阅读</span></a>
+      {{else}}<span class="jx-btn jx-btn-primary" style="opacity:.5" aria-disabled="true">暂无章节</span>{{end}}
+      <a class="jx-btn jx-btn-ghost" href="{{tocURL .Novel.id}}">查看目录</a>
+    </div>
+    <div id="fb-resume" data-book-id="{{.Novel.id}}" data-btn-class="jx-btn jx-btn-ghost jx-btn-resume" aria-label="继续阅读"></div>
+  </div>
+</div>
+
+<section class="jx-sec" style="margin-top:16px">
+  <div class="jx-sec-h"><h2>简介</h2></div>
+  <div class="jx-card">
+    <div class="jx-desc" id="jx-desc-{{.Novel.id}}">{{if .Novel.description}}{{.Novel.description}}{{else}}作者尚未填写简介。{{end}}</div>
+    {{if .Novel.description}}<button type="button" class="jx-desc-toggle" data-for="jx-desc-{{.Novel.id}}" aria-expanded="false"><span class="jx-desc-toggle-label">展开简介</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>{{end}}
+  </div>
+</section>
+
+{{if .Tags}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>小说标签</h2></div>
+  <div class="jx-chips">
+    {{range .Tags}}<a class="jx-chip" href="{{pseoURL .}}">{{.}}</a>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{if .LatestChapters}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>最新章节</h2><a class="jx-more" href="{{tocURL .Novel.id}}">共 {{.ChaptersTotal}} 章 · 查看完整目录</a></div>
+  <div class="jx-card">
+    <ul class="jx-chapters">
+      {{range .LatestChapters}}<li><a href="{{chapterURL .id}}"><span class="jx-ch-t">{{.title}}</span>{{if .wordCount}}<span class="jx-ch-m">{{wcFmt .wordCount}}</span>{{end}}</a></li>{{end}}
+    </ul>
+  </div>
+</section>
+{{end}}
+
+{{if .Related}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>猜你喜欢</h2></div>
+  <div class="jx-grid">
+    {{range .Related}}<article class="jx-novel">
+      <a href="{{bookURL .id}}" class="jx-cover-sm {{gcls .cover}}" aria-label="{{.title}}">{{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy">{{else}}{{title0 .title}}{{end}}</a>
+      <a class="jx-novel-t" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="jx-novel-m">{{.author}}</p>
+    </article>{{end}}
+  </div>
+</section>
+{{end}}
+{{end}}

@@ -1,0 +1,27 @@
+{{/* jiuxiao 目录页：书名头 + 卷/章双栏网格（分卷按卷分块，无卷平铺）。 */}}
+{{define "content"}}
+<nav class="jx-crumb" aria-label="位置">
+  <a href="/">首页</a><span aria-hidden="true">/</span>
+  <a href="{{bookURL .Novel.id}}">{{.Novel.title}}</a><span aria-hidden="true">/</span>
+  <span aria-current="page">目录</span>
+</nav>
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>{{.Novel.title}} · 目录</h2><span class="jx-more">共 {{len .Chapters}} 章</span></div>
+  {{$vols := .Volumes}}
+  {{if $vols}}{{range $vol := $vols}}
+  <div class="jx-card" style="margin-bottom:14px">
+    <div class="jx-sec-h" style="margin-bottom:6px"><h2 style="font-size:16px">{{if $vol.name}}{{$vol.name}}{{else}}未分卷{{end}}</h2><span class="jx-more">{{len $vol.chapters}} 章</span></div>
+    <ul class="jx-chapters">
+      {{range $vol.chapters}}<li><a href="{{chapterURL .id}}"><span class="jx-ch-t">{{.title}}</span>{{if .wordCount}}<span class="jx-ch-m">{{wcFmt .wordCount}}</span>{{end}}</a></li>{{end}}
+    </ul>
+  </div>
+  {{end}}{{else}}
+  <div class="jx-card">
+    <ul class="jx-chapters">
+      {{range .Chapters}}<li><a href="{{chapterURL .id}}"><span class="jx-ch-t">{{.title}}</span>{{if .wordCount}}<span class="jx-ch-m">{{wcFmt .wordCount}}</span>{{end}}</a></li>
+      {{else}}<li>暂无章节</li>{{end}}
+    </ul>
+  </div>
+  {{end}}
+</section>
+{{end}}

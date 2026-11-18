@@ -1,0 +1,50 @@
+{{/* jiuxiao 分类页：分类头 + 图文推荐 + 热门榜 + 全部书籍卡网格。 */}}
+{{define "content"}}
+<nav class="jx-crumb" aria-label="位置">
+  <a href="/">首页</a><span aria-hidden="true">/</span>
+  <span aria-current="page">{{.Category.name}}</span>
+</nav>
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>{{.Category.name}}</h2><span class="jx-more">共 {{len .Novels}} 本</span></div>
+</section>
+
+{{if .FeaturedBlock}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>图文推荐</h2></div>
+  <div class="jx-grid">
+    {{range .FeaturedBlock}}<article class="jx-novel">
+      <a href="{{bookURL .id}}" class="jx-cover-sm {{gcls .cover}}" aria-label="{{.title}}">{{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy">{{else}}{{title0 .title}}{{end}}</a>
+      <a class="jx-novel-t" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="jx-novel-m">{{.author}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</p>
+    </article>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{if .HotBlock}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>热门书籍</h2></div>
+  <div class="jx-card">
+    <ul class="jx-rows">
+      {{range $i, $n := .HotBlock}}<li>
+        <span class="jx-rank-no" aria-hidden="true">{{add $i 1}}</span>
+        <a class="jx-row-t" href="{{bookURL $n.id}}">{{$n.title}}</a>
+        <span class="jx-row-m">{{$n.author}} · 点击 {{$n.clicks}}</span>
+      </li>{{end}}
+    </ul>
+  </div>
+</section>
+{{end}}
+
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>全部书籍</h2></div>
+  <div class="jx-grid">
+    {{range .Novels}}<article class="jx-novel">
+      <a href="{{bookURL .id}}" class="jx-cover-sm {{gcls .cover}}" aria-label="{{.title}}">{{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy">{{else}}{{title0 .title}}{{end}}</a>
+      <a class="jx-novel-t" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="jx-novel-m">{{.author}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</p>
+      <p class="jx-novel-m">{{.lastChapterTitle}}</p>
+    </article>{{else}}<p style="color:var(--muted)">本分类暂无书籍</p>{{end}}
+  </div>
+</section>
+{{end}}

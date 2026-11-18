@@ -1,0 +1,18 @@
+{{/* jiuxiao 搜索页：关键词 + 结果行列表（封面缩略 + 书名 + 作者 + 分类 + 最新章 + 字数）。 */}}
+{{define "content"}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>搜索「{{.Q}}」</h2><span class="jx-more">共 {{.Total}} 本</span></div>
+  <div class="jx-card">
+    <ul class="jx-rows">
+      {{range .Novels}}<li style="align-items:flex-start">
+        <a href="{{bookURL .id}}" class="jx-cover-sm {{gcls .cover}}" style="width:56px;flex:none;font-size:16px" aria-label="{{.title}}">{{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" style="width:100%;height:100%;object-fit:cover">{{else}}{{title0 .title}}{{end}}</a>
+        <div style="flex:1;min-width:0">
+          <a class="jx-row-t" style="white-space:normal;display:block" href="{{bookURL .id}}">{{.title}}{{if eq .status "finished"}}<span class="jx-badge gray">完本</span>{{else}}<span class="jx-badge">连载</span>{{end}}</a>
+          <p class="jx-novel-m" style="white-space:normal">{{.author}} · {{.categoryName}}{{if .wordCount}} · {{wcFmt .wordCount}}{{end}}</p>
+          <p class="jx-novel-m" style="white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">{{.lastChapterTitle}}</p>
+        </div>
+      </li>{{else}}<li>{{if .Q}}未找到与「{{.Q}}」相关的书籍{{else}}请输入关键词搜索书名或作者{{end}}</li>{{end}}
+    </ul>
+  </div>
+</section>
+{{end}}

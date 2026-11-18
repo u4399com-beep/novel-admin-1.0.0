@@ -1,0 +1,94 @@
+{{/* jiuxiao 首页：轮播（Featured 前 3）→ 推荐书籍（Featured）→ 后台自定义区块（书单）→ 最近更新 → 点击榜 → 分类书库。
+对齐 jiuxiaozw.com 首页信息架构：轮播 + 推薦書籍/最近更新/書單/分類書庫 四区。 */}}
+{{define "content"}}
+{{$f := .Featured}}
+{{if $f}}{{$n3 := 3}}
+<section class="jx-carousel" aria-label="每日精选推荐" aria-roledescription="轮播图">
+  <div class="jx-track">
+    {{range $i, $n := $f}}{{if lt $i $n3}}
+    <a class="jx-banner" href="{{bookURL $n.id}}" aria-hidden="{{if eq $i 0}}false{{else}}true{{end}}" aria-label="推荐 {{add $i 1}}/3：{{$n.title}}">
+      <div class="jx-banner-backdrop" aria-hidden="true">{{if isLocalCover $n.cover}}<img loading="eager" src="{{$n.cover}}" alt="" width="240" height="320">{{else}}<div class="jx-grad" style="position:absolute;inset:0"></div>{{end}}</div>
+      <div class="jx-banner-copy">
+        <h2>{{$n.title}}</h2>
+        <span class="jx-banner-sub"><span>{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></span>
+      </div>
+      <div class="jx-cover {{gcls $n.cover}}">{{if isLocalCover $n.cover}}<img loading="eager" src="{{$n.cover}}" alt="{{$n.title}}封面" width="240" height="320">{{else}}{{title0 $n.title}}{{end}}</div>
+    </a>
+    {{end}}{{end}}
+  </div>
+  {{if gt (len $f) 1}}<div class="jx-dots">{{range $i, $n := $f}}{{if lt $i $n3}}<button type="button" class="jx-dot{{if eq $i 0}} on{{end}}" aria-label="第 {{add $i 1}} 张推荐"></button>{{end}}{{end}}</div>{{end}}
+</section>
+{{end}}
+
+<div class="jx-card" style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:22px;padding:12px 16px;font-size:13px;color:var(--muted)">
+  <span>收录 <b style="color:var(--text)">{{.Stats.novelCount}}</b> 本</span>
+  <span>章节 <b style="color:var(--text)">{{.Stats.chapterCount}}</b> 章</span>
+  <span>总字数 <b style="color:var(--text)">{{wcFmt .Stats.totalWordCount}}</b></span>
+  <span>今日更新 <b style="color:var(--text)">{{.Stats.todayUpdates}}</b> 章</span>
+</div>
+
+{{/* 推荐书籍（编辑推荐，全量 12） */}}
+{{if $f}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>推荐书籍</h2><a class="jx-more" href="/#jx-rank">热门榜单</a></div>
+  <div class="jx-grid">
+    {{range $n := $f}}<article class="jx-novel">
+      <a href="{{bookURL $n.id}}" class="jx-cover-sm {{gcls $n.cover}}" aria-label="{{$n.title}}">{{if isLocalCover $n.cover}}<img src="{{$n.cover}}" alt="{{$n.title}}封面" loading="lazy">{{else}}{{title0 $n.title}}{{end}}</a>
+      <a class="jx-novel-t" href="{{bookURL $n.id}}">{{$n.title}}</a>
+      <p class="jx-novel-m">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}</p>
+    </article>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{/* 后台自定义图文区块（小编精选等，契约同 _fallback：位于最近更新之前） */}}
+{{range .HomeBlocks}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>{{.title}}</h2><a class="jx-more" href="/#jx-latest">更多</a></div>
+  <div class="jx-grid">
+    {{range .novels}}<article class="jx-novel">
+      <a href="{{bookURL .id}}" class="jx-cover-sm {{gcls .cover}}" aria-label="{{.title}}">{{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy">{{else}}{{title0 .title}}{{end}}</a>
+      <a class="jx-novel-t" href="{{bookURL .id}}">{{.title}}</a>
+      <p class="jx-novel-m">{{.author}}{{if .categoryName}} · {{.categoryName}}{{end}}</p>
+    </article>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{/* 最近更新（Latest 14：书名 + 最新章 + 分类 + 日期） */}}
+<section class="jx-sec" id="jx-latest">
+  <div class="jx-sec-h"><h2>最近更新</h2></div>
+  <div class="jx-card">
+    <ul class="jx-rows">
+      {{range .Latest}}<li>
+        <a class="jx-row-t" href="{{bookURL .id}}">{{.title}}</a>
+        <span class="jx-row-m">{{.lastChapterTitle}}</span>
+        <span class="jx-row-m" style="max-width:none">{{.author}} · {{dateFmt .updatedAt}}</span>
+      </li>{{else}}<li>暂无更新</li>{{end}}
+    </ul>
+  </div>
+</section>
+
+{{/* 点击榜（RankClicks 10：序号徽标） */}}
+<section class="jx-sec" id="jx-rank">
+  <div class="jx-sec-h"><h2>点击排行</h2></div>
+  <div class="jx-card">
+    <ul class="jx-rows">
+      {{range $i, $n := .RankClicks}}<li>
+        <span class="jx-rank-no" aria-hidden="true">{{add $i 1}}</span>
+        <a class="jx-row-t" href="{{bookURL $n.id}}">{{$n.title}}</a>
+        <span class="jx-row-m">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}{{if $n.wordCount}} · {{wcFmt $n.wordCount}}{{end}}</span>
+      </li>{{else}}<li>暂无数据</li>{{end}}
+    </ul>
+  </div>
+</section>
+
+{{/* 分类书库（Nav 分类 chips） */}}
+<section class="jx-sec">
+  <div class="jx-sec-h"><h2>分类书库</h2></div>
+  <div class="jx-chips">
+    {{range .Nav}}<a class="jx-chip" href="{{catURL .id}}">{{.name}}<sup>{{.novelCount}}</sup></a>{{end}}
+  </div>
+</section>
+{{end}}
