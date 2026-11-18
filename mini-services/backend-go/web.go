@@ -359,11 +359,8 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 			// Task 45-a: 渲染层对抗后置处理（实现唯一权威 obfuscate.go）——页面结构混淆/
 			// 关键词转码/干扰注入，视觉与交互零变化；admin 后台页跳过，panic 兜底回原文
 			html := obfMaybe(buf.String(), page)
-			// R137: chapter 页统一注入翻译控件（12 主题零模板改动；</body> 前插 script，
-			// obfMaybe 后注入——混淆器对 script 内容透传，后置注入规避对标签形态的干扰假设）
-			if page == "chapter" {
-				html = injectChapterTranslator(html)
-			}
+			// R139: reader 前端翻译控件已下线（用户指令）；后端翻译链路保留——
+			// /api/translate 代理、TranslationCache、translatewarm 预热、TXT 导出 ?lang= 译文替换均不受影响
 			_, _ = w.Write([]byte(html))
 			return
 		} else if th == theme {
@@ -501,19 +498,4 @@ func handleSitemap(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("</urlset>")
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	_, _ = w.Write([]byte(b.String()))
-}
-
-// ---------- R137 翻译控件注入 ----------
-
-// injectChapterTranslator chapter 页 </body> 前注入 translator.js 引用（渲染层单点，
-// 12 主题零模板改动）。注入位置：obfMaybe 之后（混淆器对 script 内容逐字节透传，
-// 后置注入规避对标签形态的干扰假设）；畸形 HTML（无 </body>）跳过注入零影响。
-// translator.js 自带正文容器探测/语种切换/localStorage 缓存/进度显示，详见该文件头注。
-func injectChapterTranslator(html string) string {
-	idx := strings.LastIndex(strings.ToLower(html), "</body>")
-	if idx < 0 {
-		return html
-	}
-	tag := `<script src="/static/js/translator.js?v=` + staticVer + `" defer></script>`
-	return html[:idx] + tag + html[idx:]
 }

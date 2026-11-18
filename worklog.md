@@ -5302,3 +5302,20 @@ Stage Summary:
 - 两个实战缺陷修复（context 泄漏/429 风暴 deadline）——后者由真实读者会话暴露，验证了「读者侧功能上线即接受实战检验」
 - 第 21 次自愈新形态：备份恢复替代空库播种（数据零损失回位）+run.sh 执行位/flock 假象两坑存档
 - 移交下一轮：①PAT 轮换（用户侧，第 8 次提醒：ghp_***（IM 会话多轮暴露的那个 token，去聊天记录取） 已在多轮会话暴露，务必尽快轮换并吊销旧 token）②admin 面翻译缓存管理页（novelId 索引已备好）③ko/更多语种一行注册④TXT 导出译文通道
+
+---
+Task ID: R139
+Agent: Z.ai Code (main)
+Task: 「把前端的翻译功能去掉」——用户指令：移除 reader 前端翻译控件（后端翻译链路保留）
+
+Work Log:
+- 【开局·并行会话已落 09c04ff（未推送）】开局核查发现本地领先 origin 1 commit（09c04ff，消息为 UUID）：并行会话已交付 R139 原定主增量（admin 翻译缓存管理页 api_translate_admin.go + admin.html/admin.js、translatewarm.go 预热循环、TXT 导出 ?lang= 缓存替换、api_translate.go novelId 归属修复）——与「去掉前端翻译」指令正交，其全部工作保留。
+- 【任务·reader 前端翻译控件下线（本轮主增量）】移除面精确三处：①web.go renderPage 注入调用块 + injectChapterTranslator 函数体（合计 2 插/20 删，原位留 R139 保留说明注释）②web/static/js/translator.js 整文件删除（265 行）③bin/backend-go 重构建。后端翻译链路完整保留：/api/translate 代理+白名单、TranslationCache 双层缓存、translatewarm 预热、TXT 导出 ?lang= 译文替换、admin 缓存管理页——全部不依赖 translator.js（TXT 导出为纯后端缓存替换零上游调用）。
+- 【编辑器坑存档】MultiEdit 对 Go 文件做空白规范化匹配：old_str 以空格书写时把整个 web.go（tab 缩进）重写为空格缩进（756 行伪 diff）——git checkout 撤销后改用 python 字节级手术（marker 定位 + assert 守卫），diff 收敛至 2+/20-，gofmt 复验合规。教训：Go/tab 缩进文件的精确手术用 python，勿用 whitespace-flexible 编辑器。
+- 【gofmt 全库欠账定性】gofmt -l 发现约 33 文件历史遗留空格缩进（api_*/audit*_test/chapterorder/runner/worker 等）——非本轮引入、未动（避免混入语义提交 + 干扰活跃并行会话）；建议独立轮次全库规范化（gofmt -w + 全量 go test 回归）。
+- 【E2E 实证（agent-browser）】chapter/12527（TRXSW 杰奇经典风主题）：#tr-bar 不存在、__trState 钩子不存在、Performance API 资源列表 0 次 translator 请求；正文完整渲染（ARTICLE 容器 135 段 bodyLen 3857——此前 #content/#chaptercontent 选择器 0 段为容器 ID 不匹配该主题，非内容缺失）；390px 移动端无横向溢出（w=390 精确）；首页正常；console/errors 零输出。旧网络日志中 translator.js 200 为陈旧条目（?v=旧进程 staticVer，重启前加载）——已用当前页 Performance API 排除误导。
+- 【运维】backend :3000 重启（新 PID 20907，env 与旧进程逐项对齐）；/tmp/restart-backend.sh 重建（上轮重置丢失）；translate :3032 存活；POST /api/translate 400=参数校验生效（路由与白名单健在）；ruleHealth 14/20 healthy（较上轮 12 继续收敛）；engine totalOK 29370。
+
+Stage Summary:
+- reader 前端翻译功能完整下线（3 处移除零残留），后端翻译基建全量保留——TXT 导出译文与管理页不受影响；后续若要恢复前端 UI 仅需 revert 单 commit
+- 移交下一轮：①PAT 轮换（用户侧，第 9 次提醒：ghp_***（IM 会话多轮暴露的那个 token，去聊天记录取）已实证进 GitHub push protection 泄露监控，务必尽快轮换并吊销旧 token）②全库 gofmt whitespace 规范化（独立轮次，约 33 文件）③若用户后续明确「翻译整体下线」，可扩展移除 translate-service:3032 + api_translate.go + translatewarm.go + TranslationCache 表（当前保留）
