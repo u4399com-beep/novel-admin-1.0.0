@@ -35,6 +35,7 @@
     <button type="button" data-tab="pseo" class="adm-tab">PSEO</button>
     <button type="button" data-tab="settings" class="adm-tab">站点设置</button>
     <button type="button" data-tab="sites" class="adm-tab">站群管理</button>
+    <button type="button" data-tab="translate" class="adm-tab">翻译缓存</button>
   </nav>
 </header>
 
@@ -553,6 +554,58 @@
   </section>
 
   <!-- ============ 站群管理（Task 30-a 站群模式：一库多站按 Host 分站点渲染；交互逻辑在 admin-fleet.js） ============ -->
+  <!-- ============ 翻译缓存（R139） ============ -->
+  <section id="tab-translate" class="adm-panel hidden space-y-4">
+    <div class="adm-card">
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="adm-h2 !mb-0">翻译缓存总览</h2>
+        <button type="button" id="tr-refresh" class="adm-btn">刷新</button>
+      </div>
+      <div id="tr-stats" class="flex flex-wrap gap-3 text-xs text-neutral-600">加载中…</div>
+      <div id="tr-targets" class="mt-2 flex flex-wrap gap-2 text-xs"></div>
+      <p class="mt-2 text-[11px] text-neutral-400">采集期后台自动预热 zh-Hant/zh-HK（translatewarm.go）；en/ja/ko 为读者按需翻译（结果同样持久缓存）。</p>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">按书预热（后台批量生成译文）</h2>
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="text-xs text-neutral-500">书籍 ID
+          <input id="tr-warm-novel" type="number" min="1" class="adm-input w-28" placeholder="novelId">
+        </label>
+        <button type="button" id="tr-warm-btn" class="adm-btn">入队预热</button>
+        <span id="tr-warm-msg" class="text-xs text-neutral-500"></span>
+      </div>
+      <p class="mt-1 text-[11px] text-neutral-400">仅 zh-Hant/zh-HK 可整书预热（OpenCC 词典转换零成本）；LLM 语种批量预热被成本闸拒绝。</p>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">按书缓存清理</h2>
+      <div class="flex flex-wrap items-end gap-2">
+        <label class="text-xs text-neutral-500">书籍 ID（0 = 未归属桶）
+          <input id="tr-clear-novel" type="number" min="0" class="adm-input w-28" placeholder="novelId">
+        </label>
+        <label class="text-xs text-neutral-500">语种
+          <select id="tr-clear-target" class="adm-input">
+            <option value="">全部语种</option>
+            <option value="zh-Hant">zh-Hant</option>
+            <option value="zh-HK">zh-HK</option>
+            <option value="en">en</option>
+            <option value="ja">ja</option>
+            <option value="ko">ko</option>
+          </select>
+        </label>
+        <button type="button" id="tr-clear-btn" class="adm-btn">清理</button>
+        <span id="tr-clear-msg" class="text-xs text-neutral-500"></span>
+      </div>
+      <p class="mt-1 text-[11px] text-neutral-400">清理后对应段落回到「未翻译」态，读者阅读时会重新生成。</p>
+    </div>
+
+    <div class="adm-card">
+      <h2 class="adm-h2">按书归属 Top 20</h2>
+      <div id="tr-novels" class="text-xs text-neutral-600">加载中…</div>
+    </div>
+  </section>
+
   <section id="tab-sites" class="adm-panel hidden space-y-4">
     <div class="adm-card">
       <div class="mb-2 flex items-center justify-between">

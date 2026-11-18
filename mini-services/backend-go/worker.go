@@ -1774,6 +1774,13 @@ func persistChapterFill(run *Run, novelID, chRowID, chIdx int, title, content, s
                 affected, _ = res.RowsAffected()
                 return nil
         })
+
+        // R139：翻译预热入队钩子（用户指令：翻译放采集期后台做，读者切换零等待）——
+        // 正文落库成功即 best-effort 入队（OpenCC 语种，成本闸见 translatewarm.go）；
+        // 入队失败静默：翻译可由读者按需兜底，绝不反噬采集状态机。
+        if err == nil && affected > 0 {
+        	translateEnqueueChapter(int64(novelID), int64(chRowID))
+        }
         return err == nil && affected > 0
 }
 

@@ -256,12 +256,30 @@ CREATE TABLE IF NOT EXISTS "TranslationCache" (
         "createdAt" INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS "TranslationCache_novelId_idx" ON "TranslationCache" ("novelId");
+
+-- R139: 翻译预热队列 —— 采集管线入章后入队（persistChapterFill 钩子），翻译工作协程
+-- （translatewarm.go）消费。语种策略：OpenCC 语种（zh-Hant/zh-HK）采集期全量预热
+-- （上游词典转换秒级零成本，读者切换零等待）；LLM 语种（en/ja/ko）不自动入队——
+-- 1.4M 章 × LLM 是成本爆炸器，保持读者按需+缓存复用（admin 面可按书手动预热）。
+-- UNIQUE(chapterId,target) 幂等：重采改文 → INSERT OR REPLACE 重置 pending 触发重翻
+-- （缓存键=全文寻址，改文后旧译文自然失效）。
+CREATE TABLE IF NOT EXISTS "TranslationQueue" (
+        "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+        "novelId" INTEGER NOT NULL DEFAULT 0,
+        "chapterId" INTEGER NOT NULL DEFAULT 0,
+        "target" TEXT NOT NULL,
+        "state" TEXT NOT NULL DEFAULT 'pending',
+        "attempts" INTEGER NOT NULL DEFAULT 0,
+        "updatedAt" INTEGER NOT NULL DEFAULT 0,
+        UNIQUE("chapterId", "target")
+);
+CREATE INDEX IF NOT EXISTS "TranslationQueue_state_idx" ON "TranslationQueue" ("state", "id");
 `
 
 // ensureBaseSchema 全量基础 schema 幂等引导（全新库建表，存量库空操作）。
 // ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训：
 // 严禁 once 外经 exec/query 助手再入 getDB）。
 func ensureBaseSchema(db *sql.DB) error {
-	_, err := db.Exec(baseSchemaDDL)
-	return err
+        _, err := db.Exec(baseSchemaDDL)
+        return err
 }

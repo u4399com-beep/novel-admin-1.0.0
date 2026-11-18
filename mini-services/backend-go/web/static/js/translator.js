@@ -9,9 +9,13 @@
  *   - 只做两种 DOM 操作：往 body 追加悬浮工具条 + 对正文 <p> 赋值 textContent；
  *     不改写/移动主题既有节点，译文经 textContent 赋值（浏览器转义，XSS 免疫）。
  *
- * 目标语种（R138 扩至 4）：zh-Hant / zh-HK（OpenCC 本地词典转换，秒级，96 段/批）/
- * en / ja（LLM 文学翻译，6 段/批，进度实时显示；ja 人名保留汉字）。
+ * 目标语种（R139 扩至 6）：zh-Hant / zh-HK（OpenCC 本地词典转换，秒级，96 段/批）/
+ * en / ja / ko（LLM 文学翻译，6 段/批，进度实时显示；ja 人名保留汉字，ko 统一汉字音读约定）。
  * 失败段保留原文（后端契约：失败段 results 空串，不编造）。
+ *
+ * 语种偏好（R139）：选过一次即 localStorage 记住（tr:pref）；OpenCC 语种后续章节
+ * 首屏自动应用（配套采集期后台预热 translatewarm.go —— 读者切换零等待）；
+ * LLM 语种仅记忆不自动（未预热章节会触发真实调用，跳读体验不可控）。
  *
  * 缓存：localStorage 按 {chId}:{target} 持久缓存（>1.5MB 单条放弃写入防配额溢出）；
  * 二次切换零网络请求。
@@ -58,6 +62,15 @@
 
   var origTexts = paras.map(function (p) { return p.textContent; });
 
+  // ---------- 语种偏好记忆（R139：采集期后台预热配套——读者选过一次，后续章节自动应用）
+  // 策略：OpenCC 语种（zh-Hant/zh-HK）选过即自动应用——词典转换秒级/缓存命中，
+  // 采集期预热后切换零等待；LLM 语种（en/ja/ko）不自动应用（未预热章节会触发
+  // 真实 LLM 调用，用户在页间跳读时体验不可控），仅记住供手动一键回选。
+  var PREF_KEY = 'tr:pref';
+  function prefGet() { try { return localStorage.getItem(PREF_KEY) || ''; } catch (e) { return ''; } }
+  function prefSet(t) { try { if (t) localStorage.setItem(PREF_KEY, t); else localStorage.removeItem(PREF_KEY); } catch (e) { /* quota 静默 */ } }
+  var OPENCC_TARGETS = { 'zh-Hant': true, 'zh-HK': true };
+
   // ---------- 状态 ----------
   var current = null;      // 当前生效语种（null = 原文）
   var inflight = false;    // 翻译进行中（防并发切换）
@@ -94,10 +107,12 @@
   btnEn.type = 'button'; btnEn.textContent = 'English';
   var btnJa = document.createElement('button');
   btnJa.type = 'button'; btnJa.textContent = '日本語';
+  var btnKo = document.createElement('button');
+  btnKo.type = 'button'; btnKo.textContent = '한국어';
   var msg = document.createElement('span');
   msg.className = 'tr-msg';
   bar.appendChild(btnOrig); bar.appendChild(btnHant); bar.appendChild(btnHk);
-  bar.appendChild(btnEn); bar.appendChild(btnJa); bar.appendChild(msg);
+  bar.appendChild(btnEn); bar.appendChild(btnJa); bar.appendChild(btnKo); bar.appendChild(msg);
   document.body.appendChild(bar);
 
   function setMsg(text, sticky) {
@@ -111,10 +126,11 @@
   }
   function setActive(name) {
     allBtns().forEach(function (b) { b.classList.remove('tr-on'); });
-    var byTarget = { 'zh-Hant': btnHant, 'zh-HK': btnHk, 'en': btnEn, 'ja': btnJa };
-    (byTarget[name] || btnOrig).classList.add('tr-on');
+    (BTN_BY_TARGET[name] || btnOrig).classList.add('tr-on');
   }
-  function allBtns() { return [btnOrig, btnHant, btnHk, btnEn, btnJa]; }
+  function allBtns() { return [btnOrig, btnHant, btnHk, btnEn, btnJa, btnKo]; }
+  // 语种→按钮映射（R139 扩至 6 键）
+  var BTN_BY_TARGET = { 'zh-Hant': btnHant, 'zh-HK': btnHk, 'en': btnEn, 'ja': btnJa, 'ko': btnKo };
   function setBusy(busy) {
     allBtns().forEach(function (b) { b.disabled = busy; });
   }
@@ -172,6 +188,7 @@
   }
 
   function translateTo(target, label) {
+    prefSet(target); // R139：记住语种偏好（null = 原文 → 清除偏好，防下页被自动拉回）
     if (current === target || inflight) return;
     if (current === null && target !== null) {
       // 首次进翻译态：保存当前 DOM（原文即 origTexts，无需另存）
@@ -230,9 +247,19 @@
   btnHk.addEventListener('click', function () { translateTo('zh-HK', '繁HK'); });
   btnEn.addEventListener('click', function () { translateTo('en', 'English'); });
   btnJa.addEventListener('click', function () { translateTo('ja', '日本語'); });
+  btnKo.addEventListener('click', function () { translateTo('ko', '한국어'); });
+
+  // ---------- 偏好自动应用（R139）----------
+  // 首屏自动应用：偏好为 OpenCC 语种 → 直接切换（采集期预热链路保证秒级零等待）。
+  // LLM 语种不自动应用：未预热章节会触发真实 LLM 调用，页间跳读体验不可控。
+  // 放在 IIFE 尾部：工具条已挂载、翻译函数已就绪。
+  var savedPref = prefGet();
+  if (savedPref && OPENCC_TARGETS[savedPref] && BTN_BY_TARGET[savedPref]) {
+    setTimeout(function () { translateTo(savedPref, BTN_BY_TARGET[savedPref].textContent); }, 0);
+  }
 
   // 调试探针（window.__trState 暴露内部守卫状态；排障用，生产无害）
   window.__trState = function () {
-    return { current: current, inflight: inflight, paras: paras.length, orig: origTexts.length };
+    return { current: current, inflight: inflight, paras: paras.length, orig: origTexts.length, pref: prefGet() };
   };
 })();

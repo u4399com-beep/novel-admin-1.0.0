@@ -50,6 +50,9 @@ const TARGETS: Record<string, { label: string; engine: 'opencc' | 'llm'; conv?: 
   'zh-HK': { label: '繁體中文（香港）', engine: 'opencc', conv: 's2hk' },
   'en': { label: 'English', engine: 'llm', lang: 'English', namesHint: 'transliterate character names in pinyin' },
   'ja': { label: '日本語', engine: 'llm', lang: 'Japanese', namesHint: 'keep character names in kanji (Chinese characters), do not transliterate them' },
+  // R139：韩文（LLM 通道一行注册）——人名约定：汉字名取 Sino-Korean 音读或保留拼音，
+  // 全篇保持同一约定（避免同一名角两种转写混用）。
+  'ko': { label: '한국어', engine: 'llm', lang: 'Korean', namesHint: 'render character names consistently using the Sino-Korean (hanja) reading, or keep Chinese pinyin — pick ONE convention and apply it throughout the whole passage' },
 };
 
 // ==================== OpenCC（懒加载，失败不阻塞服务起） ====================

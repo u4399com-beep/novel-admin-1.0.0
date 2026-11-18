@@ -151,6 +151,7 @@
 
   var currentTab = 'overview';
   var settingsLoaded = false;
+  var translateLoaded = false; // R139：翻译缓存页签懒加载标记
 
   function switchTab(name) {
     currentTab = name;
@@ -167,6 +168,7 @@
     if (name === 'categories' && !catsLoaded) { catsLoaded = true; refreshCats(); }
     if (name === 'tasks' && !tasksLoaded) { tasksLoaded = true; refreshTasks(true); }
     if (name === 'rules' && !rulesLoaded) { rulesLoaded = true; refreshRules(true); }
+    if (name === 'translate' && !translateLoaded) { translateLoaded = true; refreshTranslateCache(); }
   }
 
   function initTabs() {
@@ -2167,4 +2169,107 @@
   } else {
     init();
   }
+/* ==================== 翻译缓存（R139） ==================== */
+
+// 字节数人性化（KB/MB 一位小数；负值/异常显示 —）
+function trHumanBytes(n) {
+  if (!n || n <= 0) return '0';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+
+async function refreshTranslateCache() {
+  var statsEl = $('#tr-stats'), targetsEl = $('#tr-targets'), novelsEl = $('#tr-novels');
+  if (!statsEl) return;
+  try {
+    var d = await api('GET', '/api/admin/translate-cache/stats');
+    // 总览卡片
+    var up = d.upstream || {};
+    var upTxt = up.ok
+      ? '侧车正常 · opencc:' + (up.opencc ? '✓' : '✗') + ' llm:' + (up.llm ? '✓' : '✗') + '（targets: ' + (up.targets || []).join(',') + '）'
+      : '⚠️ 翻译侧车不可达（读者按需翻译暂不可用；已缓存内容不受影响）';
+    statsEl.innerHTML =
+      '<span class="adm-badge adm-badge-neutral">总条目 <b>' + escapeHtml(d.total) + '</b></span>' +
+      '<span class="adm-badge adm-badge-neutral">占用 ≈ ' + escapeHtml(trHumanBytes(d.approxBytes)) + '</span>' +
+      '<span class="adm-badge adm-badge-neutral">最新写入 ' + (d.newest ? new Date(d.newest).toLocaleString() : '—') + '</span>' +
+      '<span class="' + (up.ok ? 'adm-badge adm-badge-ok' : 'adm-badge adm-badge-warn') + '">' + upTxt + '</span>';
+    // 语种分布
+    var bt = d.byTarget || [];
+    targetsEl.innerHTML = bt.length
+      ? bt.map(function (t) { return '<span class="adm-badge adm-badge-neutral">' + escapeHtml(t.target) + ': <b>' + escapeHtml(t.rows) + '</b></span>'; }).join('')
+      : '<span class="text-neutral-400">暂无缓存</span>';
+    // 按书 Top 20
+    var bn = d.byNovel || [];
+    novelsEl.innerHTML = bn.length
+      ? '<table class="w-full text-left"><thead><tr class="text-neutral-400"><th>novelId</th><th>书名</th><th>条目数</th><th></th></tr></thead><tbody>' +
+        bn.map(function (r) {
+          return '<tr class="border-t border-neutral-100"><td class="py-1 tabular-nums">' + escapeHtml(r.novelId) + '</td>' +
+            '<td class="py-1 max-w-[280px] truncate">' + escapeHtml(r.novelTitle) + '</td>' +
+            '<td class="py-1 tabular-nums">' + escapeHtml(r.rows) + '</td>' +
+            '<td class="py-1"><button type="button" data-tr-clear-novel="' + escapeHtml(r.novelId) + '" class="adm-btn !py-0.5 !text-[11px]">清该书缓存</button></td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<span class="text-neutral-400">暂无归属数据（R139 起 novelId 随翻译请求自动归属）</span>';
+  } catch (e) {
+    if (statsEl) statsEl.textContent = '加载失败：' + (e && e.message ? e.message : '未知错误');
+  }
+}
+
+async function translateCacheClear(novelId, target) {
+  var body = {};
+  if (novelId !== null && novelId !== undefined && novelId >= 0) body.novelId = Number(novelId);
+  if (target) body.target = target;
+  var d = await api('POST', '/api/admin/translate-cache/clear', body);
+  return d;
+}
+
+// 事件绑定（IIFE 内一次性；面板隐藏时按钮也存在，直接绑）
+(function initTranslateTab() {
+  document.addEventListener('click', async function (e) {
+    var t = e.target.closest('#tr-refresh');
+    if (t) { refreshTranslateCache(); return; }
+
+    var clearRow = e.target.closest('[data-tr-clear-novel]');
+    if (clearRow) {
+      var nid = clearRow.getAttribute('data-tr-clear-novel');
+      if (!confirm('确认清理 novelId=' + nid + ' 的全部翻译缓存？')) return;
+      try {
+        var d = await translateCacheClear(nid, '');
+        alert('已删除 ' + d.deleted + ' 条');
+        refreshTranslateCache();
+      } catch (err) { alert('清理失败：' + (err && err.message ? err.message : '未知错误')); }
+      return;
+    }
+
+    var cb = e.target.closest('#tr-clear-btn');
+    if (cb) {
+      var msgEl = $('#tr-clear-msg');
+      var nid2 = Number($('#tr-clear-novel').value);
+      var tg = $('#tr-clear-target').value;
+      if ((!nid2 && nid2 !== 0) || (nid2 <= 0 && !tg)) {
+        if (msgEl) msgEl.textContent = '请至少填写书籍 ID（或选择语种）';
+        return;
+      }
+      try {
+        var d2 = await translateCacheClear(nid2, tg);
+        if (msgEl) msgEl.textContent = '已删除 ' + d2.deleted + ' 条';
+        refreshTranslateCache();
+      } catch (err) { if (msgEl) msgEl.textContent = '清理失败：' + (err && err.message ? err.message : '未知错误'); }
+      return;
+    }
+
+    var wb = e.target.closest('#tr-warm-btn');
+    if (wb) {
+      var wmsg = $('#tr-warm-msg');
+      var wid = Number($('#tr-warm-novel').value);
+      if (!wid || wid <= 0) { if (wmsg) wmsg.textContent = '请填写有效书籍 ID'; return; }
+      if (wmsg) wmsg.textContent = '入队中…';
+      try {
+        var d3 = await api('POST', '/api/admin/translate-cache/enqueue', { novelId: wid });
+        if (wmsg) wmsg.textContent = '已入队 ' + d3.enqueued + ' 项（' + d3.chapters + ' 章 × 语种），后台逐章预热中';
+      } catch (err) { if (wmsg) wmsg.textContent = '入队失败：' + (err && err.message ? err.message : '未知错误'); }
+      return;
+    }
+  });
+})();
 })();
