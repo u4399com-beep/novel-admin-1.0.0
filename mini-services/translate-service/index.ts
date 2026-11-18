@@ -2,11 +2,13 @@
  * translate-service —— novel-admin 翻译侧车（R137）
  *
  * 定位：backend-go /api/translate 的上游执行器，与 stealth-service 同层的独立进程。
- * 能力矩阵（按 target 分发）：
- *   - zh-Hant（繁体中文）：OpenCC s2twp（简→台湾正体含词组习惯）——纯本地词典转换，
+ * 能力矩阵（按 target 分发，R138 扩至 4 语种）：
+ *   - zh-Hant（繁体中文·台湾正体）：OpenCC s2twp——纯本地词典转换，
  *     秒级零成本，一次转换终身缓存。
+ *   - zh-HK（繁体中文·香港）：OpenCC s2hk——同上零成本词典转换（R138）。
  *   - en（英文）：z-ai-web-dev-sdk LLM 文学翻译——段落编号批量（8 段/批），批间并发
  *     上限 2，解析失败段单段降级重试；SDK 不可用时 llm=false 明确报错（不编造）。
+ *   - ja（日文，R138）：同 LLM 通道，人名保留汉字（prompt namesHint 按语种注入）。
  *   - 其余语种预留：targets 表驱动，后续加语种只需注册（prompt + 校验），API 不变。
  *
  * 缓存分层（性能契约）：
@@ -32,14 +34,22 @@ const LRU_MAX = 2000;
 const LLM_BATCH = 8;           // 英文翻译每批段数（过多易截断/漏段）
 const LLM_CONCURRENCY = 2;     // 批间并发上限（SDK 限流保护）
 const LLM_BATCH_TIMEOUT_MS = 120_000;
+/** R138：截止期驱动重试——backend 上游超时 150s，侧车必须在 ~130s 内给出答复
+ *  （429 风暴实测：读者批翻連续 upstream FAIL「context deadline exceeded」→ 整批丢，
+ *  旧重试链最坏 113s sleep + 5×120s attempt 远超 150s）。剩余时间不足一次最小尝试
+ *  时立即放弃，失败段留空由前端保留原文——优雅降级而非挂死。 */
+const LLM_DEADLINE_MS = 130_000;
+const LLM_MIN_ATTEMPT_MS = 8_000;
 const MAX_ITEMS = 300; // R137 实测长章 109+ 段常态；成本主闸是 MAX_TOTAL_CHARS
 const MAX_ITEM_CHARS = 10_000;
 const MAX_TOTAL_CHARS = 120_000;
 
-/** 支持的目标语种注册表：转换器/prompt 表驱动，加语种只动这里（API 契约不变） */
-const TARGETS: Record<string, { label: string; engine: 'opencc' | 'llm'; conv?: string; lang?: string }> = {
+/** 支持的目标语种注册表：转换器/prompt 表驱动，加语种只动这里（API 契约不变，R138 扩展） */
+const TARGETS: Record<string, { label: string; engine: 'opencc' | 'llm'; conv?: string; lang?: string; namesHint?: string }> = {
   'zh-Hant': { label: '繁體中文（台灣正體）', engine: 'opencc', conv: 's2twp' },
-  'en': { label: 'English', engine: 'llm', lang: 'English' },
+  'zh-HK': { label: '繁體中文（香港）', engine: 'opencc', conv: 's2hk' },
+  'en': { label: 'English', engine: 'llm', lang: 'English', namesHint: 'transliterate character names in pinyin' },
+  'ja': { label: '日本語', engine: 'llm', lang: 'Japanese', namesHint: 'keep character names in kanji (Chinese characters), do not transliterate them' },
 };
 
 // ==================== OpenCC（懒加载，失败不阻塞服务起） ====================
@@ -94,10 +104,13 @@ function cacheSet(k: string, v: string) {
 const SYSTEM_PROMPT =
   'You are a professional literary translator for Chinese web novels. ' +
   'Translate each numbered Chinese passage into {LANG} natural, fluent prose. ' +
-  'Preserve meaning, tone and narrative style; transliterate character names in pinyin; ' +
+  'Preserve meaning, tone and narrative style; {NAMES}; ' +
   'keep quotation marks and paragraph structure. ' +
   'Output ONLY the numbered translations in the exact same format: "[n] translated text" on separate lines. ' +
   'Never merge, split, omit, reorder or add passages. Never add commentary.';
+
+/** 人名处理指令按语种注入（R138）：拼音转写只适用拉丁字母语种，日文保留汉字 */
+const NAMES_DEFAULT = 'transliterate character names in pinyin';
 
 /** 按行号标记切分 LLM 输出；未匹配段返回 undefined（由调用方降级重试） */
 function parseNumbered(out: string, n: number): string[] {
@@ -125,15 +138,19 @@ function parseNumbered(out: string, n: number): string[] {
   return results.map((v, i) => (found[i] && v.trim() ? v.trim() : ''));
 }
 
-function chatOnce(system: string, user: string): Promise<string> {
-  // zai.chat.completions.create 包装：429 限流退避重试（2s/6s/15s）+ 超时 + 消息契约
+function chatOnce(system: string, user: string, deadline?: number): Promise<string> {
+  // zai.chat.completions.create 包装：429 限流退避重试（2s/6s/15s/30s/60s）+ 超时 + 消息契约
   //（system 走 assistant role）。429 是共享上游配额的常态瞬态——退避重试从「段失败
   // 保留原文」升级为「延迟后成功」，其余错误立即抛出（上游调用方已有单段降级层）。
+  // R138：重试链受 deadline 约束（translateLLM 级传入），剩余时间不足以完成一次
+  // 最小尝试时立即停止重试——保证调用方（backend 150s 窗口）总能拿到响应。
   const DELAYS = [0, 2000, 6000, 15000, 30000, 60000];
   let lastErr: Error | null = null;
   const attempt = async (): Promise<string> => {
     const client = await getLLM();
     if (!client) throw new Error('LLM unavailable (z-ai-web-dev-sdk not installed)');
+    const remain = deadline ? deadline - Date.now() : LLM_BATCH_TIMEOUT_MS;
+    const timeout = Math.max(1_000, Math.min(LLM_BATCH_TIMEOUT_MS, remain - 1_000));
     const completion = (await Promise.race([
       client.chat.completions.create({
         messages: [
@@ -143,7 +160,7 @@ function chatOnce(system: string, user: string): Promise<string> {
         thinking: { type: 'disabled' },
       }),
       new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error('LLM batch timeout')), LLM_BATCH_TIMEOUT_MS),
+        setTimeout(() => rej(new Error('LLM batch timeout')), timeout),
       ),
     ])) as { choices?: Array<{ message?: { content?: string } }> };
     const content = completion?.choices?.[0]?.message?.content ?? '';
@@ -152,7 +169,12 @@ function chatOnce(system: string, user: string): Promise<string> {
   };
   return (async () => {
     for (let i = 0; i < DELAYS.length; i++) {
-      if (DELAYS[i] > 0) await new Promise((r) => setTimeout(r, DELAYS[i]));
+      if (DELAYS[i] > 0) {
+        if (deadline && Date.now() + DELAYS[i] + LLM_MIN_ATTEMPT_MS > deadline) {
+          throw lastErr ?? new Error('LLM deadline exceeded before retry');
+        }
+        await new Promise((r) => setTimeout(r, DELAYS[i]));
+      }
       try {
         return await attempt();
       } catch (e) {
@@ -181,20 +203,28 @@ async function runPool<T>(tasks: Array<() => Promise<T>>): Promise<void> {
   await Promise.all(workers);
 }
 
-/** 英文（LLM）翻译主流程：分批 → 编号解析 → 失败段单段降级重试 → 汇总 */
+/** 英文（LLM）翻译主流程：分批 → 编号解析 → 失败段单段降级重试 → 汇总。
+ *  R138：全流程受单一 deadline 约束（批尝试+单段降级共享），保证总响应时间
+ *  ≤ LLM_DEADLINE_MS——backend 150s 窗口内必答。 */
 async function translateLLM(
   items: string[],
   lang: string,
+  namesHint?: string,
   context?: { novelTitle?: string; chapterTitle?: string },
 ): Promise<{ results: string[]; failed: number[] }> {
   const n = items.length;
   const results = new Array<string>(n).fill('');
   const failed: number[] = [];
+  const deadline = Date.now() + LLM_DEADLINE_MS;
 
-  const system = SYSTEM_PROMPT.replace('{LANG}', lang);
+  const system = SYSTEM_PROMPT
+    .replace('{LANG}', lang)
+    .replace('{NAMES}', namesHint || NAMES_DEFAULT);
+  // R138 缺陷修复：作品背景原拼在 user 消息尾，LLM 会把它当正文回显进译文（ja 实测
+  // 「…打ち破った。（作品背景：凡人修仙伝…）」）。改入 system 并明令禁止输出。
   const ctxHint =
     context?.novelTitle || context?.chapterTitle
-      ? `\n（作品背景：${context.novelTitle ?? ''} ${context.chapterTitle ?? ''}）`
+      ? ` Context for reference only: the passages are from the novel "${context.novelTitle ?? ''}"${context.chapterTitle ? `, chapter "${context.chapterTitle}"` : ''}. Never include, mention or translate this metadata in your output.`
       : '';
 
   // 批拆分
@@ -207,9 +237,14 @@ async function translateLLM(
     const numbered = texts.map((t, i) => `[${i + 1}] ${t}`).join('\n');
     let out = '';
     try {
-      out = await chatOnce(system, numbered + ctxHint);
+      out = await chatOnce(system + ctxHint, numbered, deadline);
     } catch (e) {
       console.log(`[translate] batch@${start} FAIL:`, e instanceof Error ? e.message : e);
+      // R138：截止期已尽 → 本批全部段直接判失败，跳过单段降级（同样会超时）
+      if (Date.now() >= deadline) {
+        for (let i = 0; i < texts.length; i++) failed.push(start + i);
+        return;
+      }
     }
     const parsed = parseNumbered(out, texts.length);
     // 降级：批解析失败/漏段的段 → 单段重试一次
@@ -220,7 +255,7 @@ async function translateLLM(
         continue;
       }
       try {
-        const one = await chatOnce(system, `[1] ${texts[i]}`);
+        const one = await chatOnce(system + ctxHint, `[1] ${texts[i]}`, deadline);
         const oneParsed = parseNumbered(one, 1);
         results[gi] = oneParsed[0] || '';
       } catch (e) {
@@ -334,6 +369,7 @@ Bun.serve({
             const { results: translated, failed } = await translateLLM(
               missIdx.map((i) => texts[i]),
               conf.lang ?? 'English',
+              conf.namesHint,
               body.context,
             );
             stats.llmCalls += Math.ceil(missIdx.length / LLM_BATCH);

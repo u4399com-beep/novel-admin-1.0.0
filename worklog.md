@@ -5278,3 +5278,27 @@ Stage Summary:
 - 第 20 次重置自愈闭环（含 stealth playwright 兼容性新坑存档）；四服务全绿+cloak 过盾恢复
 - 一键安装 9 步新形态：翻译侧车进安装链，国内镜像全链（npmmirror+PyPI aliyun+ghfast）
 - 移交下一轮：①PAT 轮换（用户侧，第 7 次提醒）②admin 面可加翻译缓存管理页（可选：按书清理/命中率统计——TranslationCache novelId 索引已备好）③更多语种按需注册（ja/ko 一行配置）④翻译体验可加 TXT 导出译文（api_export.go 已有 TXT 通道可复用）
+
+---
+Task ID: R138
+Agent: Z.ai Code (main)
+Task: 「继续这个任务」——R137 交付后同步对齐+第 21 次重置自愈+翻译功能多语种扩展（⑤ 持续推进）+实战缺陷修复
+
+Work Log:
+- 【开局·远端已推进 R137（a81f8f6）】并行会话已交付 R135/R136/R137 全链（翻译三层架构/TLS/压测/恢复演练）——git pull --ff-only 同步；本地第 21 次重置（四服务全灭+DB 全空+Go 无）。
+- 【第 21 次自愈·形态升级：备份恢复替代空库播种】db/custom.db 从 db/backups/novel-20261108-082021.db（76MB，L1 integrity ok）直接恢复——舰队 25 规则+1089 书秒级回位，较 E26 空库重建多保留全量历史数据；verify-backup-r136.sh L2/L3 此前 FAIL 根因=演练时活库不存在（恢复后复验通过口径成立）。bin 快速路径起双端；translate-service 依赖 bun install（opencc-js+z-ai-web-dev-sdk）。
+- 【重置新坑·run.sh 执行位丢失】git 内 run.sh 无 x 位（chmod +x 后才可拉起，translate/stealth 双双命中）；stealth「flock 已有实例」假象=ensure-services 在 venv 建成前用系统 python3 拉起了无 cloakbrowser 的实例并持锁——kill 后 venv 就位再起，cloak/cloakBinary/iv8 三 true。stealth venv 重建链固化：tuna PyPI 403 → aliyun PyPI 可用；playwright 1.53 pin 生效（cloakbrowser 0.6.5 import 正常）。
+- 【任务⑤翻译功能·4 语种扩展（本轮主增量）】TARGETS 注册表新增 zh-HK（OpenCC s2hk 香港繁体，零成本）+ ja（LLM 日文）——三层同步：translate-service TARGETS + backend translateTargets 白名单 + translator.js 工具条 5 键（原文/繁體/繁HK/English/日本語，byTarget 映射表替代三元链）+ BATCH 按引擎分流（OpenCC 96/批、LLM 6/批）；**人名处理按语种注入**（namesHint 字段）：拼音转写只适用拉丁语种，日文 prompt 明令保留汉字——E2E 实测「許経年（きょ・けいねん）はぼんやり…」名字保 kanji 带假名注音，文学级质量。
+- 【实战缺陷修复①·context 泄漏】ja 首测发现「（作品背景：…）」被 LLM 回显进译文——ctxHint 原拼在 user 消息尾被当正文翻译；改入 system 尾部+明令「Never include, mention or translate this metadata」；复测 leak:False。
+- 【实战缺陷修复②·429 风暴整批丢失（真实读者会话暴露）】backend 日志发现**活跃读者**正在使用翻译（13:57:10 一个 121 段章节 zh-Hant 双批 849/917ms 两簇+en 6 段批持续 upstream FAIL「context deadline exceeded」至 14:16）——根因：LLM 共享配额 429 风暴期，侧车重试链最坏 113s sleep+5×120s attempt 远超 backend 150s 上游窗口→整批丢弃。**截止期驱动重试**：translateLLM 级单一 deadline（130s=150s-20s 余量），chatOnce 重试前检查剩余时间+attempt 超时取 min(120s, 剩余-1s)，deadline 耗尽跳过单段降级直接判失败——保证 backend 窗口内必答，失败段前端保留原文（优雅降级替代挂死）；真实长段复测 3s 完成（修复前 >170s 无响应）。
+- 【E2E 黄金路径实证（agent-browser）】chapter/12527（132 段）：工具条 5 键注入+__trState 探测 132/132；繁HK 点击→active/完成/正文转繁体；短章 20636 日本語→渐进渲染 36/41→完成态 active=日本語/inflight=false/console 零输出；reload 后日本語「已从缓存恢复」秒回；390px 移动端 5 键 flex-wrap 自动换行无溢出（358px≤390）。全章 132 段 zh-Hant 经 backend 代理 0.051s 零失败。
+- 【质量闸】backend go test 全量 74.8s PASS（translate 子集复跑 0.02s）；staticcheck 2023.1.7 零残留；bin 与源码原子同步（bin/backend-go 20.17MB 重构建入 commit）。
+- 【任务②③效率+反反爬观测】恢复后 1h20m：1089→1499 书（+410）、~112 万→139.8 万章（+27.8 万）、正文 7352→10365；舰队 16 running/4 partial/6 paused 自动轮转；engine totalOK 13937/totalFail 370（97.4%）；ruleHealth 4→14 healthy（巡检收敛中）；per-host 准入+per-IP 分桶+ cloak 出口池维持（chrome 渲染进程带外部代理实战在跑）。
+- 【任务④代码精简】staticcheck 双端零残留维持；本轮改动三文件全部最小 diff（注册表行/映射表/deadline 块），无死代码引入。
+- 【任务⑥一键安装】R137 已 9 步化（翻译侧车进 deploy-cn.sh），本轮零新依赖（opencc-js 既有）——无需改动维持。
+
+Stage Summary:
+- 翻译功能 2→4 语种（zh-HK 零成本词典+ja LLM 保汉字人名），架构「加语种只动注册表」承诺首次兑现实证
+- 两个实战缺陷修复（context 泄漏/429 风暴 deadline）——后者由真实读者会话暴露，验证了「读者侧功能上线即接受实战检验」
+- 第 21 次自愈新形态：备份恢复替代空库播种（数据零损失回位）+run.sh 执行位/flock 假象两坑存档
+- 移交下一轮：①PAT 轮换（用户侧，第 8 次提醒：ghp_***（IM 会话多轮暴露的那个 token，去聊天记录取） 已在多轮会话暴露，务必尽快轮换并吊销旧 token）②admin 面翻译缓存管理页（novelId 索引已备好）③ko/更多语种一行注册④TXT 导出译文通道

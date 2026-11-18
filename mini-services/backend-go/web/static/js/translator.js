@@ -9,9 +9,9 @@
  *   - 只做两种 DOM 操作：往 body 追加悬浮工具条 + 对正文 <p> 赋值 textContent；
  *     不改写/移动主题既有节点，译文经 textContent 赋值（浏览器转义，XSS 免疫）。
  *
- * 目标语种：zh-Hant（OpenCC 本地词典转换，秒级）/ en（LLM 文学翻译，6 段/批串行，
- * 进度实时显示）。失败段保留原文（后端契约：失败段 results 空串，不编造）。
- * 分批统一 ≤96 段/请求（R137 实测长章 109+ 段；繁体虽快也分批——兼容保守上游部署）。
+ * 目标语种（R138 扩至 4）：zh-Hant / zh-HK（OpenCC 本地词典转换，秒级，96 段/批）/
+ * en / ja（LLM 文学翻译，6 段/批，进度实时显示；ja 人名保留汉字）。
+ * 失败段保留原文（后端契约：失败段 results 空串，不编造）。
  *
  * 缓存：localStorage 按 {chId}:{target} 持久缓存（>1.5MB 单条放弃写入防配额溢出）；
  * 二次切换零网络请求。
@@ -88,11 +88,16 @@
   btnOrig.type = 'button'; btnOrig.textContent = '原文'; btnOrig.className = 'tr-on';
   var btnHant = document.createElement('button');
   btnHant.type = 'button'; btnHant.textContent = '繁體';
+  var btnHk = document.createElement('button');
+  btnHk.type = 'button'; btnHk.textContent = '繁HK';
   var btnEn = document.createElement('button');
   btnEn.type = 'button'; btnEn.textContent = 'English';
+  var btnJa = document.createElement('button');
+  btnJa.type = 'button'; btnJa.textContent = '日本語';
   var msg = document.createElement('span');
   msg.className = 'tr-msg';
-  bar.appendChild(btnOrig); bar.appendChild(btnHant); bar.appendChild(btnEn); bar.appendChild(msg);
+  bar.appendChild(btnOrig); bar.appendChild(btnHant); bar.appendChild(btnHk);
+  bar.appendChild(btnEn); bar.appendChild(btnJa); bar.appendChild(msg);
   document.body.appendChild(bar);
 
   function setMsg(text, sticky) {
@@ -105,11 +110,13 @@
     }
   }
   function setActive(name) {
-    [btnOrig, btnHant, btnEn].forEach(function (b) { b.classList.remove('tr-on'); });
-    (name === 'zh-Hant' ? btnHant : name === 'en' ? btnEn : btnOrig).classList.add('tr-on');
+    allBtns().forEach(function (b) { b.classList.remove('tr-on'); });
+    var byTarget = { 'zh-Hant': btnHant, 'zh-HK': btnHk, 'en': btnEn, 'ja': btnJa };
+    (byTarget[name] || btnOrig).classList.add('tr-on');
   }
+  function allBtns() { return [btnOrig, btnHant, btnHk, btnEn, btnJa]; }
   function setBusy(busy) {
-    [btnOrig, btnHant, btnEn].forEach(function (b) { b.disabled = busy; });
+    allBtns().forEach(function (b) { b.disabled = busy; });
   }
 
   // ---------- 缓存 ----------
@@ -183,7 +190,8 @@
     }
     var results = new Array(origTexts.length);
     var idx = 0;
-    var BATCH = target === 'en' ? 6 : 96; // en 小批走 LLM 质量+进度；繁体 96/批秒级近实时
+    var OPENCC_LOCAL = (target === 'zh-Hant' || target === 'zh-HK'); // 本地词典语种 96/批秒级；LLM 语种 6/批保质量+进度
+    var BATCH = OPENCC_LOCAL ? 96 : 6;
     var doneCount = 0;
 
     function next() {
@@ -219,7 +227,9 @@
   // ---------- 事件 ----------
   btnOrig.addEventListener('click', function () { translateTo(null); });
   btnHant.addEventListener('click', function () { translateTo('zh-Hant', '繁體'); });
+  btnHk.addEventListener('click', function () { translateTo('zh-HK', '繁HK'); });
   btnEn.addEventListener('click', function () { translateTo('en', 'English'); });
+  btnJa.addEventListener('click', function () { translateTo('ja', '日本語'); });
 
   // 调试探针（window.__trState 暴露内部守卫状态；排障用，生产无害）
   window.__trState = function () {
