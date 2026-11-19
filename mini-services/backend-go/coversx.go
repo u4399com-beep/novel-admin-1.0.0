@@ -536,6 +536,12 @@ func consumeCoverResponse(res *http.Response) (ob []byte, reason string) {
 	if w <= 0 || h <= 0 {
 		return nil, "图像尺寸异常"
 	}
+	// R146: 尺寸下限——1x1 跟踪图/源站限流占位图（实测 1x1 376B 与 15x22 等形态，源站
+	// 热请求节流时下发）拒绝入库，防止 force 重下覆盖既有好封面（与首页 hasCoverFile
+	// 展示侧过滤同口径，写入侧单咽喉根治）
+	if w < 30 || h < 40 {
+		return nil, "占位图尺寸不达标（<30x40）"
+	}
 	out := img
 	if w > coverMaxSide || h > coverMaxSide {
 		scale := float64(coverMaxSide) / float64(w)

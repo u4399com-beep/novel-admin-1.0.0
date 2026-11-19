@@ -38,10 +38,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"html/template"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -326,11 +332,27 @@ func ensureFeaturedBootstrap() {
 	if featured > 0 || total < 8 {
 		return
 	}
-	if _, err := exec(`UPDATE "Novel" SET "isFeatured" = 1 WHERE "id" IN (SELECT "id" FROM "Novel" ORDER BY "wordCount" DESC, "id" DESC LIMIT 8)`); err != nil {
-		log.Printf("[web-home] 编辑推荐空态补标失败: %v", err)
-		return
+	// R146: 封面优先补标——先挑有真实封面文件的书（与首页图文模块硬过滤同口径），
+	// 不足 8 本再按原口径（字数 Top）补齐，保证空态自愈后首页即刻有图。
+	picked := 0
+	for _, id := range webInt64List(`SELECT "id" FROM "Novel" WHERE "isFeatured" = 0 AND "cover" LIKE '/covers/%' ORDER BY "wordCount" DESC, "id" DESC LIMIT 24`) {
+		if picked >= 8 {
+			break
+		}
+		if !hasCoverFile(id) {
+			continue
+		}
+		if _, err := exec(`UPDATE "Novel" SET "isFeatured" = 1 WHERE "id" = ?`, id); err == nil {
+			picked++
+		}
 	}
-	log.Printf("[web-home] 编辑推荐空态自愈：已按字数 Top8 补标 isFeatured=1（库内 %d 本）", total)
+	if picked < 8 {
+		if _, err := exec(`UPDATE "Novel" SET "isFeatured" = 1 WHERE "id" IN (SELECT "id" FROM "Novel" WHERE "isFeatured" = 0 ORDER BY "wordCount" DESC, "id" DESC LIMIT ?)`, 8-picked); err != nil {
+			log.Printf("[web-home] 编辑推荐空态补标失败: %v", err)
+			return
+		}
+	}
+	log.Printf("[web-home] 编辑推荐空态自愈：封面优先补标 %d 本（库内 %d 本）", picked, total)
 }
 
 // ensureHotBootstrap 首页「热门小说」空态自愈（R105）：isHot 与 isFeatured 同为运营打标位，
@@ -349,23 +371,115 @@ func ensureHotBootstrap() {
 	if hot > 0 || total < 10 {
 		return
 	}
-	if _, err := exec(`UPDATE "Novel" SET "isHot" = 1 WHERE "id" IN (SELECT "id" FROM "Novel" ORDER BY "wordCount" DESC, "id" DESC LIMIT 10)`); err != nil {
-		log.Printf("[web-home] 热门小说空态补标失败: %v", err)
-		return
+	// R146: 封面优先补标（与 ensureFeaturedBootstrap 同口径）
+	picked := 0
+	for _, id := range webInt64List(`SELECT "id" FROM "Novel" WHERE "isHot" = 0 AND "cover" LIKE '/covers/%' ORDER BY "wordCount" DESC, "id" DESC LIMIT 30`) {
+		if picked >= 10 {
+			break
+		}
+		if !hasCoverFile(id) {
+			continue
+		}
+		if _, err := exec(`UPDATE "Novel" SET "isHot" = 1 WHERE "id" = ?`, id); err == nil {
+			picked++
+		}
 	}
-	log.Printf("[web-home] 热门小说空态自愈：已按字数 Top10 补标 isHot=1（库内 %d 本）", total)
+	if picked < 10 {
+		if _, err := exec(`UPDATE "Novel" SET "isHot" = 1 WHERE "id" IN (SELECT "id" FROM "Novel" WHERE "isHot" = 0 ORDER BY "wordCount" DESC, "id" DESC LIMIT ?)`, 10-picked); err != nil {
+			log.Printf("[web-home] 热门小说空态补标失败: %v", err)
+			return
+		}
+	}
+	log.Printf("[web-home] 热门小说空态自愈：封面优先补标 %d 本（库内 %d 本）", picked, total)
+}
+
+// ---------- R146: 首页图文模块封面硬过滤 ----------
+
+// hasCoverFile 书籍是否「确定有封面图」：本地封面文件真实存在 + 非空 + 图像头尺寸达标
+// （public/covers/{id}.jpg）。
+// 用户 R146 指令：首页图文模块只展示确定有封面图的书——DB cover 字段即使为本地路径形态，
+// 文件缺失/空文件（清库错位/回填未跑完）也算无图；1x1 跟踪图（源站占位陷阱）视为无图；
+// 渐变 token（g1-g12）本就无图同拒。
+func hasCoverFile(id any) bool {
+	nid := toInt64(id)
+	if nid <= 0 {
+		return false
+	}
+	f, err := os.Open(filepath.Join(coversDir(), strconv.FormatInt(nid, 10)+".jpg"))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() || st.Size() < 256 {
+		return false
+	}
+	// 图像头尺寸门：1x1 跟踪图/源站占位陷阱（全库 17 张 376B 同款）头部解码即拒，
+	// DecodeConfig 只读文件头不整图解码，首页渲染开销可忽略
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return false
+	}
+	return cfg.Width >= 30 && cfg.Height >= 40
+}
+
+// filterWithCovers 保持原序取前 want 本「确定有封面图」的书（不足则如实少给——
+// 首页模块宁可空位不放假图，与诚实原则一致）。
+func filterWithCovers(list []map[string]any, want int) []map[string]any {
+	if want <= 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, min(want, len(list)))
+	for _, n := range list {
+		if hasCoverFile(n["id"]) {
+			out = append(out, n)
+			if len(out) >= want {
+				break
+			}
+		}
+	}
+	return out
+}
+
+// queryNovelListCovers 首页图文模块专用取数：超量查询（want*3，钳 24-48）+ 封面硬过滤 +
+// 截断——避免「取 12 过滤后剩 3」的稀疏形态；排序保持查询原序。
+func queryNovelListCovers(whereSQL, orderSQL string, args []any, want int) []map[string]any {
+	if want <= 0 {
+		return nil
+	}
+	over := want * 3
+	if over < 24 {
+		over = 24
+	}
+	if over > 48 {
+		over = 48
+	}
+	list, _ := queryNovelList(whereSQL, orderSQL, args, over, 0)
+	return filterWithCovers(list, want)
+}
+
+// webInt64List 单列 int64 查询（封面优先补标取 id 用；扫描失败行跳过不中断）。
+func webInt64List(query string, args ...any) []int64 {
+	out := []int64{}
+	_ = queryList(query, func(rows *sql.Rows) error {
+		var v int64
+		if err := rows.Scan(&v); err == nil {
+			out = append(out, v)
+		}
+		return nil
+	}, args...)
+	return out
 }
 
 func handleWebHome(w http.ResponseWriter, r *http.Request) {
 	data := webCommon(r)
 	ensureFeaturedBootstrap()
 	ensureHotBootstrap()
-	featured, _ := queryNovelList(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 12, 0)
-	hot, _ := queryNovelList(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10, 0)
-	latest, _ := queryNovelList("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 14, 0)
-	rankClicks, _ := queryNovelList("", ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10, 0)
-	rankUpdates, _ := queryNovelList("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 10, 0)
-	rankFinished, _ := queryNovelList(` WHERE n."status" = 'finished'`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10, 0)
+	featured := queryNovelListCovers(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 12)
+	hot := queryNovelListCovers(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10)
+	latest := queryNovelListCovers("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 14)
+	rankClicks := queryNovelListCovers("", ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10)
+	rankUpdates := queryNovelListCovers("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 10)
+	rankFinished := queryNovelListCovers(` WHERE n."status" = 'finished'`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10)
 	data["Featured"] = featured
 	data["Hot"] = hot
 	data["Latest"] = latest
@@ -457,21 +571,17 @@ func homeBlockTarget(source string, data map[string]any) (string, int64) {
 func homeBlockNovels(source string, count int) []map[string]any {
 	switch {
 	case source == "latest":
-		v, _ := queryNovelList("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, count, 0)
-		return v
+		return queryNovelListCovers("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, count)
 	case source == "hot":
-		v, _ := queryNovelList(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, count, 0)
-		return v
+		return queryNovelListCovers(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, count)
 	case source == "featured":
-		v, _ := queryNovelList(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, count, 0)
-		return v
+		return queryNovelListCovers(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, count)
 	case strings.HasPrefix(source, "cat:"):
 		cid, err := strconv.Atoi(strings.TrimPrefix(source, "cat:"))
 		if err != nil || cid <= 0 {
 			return []map[string]any{}
 		}
-		v, _ := queryNovelList(` WHERE n."categoryId" = ?`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, []any{int64(cid)}, count, 0)
-		return v
+		return queryNovelListCovers(` WHERE n."categoryId" = ?`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, []any{int64(cid)}, count)
 	}
 	return []map[string]any{}
 }

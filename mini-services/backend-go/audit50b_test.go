@@ -213,12 +213,12 @@ func fakeCoverRes(status int, ctype string, body []byte) *http.Response {
 	return &http.Response{StatusCode: status, Header: h, Body: io.NopCloser(bytes.NewReader(body))}
 }
 
-// tinyJPEGBytes 生成一张极小但合法的 JPEG（4x3 纯色）
+// tinyJPEGBytes 生成一张合法的 JPEG（60x80 纯色，R146 封面尺寸下限 30x40 之上的最小常规封面形态）
 func tinyJPEGBytes(t *testing.T) []byte {
 	t.Helper()
-	img := image.NewRGBA(image.Rect(0, 0, 4, 3))
-	for y := 0; y < 3; y++ {
-		for x := 0; x < 4; x++ {
+	img := image.NewRGBA(image.Rect(0, 0, 60, 80))
+	for y := 0; y < 80; y++ {
+		for x := 0; x < 60; x++ {
 			img.Set(x, y, color.RGBA{R: 200, G: 120, B: 40, A: 255})
 		}
 	}
