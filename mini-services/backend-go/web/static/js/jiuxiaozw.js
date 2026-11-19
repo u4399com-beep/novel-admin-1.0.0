@@ -218,6 +218,30 @@
     var tapR = $('.jxzw-tap-right', pagesRoot);
     var tapC = $('.jxzw-tap-center', pagesRoot);
 
+    /* ---------- R148 阅读页模式决策：后台 readerMode 设置（data-reader-mode-setting 透传） ----------
+       page=全端分页；scroll=全端全文；auto=跟随设备：PC（hover+fine 主指针）全文滚动、触屏分页。
+       JS 权威决策一次定终身（服务端 data-mode 初值只作 no-JS 兜底；窗口拖拽跨阈值不做
+       运行时切换，保分页状态机简单）。原站 data-mode=scroll 同款钩子（text-window 即滚动容器、
+       columns 原生流式）在 CSS 内已具备，零额外几何适配。 */
+    var modeSetting = pagesRoot.getAttribute('data-reader-mode-setting') || 'auto';
+    function decideReaderMode() {
+      if (modeSetting === 'page') return 'horizontal';
+      if (modeSetting === 'scroll') return 'scroll';
+      try {
+        /* PC 判定：hover+fine 主指针（真桌面）或宽视口 ≥1024（桌面窗口/headless 无指针
+           媒体特征、平板横屏）。≥1024 的触屏设备走滚动模式同样自然（pan-y 原生滚动）；
+           手机窄屏两条件皆 false → 分页 + 四向手势 */
+        var pc = false;
+        if (window.matchMedia) {
+          pc = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+            || window.matchMedia('(min-width: 1024px)').matches;
+        }
+        return pc ? 'scroll' : 'horizontal';
+      } catch (e) { return 'horizontal'; }
+    }
+    var readerMode = decideReaderMode();
+    pagesRoot.setAttribute('data-mode', readerMode);
+
     var st = { font: 22, lh: 1.4, paper: 'sepia' };
     try { var saved = JSON.parse(localStorage.getItem('jxzw-reader') || 'null'); if (saved) st = saved; } catch (e) {}
     var PAPERS = {
@@ -246,6 +270,15 @@
       $all('[data-paper-dot],.jxzw-paper-dot').forEach(function (d) { d.setAttribute('aria-pressed', d.getAttribute('data-paper') === st.paper ? 'true' : 'false'); });
     }
     var total = 1, cur = 0, colGap = 48;
+    /* R148: 滚动模式进度（text-window 即滚动容器，百分比 = scrollTop 比例） */
+    function updateScrollProgress() {
+      if (!textWindow) return;
+      var max = textWindow.scrollHeight - textWindow.clientHeight;
+      var p = max > 0 ? textWindow.scrollTop / max : 0;
+      if (pageEl) pageEl.textContent = '全文';
+      if (pctEl) pctEl.textContent = Math.round(p * 100) + '%';
+      pagesRoot.setAttribute('data-reading-position', String(Math.round(p * 100)));
+    }
     function measure() {
       if (!cols || !textWindow) return;
       var w = textWindow.clientWidth;
@@ -254,6 +287,15 @@
       cols.style.fontSize = st.font + 'px';
       cols.style.lineHeight = String(st.lh);
       pagesRoot.style.setProperty('--reader-paragraph-gap', '0.72em');
+      if (readerMode !== 'horizontal') {
+        /* 滚动模式：columns 原生流式（CSS [data-mode=scroll] 已接管），清分页内联样式后仅维护进度 */
+        cols.style.columnWidth = '';
+        cols.style.columnGap = '';
+        cols.style.transform = '';
+        if (pageEl) pageEl.textContent = '全文';
+        updateScrollProgress();
+        return;
+      }
       cols.style.columnWidth = w + 'px';
       cols.style.columnGap = colGap + 'px';
       var full = cols.scrollWidth;
@@ -290,6 +332,17 @@
     }
     pagesRoot.setAttribute('data-reader-ready', 'true');
     applyPaper();
+    if (readerMode === 'scroll') {
+      /* 滚动模式：顶栏常开（PC 无中央热区可呼出，隐藏态将无入口）；进度跟 scroll 被动维护 */
+      var bar = $('[data-reader-toolbar]');
+      if (bar) bar.setAttribute('data-open', 'true');
+      var menuAcc = $('.reader-menu-access');
+      if (menuAcc) menuAcc.setAttribute('aria-expanded', 'true');
+      textWindow.addEventListener('scroll', function () {
+        if (rAF) cancelAnimationFrame(rAF);
+        rAF = requestAnimationFrame(updateScrollProgress);
+      }, { passive: true });
+    }
     /* 上一轮设置回放 */
     cols.style.fontSize = st.font + 'px';
     cols.style.lineHeight = String(st.lh);
@@ -307,10 +360,18 @@
     setTimeout(measure, 30);
     setTimeout(measure, 400);
 
-    if (tapL) tapL.addEventListener('click', function () { goPage(-1); });
-    if (tapR) tapR.addEventListener('click', function () { goPage(1); });
+    if (readerMode === 'horizontal') {
+      if (tapL) tapL.addEventListener('click', function () { goPage(-1); });
+      if (tapR) tapR.addEventListener('click', function () { goPage(1); });
+    }
     if (pageWindow) {
       pageWindow.addEventListener('keydown', function (ev) {
+        if (readerMode === 'scroll') {
+          /* 滚动模式：左右键 = 章导航（与右侧栏同语义），上下键交浏览器原生滚动 */
+          if (ev.key === 'ArrowLeft') { ev.preventDefault(); navChapter('prev'); }
+          if (ev.key === 'ArrowRight') { ev.preventDefault(); navChapter('next'); }
+          return;
+        }
         if (ev.key === 'ArrowLeft') { ev.preventDefault(); goPage(-1); }
         if (ev.key === 'ArrowRight') { ev.preventDefault(); goPage(1); }
       });
@@ -322,7 +383,9 @@
       if (!ev.ctrlKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
         var active = doc.activeElement;
         if (active && pageWindow && (active === pageWindow || pageWindow.contains(active))) {
-          ev.preventDefault(); goPage(ev.key === 'ArrowLeft' ? -1 : 1);
+          ev.preventDefault();
+          if (readerMode === 'scroll') navChapter(ev.key === 'ArrowLeft' ? 'prev' : 'next');
+          else goPage(ev.key === 'ArrowLeft' ? -1 : 1);
         }
       }
     });
@@ -331,7 +394,7 @@
        原站同机制；触摸指针靠浏览器隐式捕获不 setPointerCapture 以免重定向点击破坏热区；鼠标拖拽在成手后显式捕获） ---------- */
     var surface = $('.reader-page-surface', pagesRoot);
     var preview = $('[data-reader-preview]', pagesRoot);
-    if (surface && preview && 'PointerEvent' in window) {
+    if (readerMode === 'horizontal' && surface && preview && 'PointerEvent' in window) {
       var drag = null, anim = false, suppressClick = false;
       function dragStride() { return (textWindow.clientWidth || 1) + colGap; }
       function dragWinH() { return pageWindow.clientHeight || 1; }

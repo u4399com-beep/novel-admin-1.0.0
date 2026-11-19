@@ -225,3 +225,19 @@ a.jxzw-gcover:hover{filter:brightness(1.05)}
 
 /* R143: 移动端书页水平溢出根修——.book-detail 的 overflow-x:clip 在拼接的原站 CSS 里只出现在 @media(min-width:768px) 作用域，<768px 的暗幕 hero（backdrop inset calc(50% - 50vw) + img width calc(100% + 180px)）顶穿视口（390px 实测 scrollWidth 438）。全局补 clip（与既有 min-width 版本叠加，语义一致零冲突）。 */
 .book-detail{overflow-x:clip}
+
+/* R148: 阅读页滚动模式（PC 显示全文/后台 readerMode 设置）——原站 data-mode=scroll 钩子已
+   内建（text-window 即滚动容器、columns 原生流式、page-window 全出血），此处仅补配本主题
+   自有组件在滚动模式下的豁免：热区/影子预览层为分页专属交互，滚动模式原生滚动替代分页，
+   隐藏防吞点击与空转。 */
+.reader-pages-root[data-mode=scroll] .jxzw-tapzone{display:none!important}
+.reader-pages-root[data-mode=scroll] .reader-page-preview{display:none!important}
+/* R148: 滚动模式正文宽度帽——原站 scroll DOM 有 .reader-scroll-window>* 层做
+   max-width:var(--reader-column) + 居中 + padding-inline:48px（正文与纸面同宽、内衬 48px
+   不贴边、不压白翼），我们的 DOM 无该层，由 text-window 直接承担同口径。--reader-column
+   仅 PC 媒体块定义，故帽宽限 @media(min-width:1024px)；手机强制 scroll 走全宽+20px 内衬
+   （滚动条已被原站规则 scrollbar-width:none 隐藏，内衬即净边距） */
+.reader-pages-root[data-mode=scroll] .reader-text-window{margin-inline:0;padding-inline:20px}
+@media (min-width:1024px){
+.reader-pages-root[data-mode=scroll] .reader-text-window{max-width:var(--reader-column);margin-inline:auto;padding-inline:48px}
+}

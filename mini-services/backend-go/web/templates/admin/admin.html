@@ -445,6 +445,13 @@
             {{range .Themes}}<option value="{{.}}"{{if eq . $.Settings.activeTheme}} selected{{end}}>{{.}}</option>{{end}}
           </select>
         </label>
+        <label class="adm-field">阅读页分页模式 readerMode（R148：章节页显示方式，刷新章节页生效）
+          <select id="adm-set-readermode" class="adm-input">
+            <option value="auto"{{if eq $.Settings.readerMode "auto"}} selected{{end}}>跟随设备（PC 显示全文滚动，移动端分页翻页）</option>
+            <option value="scroll"{{if eq $.Settings.readerMode "scroll"}} selected{{end}}>全文滚动（所有设备显示整章内容）</option>
+            <option value="page"{{if eq $.Settings.readerMode "page"}} selected{{end}}>分页翻页（所有设备，含 PC）</option>
+          </select>
+        </label>
       </div>
       <label class="adm-field mt-2 block">站点公告（部分主题在首页展示）<textarea id="adm-set-notice" class="adm-input" rows="2">{{.Settings.notice}}</textarea></label>
       <div class="mt-2 flex justify-end"><button type="button" id="adm-set-basic-save" class="adm-btn adm-btn-primary">保存基础设置</button></div>

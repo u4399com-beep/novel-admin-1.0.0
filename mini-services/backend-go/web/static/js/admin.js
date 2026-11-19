@@ -1080,6 +1080,8 @@
       $('#adm-set-name').value = s.siteName || '';
       $('#adm-set-notice').value = s.notice || '';
       if (s.activeTheme) $('#adm-set-theme').value = s.activeTheme;
+      // R148: 阅读页分页模式回显（auto/scroll/page，GET 已归一化）
+      if (s.readerMode) $('#adm-set-readermode').value = s.readerMode;
       // R97: 采集存储与代理池回显
       $('#adm-set-txtdir').value = s.txtDir || '';
       $('#adm-set-coversdir').value = s.coversDir || '';
@@ -1620,9 +1622,10 @@
         await api('PATCH', '/api/settings', {
           siteName: siteName,
           notice: $('#adm-set-notice').value,
-          activeTheme: $('#adm-set-theme').value
+          activeTheme: $('#adm-set-theme').value,
+          readerMode: $('#adm-set-readermode').value
         });
-        toast('基础设置已保存（主题切换后刷新前台生效）', 'ok');
+        toast('基础设置已保存（主题切换后刷新前台生效；阅读页模式刷新章节页生效）', 'ok');
       } catch (e) { handleErr(e); }
     });
 
