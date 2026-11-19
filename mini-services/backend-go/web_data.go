@@ -642,13 +642,15 @@ func chapterMetaBlock(nid int64) map[string]any {
 			}
 			return nil
 		}, nid)
+	// R150: latest 追加 createdAt（毫秒）——源站书籍页最新章节列表除首条（字数 meta）外
+	// 均为 MM-DD 日期 meta（template dateFmt），无日期列则模板只能全字数、与源站 1:1 有差。
 	_ = queryList(
-		`SELECT "id","idx","title","wordCount" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" DESC LIMIT 12`,
+		`SELECT "id","idx","title","wordCount","createdAt" FROM "Chapter" WHERE "novelId" = ? ORDER BY "idx" DESC LIMIT 12`,
 		func(rows *sql.Rows) error {
-			var id, idx, wc int64
+			var id, idx, wc, createdAt int64
 			var t string
-			if err := rows.Scan(&id, &idx, &t, &wc); err == nil {
-				latest = append(latest, map[string]any{"id": id, "idx": idx, "title": t, "wordCount": wc})
+			if err := rows.Scan(&id, &idx, &t, &wc, &createdAt); err == nil {
+				latest = append(latest, map[string]any{"id": id, "idx": idx, "title": t, "wordCount": wc, "createdAt": createdAt})
 			}
 			return nil
 		}, nid)
@@ -659,6 +661,59 @@ func chapterMetaBlock(nid int64) map[string]any {
 		block["LastChapter"] = map[string]any{"id": lastID, "idx": lastIdx, "title": lastTitle}
 	}
 	return block
+}
+
+// viewsMilestone 浏览量里程碑（R150，真实数据视图）：按源站万进制阶梯取「已达成」与
+// 「下一档」；零值返回 nil（模板侧整个卡不渲染——宁缺毋假，不造收藏/评分数据）。
+// label/nextLabel 供徽章与进度行文案；progressPct 为当前值/下一档的百分比（源站同口径）。
+func viewsMilestone(clicks int64) map[string]any {
+	if clicks <= 0 {
+		return nil
+	}
+	ladder := []struct {
+		val   int64
+		label string
+	}{
+		{10000, "一万浏览"}, {100000, "十万浏览"}, {500000, "五十万浏览"},
+		{1000000, "百万浏览"}, {2000000, "二百万浏览"}, {5000000, "五百万浏览"},
+		{10000000, "千万浏览"}, {50000000, "五千万浏览"}, {100000000, "亿级浏览"},
+	}
+	achievedIdx := -1
+	next := int64(0)
+	nextLabel := ""
+	for i, lv := range ladder {
+		if clicks >= lv.val {
+			achievedIdx = i
+		} else if next == 0 {
+			next = lv.val
+			nextLabel = lv.label
+		}
+	}
+	m := map[string]any{"value": milestoneFmt(clicks)}
+	if achievedIdx >= 0 {
+		m["label"] = ladder[achievedIdx].label
+		m["level"] = achievedIdx + 1
+	} else {
+		// 未及一万：徽章显示真实浏览数（如「856浏览」），副文案仍为「浏览量」
+		m["label"] = milestoneFmt(clicks) + "浏览"
+		m["level"] = 0
+	}
+	if next > 0 {
+		m["next"] = next
+		m["nextLabel"] = nextLabel
+		m["progressPct"] = float64(clicks) / float64(next) * 100
+	}
+	return m
+}
+
+// milestoneFmt 里程碑数值格式化：≥1万 → x.x万（去尾零），否则整数；无「字」后缀
+// （wcFmt 是字数专用，浏览量/里程碑不能复用）
+func milestoneFmt(v int64) string {
+	if v >= 10000 {
+		s := strconv.FormatFloat(float64(v)/10000.0, 'f', 1, 64)
+		return strings.TrimSuffix(s, ".0") + "万"
+	}
+	return strconv.FormatInt(v, 10)
 }
 
 func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string) {
@@ -697,6 +752,12 @@ func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string)
 		` WHERE n."categoryId" = (SELECT "categoryId" FROM "Novel" WHERE "id" = ?) AND n."id" != ?`,
 		` ORDER BY n."clicks" DESC, n."id" DESC`, []any{nid, nid}, 6, 0)
 	data["Related"] = related
+	// R150: 浏览量里程碑（源站书籍页 aside 里程碑卡 + 移动端简介徽章的真实数据替代——
+	// 评价/收藏服务端无数据面，此处只用 clicks 真实值；零浏览量不渲染，宁缺毋假）。
+	clicks, _ := novel["clicks"].(int64)
+	if ms := viewsMilestone(clicks); ms != nil {
+		data["ViewsMilestone"] = ms
+	}
 
 	s := data["Site"].(map[string]any)
 	siteName, _ := s["siteName"].(string)

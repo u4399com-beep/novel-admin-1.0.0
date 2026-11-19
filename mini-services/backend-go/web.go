@@ -198,6 +198,17 @@ func webFuncMap() template.FuncMap {
 		"sub":        func(a, b any) int64 { return toInt64(a) - toInt64(b) },
 		// trimSuffixStr 模板字符串后缀裁剪（长尾词去站点后缀等）
 		"trimSuffixStr": strings.TrimSuffix,
+		// statSplit 数值/单位分离（R150 书籍页源站同款 value+small 排版）：
+		// ≥1万 → ["1.2", big]（万进制 x.x 去尾零），否则 ["856", small]。
+		// 用法 {{$p := statSplit $n.wordCount "万字" "字"}} → {{index $p 0}}/{{index $p 1}}
+		"statSplit": func(v any, big, small string) []string {
+			n := toInt64(v)
+			if n >= 10000 {
+				s := strconv.FormatFloat(float64(n)/10000.0, 'f', 1, 64)
+				return []string{strings.TrimSuffix(s, ".0"), big}
+			}
+			return []string{strconv.FormatInt(n, 10), small}
+		},
 		// dict 模板内联键值对 → map（R142 jiuxiaozw 主题子模板参数打包；html/template 无 map 字面量）
 		"dict": func(kv ...any) map[string]any {
 			m := map[string]any{}
