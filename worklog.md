@@ -5431,3 +5431,21 @@ Stage Summary:
 - 用户报告「logo 位置不对」双根因闭环：沙箱重置 bin 回退主题 fallback（重编即愈）+ R142 icon.png 截断缺陷（原站图标替换+版本参数穿透缓存）
 - R142 遗留缺陷定性：素材下载截断漏检——CSS 有花括号平衡校验但二进制资产无完整性校验，后续抓站资产应加尺寸/魔数审计
 - 移交下一轮：①PAT 轮换（用户侧，第 14 次提醒：ghp_*** 务必去 GitHub 吊销换新）②cloak chromium（cloakbrowser.dev）源站恢复后补下载 ③爬虫舰队随新 bin 恢复自动爬坡，观察 iqxsw 车道爬坡与慢站观测日志是否符合 R143 预期形态
+
+Task ID: R145
+Agent: Z.ai Code (main)
+Task: 「首页的每个模块右上角的书籍数量和显示的不对应」+「这个角标在源站是链接，这一点你在做主题模版的时候也没有完全克隆过来」
+
+Work Log:
+- 【原站语义解码（curl_chrome116 通道）】jiuxiaozw.com /sim 首页 12 条横带全部是书单驱动：角标「全部 17/32/28 本 →」= 书单全集总数，href=/sim/lists/<slug> 真实书单页；桌面带内可见 4-6 卡（子集）+ 移动 3 卡——「子集+总数+全集页」三件套。R142 克隆只搬了「子集+总数」且数字取首页内存切片长度（len(.novels)≠可见 3 卡）、链接全是页内自锚点（/#jxzw-*）——承诺无可到达兑现页，即用户两连报的根因。
+- 【频道列表页（web_list.go 新文件+web.go 路由）】GET /list/{kind} 六频道：featured 小编精选(isFeatured=1, 按更新)/hot 热门小说(isHot=1, 按点击)/latest 最新上架(全库按更新)/rank-clicks 点击榜(全库按点击)/rank-updates 更新榜(全库按更新)/finished 完本佳作(status=finished 按点击)——标题/副标与首页横带文案同源。24 本/页服务端分页；页码窗口 7 个当前页居中；分页器用原站 book-list-pagination CSS（a 链接/span[aria-current]/span[aria-disabled] 端点机制，bundle 已内置零新增样式）；?page=999 钳到末页 74；未知 kind web404。seoConfig 缺 listTitle/listDescription 键走 renderSeoKey 默认回落。
+- 【数字同源永不漂移（webListTotals）】一条 SQL 出 4 基数（featured/hot/全库/finished）映射六键；首页角标数字与落点页「共 N 本」共用同一函数——实测 8/10/1768/245 双侧一致（爬虫回血期间 1768→1775 双侧同步+7，同源设计直接实证）。
+- 【HomeBlocks 区块角标（web_data.go）】gatherHomeBlocks 产 href/total 新键：featured/hot/latest → /list/<kind>（total 取 ListTotals）；cat:<id> → /category/<id>（即时 COUNT）；未知 source 留空 href（模板侧 {{if .href}} 不渲染角标——不造假链接）。handleWebHome 先写 data["ListTotals"] 再 gatherHomeBlocks（区块读同一份）。
+- 【模板（jiuxiaozw home.html+list.html 新增）】桌面 jxzw-band/移动 jxzw-mband 角标改「全部 {{.total}} 本」（total 缺省回落 len 防哑页）；六个固定横带+HomeBlocks 横带 href 全改真实落点；更多书单 rl-coll/mh-list-collection 卡 href 同步 $b.href；list.html 复用 category.html 的 book-list 行卡体系+频道导航条+分页器。
+- 【E2E（agent-browser）】桌面角标 6 连（8/10/1768/1768/1768/245 → /list/*）全对齐；点击「全部 1768 本」→ /list/latest 落点页 24 行+分页器 current=1；page=2 窗口 1-7+上/下一页；page=999 钳 74；featured 8 本<24 分页器正确隐藏；移动 390 列表页 sw=390 零溢出+频道条可见；bad-kind 404；console 零错误。
+- 【质量闸】全量 go test 72.2s PASS（页脚契约/主题渲染回归不受新页影响）；staticcheck 2023.1.7 零输出；vet 零告警；gofmt 新改文件规范化。踩坑存档：web_data.go 混合缩进（handleWebHome 8 空格 vs gatherHomeBlocks TAB）致 MultiEdit 两轮才命中+homeBlockTarget 重复插入一次（python 行删除去重后 gofmt 归一）；git push 首次被 60s 超时打断（commit 已落）重推成功。
+- 【运维】backend 重编重启（31684）；scraper/translate/stealth 沿 R144 形态全绿。
+
+Stage Summary:
+- 用户两连报闭环：首页角标数字=频道全集真实总数（与落点页同源）+ 角标为真实链接（/list/<kind> 频道全集分页页，原站 /sim/lists/<slug> 的同位替代）——「子集+总数+全集页」三件套与原站语义完全对齐
+- 移交下一轮：①PAT 轮换（用户侧，第 15 次提醒）②更多书单「全部书单 →」头链仍为页内锚点（无 lists 索引页；如需可后续加 /list 索引聚合页）③HomeBlocks 区块与固定横带同题重复（homeConfig 3 块 featured/hot/latest 与固定横带同名）——配置层既有行为，如嫌重复可在后台改区块标题或来源
