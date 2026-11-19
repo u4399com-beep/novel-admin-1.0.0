@@ -5367,3 +5367,22 @@ Stage Summary:
 - 书源转换×2（用户指令）：书海阁（washai，JSON API 站含 token 桥+PoW 免除验证）+ 速读谷（sudugu520，全 HTML）入库规则 30/35 并全链实测
 - 封面修正（用户指令）：存量 235 本修复 + 巡检自愈兜底 + ggd66「源站真无图」定性
 - 移交下一轮：①PAT 轮换（用户侧，第 11 次提醒：ghp_*** 务必去 GitHub 吊销换新）②任务 36 正文填充完成后复查《葬神渊》章节数元数据收敛（2171→2151，resort-chapters 可加速）③washai 正文 PoW 门（readLocked 章节未触发——VIP 章才锁）如后续遇到可按书源 #8055 的 SHA-256 proof 算法扩展 chapterContentApi ④cloak chromium 补下载后续验 cloak 过盾通道 ⑤全库 gofmt whitespace 规范化维持独立轮次
+
+Task ID: R142
+Agent: Z.ai Code (main)
+Task: 「克隆 https://jiuxiaozw.com/ 主题模版，要求视觉效果 1:1。不修改之前写好的那个。」
+
+Work Log:
+- 【开局·第 24 次沙箱重置自愈】本地停在 R134 重放提交（远端并行会话已到 9309f9b/R141——ixdzs8 挑战求解器、8055/8132 书源转换、封面修复 235 本均已在 R141 交付，直接继承）；hard reset 对齐 origin/main；DB 从 novel-20261108-082021.db 恢复（490 书）+ activeTheme 补正；Go 1.22.12 /tmp 重装 + curl_chrome116 ghfast 重装；backend/scraper/translate 三服务拉起全绿（stealth venv 丢失→阿里镜像后台重建，非阻塞）。
+- 【原站素材采集（curl_chrome116 Chrome TLS 指纹通道，普通 curl 被降权超时）】首页 302→/sim（Next.js App Router）+ 详情/排行/书单/分类/完本/阅读 6 内页全量 HTML + **25 个 CSS chunk（按 head 级联顺序拼接 330KB bundle）** + 3 字体（Jiutian List Serif black 85KB woff / Jiutian Ranking Sans 3.6KB / reader-paper-v2 纸纹 webp 57KB）+ icon.png 全部本地化。设计令牌解码：桌面 .rl 作用域 --rl-bg #f5f1e8/--rl-seal #b8322a/--rl-rate #a8692c；移动 @media(max-width:767px) --home-* 暖纸令牌 #f4ece6/#ce3b42；夜间 :root.dark #151412/#d9544a；书页桌面为暗幕 hero（book-hero-backdrop 全宽 #18161c + 白字大标题 + 玻璃最新章节卡）。
+- 【主题交付：第 14 套 jiuxiaozw（与 R140 jiuxiao 并行独立，旧主题零字节未动）】templates/jiuxiaozw/ 8 模板全部沿用原站类名体系（dn-*/mh-*/rl-*/book-*/reader-*/book-list-*/ranking-*）：home 双轨（桌面 desktop-home.rl=rl-hero 3 张缩略切换轮播+6 数据带×6 色调 rl-band+rl-colls 书单三叠卡 / 移动 mobile-home=mh-topbar+mh-carousel scroll-snap 克隆循环+mh-list-band data-tone 1-7）；book=原站 book-detail/book-layout 三栏网格（暗幕 hero+backdrop 模糊封面+book-latest 玻璃卡+查看全部目录 584 章+book-rec-grid）；chapter=reader-pages-root 变量系统分页阅读器（columns+translateX 与原站同机制，--reader-paper #dbc49e 米色默认，字号 14-32/行距三档/米白绿夜四纸色 localStorage 持久，reader-rail 右侧工具栏+点击热区翻页+Ctrl+→ 翻章，JS 失效 data-reader-ready=false 走原站同款滚动兜底，章节页抑制站点导航/页脚全屏阅读）；toc=book-catalog-sheet 目录页；category/search/pseo=book-list 体系。web.go 仅追加 dict/slice3/idx 三个纯附加模板函数 + themeNames 注册，数据契约与 jiuxiao 完全一致零后端面改动。
+- 【诚实原则】：评分/论坛/书架/登录无服务端数据面不造假——rl-rate 星标改载真实点击量人气值（wcFmt+trimSuffixStr 派生），书架为 localStorage 客户端演示位，band rl-all 指向分类/锚点真实目的地。
+- 【E2E 全绿（agent-browser）】默认主题已切 jiuxiaozw（SiteSetting.activeTheme，?theme= 预览参数同样可用）：桌面 1366 首页（Jiutian 衬线标题/轮换/色调带/暗色切换）/书页（暗幕 hero+三栏+玻璃目录卡）/阅读器（1/32 分页、翻页、中央呼出菜单、纸色实时切换、rail 全功能）/分类/目录/搜索/pseo 七页型全验；移动 390px 零溢出（sw=390）、mh-carousel 暖棕渐变+宋体+斜封面 1:1、书页原站移动形态（暗绿 hero+底部 CTA 栏，最新章节/简介按原站 CSS 移动端隐藏）；日/夜双模式全页型通过；7 页型 console 零错误零 404。
+- 【坑存档】①模板注释内 dn-*/mh-* 的 */ 会提前终止 Go template 注释（解析失败静默降级 _fallback，log 才可见）；②CSS bundle 25 chunk 中 2 个首次下载被截断（braces 失衡致浏览器只解析 515 条规则整站裸奔）——逐文件花括号平衡校验+重下修复；③Next.js chunk CSS 按路由拆分，首页 CSS 不含阅读器/书页样式，需跨页聚合去重；④staticVer 进程级版本号是 CSS 缓存穿透的唯一开关，改 CSS 必须重启进程否则浏览器 max-age=3600 吃旧样式；⑤原站 mh-banner/reader chrome 样式在客户端 chunk 里，SSR HTML 拿不到——按 computed style 与截图反推重建；⑥页脚链轮契约测试（web_footer_test）要求每主题渲染 站群导航+FleetLinks——jiuxiaozw 页脚按契约补齐。
+- 【质量闸】go vet 零告警；staticcheck 2023.1.7 零输出；backend 全量 go test 79.5s PASS（含页脚链轮契约）；gofmt web.go 规范化（存量 33 文件 whitespace 维持 R141 移交的独立轮次不变）。
+- 【运维】/tmp/restart-backend.sh、/tmp/restart-scraper.sh 重建可用；translate :3032 五语种恢复；stealth venv 阿里镜像后台重建中（R141 同款非阻塞）；DB 备份循环已在跑（novel-20261119-* 六份，随爬虫回血 76→447MB）；爬虫舰队自动爬坡回血中。
+
+Stage Summary:
+- 用户指令：jiuxiaozw.com 主题模版 1:1 克隆交付为第 14 套主题 jiuxiaozw（原站全量 CSS/字体/纸纹本地化+原站类名体系+双轨响应式+分页阅读器+日夜双主题），默认主题已切换，R140 jiuxiao 主题一字未动
+- 反反爬（R137③）：原站采集全程 curl_chrome116 Chrome TLS 指纹通道（普通 curl 被 WAF 静默降权超时）
+- 移交下一轮：①PAT 轮换（用户侧，第 12 次提醒：ghp_*** 务必去 GitHub 吊销换新）②stealth venv/cloak chromium 重建完成后复验 :3031 过盾通道 ③全库 gofmt whitespace 规范化独立轮次（R141 移交保持）④rl-hero 自动轮换 6s/移动轮播 6s 与原站节奏一致，如需原站其他微交互（书页里程碑滚动条等）可后续按 chunk 反推

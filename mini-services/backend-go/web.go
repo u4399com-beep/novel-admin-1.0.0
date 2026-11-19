@@ -57,7 +57,8 @@ const fallbackTheme = "_fallback"
 // themeNames admin 主题切换下拉的可选清单（与 src/themes registry 对齐）
 // R98 追加 ncnd（克隆 ncnd.net「gelin」版式，纯手写 CSS 自包含）
 // R140 追加 jiuxiao（复刻 jiuxiaozw.com 暖纸色+朱砂红设计体系，日/夜双主题，轮播/书单/点击榜对齐原站信息架构）
-var themeNames = []string{"aijjxs", "pilishuwu", "ddyueshu", "shipsay", "x2552", "trxsw", "23qb", "101kks", "huangjinwu", "ggd66", "ncnd", "washai", "jiuxiao"}
+// R142 追加 jiuxiaozw（jiuxiaozw.com 像素级克隆：原站全量 CSS chunk 拼接包+原站类名体系 dn-*/mh-*/rl-*/book-*/reader-*，与 jiuxiao 并行独立互不影响）
+var themeNames = []string{"aijjxs", "pilishuwu", "ddyueshu", "shipsay", "x2552", "trxsw", "23qb", "101kks", "huangjinwu", "ggd66", "ncnd", "washai", "jiuxiao", "jiuxiaozw"}
 
 // isKnownTheme 主题白名单校验（?theme= 预览参数防路径穿越）
 func isKnownTheme(t string) bool {
@@ -197,6 +198,42 @@ func webFuncMap() template.FuncMap {
 		"sub":        func(a, b any) int64 { return toInt64(a) - toInt64(b) },
 		// trimSuffixStr 模板字符串后缀裁剪（长尾词去站点后缀等）
 		"trimSuffixStr": strings.TrimSuffix,
+		// dict 模板内联键值对 → map（R142 jiuxiaozw 主题子模板参数打包；html/template 无 map 字面量）
+		"dict": func(kv ...any) map[string]any {
+			m := map[string]any{}
+			for i := 0; i+1 < len(kv); i += 2 {
+				if k, ok := kv[i].(string); ok {
+					m[k] = kv[i+1]
+				}
+			}
+			return m
+		},
+		// slice3 novel map 列表切片 [from:]（首页小编精选跳过轮播前 3；越界安全返回 nil）
+		"slice3": func(v any, from int) []map[string]any {
+			list, ok := v.([]map[string]any)
+			if !ok || from < 0 || from >= len(list) {
+				return nil
+			}
+			return list[from:]
+		},
+		// idx 列表按下标取元素（书籍页取首章 id 等；越界/类型不匹配安全返回 nil）
+		"idx": func(v any, i int) any {
+			switch l := v.(type) {
+			case []map[string]any:
+				if i >= 0 && i < len(l) {
+					return l[i]
+				}
+			case []any:
+				if i >= 0 && i < len(l) {
+					return l[i]
+				}
+			case []string:
+				if i >= 0 && i < len(l) {
+					return l[i]
+				}
+			}
+			return nil
+		},
 	}
 }
 

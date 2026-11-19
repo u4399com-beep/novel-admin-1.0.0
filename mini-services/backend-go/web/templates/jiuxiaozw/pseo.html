@@ -1,0 +1,28 @@
+{{/* jiuxiaozw PSEO 聚合页：长尾词落地页，站点 rl-page-head + book-list-content 视觉承载（rl-page-topic 朱砂衬线小题为其专属设计元素）。 */}}
+{{define "content"}}{{$kw := .Keyword}}
+<div class="book-list-page max-w-3xl mx-auto px-3 md:px-4 py-3 md:py-6">
+<header class="rl-page-head">
+  <h1>{{$kw}}<span class="rl-page-topic">专题书单</span></h1>
+  {{if .Description}}<p class="rl-page-desc">{{.Description}}</p>{{end}}
+</header>
+<section class="book-list-content" aria-label="{{$kw}}相关书籍">
+  <div class="book-list-summary" data-nosnippet><span>共 {{len .Novels}} 本</span></div>
+  <ol class="book-list" aria-label="{{$kw}}相关书籍">
+    {{range .Novels}}
+    <li class="book-list-row">
+      <a class="book-list-card" aria-label="阅读{{.title}}" href="{{bookURL .id}}">
+        <div class="book-list-cover">{{if isLocalCover .cover}}<img src="{{coverSrc .id .cover}}" sizes="120px" alt="{{.title}}封面" width="240" height="320" loading="lazy" decoding="async">{{else}}<span class="jxzw-gcover {{gcls .cover}}" style="width:100%;height:100%;font-size:24px" aria-hidden="true">{{title0 .title}}</span>{{end}}</div>
+        <div class="book-list-info">
+          <h2>{{.title}}</h2>
+          <p class="book-list-meta" data-nosnippet><span>{{.author}}</span>{{if .categoryName}}<span>{{.categoryName}}</span>{{end}}<span data-status="{{.status}}">{{if eq .status "finished"}}完本{{else}}连载{{end}}</span>{{if .wordCount}}<span>{{wcFmt .wordCount}}</span>{{end}}</p>
+          {{if .description}}<p class="book-list-description">{{excerpt .description 64}}</p>{{end}}
+        </div>
+      </a>
+    </li>
+    {{else}}
+    <li style="padding:40px 0;text-align:center;color:var(--home-muted,#68717d);font-size:14px">该专题暂无收录书籍。</li>
+    {{end}}
+  </ol>
+</section>
+</div>
+{{end}}
