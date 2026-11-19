@@ -8,10 +8,15 @@ cd "$(dirname "$0")"
 export PATH="$PATH:/home/z/go-sdk/go/bin"
 export GOPATH="${GOPATH:-/home/z/go}"
 
+mkdir -p bin
 if command -v go >/dev/null 2>&1; then
-  go build -o backend-go.bin .
+  go build -o bin/backend-go .
 else
-  echo "[backend-go] go 工具链缺失，使用已有二进制" >&2
+  echo "[backend-go] go 工具链缺失，使用已有二进制 bin/backend-go" >&2
+fi
+if [ ! -x bin/backend-go ]; then
+  echo "[backend-go] 无可用二进制（bin/backend-go 缺失且无 go 工具链）" >&2
+  exit 1
 fi
 
 # SQLite CANTOPEN(14) 防护：DB_PATH 所在目录必须存在（R95 部署演练同款修复，本地 run.sh 也落地）
@@ -21,4 +26,4 @@ else
   mkdir -p ../db
 fi
 
-exec ./backend-go.bin
+exec ./bin/backend-go
