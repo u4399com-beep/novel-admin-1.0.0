@@ -129,7 +129,10 @@ var bookKeys = []string{
         // chapterTitleSelector 特殊关键字 "ownText"：锚点直接文本（legado 书源 chapterName=ownText
         // 语义，剥离内嵌站方标记如 <i class="red"> [免费]</i>；selectors.go ownTextOf 实现）
 }
-var chapterKeys = []string{"titleSelector", "contentSelector", "nextSelector", "excludeSelector"}
+var chapterKeys = []string{"titleSelector", "contentSelector", "nextSelector", "excludeSelector",
+        // R141：章节正文 JSON API（书海阁 washai 形态——正文由同源 AJAX 端点下发 contentHtml，
+        // HTML 章节页无正文；配置为 JSON 字符串，1200 上限理由同 chapterListApi）
+        "chapterContentApi"}
 
 func sanitizeRule(keys []string, raw any) map[string]string {
         out := map[string]string{}
@@ -146,9 +149,10 @@ func sanitizeRule(keys []string, raw any) map[string]string {
                         if t == "" {
                                 continue
                         }
-                        // chapterListApi 为 JSON 配置字符串（url/字段名/模板等十几字段），普通选择器 300 字符不够用
+                        // chapterListApi / chapterContentApi 为 JSON 配置字符串（url/字段名/模板等十几字段），
+                        // 普通选择器 300 字符不够用
                         capLen := 300
-                        if k == "chapterListApi" {
+                        if k == "chapterListApi" || k == "chapterContentApi" {
                                 capLen = 1200
                         }
                         out[k] = truncateStr(t, capLen)

@@ -103,6 +103,8 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
                         var lastLimitedRetryAfter *int64
                         // R114: 域槽排队累计（跨画像梯子求和；成功/失败路径都带回，饱和观测口径）
                         totalWaited := int64(0)
+                        // R141: JS cookie 挑战求解重放——本策略全程限 1 次（见循环内注释）
+                        cookieSolveReplayed := false
 
                         for _, profile := range profiles {
                                 // Task 35-b: 预算感知取槽（预计等待超预算时 shed，不预约不睡眠）+
@@ -157,6 +159,42 @@ func makeFetchStrategy(name, description string, profiles []headerProfile) strat
                                 }
                                 if a.ok && !bounceFail {
                                         return attemptResult{ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r.retryAfter, queueMs: totalWaited}
+                                }
+
+                                // R141：JS 计算 cookie 型挑战本地求解（ixdzs8 __cn_v 实测）——挑战页被
+                                // assess 判失败后，若响应体含 document.cookie=<name>=<expr> 的白名单可求值
+                                // 形态，本地算出 cookie 种入会话桶并同画像重放一次（限本策略全程 1 次，
+                                // 防挑战值被拒时重复重放）。重放成功则整链成功；cookie 被服务端拒绝
+                                // （IP/UA 绑定型）时失败语义与旧版一致，零回归。
+                                if !cookieSolveReplayed && (len(r.bytes) > 0) {
+                                        cookieSolveReplayed = true // 无论成败，求解重试机会只花一次
+                                        if ckline, solved := solveJSCookieChallenge(r.bytes); solved {
+                                                if tu, perr := urlParse(targetURL); perr == nil {
+                                                        recordSetCookieLines(hostOf(targetURL), []string{ckline}, tu.Scheme == "https")
+                                                        preview := ckline
+                                                        if len(preview) > 30 {
+                                                                preview = preview[:30] + "..."
+                                                        }
+                                                        warnings = append(warnings, "[cookie-challenge] 已求解 JS 挑战 cookie（"+preview+"），同画像重放一次")
+                                                        waited2, granted2 := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
+                                                        if granted2 {
+                                                                deadline += waited2
+                                                                totalWaited += waited2
+                                                                remaining2 := deadline - nowMs()
+                                                                if remaining2 >= 1000 {
+                                                                        r2 := fetchWithRedirectGuard(targetURL, hdrs, remaining2, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
+                                                                        a2 := assess(r2.status, r2.bytes, r2.contentType, r2.serverChallenge)
+                                                                        bounce2 := r2.note == "challenge-landing"
+                                                                        ms2 := nowMs() - s0
+                                                                        subAttempts = append(subAttempts, SubAttempt{Profile: profile.id + "+cookieReplay", OK: a2.ok && !bounce2, Status: r2.status, Ms: ms2, Blocked: a2.blocked, Bytes: a2.size, Note: r2.note})
+                                                                        if a2.ok && !bounce2 {
+                                                                                return attemptResult{ok: true, status: r2.status, bytes: r2.bytes, contentType: r2.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r2.retryAfter, queueMs: totalWaited}
+                                                                        }
+                                                                        last = &attemptResult{ok: false, status: r2.status, bytes: r2.bytes, contentType: r2.contentType, warnings: warnings, note: r2.note, subAttempts: subAttempts, retryAfter: r2.retryAfter, queueMs: totalWaited}
+                                                                }
+                                                        }
+                                                }
+                                        }
                                 }
                                 last = &attemptResult{ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, note: note, subAttempts: subAttempts, retryAfter: r.retryAfter, queueMs: totalWaited}
                                 if r.status == 429 || r.status == 503 {

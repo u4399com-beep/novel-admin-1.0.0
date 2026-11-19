@@ -310,6 +310,34 @@ func handleTest(w http.ResponseWriter, body map[string]any) {
 func handleChapter(w http.ResponseWriter, body map[string]any) {
         t0 := nowMs()
         rule := sanitizeRule(chapterKeys, body["rule"])
+
+        // R141：chapterContentApi 分支——正文由同源 JSON API 下发的站点（washai 实测），
+        // 章节页 URL 仅作 {bookId}/{chapterId} ID 载体，API 命中时直接返回（不再请求
+        // 无正文的 HTML 章节页）；失败/未配置回退既有 HTML 路径（降级语义不变）。
+        if apiRaw := rule["chapterContentApi"]; apiRaw != "" {
+                if cfg, cfgErr := parseChapterContentApi(apiRaw); cfgErr == "" {
+                        chapterURL, _ := body["url"].(string)
+                        if chapterURL != "" {
+                                apiWarnings := []string{}
+                                if data, ok := extractChapterViaAPI(chapterURL, cfg, &apiWarnings);
+                                        ok && strings.TrimSpace(data.Content) != "" {
+                                        writeJSON(w, 200, map[string]any{
+                                                "ok": true, "url": chapterURL, "strategy": "json-content-api",
+                                                "status": 200, "elapsedMs": nowMs() - t0, "queueMs": int64(0),
+                                                "data": data, "warnings": apiWarnings,
+                                        })
+                                        return
+                                }
+                                // API 未命中：落回 HTML 路径，失败原因透传给调用方观测
+                                body["_contentApiWarnings"] = apiWarnings
+                        } else {
+                                body["_contentApiWarnings"] = []string{"chapterContentApi：缺少 url，跳过 JSON 正文提取"}
+                        }
+                } else {
+                        body["_contentApiWarnings"] = []string{"chapterContentApi 配置无效：" + cfgErr}
+                }
+        }
+
         outcome := fetchAndPrepare(w, body)
         if outcome.response {
                 return
@@ -323,6 +351,10 @@ func handleChapter(w http.ResponseWriter, body map[string]any) {
         }
 
         warnings := append([]string{}, page.warnings...)
+        // R141：chapterContentApi 未命中时的失败原因透传（调用方可观测降级路径）
+        if apiW, ok := body["_contentApiWarnings"].([]string); ok {
+                warnings = append(warnings, apiW...)
+        }
         doc, docErr := goquery.NewDocumentFromReader(strings.NewReader(page.html))
         if docErr != nil {
                 failJSON(w, "服务器内部错误", "HTML 解析失败", 500)

@@ -5342,3 +5342,28 @@ Stage Summary:
 - Legado 书源双交付：jiuxiaozw（实测+蜜罐清洗，超越 8097 原版）+ 青阅自建站（零后端改动接入阅读 App）——docs/shuyuan/ 三件套（两 JSON+README）
 - 第 22 次自愈新形态两坑存档（后台进程收割三种存活方案 / git clean -fd 误删活库），数据从仓库内备份恢复、爬虫舰队 1h 自动爬坡回血 74 万章
 - 移交下一轮：①PAT 轮换（用户侧，第 10 次提醒）②全库 gofmt whitespace 规范化（约 33 文件，独立轮次）③jiuxiao 主题可再补：书单聚合页（原站 /lists/）与论坛页（/forum）为站外功能无对应数据面，未复刻（数据契约不存在，避免假区块）④cloak chromium 下载完成后续验 cloak 过盾通道
+
+---
+Task ID: R141
+Agent: Z.ai Code (main)
+Task: 「yckceo #8055/#8132 两书源转换采集规则 + 修正没有封面图的规则」+ 承接 R141 前半「葬神渊为何只有 20 章」（ixdzs8 clist 403 根因修复）
+
+Work Log:
+- 【开局·第 23 次沙箱重置自愈】上轮 R140 会话交付后整机回收（四服务全灭/Go 无/DB 丢/venv 丢）。git fetch 对齐 origin/main bad317e（R140 已含本任务目标的 jiuxiao 主题+书源双交付——并行会话超集，直接继承）；DB 从仓库内备份 novel-20261108-082021.db（76MB，integrity ok，490 书/65.4 万章）恢复；`UPDATE SiteSetting SET activeTheme='jiuxiao'` 补正（备份快照滞后于 R140 的主题切换）；Go 重装 /tmp（golang.google.cn 1.9s 快路径）+ curl-impersonate 重装（ghfast 链）+ stealth venv 重建（阿里镜像一次通过，playwright 1.53 pin 生效）；四服务 setsid --fork 拉起全绿（backend/scraper/translate 五语种含 ko/stealth）。cloak chromium 216MB 下载因本轮网络极慢未完成（非阻塞，iv8 通道可用）。
+- 【葬神渊 20 章根因定位（用户问句驱动）】ixdzs8 规则书全部 20 章（任务日志实证 9 本同形态）：完整目录接口 chapterListApi（POST /novel/clist/）恒 403 → 引擎回退书页内嵌目录（爱下书页面只渲染前 20 条预览）。403 链路还原：①__cn_v 挑战 cookie 只在挑战页 JS 里种（(882654).toString(36)+"_"+(1583867302136).toString(36) 形态，本地可算）②代理出口 IP 信誉好时书页 200 直过**不带 Set-Cookie** → 会话桶空 → clist 被 WAF 强制校验 __cn_v → 403。实测：curl 带 __cn_v=ix26_k7m9p3w8 后 clist 200 返回完整 JSON（《葬神渊》真实 2151 章）。
+- 【修复①：jscookie.go JS 计算 cookie 型挑战本地求解】白名单表达式求值器（绝不 eval）：字符串字面量/(数字).toString(基数 2-36)/标识符查 var 赋值表递归限深/'+' 拼接；未知 token 截断语义（cookie 值段完整后遇属性串即返回）。接入 strategies.go makeFetchStrategy：assess 判失败的响应体若可求解 → recordSetCookieLines 种 jar → 同画像重放一次（本策略全程限 1 次，SubAttempt 记 profile+cookieReplay）。坑两个：①JS 惯例 document.cookie="name="+value 的等号在字符串内——捕获组剥尾部 = 还原纯 name；②(?:"..."|'...') 互斥分支未参与侧捕获组下标 -1 直接切片 panic [:-1]——显式 >=0 守卫。测试含 ixdzs8 真实挑战样本（__cn_v=ix26_k7m9p3w8 精确命中）。
+- 【修复②：jsontoc clist 403 兜底探测】cookieChallengeProbe（每 host 一次闸）：GET 书页 → Set-Cookie 回存 + 挑战页求解 → 重放被 403 的请求一次；伪装传输/Go 原生双通道。接入伪装与原生两条 403 分支。
+- 【实战闭环（agent E2E + 真实任务）】引擎 /api/test 实测：挑战页判失败 → 求解 __cn_v → 重放 200 → clist JSON 2151 条优于书页内嵌 20 条已采用；backend 建单本任务 36（mode=single targetUrl=/read/619751/）重扫：chaptersTotal 2151、DB Chapter 2171（含旧骨架去重中）、正文填充 362/2151 爬坡中；agent-browser 站内验证：搜索→详情页（元数据 2171 章）→目录页 2151 章唯一升序连续全列→阅读页正文 91 段正常，390px 零溢出 console 零错误 5/5 全绿。170 本 ixdzs8 存量书随 6h tocScannedAt 窗口自动补全目录。
+- 【主指令①：yckceo #8055 书海阁(book.washai.net) 转换】站点实测（curl_chrome116 Chrome TLS 指纹——普通 curl TLS 指纹被静默降权：首页 200 但**不种 novel_browser_token**，Chrome 指纹任意页 200 且 Set-Cookie 种 token；搜索/正文 API 无 token 403）：搜索 /book/searchByPage JSON API（$.data.list，热缓存 2.6s 冷 86s）+ 书页 SSR id.* 元素齐全 + 目录 /book/indexList-{bid}.html 100 章/页 pgBtn 翻页 + **正文走 /book/queryReadPage JSON API（contentHtml 字段，免费章直出免 PoW）**。引擎能力缺口：正文 JSON API 下发（HTML 章节页无正文）——**新增 chapterContentApi（jscontent.go，R141 第二个引擎能力）**：{bookId}/{chapterId} 章节 URL 正则提取 + API URL 同源 SSRF 校验 + cookie 会话回放 + tokenHeaders 桥（会话 jar 的 novel_browser_token → X-Browser-Token 头）+ contentFields/titleFields 点路径备选 + curl-impersonate 优先/Go 原生回退双通道 + 命中时跳过无正文的 HTML 章节页（strategy=json-content-api 透出）。规则 30 更新（chapterContentApi + 旧 HTML selector 降级保留），titleFields 实测修正 data.bookIndex.indexName（name 字段不存在）。实战验证：书页种 token → /api/chapter 直返 API 正文 3317 字节 title 干净（第1章 122次）。
+- 【主指令②：yckceo #8132 速读谷(sudugu520.com) 转换】纯 HTML aspx 站实测（桌面 UA 直连可用无盾，站点偶发随机空 body 重试即好）：搜索 /i/sor.aspx class.item 卡片 + 书页 .itemtxt/.des bb（封面 div.item>a>img 首图=本书）+ 目录 #list li a 999 章/页 a.gr「下一页」翻页 + 正文 div.con（首段章题由引擎首段去重清理）+ 同章分页 .prenext（-2.html 形态）nextSelector 接管。规则 35 入库。引擎 /api/test 全链实测：列表 2 条 title/author/category 齐、书页 999 章+tocPages 翻页链接、正文 491 字节 nextUrl 正确。站点随机空壳坑存档：首次测试 0 items 为站点侧随机空响应（fetch-browser 拿 3.1KB 完整页 vs 桌面 UA 直连 0 字节随机），重试即好非规则问题。
+- 【主指令③：无封面修正】cover=g1-g12 渐变 token 是设计内回退（gradientTokenFor hash 均匀分布，cover-gradients.css 渲染色块非破图）；518 本占位分布：ggd66 91%（源站自身 nocover.jpg 占位——规则没坏站点真无图）+ 各站下载失败存量。修正路径：backfill-covers 批量跑 8 轮（limit=100）修复 **235 本**真封面（剩余 283 本渐变：206 本源站真无图 + 77 本 coverSrc 有值由 30min 巡检自愈继续收敛）。首页 agent-browser 复核：39 张 <img> 全部真图加载。
+- 【质量闸】go vet 零告警；staticcheck 2023.1.7 双端零输出；scraper 全量 go test 51.4s PASS（新增 jscontent 9 测+jscookie 5 测）；bin/scraper-go 与源码原子同步 commit（R125 血泪教训执行）；backend 未改不重建。
+- 【移植缺陷自纠 1 个】jscontent 初版抄漏 jsontoc 的「伪装传输执行失败（非 errNoTransport）→ Go 原生回退」分支（washai curl-imp 超时 exit 28 实测暴露：API 分支直接 return false 误走 HTML 降级）——补双通道口径后 strategy=json-content-api 正确命中。
+- 【运维】/tmp/restart-backend.sh + /tmp/restart-scraper.sh 重建（R139/R140 形态）；规则库 DB 直写（loadRule 无缓存即改即生效）；任务 36 后台继续填充正文。
+
+Stage Summary:
+- 章节获取效率（R137 常设②）：ixdzs8 全站 20 章截断根修（挑战求解+clist 403 兜底双修复），170 本存量书随窗口自动补全，《葬神渊》20→2151 章实证
+- 反反爬强化（R137 常设③）：JS 计算 cookie 型挑战本地求解器（白名单求值零 eval）+ token 桥（会话 cookie→请求头）+ Chrome TLS 指纹 token 签发适配（curl-impersonate 车道），两个新引擎能力（chapterContentApi 正文 JSON API / cookie-challenge 求解重放）
+- 书源转换×2（用户指令）：书海阁（washai，JSON API 站含 token 桥+PoW 免除验证）+ 速读谷（sudugu520，全 HTML）入库规则 30/35 并全链实测
+- 封面修正（用户指令）：存量 235 本修复 + 巡检自愈兜底 + ggd66「源站真无图」定性
+- 移交下一轮：①PAT 轮换（用户侧，第 11 次提醒：ghp_*** 务必去 GitHub 吊销换新）②任务 36 正文填充完成后复查《葬神渊》章节数元数据收敛（2171→2151，resort-chapters 可加速）③washai 正文 PoW 门（readLocked 章节未触发——VIP 章才锁）如后续遇到可按书源 #8055 的 SHA-256 proof 算法扩展 chapterContentApi ④cloak chromium 补下载后续验 cloak 过盾通道 ⑤全库 gofmt whitespace 规范化维持独立轮次
