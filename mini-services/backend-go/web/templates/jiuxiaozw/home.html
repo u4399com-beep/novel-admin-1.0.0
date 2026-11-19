@@ -44,15 +44,17 @@
   </section>
   {{end}}
 
-  {{/* 书单横带：数据面 6 组 + 后台自定义区块；色调 6 色循环；卡 1-3 张随实际 */}}
-  {{template "jxzw-band" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/#jxzw-hero" "novels" (slice3 $f 3) "tone" "apricot" "id" "jxzw-hero-band"}}
-  {{template "jxzw-band" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/#jxzw-rank" "novels" .Hot "tone" "straw" "id" "jxzw-hot"}}
-  {{template "jxzw-band" dict "title" "最新上架" "tag" "新鲜出炉，抢先开读。" "href" "/#jxzw-latest" "novels" .Latest "tone" "clay" "id" "jxzw-latest" "anchor" "latest"}}
-  {{template "jxzw-band" dict "title" "点击榜" "tag" "用真实点击数说话的榜单。" "href" "/#jxzw-rank" "novels" .RankClicks "tone" "wheat" "id" "jxzw-rank" "anchor" "rank"}}
-  {{template "jxzw-band" dict "title" "更新榜" "tag" "追更上头，最近动作最快的书。" "href" "/#jxzw-latest" "novels" .RankUpdates "tone" "sand" "id" "jxzw-updates"}}
-  {{template "jxzw-band" dict "title" "完本佳作" "tag" "一口气看到大结局的安心之选。" "href" "/#jxzw-finished" "novels" .RankFinished "tone" "tea" "id" "jxzw-finished" "anchor" "finished"}}
+  {{/* 书单横带：数据面 6 组 + 后台自定义区块；色调 6 色循环；卡 1-3 张随实际；
+  角标「全部 N 本」= 频道全集总数（ListTotals 与 /list/<kind> 落点页同源，R145） */}}
+  {{$t := .ListTotals}}
+  {{template "jxzw-band" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" "apricot" "id" "jxzw-hero-band"}}
+  {{template "jxzw-band" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" "straw" "id" "jxzw-hot"}}
+  {{template "jxzw-band" dict "title" "最新上架" "tag" "新鲜出炉，抢先开读。" "href" "/list/latest" "total" (index $t "latest") "novels" .Latest "tone" "clay" "id" "jxzw-latest" "anchor" "latest"}}
+  {{template "jxzw-band" dict "title" "点击榜" "tag" "用真实点击数说话的榜单。" "href" "/list/rank-clicks" "total" (index $t "rank-clicks") "novels" .RankClicks "tone" "wheat" "id" "jxzw-rank" "anchor" "rank"}}
+  {{template "jxzw-band" dict "title" "更新榜" "tag" "追更上头，最近动作最快的书。" "href" "/list/rank-updates" "total" (index $t "rank-updates") "novels" .RankUpdates "tone" "sand" "id" "jxzw-updates"}}
+  {{template "jxzw-band" dict "title" "完本佳作" "tag" "一口气看到大结局的安心之选。" "href" "/list/finished" "total" (index $t "finished") "novels" .RankFinished "tone" "tea" "id" "jxzw-finished" "anchor" "finished"}}
   {{range $b := .HomeBlocks}}
-  {{template "jxzw-band" dict "title" $b.title "tag" "书友手择，值得一读。" "href" "/#jxzw-lists" "novels" $b.novels "tone" "tea" "id" (printf "jxzw-block-%v" $b.id)}}
+  {{template "jxzw-band" dict "title" $b.title "tag" "书友手择，值得一读。" "href" $b.href "total" $b.total "novels" $b.novels "tone" "tea" "id" (printf "jxzw-block-%v" $b.id)}}
   {{end}}
 
   {{/* 更多书单（书单卡：封面三叠 + 标题 + 简介 + 收录书名） */}}
@@ -61,7 +63,7 @@
       <div class="rl-more-head"><h2>更多书单</h2><a class="rl-all" href="/#jxzw-lists">全部书单 →</a></div>
       <div class="rl-colls">
         {{range $b := .HomeBlocks}}
-        <a class="rl-coll" href="/#jxzw-lists">
+        <a class="rl-coll" href="{{$b.href}}">
           <div class="rl-stack" aria-hidden="true">
             {{range $j, $n := $b.novels}}{{if lt $j 3}}{{if isLocalCover $n.cover}}<img src="{{coverSrc $n.id $n.cover}}" sizes="96px" alt="{{$n.title}}" class="rl-cover" width="240" height="320" loading="lazy" decoding="async">{{else}}<span class="rl-cover jxzw-gcover {{gcls $n.cover}}">{{title0 $n.title}}</span>{{end}}{{end}}{{end}}
           </div>
@@ -107,21 +109,21 @@
   </section>
   {{end}}
 
-  {{template "jxzw-mband" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/#jxzw-m-latest" "novels" (slice3 $f 3) "tone" 1 "id" "jxzw-m-hero"}}
-  {{template "jxzw-mband" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/#jxzw-m-latest" "novels" .Hot "tone" 2 "id" "jxzw-m-hot"}}
-  {{template "jxzw-mband" dict "title" "最新上架" "tag" "新鲜出炉，抢先开读。" "href" "/#jxzw-m-latest" "novels" .Latest "tone" 3 "id" "jxzw-m-latest" "anchor" "latest"}}
-  {{template "jxzw-mband" dict "title" "点击榜" "tag" "用真实点击数说话的榜单。" "href" "/#jxzw-m-latest" "novels" .RankClicks "tone" 4 "id" "jxzw-m-rank" "anchor" "rank"}}
-  {{template "jxzw-mband" dict "title" "更新榜" "tag" "追更上头，最近动作最快的书。" "href" "/#jxzw-m-latest" "novels" .RankUpdates "tone" 5 "id" "jxzw-m-updates"}}
-  {{template "jxzw-mband" dict "title" "完本佳作" "tag" "一口气看到大结局的安心之选。" "href" "/#jxzw-m-finished" "novels" .RankFinished "tone" 6 "id" "jxzw-m-finished" "anchor" "finished"}}
+  {{template "jxzw-mband" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" 1 "id" "jxzw-m-hero"}}
+  {{template "jxzw-mband" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" 2 "id" "jxzw-m-hot"}}
+  {{template "jxzw-mband" dict "title" "最新上架" "tag" "新鲜出炉，抢先开读。" "href" "/list/latest" "total" (index $t "latest") "novels" .Latest "tone" 3 "id" "jxzw-m-latest" "anchor" "latest"}}
+  {{template "jxzw-mband" dict "title" "点击榜" "tag" "用真实点击数说话的榜单。" "href" "/list/rank-clicks" "total" (index $t "rank-clicks") "novels" .RankClicks "tone" 4 "id" "jxzw-m-rank" "anchor" "rank"}}
+  {{template "jxzw-mband" dict "title" "更新榜" "tag" "追更上头，最近动作最快的书。" "href" "/list/rank-updates" "total" (index $t "rank-updates") "novels" .RankUpdates "tone" 5 "id" "jxzw-m-updates"}}
+  {{template "jxzw-mband" dict "title" "完本佳作" "tag" "一口气看到大结局的安心之选。" "href" "/list/finished" "total" (index $t "finished") "novels" .RankFinished "tone" 6 "id" "jxzw-m-finished" "anchor" "finished"}}
   {{range $b := .HomeBlocks}}
-  {{template "jxzw-mband" dict "title" $b.title "tag" "书友手择，值得一读。" "href" "/#jxzw-m-lists" "novels" $b.novels "tone" 7 "id" (printf "jxzw-m-block-%v" $b.id)}}
+  {{template "jxzw-mband" dict "title" $b.title "tag" "书友手择，值得一读。" "href" $b.href "total" $b.total "novels" $b.novels "tone" 7 "id" (printf "jxzw-m-block-%v" $b.id)}}
   {{end}}
 
   <section class="mh-list-more" aria-labelledby="mh-list-more" id="jxzw-m-lists" data-anchor="lists">
     <header><h2 id="mh-list-more">更多书单</h2><a class="mh-list-all" href="/#jxzw-lists">全部书单<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a></header>
     <div class="mh-list-collections">
       {{range $b := .HomeBlocks}}
-      <a class="mh-list-collection" href="/#jxzw-lists">
+      <a class="mh-list-collection" href="{{$b.href}}">
         <span class="mh-list-stack" aria-hidden="true">
           {{range $j, $n := $b.novels}}{{if lt $j 3}}{{if isLocalCover $n.cover}}<img src="{{coverSrc $n.id $n.cover}}" sizes="60px" alt="{{$n.title}}封面" class="mh-list-cover" width="240" height="320" loading="lazy" decoding="async">{{else}}<span class="mh-list-cover jxzw-gcover {{gcls $n.cover}}">{{title0 $n.title}}</span>{{end}}{{end}}{{end}}
         </span>
@@ -143,7 +145,7 @@
     <header class="rl-lead">
       <h2><a href="{{.href}}">{{.title}}</a></h2>
       <p>{{.tag}}</p>
-      <a class="rl-all" href="{{.href}}">全部 {{len .novels}} 本 →</a>
+      <a class="rl-all" href="{{.href}}">全部 {{if .total}}{{.total}}{{else}}{{len .novels}}{{end}} 本 →</a>
     </header>
     <div class="rl-cards">
       {{range $i, $n := .novels}}{{if lt $i 3}}
@@ -170,7 +172,7 @@
 <section class="mh-list-band" data-layout="cards" data-tone="{{$tone}}"{{if .id}} id="{{.id}}"{{end}}{{if .anchor}} data-anchor="{{.anchor}}"{{end}} aria-labelledby="mh-list-{{$tone}}">
   <header class="mh-list-band-head">
     <h2 id="mh-list-{{$tone}}">{{.title}}</h2>
-    <a class="mh-list-all" aria-label="{{.title}}，全部 {{len .novels}} 本" href="{{.href}}">全部 {{len .novels}} 本<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+    <a class="mh-list-all" aria-label="{{.title}}，全部 {{if .total}}{{.total}}{{else}}{{len .novels}}{{end}} 本" href="{{.href}}">全部 {{if .total}}{{.total}}{{else}}{{len .novels}}{{end}} 本<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
     <p>{{.tag}}</p>
   </header>
   <div class="mh-list-cards" data-sheet="true">

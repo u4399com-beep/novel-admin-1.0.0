@@ -418,6 +418,7 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 func init() {
 	register("GET", "/", func(w http.ResponseWriter, r *http.Request, _ map[string]string) { handleWebHome(w, r) })
 	register("GET", "/category/{id}", handleWebCategory)
+	register("GET", "/list/{kind}", handleWebList) // R145: 首页角标「全部 N 本」真实落点（频道全集分页页）
 	register("GET", "/book/{id}", handleWebBook)
 	register("GET", "/book/{id}/toc", handleWebToc)
 	register("GET", "/chapter/{id}", handleWebChapter)

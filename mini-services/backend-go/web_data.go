@@ -373,6 +373,9 @@ func handleWebHome(w http.ResponseWriter, r *http.Request) {
 	data["RankUpdates"] = rankUpdates
 	data["RankFinished"] = rankFinished
 	data["Stats"] = gatherHomeStats()
+	// R145: 六频道全集总数（首页角标「全部 N 本」与 /list/<kind> 落点页「共 N 本」同源）——
+	// 必须先于 gatherHomeBlocks 写入（区块角标读同一份总数）
+	data["ListTotals"] = webListTotals()
 	data["HomeBlocks"] = gatherHomeBlocks(data) // Task 30-a: homeConfig 按请求站点档案
 
 	s := settingsFromData(data)
@@ -419,11 +422,35 @@ func gatherHomeBlocks(data map[string]any) []map[string]any {
 			continue
 		}
 		novels := homeBlockNovels(source, count)
+		// R145: 角标「全部 N 本」真实落点——href/total 与首页横带同源（webListTotals/cat 计数），
+		// 无对应频道页的 source 留空 href（模板侧不渲染角标，不造假链接）
+		href, total := homeBlockTarget(source, data)
 		out = append(out, map[string]any{
 			"id": id, "title": title, "source": source, "count": count, "novels": novels,
+			"href": href, "total": total,
 		})
 	}
 	return out
+}
+
+// homeBlockTarget 区块来源 → 角标落点（href + 全集总数）：latest/hot/featured → /list/<kind>
+// （R145 频道页，总数取 webListTotals）；cat:<id> → /category/<id>（总数即时 COUNT）；
+// 其余来源 → 空串（无真实落点不渲染角标）。
+func homeBlockTarget(source string, data map[string]any) (string, int64) {
+	switch {
+	case source == "latest" || source == "hot" || source == "featured":
+		totals, _ := data["ListTotals"].(map[string]int64)
+		return "/list/" + source, totals[source]
+	case strings.HasPrefix(source, "cat:"):
+		cid, err := strconv.Atoi(strings.TrimPrefix(source, "cat:"))
+		if err != nil || cid <= 0 {
+			return "", 0
+		}
+		var total int64
+		_ = queryOne(`SELECT COUNT(*) FROM "Novel" WHERE "categoryId" = ?`, []any{&total}, int64(cid))
+		return "/category/" + strconv.Itoa(cid), total
+	}
+	return "", 0
 }
 
 // homeBlockNovels 按来源取书：latest | hot | featured | cat:<id>
