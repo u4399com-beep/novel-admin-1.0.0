@@ -1,6 +1,6 @@
 {{/* jiuxiaozw 阅读页：1:1 复刻 /book/:bid/:cid 分页阅读器。
 reader-pages-root 变量系统（米色纸 #dbc49e/墨 #382b19/面板 #faf3e5）+ data-paper 纹理 + reader-rail 工具栏 + reader-status-bottom 进度。
-分页由 jiuxiaozw.js 接管（CSS columns + translateX）；触屏垂直滑动翻页（上滑下一页/下滑上一页，reader-page-preview 影子层跟手，与原站 data-moving=Y 同机制）；JS 失效时 data-reader-ready="false" 走原站同款滚动兜底。
+分页由 jiuxiaozw.js 接管（CSS columns + translateX）；四向滑动翻页（上/左滑下一页、下/右滑上一页，reader-page-preview 影子层跟手 + data-moving=X/Y 影子特效，与原站同机制）；JS 失效时 data-reader-ready="false" 走原站同款滚动兜底。
 设置面板（字号/行距/纸色）为站点客户端组件的等价实现，变量口径与其 reader-panel 一致。 */}}
 {{define "content"}}{{$c := .Chapter}}{{$n := .Novel}}
 <div class="reader-pages-root" data-dark="false" data-mode="horizontal" data-reader-ready="false" data-reading-position="0" style="--reader-paper:#dbc49e;--reader-ink:#382b19;--reader-panel:#faf3e5;--reader-width:1000px;--reader-paragraph-gap:0.72em">
