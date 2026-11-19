@@ -5414,3 +5414,20 @@ Stage Summary:
 - 一键安装（R137⑥）：restart 脚本 engine.env 缺口闭环（R110 教训最后一块拼图：手工重启路径）
 - 遗留清理（R137①）：R139 两项移交全部闭环（admin 缓存页核验完整/TXT 通道实证）+ R142 移交 cloak 诚实留档 + jiuxiaozw 移动端溢出修复
 - 移交下一轮：①PAT 轮换（用户侧，第 13 次提醒：ghp_*** 务必去 GitHub 吊销换新）②cloak chromium 源站（cloakbrowser.dev）恢复后补下载复验过盾通道 ③iqxsw 单站吞吐已到合规上限，如需再提速可选：规则 proxy 字段补优质代理出口启用分桶（免费公共代理 20-50s 延迟反而拖慢，需先测质量）④translatewarm 预热覆盖面（当前 zh-Hant/zh-HK，en/ja/ko LLM 成本闸维持按需）
+
+Task ID: R144
+Agent: Z.ai Code (main)
+Task: 「还有就是logo位置显示的不对。」
+
+Work Log:
+- 【第 25 次沙箱重置自愈（开局）】R143 提交在本地未推送（ahead 1）已随本轮补推；bin 打回 R141 旧版（mtime 11-18 16:14，strings 无 jiuxiaozw）→ 整站回退 _fallback 主题（用户看到的错版）；Go 1.22.12 阿里镜像重装 + backend/scraper-go 双重编（goproxy.cn 重下模块）；restart-backend.sh/restart-scraper.sh 重建（scraper 版带 engine.env）；stealth venv 阿里镜像重建+run.sh 拉起（cloakBinary=false 维持诚实上报，iv8=true）；translate :3032 五语种全绿（opencc+llm true）。
+- 【用户报告根修①：主题回退】旧 bin 不识 activeTheme='jiuxiaozw' → fallback 渲染（fb-logo 纯文字无图）。重建 bin 后 jiuxiaozw 主题回归（暖纸 #f5f1e8 + dn-brand）。
+- 【用户报告根修②：icon.png 截断（R142 遗留缺陷）】git 内 icon.png 1360B（PNG 头有效 IDAT 截断→浏览器渲染细红条，视觉上 logo 消失/位置不对）；原站 icon 15918B（192x178 红底白玖印章）。curl_chrome116 通道重装并重取；R142 本地化资产全审计：jiutian-list-serif-black.woff 85400B/jiutian-ranking-sans-medium.woff2 3640B/reader-paper-v2.webp 57548B/jiuxiaozw.js 17972B magic 全对，仅 icon 一处截断。
+- 【缓存穿透加固】icon 四处引用（_shared favicon+dn-brand、book.html book-home-logo、home.html mh-logo）补 ?v={{staticVer}}（staticVer 进程启动毫秒戳，重启即变）——用户浏览器 max-age=3600 旧坏图缓存立即失效；server 端 /static/icon.png 200 15918B 实证。
+- 【E2E（agent-browser 双会话）】旧会话缓存坏图仍显示（复现用户所见）→ 新会话全绿：桌面首页 dn-brand 30x30 红玖+站名 @83,17/移动首页 mh-logo 30x30 @16,17（CSS 收敛尺寸，原站同款）/移动书页浮动条 back+logo 24x24 @37,18 + sw=390 零溢出/桌面书页 book-home-actions display:none 为原站 1:1 正确形态（ROOT 规则隐藏 + max-width:767px 才 flex，桌面由 dn 导航承担 logo）——与原站书页 HTML 结构比对（book-home-back+book-home-link 24x24 完全一致）；阅读器 readerRoot 渲染正常；console 零错误。
+- 【质量闸】backend/scraper 全量源码态 bin 原子提交（R125 教训执行）；无 Go 源码改动（模板+静态资产+bin）；推 origin/main 79934a7（R143+R144 双提交）。
+
+Stage Summary:
+- 用户报告「logo 位置不对」双根因闭环：沙箱重置 bin 回退主题 fallback（重编即愈）+ R142 icon.png 截断缺陷（原站图标替换+版本参数穿透缓存）
+- R142 遗留缺陷定性：素材下载截断漏检——CSS 有花括号平衡校验但二进制资产无完整性校验，后续抓站资产应加尺寸/魔数审计
+- 移交下一轮：①PAT 轮换（用户侧，第 14 次提醒：ghp_*** 务必去 GitHub 吊销换新）②cloak chromium（cloakbrowser.dev）源站恢复后补下载 ③爬虫舰队随新 bin 恢复自动爬坡，观察 iqxsw 车道爬坡与慢站观测日志是否符合 R143 预期形态
