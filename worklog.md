@@ -5449,3 +5449,23 @@ Work Log:
 Stage Summary:
 - 用户两连报闭环：首页角标数字=频道全集真实总数（与落点页同源）+ 角标为真实链接（/list/<kind> 频道全集分页页，原站 /sim/lists/<slug> 的同位替代）——「子集+总数+全集页」三件套与原站语义完全对齐
 - 移交下一轮：①PAT 轮换（用户侧，第 15 次提醒）②更多书单「全部书单 →」头链仍为页内锚点（无 lists 索引页；如需可后续加 /list 索引聚合页）③HomeBlocks 区块与固定横带同题重复（homeConfig 3 块 featured/hot/latest 与固定横带同名）——配置层既有行为，如嫌重复可在后台改区块标题或来源
+
+Task ID: R146
+Agent: Z.ai Code (main)
+Task: 「能不能设置一下，在首页显示的都要确定有封面图的，没图的不要在图文模块中显示。」
+
+Work Log:
+- 【双闸设计】用户指令口径「确定有封面图」= 本地封面文件真实存在 + 可解码 + 尺寸达标。展示侧（web_data.go）+ 写入侧（coversx.go）同尺寸口径（>=30x40）双闸闭环。
+- 【展示侧硬过滤（queryNovelListCovers）】超量取数（want*3 钳 24-48）→ hasCoverFile 过滤 → 原序截断 want 本；六首页列表（featured 12/hot 10/latest 14/rankClicks 10/rankUpdates 10/rankFinished 10）+ HomeBlocks 四来源（latest/hot/featured/cat:id 即时 COUNT 落点契约不变）全接入；不足如实少给（宁可空位不放假图，诚实原则）。hasCoverFile=os 存在性+Size>0+image.DecodeConfig 图像头尺寸门（全库扫出 17 张 376B 同款 1x1 跟踪图+15x22/20x26 微图，head-only 解码开销可忽略）。
+- 【写入侧尺寸下限（consumeCoverResponse）】源站热请求限流时下发 1x1/15x22 跟踪图占位——旧解码校验只拒非图不拒微图，force 重下会用占位图覆盖既有好封面。加 w<30||h<40 拒入库（"占位图尺寸不达标"），实战首日即拦 id=34。scraper-go 无封面写路径，backend 为唯一写入方=单咽喉根治。
+- 【空态补标封面优先】ensureFeaturedBootstrap/ensureHotBootstrap 两阶段：先挑 cover LIKE '/covers/%' 且 hasCoverFile 的书按字数补标，不足再按原口径补齐——DB 重建/沙箱回收后首页即刻有图。
+- 【存量治理】17 张 1x1 微图删除（fetchAndStoreCover 幂等复用 size>0 即跳过——不删永远挡住重下）；缺文件书经 backfillBrokenCoverLocal（boot 自愈链）重置渐变 token → backfill-covers 7 轮修复 118 本（limit=100/轮 40s 预算；失败多为死图床 404；17 本重置书 3 本已重下真图、14 本排队随 30min 巡检收敛，写入门保证占位图永不落库）。
+- 【测试夹具随门升级】tinyJPEGBytes 4x3→60x80（新尺寸门之上的最小合法封面形态；coverMaxSide=512 无缩放路径断言不变），5 个封面下载测试（ConsumeCoverResponse/FetchCoverWithFallback×2/CoverFallbackDeterministic/ConcurrentTmpSafety）随夹具全绿。
+- 【E2E（agent-browser）】首页 gradientInHome=0（桌面/移动全模块零渐变占位）、hero 6 图全真、badge「全部 8 本」契约不变；排查插曲：负 Y 坐标 broken 实证为瞬时 scrollTo 跳页使中段 lazy 图未进 IntersectionObserver 触发带的测量伪影（滚动到位全数加载非缺陷）+ 298.jpg 15x22→95x135 实证源站限流占位图被巡检周期性重下（写入侧门已根治）。
+- 【质量闸】全量 go test 65.5s PASS；staticcheck/vet/gofmt 零输出；backend 重启 7664；推 origin/main 1404b8c。
+- 【坑存档】Edit/MultiEdit 工具落盘会把 TAB 归一为空格——web_data.go 混合缩进区多次编辑冲突，最终全部改走 python 字节级替换（断言保护+原子写）+gofmt 收口；agent-browser eval 不支持 async promise（{} 返回），用两步同步探针（window 全局中转）；瞬时 scrollTo 会跳过中段 lazy 图加载（IntersectionObserver 无中间帧），验证 lazy 图需分段滚动。
+
+Stage Summary:
+- 首页图文模块封面硬过滤交付：展示侧六列表+HomeBlocks 全接入（文件存在+可解码+>=30x40 三重门槛）、写入侧单咽喉拒占位图、空态补标封面优先、17 张存量微图清理+118 本封面补抓
+- 首页视觉契约：真实封面图 100%（宁缺毋假）；/list 频道页保持全集口径（无图书走渐变块，角标数字=全集总数不变）
+- 移交下一轮：①PAT 轮换（用户侧，第 16 次提醒：ghp_*** 务必去 GitHub 吊销换新）②14 本重置书封面随巡检收敛（写入门已保证占位图不落库，若源站持续限流可按需扩 proxy 出口）③其余主题（非 jiuxiaozw）首页如需同款硬过滤可复用 queryNovelListCovers（当前仅 jiuxiaozw 默认主题接入）
