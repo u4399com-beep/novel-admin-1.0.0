@@ -5487,3 +5487,17 @@ Work Log:
 Stage Summary:
 - 阅读页翻页交互完整交付：四向滑动（上下左右）+ 全路径翻页特效（滑动跟手/热区/键盘统一贝塞尔平移+高度阴影）+ 章界橡皮筋/强甩跨章 + 触摸/鼠标双通道，机制与原站 data-moving=X/Y+preview 钩子 1:1
 - 移交下一轮：①PAT 轮换（用户侧，第 17 次提醒：ghp_*** 务必去 GitHub 吊销换新）②阅读进度跨会话记忆未实现（原站有断点续读；如需可加 localStorage 恢复 cur）③如需"仿真卷页"级特效可另开轮评估（当前平移+阴影与原站行为对齐）
+
+Task ID: R148
+Agent: Z.ai Code (main)
+Task: 「阅读页在pc模式下要显示全，或跟随后台分页设置。」+「八道横行这本书的内容简介有问题，修一下。」+ 沙箱整机重置后全环境重建
+
+Work Log:
+- 【沙箱重置恢复（本轮前置硬工程）】/tmp 与 gitignored 运行时目录全灭（Go 工具链、db/、restart 脚本）：①重装 Go 1.22.12 至 /tmp/go（aliyun 镜像）②db/ 目录重建（ensure-services.sh R104 注释即历史同款 case）+ seed 自动播种（15 规则/9 分类/homeConfig）③ensure-services 拉起 backend+scraper（Bash 工具会话清理会连坐 nohup 进程 → 改 setsid 完全脱离进程组）④PATCH /api/settings 激活 jiuxiaozw 主题⑤库空态自动引导任务自动跑起（16 任务并发采库，书/章陆续到位）。坑存档：restart 脚本 pkill 模式 'backend-go/bin/backend-go' 匹配不到 './bin/backend-go' 相对路径 cmdline → 第二次重启静默失效（健康检查打到旧进程）——模式改 'bin/backend-go$' 双形态通吃；教训：重启后必须核对进程 lstart 而非只看 health ok。
+- 【R148a 简介第 9 噪声族「章节列表尾块」双侧截断】书 4/42（dzrjk 系）简介尾部拼入源站书页 h2 章节标题+章节清单（collapse 后「…鳞毛倮羽介。 章节列表 第1章 黎国巡警 第2章 命数五分 …」）。源页取证：m.dzrjk.com 书页/列表卡 intro 均为服务端截断形态（<b... 残尾），两处都给不出长简介——污染来自某次抓取变体，无从复现故走闭环修复：backend introx.go introChapterListRE（双锚点=UI 标签[章节列表/章节目录]+紧随章节条目 第N[数字集合同 reChapterText 口径][章节回卷]，缺一不截防误伤叙事；置于相关词块提取**之前**防「第N章 X」混入 pSEO 词池）+ scraper-go reDescChapterList（引擎挡新数据，清单无转换价值故引擎侧直截——「相关小说仍不引擎侧截」的 Task 41 分工不变）。存量 2 行由 getDB once 幂等回填重启自动洗净（截断后与源站列表卡逐字一致），全库扫描仅 2 行命中零误伤；backend 全量 test 61s + scraper 51s 全绿，独立提交推送 ae7853d。
+- 【R148 阅读页双模式（PC 全文/后台设置）】发现原站 CSS 本就内建 data-mode=scroll 滚动模式全套钩子（text-window 即滚动容器 overflow:hidden auto、columns 原生流式、page-window 全出血、surface 透明、scrollbar 薄条）+PC @media(min-width:1024px) 媒体块（--reader-column/48px 边距/rail-space 96px）——原站 PC 上 horizontal 仍分页、scroll 才是全文，本实现即补「PC 默认走 scroll」。SiteSetting 新列 readerMode 三态：auto=跟随设备（默认，PC 全文滚动/触屏分页）、scroll=全端全文、page=全端分页；schema+db.go 幂等加列（DQS 防御同先例）、api_settings GET 归一化/PATCH 白名单宽松写、web_data Site+adminSettings 透传（站群 SiteSite 无此列恒 auto）。jiuxiaozw.js 权威决策一次定终身：hover+fine 主指针 OR 宽视口 ≥1024（headless 无指针媒体特征全 false 实测 → 加宽度兜底；平板横屏滚动同样自然）；scroll 分支=顶栏常开（PC 无中央热区呼出）+scroll 被动进度（「全文」+滚动百分比）+左右键=章导航（上下键交原生滚动）+清分页内联样式；四向手势/热区/翻页特效整模块限 horizontal 分支，两条路径互不干扰。CSS 尾部补配：热区+影子层滚动模式豁免、正文宽度帽（PC @media 帽 --reader-column+margin auto+48px 内衬对齐原站 scroll-window>* 层——修实测正文压白翼+贴纸边双缺陷；手机强制 scroll 全宽 20px 内衬，因 --reader-column 仅 PC 媒体块定义）。chapter.html data-reader-mode-setting 透传；admin.html 站点基础卡 readerMode 下拉（三态中文说明）+admin.js 加载/保存接线。E2E 矩阵全绿：PC 1440 auto=scroll 全文+进度 0→100%+键盘 ArrowRight 章导航 21516→21517、iPhone 14 auto=horizontal 1/13+四向手势回归（上滑下一页/右滑上一页/中央热区顶栏开合）、page 强制 PC 分页（1/8+热区在位）、scroll 强制手机全文（10051/820 可滚），console 零 error/warn；gofmt/vet 零输出；推 origin/main e912a6b。
+- 【工具链坑存档】①Edit 工具写入会把整文件缩进规范化（tab→space），Go 文件编辑后必须 gofmt -w（本轮 introx/extract/api_settings/db/schema/web_data 六文件全中招，已全数清洗后 amend/重提交，commit diff 曾膨胀到 987+ 行）②bin/ 二进制是仓库受控产物（R127 预构建快速路径），重编后须随源码一并提交。
+
+Stage Summary:
+- 用户两项即时诉求闭环：①八道横行/神峰简介已洗净且未来数据双侧防再生；②阅读页 PC 默认显示全文，且后台「站点设置→站点基础→阅读页分页模式」可切跟随设备/全端全文/全端分页
+- 移交下一轮：①PAT 轮换（用户侧，第 18 次提醒：ghp_*** 务必去 GitHub 吊销换新）②db 重置后 bootstrap 采库仍在跑（16 任务），历史遗留 R145 首页角标双缺陷修复未开工③站群 SiteSite 如需独立 readerMode 可加列（当前恒 auto）④阅读进度跨会话记忆（R147 移交）仍未实现
