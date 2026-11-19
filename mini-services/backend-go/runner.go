@@ -14,28 +14,28 @@
 package main
 
 import (
-        "database/sql"
-        "fmt"
-        "log"
-        "net/http"
-        "net/url"
-        "os"
-        osexec "os/exec"
-        "path/filepath"
-        "strings"
-        "time"
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	osexec "os/exec"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
 const (
-        // runnerHeartbeatFile runner 心跳文件（startRunner 每轮刷新 mtime，runnerAliveRecent
-        // 判断存活；Task 58-b 合并 api_scrape_tasks.go 曾有的同值常量 runnerHeartbeatPath，
-        // 写入侧与读取侧共用单一定义防漂移）
-        runnerHeartbeatFile = "/tmp/scrape-runner-heartbeat"
-        runnerPollInterval  = 2 * time.Second
-        runnerEngineEvery   = 15
-        // runnerTSKillEvery TS runner 防复活护栏的低频执行周期（轮数）：15 轮×2s=30s 探引擎，
-        // 150 轮≈5 分钟清一次 TS runner（残余复活窗口 ≤5 分钟，与引擎互监护同数量级）
-        runnerTSKillEvery = 150
+	// runnerHeartbeatFile runner 心跳文件（startRunner 每轮刷新 mtime，runnerAliveRecent
+	// 判断存活；Task 58-b 合并 api_scrape_tasks.go 曾有的同值常量 runnerHeartbeatPath，
+	// 写入侧与读取侧共用单一定义防漂移）
+	runnerHeartbeatFile = "/tmp/scrape-runner-heartbeat"
+	runnerPollInterval  = 2 * time.Second
+	runnerEngineEvery   = 15
+	// runnerTSKillEvery TS runner 防复活护栏的低频执行周期（轮数）：15 轮×2s=30s 探引擎，
+	// 150 轮≈5 分钟清一次 TS runner（残余复活窗口 ≤5 分钟，与引擎互监护同数量级）
+	runnerTSKillEvery = 150
 )
 
 // tsRunnerPkillPattern TS 版采集 runner（scripts/worker-runner.ts，bun 进程）的 pkill 模式。
@@ -49,12 +49,12 @@ const tsRunnerPkillPattern = "worker-[r]unner.ts"
 // scraper-go 旧版互监护、手工误启。此处在 Go runner 启动时与心跳循环低频执行 pkill，
 // 确保任何环境以任何方式拉起的 TS runner 都会被清除。
 func killTSScrapeRunner() {
-        out, err := osexec.Command("pkill", "-f", tsRunnerPkillPattern).CombinedOutput()
-        if err == nil {
-                // pkill 命中至少一个进程时 exit 0：记一行日志到 stdout（进程日志）与任务无关
-                log.Printf("[backend-go-runner] TS runner 防复活护栏：已清除残留 worker-runner.ts 进程（pkill 输出 %d 字节）", len(out))
-        }
-        // exit 1 = 无匹配进程（常态），静默
+	out, err := osexec.Command("pkill", "-f", tsRunnerPkillPattern).CombinedOutput()
+	if err == nil {
+		// pkill 命中至少一个进程时 exit 0：记一行日志到 stdout（进程日志）与任务无关
+		log.Printf("[backend-go-runner] TS runner 防复活护栏：已清除残留 worker-runner.ts 进程（pkill 输出 %d 字节）", len(out))
+	}
+	// exit 1 = 无匹配进程（常态），静默
 }
 
 var runnerHTTPClient = &http.Client{Timeout: 8 * time.Second}
@@ -67,11 +67,11 @@ var runnerHeldPrev = map[int]bool{}
 // R133 per-host 任务并发的记账键。无地址/解析失败返回空串=该任务不受准入约束
 // （保持旧派发行为，不因脏数据卡死舰队）。
 func ruleHostOf(siteURL string) string {
-        u, err := url.Parse(strings.TrimSpace(siteURL))
-        if err != nil || u.Host == "" {
-                return ""
-        }
-        return strings.ToLower(u.Host)
+	u, err := url.Parse(strings.TrimSpace(siteURL))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return strings.ToLower(u.Host)
 }
 
 // recategorizeOne 未分类书慢速归类（每轮 0-1 本）。返回是否处理了一本。
@@ -80,68 +80,68 @@ func ruleHostOf(siteURL string) string {
 var recatOffset int
 
 func recategorizeOne() bool {
-        var bookID int
-        var title, description string
-        err := queryOne(
-                `SELECT n.id, n.title, n.description FROM Novel n
+	var bookID int
+	var title, description string
+	err := queryOne(
+		`SELECT n.id, n.title, n.description FROM Novel n
                  JOIN Category c ON n.categoryId = c.id
                  WHERE c.name = ? ORDER BY n.id LIMIT 1 OFFSET ?`,
-                []any{&bookID, &title, &description},
-                FALLBACK_CATEGORY, recatOffset,
-        )
-        if err != nil {
-                recatOffset = 0 // 游标越界（表缩小/全处理）：回到队首
-                err = queryOne(
-                        `SELECT n.id, n.title, n.description FROM Novel n
+		[]any{&bookID, &title, &description},
+		FALLBACK_CATEGORY, recatOffset,
+	)
+	if err != nil {
+		recatOffset = 0 // 游标越界（表缩小/全处理）：回到队首
+		err = queryOne(
+			`SELECT n.id, n.title, n.description FROM Novel n
                  JOIN Category c ON n.categoryId = c.id
                  WHERE c.name = ? ORDER BY n.id LIMIT 1`,
-                        []any{&bookID, &title, &description},
-                        FALLBACK_CATEGORY,
-                )
-                if err != nil {
-                        return false // 未分类类不存在或无书
-                }
-        }
-        recatOffset++
-        // Task 28-b: 改走非缓存归类路径。旧代码 canonicalCategoryWithHint 会把 LLM 失败期
-        // （401/冷却）的 FALLBACK 结果永久写入 hint 缓存（catCache 无过期机制），LLM 凭证
-        // 恢复后这批书仍命中缓存 → 永远 return false，队列空转不收敛。改为：本地关键词
-        // （标题+简介 240 字）优先，残余直接 llmClassifyBook（串行+30s 冷却治理在 llm.go），
-        // 负结果不落缓存，LLM 恢复后下一轮即可自然归类。
-        canon := classifyBookLocal(title, description)
-        if canon == "" {
-                canon = llmClassifyBook(title, description)
-        }
-        if canon == FALLBACK_CATEGORY || canon == "" {
-                return false // LLM 冷却中/推断未果：本轮跳过
-        }
-        // 分类 upsert（唯一冲突回读）。
-        // 【23-a 修复死代码 Bug】原 INSERT 写了不存在的 createdAt/updatedAt 列（Category 表只有
-        // id/name/sort 三列），导致此 INSERT 一直失败、慢速 LLM 重归类从未生效 → 改为 (name, sort)。
-        var catID int64
-        rowErr := queryOne(`SELECT id FROM Category WHERE name = ?`, []any{&catID}, canon)
-        if rowErr != nil {
-                id, insErr := execRetryReturningID(
-                        `INSERT INTO Category (name, sort) VALUES (?, 0)`,
-                        canon,
-                )
-                if insErr != nil {
-                        // 并发竞态：回读
-                        if rErr := queryOne(`SELECT id FROM Category WHERE name = ?`, []any{&catID}, canon); rErr != nil {
-                                return false
-                        }
-                } else {
-                        catID = id
-                }
-        }
-        if _, err := exec(`UPDATE Novel SET categoryId = ?, updatedAt = ? WHERE id = ?`, catID, nowMillis(), bookID); err != nil {
-                return false
-        }
-        if recatOffset > 0 {
-                recatOffset-- // 成功离队：游标回退一格，下轮从同位置继续（队列已前移）
-        }
-        log.Printf("[backend-go-runner] recategorize 《%s》→ %s", truncateRunes(title, 24), canon)
-        return true
+			[]any{&bookID, &title, &description},
+			FALLBACK_CATEGORY,
+		)
+		if err != nil {
+			return false // 未分类类不存在或无书
+		}
+	}
+	recatOffset++
+	// Task 28-b: 改走非缓存归类路径。旧代码 canonicalCategoryWithHint 会把 LLM 失败期
+	// （401/冷却）的 FALLBACK 结果永久写入 hint 缓存（catCache 无过期机制），LLM 凭证
+	// 恢复后这批书仍命中缓存 → 永远 return false，队列空转不收敛。改为：本地关键词
+	// （标题+简介 240 字）优先，残余直接 llmClassifyBook（串行+30s 冷却治理在 llm.go），
+	// 负结果不落缓存，LLM 恢复后下一轮即可自然归类。
+	canon := classifyBookLocal(title, description)
+	if canon == "" {
+		canon = llmClassifyBook(title, description)
+	}
+	if canon == FALLBACK_CATEGORY || canon == "" {
+		return false // LLM 冷却中/推断未果：本轮跳过
+	}
+	// 分类 upsert（唯一冲突回读）。
+	// 【23-a 修复死代码 Bug】原 INSERT 写了不存在的 createdAt/updatedAt 列（Category 表只有
+	// id/name/sort 三列），导致此 INSERT 一直失败、慢速 LLM 重归类从未生效 → 改为 (name, sort)。
+	var catID int64
+	rowErr := queryOne(`SELECT id FROM Category WHERE name = ?`, []any{&catID}, canon)
+	if rowErr != nil {
+		id, insErr := execRetryReturningID(
+			`INSERT INTO Category (name, sort) VALUES (?, 0)`,
+			canon,
+		)
+		if insErr != nil {
+			// 并发竞态：回读
+			if rErr := queryOne(`SELECT id FROM Category WHERE name = ?`, []any{&catID}, canon); rErr != nil {
+				return false
+			}
+		} else {
+			catID = id
+		}
+	}
+	if _, err := exec(`UPDATE Novel SET categoryId = ?, updatedAt = ? WHERE id = ?`, catID, nowMillis(), bookID); err != nil {
+		return false
+	}
+	if recatOffset > 0 {
+		recatOffset-- // 成功离队：游标回退一格，下轮从同位置继续（队列已前移）
+	}
+	log.Printf("[backend-go-runner] recategorize 《%s》→ %s", truncateRunes(title, 24), canon)
+	return true
 }
 
 // engineEnvRootForTest R116: repoRoot 注入点（测试隔离；nil=用真实 repoRoot）。
@@ -153,73 +153,73 @@ var engineEnvRootForTest func() string
 // 早期部署的 SCRAPE_PROXY_BUCKET_HOSTS 只存在于手工启动命令行——引擎闪断自愈后分桶
 // 静默失效回单槽）。值域白名单防注入：key [A-Z_]+，value [A-Za-z0-9.,:_/-]。
 func engineEnvPrefix() string {
-        root := repoRoot()
-        if engineEnvRootForTest != nil {
-                root = engineEnvRootForTest()
-        }
-        data, err := os.ReadFile(filepath.Join(root, "scripts", "engine.env"))
-        if err != nil {
-                return ""
-        }
-        parts := make([]string, 0, 4)
-        for _, line := range strings.Split(string(data), "\n") {
-                line = strings.TrimSpace(line)
-                if line == "" || strings.HasPrefix(line, "#") {
-                        continue
-                }
-                k, v, ok := strings.Cut(line, "=")
-                k, v = strings.TrimSpace(k), strings.TrimSpace(v)
-                if !ok || k == "" || v == "" {
-                        continue
-                }
-                if !isPlainASCIIRun(k) || !isPlainASCIIRun(v) {
-                        continue // 含空格/引号/控制符等一律拒用（防注入，宁可缺配）
-                }
-                parts = append(parts, k+"="+v)
-        }
-        if len(parts) == 0 {
-                return ""
-        }
-        return "env " + strings.Join(parts, " ") + " "
+	root := repoRoot()
+	if engineEnvRootForTest != nil {
+		root = engineEnvRootForTest()
+	}
+	data, err := os.ReadFile(filepath.Join(root, "scripts", "engine.env"))
+	if err != nil {
+		return ""
+	}
+	parts := make([]string, 0, 4)
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if !ok || k == "" || v == "" {
+			continue
+		}
+		if !isPlainASCIIRun(k) || !isPlainASCIIRun(v) {
+			continue // 含空格/引号/控制符等一律拒用（防注入，宁可缺配）
+		}
+		parts = append(parts, k+"="+v)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "env " + strings.Join(parts, " ") + " "
 }
 
 // isPlainASCIIRun 白名单字符判定（env 前缀拼接安全集）。
 func isPlainASCIIRun(s string) bool {
-        for _, r := range s {
-                switch {
-                case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-                case r == '.' || r == ',' || r == ':' || r == '_' || r == '-' || r == '/':
-                default:
-                        return false
-                }
-        }
-        return true
+	for _, r := range s {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r == '.' || r == ',' || r == ':' || r == '_' || r == '-' || r == '/':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ensureEngine 引擎互监护：不可达则杀残留后 setsid 完全托孤拉起 scraper-go。
 // Task 26-d：BACKEND_ENGINE_URL/PORT 指向非默认引擎时只观测不杀不拉（自定义引擎进程
 // 的拉起方式未知，pkill 'scraper-[g]o.bin' 会误杀生产引擎且无法正确重拉）。
 func ensureEngine() {
-        resp, err := runnerHTTPClient.Get(engineBaseURL() + "/api/strategies")
-        if err == nil {
-                _ = resp.Body.Close()
-                if resp.StatusCode >= 200 && resp.StatusCode < 500 {
-                        return // 引擎存活（40x 也说明进程在）
-                }
-        }
-        if !isDefaultEngineURL() {
-                log.Printf("[backend-go-runner] 自定义引擎 %s 不可达（仅观测，不执行 pkill/拉起）", engineBaseURL())
-                return
-        }
-        log.Println("[backend-go-runner] engine 不可达，重新拉起")
-        // 两步走：先 pkill（[g] 防自匹配），再 setsid 托孤拉起（Task 13 教训：pkill 与 spawn
-        // 放同一 bash -c 时 pkill -f 会匹配到自身命令行导致自杀）
-        // Task 33: pkill 同步等待完成后再 spawn（消除 pkill/spawn 异步竞态）
-        // R90: 引擎目录改为 repoRoot() 推断（任意部署路径自适应；沙箱内推出值与旧硬编码一致）
-        // R116: spawn 注入 scripts/engine.env 前缀（engineEnvPrefix），分桶 env 不再丢失
-        engineDir := filepath.Join(repoRoot(), "mini-services", "scraper-go")
-        _ = runBashSync("pkill -f 'scraper-[g]o.bin' 2>/dev/null; true", 5*time.Second)
-        _ = runBashSync(fmt.Sprintf("cd %q && setsid nohup %s./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &", engineDir, engineEnvPrefix()), 3*time.Second)
+	resp, err := runnerHTTPClient.Get(engineBaseURL() + "/api/strategies")
+	if err == nil {
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+			return // 引擎存活（40x 也说明进程在）
+		}
+	}
+	if !isDefaultEngineURL() {
+		log.Printf("[backend-go-runner] 自定义引擎 %s 不可达（仅观测，不执行 pkill/拉起）", engineBaseURL())
+		return
+	}
+	log.Println("[backend-go-runner] engine 不可达，重新拉起")
+	// 两步走：先 pkill（[g] 防自匹配），再 setsid 托孤拉起（Task 13 教训：pkill 与 spawn
+	// 放同一 bash -c 时 pkill -f 会匹配到自身命令行导致自杀）
+	// Task 33: pkill 同步等待完成后再 spawn（消除 pkill/spawn 异步竞态）
+	// R90: 引擎目录改为 repoRoot() 推断（任意部署路径自适应；沙箱内推出值与旧硬编码一致）
+	// R116: spawn 注入 scripts/engine.env 前缀（engineEnvPrefix），分桶 env 不再丢失
+	engineDir := filepath.Join(repoRoot(), "mini-services", "scraper-go")
+	_ = runBashSync("pkill -f 'scraper-[g]o.bin' 2>/dev/null; true", 5*time.Second)
+	_ = runBashSync(fmt.Sprintf("cd %q && setsid nohup %s./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &", engineDir, engineEnvPrefix()), 3*time.Second)
 }
 
 // runBashSync 同步执行 bash 命令（Task 33：限时等待完成，超时放后台收敛）。
@@ -232,22 +232,22 @@ func ensureEngine() {
 // 出现「listening 后无任何退出痕迹消失」的实证）。spawn 本身立即返回（bash 内 setsid &），
 // 同步化开销可忽略。
 func runBashSync(cmd string, timeout time.Duration) error {
-        c := osexec.Command("bash", "-c", cmd)
-        c.Stdin = nil
-        c.Stdout = nil
-        c.Stderr = nil
-        if err := c.Start(); err != nil {
-                return err
-        }
-        done := make(chan error, 1)
-        go func() { done <- c.Wait() }()
-        select {
-        case err := <-done:
-                return err
-        case <-time.After(timeout):
-                go func() { <-done }() // R131（staticcheck S1005）：裸接收即排空，无需空白赋值；超时后收尾防 zombie
-                return nil
-        }
+	c := osexec.Command("bash", "-c", cmd)
+	c.Stdin = nil
+	c.Stdout = nil
+	c.Stderr = nil
+	if err := c.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(timeout):
+		go func() { <-done }() // R131（staticcheck S1005）：裸接收即排空，无需空白赋值；超时后收尾防 zombie
+		return nil
+	}
 }
 
 // ==================== 限流类熔断的有界自动恢复（Task 33） ====================
@@ -262,57 +262,57 @@ func runBashSync(cmd string, timeout time.Duration) error {
 // 非限流类熔断（封禁/不可达）不自动恢复：那类站点需要人工介入排查。
 
 const (
-        autoResumeSilentMs   = 3 * 60 * 1000 // 熔断后静默等待（引擎冷却 60s × 3 冗余）
-        autoResumeMaxPerTask = 4             // 每任务自动恢复上限（进程生命周期内）
+	autoResumeSilentMs   = 3 * 60 * 1000 // 熔断后静默等待（引擎冷却 60s × 3 冗余）
+	autoResumeMaxPerTask = 4             // 每任务自动恢复上限（进程生命周期内）
 
-        // R131 引擎不可达零预算通道参数：静默 60s（引擎重启窗口量级，远短于源站冷却）
-        // + 每轮至多 10 条（重启风暴一次性全回）
-        engineDownResumeSilentMs = 60 * 1000
-        engineDownResumePerSweep = 10
+	// R131 引擎不可达零预算通道参数：静默 60s（引擎重启窗口量级，远短于源站冷却）
+	// + 每轮至多 10 条（重启风暴一次性全回）
+	engineDownResumeSilentMs = 60 * 1000
+	engineDownResumePerSweep = 10
 )
 
 var autoResumeAttempts = map[int]int{}
 
 func autoResumePausedTasks() {
-        var ids []int
-        err := queryList(
-                `SELECT "id" FROM "ScrapeTask"
+	var ids []int
+	err := queryList(
+		`SELECT "id" FROM "ScrapeTask"
                  WHERE "status" = 'paused' AND "message" LIKE '%限流%软拦截%'
                    AND "updatedAt" <= ?`,
-                func(rows *sql.Rows) error {
-                        var id int
-                        if err := rows.Scan(&id); err != nil {
-                                return err
-                        }
-                        ids = append(ids, id)
-                        return nil
-                }, nowMillis()-autoResumeSilentMs)
-        if err != nil {
-                return
-        }
-        for _, id := range ids {
-                if autoResumeAttempts[id] >= autoResumeMaxPerTask {
-                        continue
-                }
-                autoResumeAttempts[id]++
-                n := autoResumeAttempts[id]
-                var logv string
-                logv = readTaskLog(int64(id)) // R102-b: 日志拆表读（含主表旧列回退）
-                line := "[" + runTs() + "] 自动恢复（限流冷却结束）：第 " + itoa(n) + "/" + itoa(autoResumeMaxPerTask) + " 次重新入队（车道降档经验已延续，缺失正文自动续传）"
-                if logv != "" {
-                        logv += "\n"
-                }
-                logv = lastLines(logv+line, MAX_LOG_LINES)
-                res, err := exec(
-                        `UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（限流冷却结束），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
-                        nowMillis(), id)
-                if err == nil {
-                        if cnt, _ := res.RowsAffected(); cnt > 0 {
-                                _ = writeTaskLog(int64(id), logv) // R102-b: 日志落拆表
-                                log.Printf("[backend-go-runner] task %d 限流熔断自动恢复（第 %d 次）", id, n)
-                        }
-                }
-        }
+		func(rows *sql.Rows) error {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+			return nil
+		}, nowMillis()-autoResumeSilentMs)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		if autoResumeAttempts[id] >= autoResumeMaxPerTask {
+			continue
+		}
+		autoResumeAttempts[id]++
+		n := autoResumeAttempts[id]
+		var logv string
+		logv = readTaskLog(int64(id)) // R102-b: 日志拆表读（含主表旧列回退）
+		line := "[" + runTs() + "] 自动恢复（限流冷却结束）：第 " + itoa(n) + "/" + itoa(autoResumeMaxPerTask) + " 次重新入队（车道降档经验已延续，缺失正文自动续传）"
+		if logv != "" {
+			logv += "\n"
+		}
+		logv = lastLines(logv+line, MAX_LOG_LINES)
+		res, err := exec(
+			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（限流冷却结束），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+			nowMillis(), id)
+		if err == nil {
+			if cnt, _ := res.RowsAffected(); cnt > 0 {
+				_ = writeTaskLog(int64(id), logv) // R102-b: 日志落拆表
+				log.Printf("[backend-go-runner] task %d 限流熔断自动恢复（第 %d 次）", id, n)
+			}
+		}
+	}
 }
 
 // autoResumeEngineTasks R131: 引擎不可达形态 paused 的健康门控零预算恢复通道。
@@ -325,52 +325,52 @@ func autoResumePausedTasks() {
 // 每轮至多 10 条（重启风暴一次性全回，健康引擎下无踩踏风险）。
 // 匹配词表：pausedEngineDownMsg 的「引擎不可达」字样（契约见 worker.go 常量注）。
 func autoResumeEngineTasks() {
-        // 引擎探活门控：不可达时本轮跳过（任务继续静默，下轮再试）
-        resp, err := runnerHTTPClient.Get(engineBaseURL() + "/api/strategies")
-        if err != nil {
-                return
-        }
-        _ = resp.Body.Close()
-        if resp.StatusCode < 200 || resp.StatusCode >= 500 {
-                return
-        }
-        var ids []int
-        err = queryList(
-                `SELECT "id" FROM "ScrapeTask"
+	// 引擎探活门控：不可达时本轮跳过（任务继续静默，下轮再试）
+	resp, err := runnerHTTPClient.Get(engineBaseURL() + "/api/strategies")
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 500 {
+		return
+	}
+	var ids []int
+	err = queryList(
+		`SELECT "id" FROM "ScrapeTask"
                  WHERE "status" = 'paused' AND "message" LIKE '%引擎不可达%'
                    AND "updatedAt" <= ?`,
-                func(rows *sql.Rows) error {
-                        var id int
-                        if err := rows.Scan(&id); err != nil {
-                                return err
-                        }
-                        ids = append(ids, id)
-                        return nil
-                }, nowMillis()-engineDownResumeSilentMs)
-        if err != nil {
-                return
-        }
-        if len(ids) > engineDownResumePerSweep {
-                ids = ids[:engineDownResumePerSweep]
-        }
-        for _, id := range ids {
-                var logv string
-                logv = readTaskLog(int64(id))
-                line := "[" + runTs() + "] 自动恢复（引擎已恢复可达，基础设施故障不消耗采集预算）：重新入队继续采集"
-                if logv != "" {
-                        logv += "\n"
-                }
-                logv = lastLines(logv+line, MAX_LOG_LINES)
-                res, err := exec(
-                        `UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（引擎恢复可达），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
-                        nowMillis(), id)
-                if err == nil {
-                        if cnt, _ := res.RowsAffected(); cnt > 0 {
-                                _ = writeTaskLog(int64(id), logv)
-                                log.Printf("[backend-go-runner] task %d 引擎恢复自动重新入队（零预算通道）", id)
-                        }
-                }
-        }
+		func(rows *sql.Rows) error {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+			return nil
+		}, nowMillis()-engineDownResumeSilentMs)
+	if err != nil {
+		return
+	}
+	if len(ids) > engineDownResumePerSweep {
+		ids = ids[:engineDownResumePerSweep]
+	}
+	for _, id := range ids {
+		var logv string
+		logv = readTaskLog(int64(id))
+		line := "[" + runTs() + "] 自动恢复（引擎已恢复可达，基础设施故障不消耗采集预算）：重新入队继续采集"
+		if logv != "" {
+			logv += "\n"
+		}
+		logv = lastLines(logv+line, MAX_LOG_LINES)
+		res, err := exec(
+			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（引擎恢复可达），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+			nowMillis(), id)
+		if err == nil {
+			if cnt, _ := res.RowsAffected(); cnt > 0 {
+				_ = writeTaskLog(int64(id), logv)
+				log.Printf("[backend-go-runner] task %d 引擎恢复自动重新入队（零预算通道）", id)
+			}
+		}
+	}
 }
 
 // ==================== P0-2（R107 提速·舰队唤醒） ====================
@@ -392,10 +392,10 @@ func autoResumeEngineTasks() {
 //   2×PHASE2_FAIL_BREAKER 章连败即回到纯手动，烧穿有界。
 
 const (
-        autoResumeBlockedSilentMs   = 30 * 60 * 1000 // 封禁熔断后的静默等待（限流类 3min 的 10 倍，封禁更谨慎）
-        autoResumeBlockedMaxPerTask = 2              // 每任务自动恢复上限（进程生命周期内）
-        autoResumeBlockedPerSweep   = 2              // 每轮至多唤醒条数（防集中重入队踩踏）
-        proxyPoolResumeMinAlive     = 3              // 代理池存活出口低于此值时不唤醒（重试无意义）
+	autoResumeBlockedSilentMs   = 30 * 60 * 1000 // 封禁熔断后的静默等待（限流类 3min 的 10 倍，封禁更谨慎）
+	autoResumeBlockedMaxPerTask = 2              // 每任务自动恢复上限（进程生命周期内）
+	autoResumeBlockedPerSweep   = 2              // 每轮至多唤醒条数（防集中重入队踩踏）
+	proxyPoolResumeMinAlive     = 3              // 代理池存活出口低于此值时不唤醒（重试无意义）
 )
 
 var autoResumeBlockedAttempts = map[int]int{}
@@ -404,216 +404,216 @@ var autoResumeBlockedAttempts = map[int]int{}
 // 恢复后 message 改写为「服务重启自动恢复：…」（不含「服务重启，任务自动暂停」前缀），
 // 后续再重启不会把本条误当新孤儿（进程崩溃循环场景无重启风暴）。
 func resumeRestartOrphans() int {
-        res, err := exec(
-                `UPDATE "ScrapeTask" SET "status" = 'pending',
+	res, err := exec(
+		`UPDATE "ScrapeTask" SET "status" = 'pending',
                    "message" = '服务重启自动恢复：重新入队继续采集（进度保留）', "updatedAt" = ?
                  WHERE "status" = 'paused' AND "message" LIKE '服务重启，任务自动暂停%'`,
-                nowMillis())
-        if err != nil {
-                return 0
-        }
-        n, _ := res.RowsAffected()
-        return int(n)
+		nowMillis())
+	if err != nil {
+		return 0
+	}
+	n, _ := res.RowsAffected()
+	return int(n)
 }
 
 // autoResumeBlockedTasks 封禁形态 paused 任务的有界自动恢复（代理池健康前置）。
 // 词表 '%疑似源站封禁或站点不可达%' 与 pausedPhase2BlockedFmt 构成隐式契约
 // （worker_autorecovery_test.go 锁定该文案不入限流词表；此处为独立第二通道）。
 func autoResumeBlockedTasks() {
-        var alive int
-        if err := queryOne(`SELECT COUNT(*) FROM "ProxyExit" WHERE "dead" = 0`, []any{&alive}); err != nil || alive < proxyPoolResumeMinAlive {
-                return
-        }
-        var ids []int
-        err := queryList(
-                `SELECT "id" FROM "ScrapeTask"
+	var alive int
+	if err := queryOne(`SELECT COUNT(*) FROM "ProxyExit" WHERE "dead" = 0`, []any{&alive}); err != nil || alive < proxyPoolResumeMinAlive {
+		return
+	}
+	var ids []int
+	err := queryList(
+		`SELECT "id" FROM "ScrapeTask"
                  WHERE "status" = 'paused' AND "message" LIKE '%疑似源站封禁或站点不可达%'
                    AND "updatedAt" <= ? ORDER BY "updatedAt" ASC LIMIT ?`,
-                func(rows *sql.Rows) error {
-                        var id int
-                        if err := rows.Scan(&id); err != nil {
-                                return err
-                        }
-                        ids = append(ids, id)
-                        return nil
-                }, nowMillis()-autoResumeBlockedSilentMs, autoResumeBlockedPerSweep)
-        if err != nil {
-                return
-        }
-        for _, id := range ids {
-                if autoResumeBlockedAttempts[id] >= autoResumeBlockedMaxPerTask {
-                        continue
-                }
-                autoResumeBlockedAttempts[id]++
-                n := autoResumeBlockedAttempts[id]
-                var logv string
-                logv = readTaskLog(int64(id)) // R102-b: 日志拆表读（含主表旧列回退）
-                line := "[" + runTs() + "] 自动恢复（封禁冷却结束且代理池健康）：第 " + itoa(n) + "/" + itoa(autoResumeBlockedMaxPerTask) + " 次重新入队（如为代理死口/临时抖动将续采；确认封禁则回退纯手动）"
-                if logv != "" {
-                        logv += "\n"
-                }
-                logv = lastLines(logv+line, MAX_LOG_LINES)
-                res, err := exec(
-                        `UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（封禁冷却结束+代理池健康），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
-                        nowMillis(), id)
-                if err == nil {
-                        if cnt, _ := res.RowsAffected(); cnt > 0 {
-                                _ = writeTaskLog(int64(id), logv)
-                                log.Printf("[backend-go-runner] task %d 封禁形态自动恢复（第 %d 次，代理池存活 %d）", id, n, alive)
-                        }
-                }
-        }
+		func(rows *sql.Rows) error {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+			return nil
+		}, nowMillis()-autoResumeBlockedSilentMs, autoResumeBlockedPerSweep)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		if autoResumeBlockedAttempts[id] >= autoResumeBlockedMaxPerTask {
+			continue
+		}
+		autoResumeBlockedAttempts[id]++
+		n := autoResumeBlockedAttempts[id]
+		var logv string
+		logv = readTaskLog(int64(id)) // R102-b: 日志拆表读（含主表旧列回退）
+		line := "[" + runTs() + "] 自动恢复（封禁冷却结束且代理池健康）：第 " + itoa(n) + "/" + itoa(autoResumeBlockedMaxPerTask) + " 次重新入队（如为代理死口/临时抖动将续采；确认封禁则回退纯手动）"
+		if logv != "" {
+			logv += "\n"
+		}
+		logv = lastLines(logv+line, MAX_LOG_LINES)
+		res, err := exec(
+			`UPDATE "ScrapeTask" SET "status" = 'pending', "message" = '自动恢复（封禁冷却结束+代理池健康），等待 runner 领取继续采集', "updatedAt" = ? WHERE "id" = ? AND "status" = 'paused'`,
+			nowMillis(), id)
+		if err == nil {
+			if cnt, _ := res.RowsAffected(); cnt > 0 {
+				_ = writeTaskLog(int64(id), logv)
+				log.Printf("[backend-go-runner] task %d 封禁形态自动恢复（第 %d 次，代理池存活 %d）", id, n, alive)
+			}
+		}
+	}
 }
 
 // startRunner runner 主循环入口（main.go 在 runner/all 模式下 go 调用）
 func startRunner() {
-        log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
+	log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
 
-        // R116: 车道下限记忆恢复 + 周期落盘（任何任务派发前恢复，防重启清零回软起步重爬）
-        restoreLaneFloors()
-        go laneFloorPersistLoop()
+	// R116: 车道下限记忆恢复 + 周期落盘（任何任务派发前恢复，防重启清零回软起步重爬）
+	restoreLaneFloors()
+	go laneFloorPersistLoop()
 
-        // 僵尸任务回收（recoverStaleTasks 语义：Go runner 是唯一任务执行方，启动时把本进程
-        // 启动前仍 running 的任务一次性转 paused 可恢复续传；Task 27-c 注释纠偏：旧文案
-        // 「标 failed」与实际行为不符）
-        recoverStaleTasks()
+	// 僵尸任务回收（recoverStaleTasks 语义：Go runner 是唯一任务执行方，启动时把本进程
+	// 启动前仍 running 的任务一次性转 paused 可恢复续传；Task 27-c 注释纠偏：旧文案
+	// 「标 failed」与实际行为不符）
+	recoverStaleTasks()
 
-        // TS runner 防复活护栏：启动即清一次，之后每 runnerTSKillEvery 轮（≈5 分钟）再清
-        killTSScrapeRunner()
+	// TS runner 防复活护栏：启动即清一次，之后每 runnerTSKillEvery 轮（≈5 分钟）再清
+	killTSScrapeRunner()
 
-        // P0-2 舰队唤醒①：重启孤儿一次性归队（重启前 running 的任务恢复 pending 续采）
-        if n := resumeRestartOrphans(); n > 0 {
-                log.Printf("[backend-go-runner] 服务重启孤儿唤醒：%d 条 paused 任务已重新入队", n)
-        }
+	// P0-2 舰队唤醒①：重启孤儿一次性归队（重启前 running 的任务恢复 pending 续采）
+	if n := resumeRestartOrphans(); n > 0 {
+		log.Printf("[backend-go-runner] 服务重启孤儿唤醒：%d 条 paused 任务已重新入队", n)
+	}
 
-        tick := 0
-        for {
-                func() {
-                        defer func() {
-                                if r := recover(); r != nil {
-                                        log.Printf("[backend-go-runner] poll panic(已恢复): %v", r)
-                                }
-                        }()
-                        // 心跳：mtime 每轮刷新
-                        now := time.Now()
-                        if _, err := os.Stat(runnerHeartbeatFile); err == nil {
-                                _ = os.Chtimes(runnerHeartbeatFile, now, now)
-                        } else {
-                                if f, err := os.Create(runnerHeartbeatFile); err == nil {
-                                        _ = f.Close()
-                                }
-                        }
+	tick := 0
+	for {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[backend-go-runner] poll panic(已恢复): %v", r)
+				}
+			}()
+			// 心跳：mtime 每轮刷新
+			now := time.Now()
+			if _, err := os.Stat(runnerHeartbeatFile); err == nil {
+				_ = os.Chtimes(runnerHeartbeatFile, now, now)
+			} else {
+				if f, err := os.Create(runnerHeartbeatFile); err == nil {
+					_ = f.Close()
+				}
+			}
 
-                        if tick%runnerEngineEvery == 0 {
-                                ensureEngine()
-                        }
+			if tick%runnerEngineEvery == 0 {
+				ensureEngine()
+			}
 
-                        if tick%runnerTSKillEvery == 0 {
-                                killTSScrapeRunner() // TS runner 防复活护栏（低频）
-                        }
+			if tick%runnerTSKillEvery == 0 {
+				killTSScrapeRunner() // TS runner 防复活护栏（低频）
+			}
 
-                        // 轮询 pending 任务（R111：每轮派发批量加大无并发语义变化；R133：
-                        // per-host 任务并发准入——任务均为独立 goroutine 并发执行
-                        // （triggerScrapeTask go runTask），互不排队，但同 host 任务齐发会把
-                        // 引擎域限速队列打饱和（R133 实证：rule34 7 任务齐发 → 引擎「限速排队
-                        // 饱和」未预约槽位快速失败 → 全策略 timeout-budget → 书目连败熔断
-                        // partial/暂停循环空烧预算）。准入=同 host 在跑任务达上限时新任务留队
-                        // pending，按域限速自然消纳，契合「兼顾源站封禁」约束。
-                        // SCRAPE_TASK_PER_HOST_LIMIT 调整，0=不限恢复旧行为。
-                        type taskHostRow struct {
-                                id     int
-                                status string
-                                host   string
-                        }
-                        live := make([]taskHostRow, 0, 32)
-                        err := queryList(`SELECT t."id", t."status", COALESCE(NULLIF(t."targetUrl",''), r."siteUrl", '')
+			// 轮询 pending 任务（R111：每轮派发批量加大无并发语义变化；R133：
+			// per-host 任务并发准入——任务均为独立 goroutine 并发执行
+			// （triggerScrapeTask go runTask），互不排队，但同 host 任务齐发会把
+			// 引擎域限速队列打饱和（R133 实证：rule34 7 任务齐发 → 引擎「限速排队
+			// 饱和」未预约槽位快速失败 → 全策略 timeout-budget → 书目连败熔断
+			// partial/暂停循环空烧预算）。准入=同 host 在跑任务达上限时新任务留队
+			// pending，按域限速自然消纳，契合「兼顾源站封禁」约束。
+			// SCRAPE_TASK_PER_HOST_LIMIT 调整，0=不限恢复旧行为。
+			type taskHostRow struct {
+				id     int
+				status string
+				host   string
+			}
+			live := make([]taskHostRow, 0, 32)
+			err := queryList(`SELECT t."id", t."status", COALESCE(NULLIF(t."targetUrl",''), r."siteUrl", '')
                                  FROM "ScrapeTask" t LEFT JOIN "ScrapeRule" r ON t."ruleId" = r."id"
                                  WHERE t."status" IN ('pending','running') ORDER BY t."id" ASC`,
-                                func(rows *sql.Rows) error {
-                                        var r taskHostRow
-                                        if err := rows.Scan(&r.id, &r.status, &r.host); err != nil {
-                                                return err
-                                        }
-                                        live = append(live, r)
-                                        return nil
-                                })
-                        if err != nil {
-                                log.Printf("[backend-go-runner] poll error: %v", err)
-                        } else {
-                                perHostLimit := envIntAllowZero("SCRAPE_TASK_PER_HOST_LIMIT", 2)
-                                hostRunning := make(map[string]int, 8)
-                                inFlight := make(map[int]bool, 8)
-                                for _, id := range runningIDs() {
-                                        inFlight[id] = true
-                                }
-                                for _, r := range live {
-                                        if r.status == "running" || inFlight[r.id] {
-                                                hostRunning[ruleHostOf(r.host)]++
-                                        }
-                                }
-                                dispatched := 0
-                                pendSkipped := make(map[string][]int, 4)
-                                for _, r := range live {
-                                        if r.status != "pending" {
-                                                continue
-                                        }
-                                        h := ruleHostOf(r.host)
-                                        if perHostLimit > 0 && h != "" && hostRunning[h] >= perHostLimit {
-                                                pendSkipped[h] = append(pendSkipped[h], r.id)
-                                                continue
-                                        }
-                                        hostRunning[h]++
-                                        triggerScrapeTask(r.id)
-                                        dispatched++
-                                }
-                                for h, ids := range pendSkipped {
-                                        // R133：仅在状态跃迁时记日志（新入队的任务首次被留队），
-                                        // 防每 2s 轮询同批任务刷屏淹没有效日志
-                                        newly := make([]int, 0, len(ids))
-                                        for _, id := range ids {
-                                                if !runnerHeldPrev[id] {
-                                                        newly = append(newly, id)
-                                                }
-                                        }
-                                        if len(newly) > 0 {
-                                                log.Printf("[backend-go-runner] per-host 准入：host %s 在跑已达上限 %d，任务 %v 留队 pending", h, perHostLimit, newly)
-                                        }
-                                }
-                                runnerHeldPrev = make(map[int]bool, 8)
-                                for _, ids := range pendSkipped {
-                                        for _, id := range ids {
-                                                runnerHeldPrev[id] = true
-                                        }
-                                }
-                                if dispatched > 0 {
-                                        log.Printf("[backend-go-runner] dispatched %d task(s)", dispatched)
-                                }
-                        }
+				func(rows *sql.Rows) error {
+					var r taskHostRow
+					if err := rows.Scan(&r.id, &r.status, &r.host); err != nil {
+						return err
+					}
+					live = append(live, r)
+					return nil
+				})
+			if err != nil {
+				log.Printf("[backend-go-runner] poll error: %v", err)
+			} else {
+				perHostLimit := envIntAllowZero("SCRAPE_TASK_PER_HOST_LIMIT", 2)
+				hostRunning := make(map[string]int, 8)
+				inFlight := make(map[int]bool, 8)
+				for _, id := range runningIDs() {
+					inFlight[id] = true
+				}
+				for _, r := range live {
+					if r.status == "running" || inFlight[r.id] {
+						hostRunning[ruleHostOf(r.host)]++
+					}
+				}
+				dispatched := 0
+				pendSkipped := make(map[string][]int, 4)
+				for _, r := range live {
+					if r.status != "pending" {
+						continue
+					}
+					h := ruleHostOf(r.host)
+					if perHostLimit > 0 && h != "" && hostRunning[h] >= perHostLimit {
+						pendSkipped[h] = append(pendSkipped[h], r.id)
+						continue
+					}
+					hostRunning[h]++
+					triggerScrapeTask(r.id)
+					dispatched++
+				}
+				for h, ids := range pendSkipped {
+					// R133：仅在状态跃迁时记日志（新入队的任务首次被留队），
+					// 防每 2s 轮询同批任务刷屏淹没有效日志
+					newly := make([]int, 0, len(ids))
+					for _, id := range ids {
+						if !runnerHeldPrev[id] {
+							newly = append(newly, id)
+						}
+					}
+					if len(newly) > 0 {
+						log.Printf("[backend-go-runner] per-host 准入：host %s 在跑已达上限 %d，任务 %v 留队 pending", h, perHostLimit, newly)
+					}
+				}
+				runnerHeldPrev = make(map[int]bool, 8)
+				for _, ids := range pendSkipped {
+					for _, id := range ids {
+						runnerHeldPrev[id] = true
+					}
+				}
+				if dispatched > 0 {
+					log.Printf("[backend-go-runner] dispatched %d task(s)", dispatched)
+				}
+			}
 
-                        // 未分类慢速归类（0-1 本/轮）
-                        _ = recategorizeOne()
+			// 未分类慢速归类（0-1 本/轮）
+			_ = recategorizeOne()
 
-                        // Task 33: 限流类熔断任务的有界自动恢复（每 15 轮≈30s 扫一次）
-                        // P0-2 舰队唤醒②：封禁形态 paused 的有界自动恢复（同频扫描，独立门槛）
-                        if tick%15 == 0 {
-                                autoResumePausedTasks()
-                                autoResumeBlockedTasks()
-                                autoResumeEngineTasks() // R131: 引擎不可达零预算通道（探活门控）
-                        }
+			// Task 33: 限流类熔断任务的有界自动恢复（每 15 轮≈30s 扫一次）
+			// P0-2 舰队唤醒②：封禁形态 paused 的有界自动恢复（同频扫描，独立门槛）
+			if tick%15 == 0 {
+				autoResumePausedTasks()
+				autoResumeBlockedTasks()
+				autoResumeEngineTasks() // R131: 引擎不可达零预算通道（探活门控）
+			}
 
-                        // Task 44-b: 进程内 running 孤儿自查（每 5 轮≈10s）——running 且不在
-                        // gRunning 在册表的悬挂态自动转 paused，防 worker 异常退出路径漏写终态
-                        if tick%5 == 0 {
-                                sweepOrphanRunningTasks()
-                        }
+			// Task 44-b: 进程内 running 孤儿自查（每 5 轮≈10s）——running 且不在
+			// gRunning 在册表的悬挂态自动转 paused，防 worker 异常退出路径漏写终态
+			if tick%5 == 0 {
+				sweepOrphanRunningTasks()
+			}
 
-                        // R105: 书级字数兜底回填（每 150 轮≈5 分钟）——长跑/暂停任务的已填充
-                        // 章节此前要等收尾才汇总，期间首页/榜单字数恒「—」；低频增量修正
-                        if tick%150 == 0 {
-                                backfillNovelWordCounts()
-                        }
-                }()
-                tick++
-                time.Sleep(runnerPollInterval)
-        }
+			// R105: 书级字数兜底回填（每 150 轮≈5 分钟）——长跑/暂停任务的已填充
+			// 章节此前要等收尾才汇总，期间首页/榜单字数恒「—」；低频增量修正
+			if tick%150 == 0 {
+				backfillNovelWordCounts()
+			}
+		}()
+		tick++
+		time.Sleep(runnerPollInterval)
+	}
 }

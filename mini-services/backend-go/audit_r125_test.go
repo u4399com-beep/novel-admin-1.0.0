@@ -10,67 +10,67 @@ package main
 // 段位空闲可占用）。
 
 import (
-        "encoding/json"
-        "testing"
+	"encoding/json"
+	"testing"
 )
 
 func TestLoadRuleZeroIDLoadsRuleR125(t *testing.T) {
-        db, err := getDB()
-        if err != nil {
-                t.Fatalf("getDB: %v", err)
-        }
-        if _, err := db.Exec(`DELETE FROM "ScrapeRule" WHERE "id" = 0`); err != nil {
-                t.Fatalf("pre-clean id=0: %v", err)
-        }
-        if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","siteUrl","enabled","charset","listRule","bookRule","chapterRule","createdAt","updatedAt")
+	db, err := getDB()
+	if err != nil {
+		t.Fatalf("getDB: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM "ScrapeRule" WHERE "id" = 0`); err != nil {
+		t.Fatalf("pre-clean id=0: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO "ScrapeRule" ("id","name","siteUrl","enabled","charset","listRule","bookRule","chapterRule","createdAt","updatedAt")
                 VALUES (0,'loadrule-zero-r125','https://zero.example/',1,'gbk','{"itemSelector":".it a"}','{"titleSelector":"h1"}','',1,1)`); err != nil {
-                t.Fatalf("insert fixture id=0: %v", err)
-        }
-        t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM "ScrapeRule" WHERE "id" = 0 AND "name" = 'loadrule-zero-r125'`) })
+		t.Fatalf("insert fixture id=0: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DELETE FROM "ScrapeRule" WHERE "id" = 0 AND "name" = 'loadrule-zero-r125'`) })
 
-        zero := 0
-        r := loadRule(&zero)
-        if r.Name != "loadrule-zero-r125" {
-                t.Fatalf("id=0 是合法规则 ID，loadRule 必须正常装载（R125 修复回归），got name=%q listRule=%v", r.Name, r.ListRule)
-        }
-        if len(r.ListRule) == 0 || r.ListRule["itemSelector"] != ".it a" {
-                t.Fatalf("id=0 规则 listRule 应装载: %v", r.ListRule)
-        }
-        if r.Charset != "gbk" {
-                t.Fatalf("id=0 规则 charset 应装载: %q", r.Charset)
-        }
+	zero := 0
+	r := loadRule(&zero)
+	if r.Name != "loadrule-zero-r125" {
+		t.Fatalf("id=0 是合法规则 ID，loadRule 必须正常装载（R125 修复回归），got name=%q listRule=%v", r.Name, r.ListRule)
+	}
+	if len(r.ListRule) == 0 || r.ListRule["itemSelector"] != ".it a" {
+		t.Fatalf("id=0 规则 listRule 应装载: %v", r.ListRule)
+	}
+	if r.Charset != "gbk" {
+		t.Fatalf("id=0 规则 charset 应装载: %q", r.Charset)
+	}
 
-        // nil 语义不变：未使用规则 → 全空
-        if r2 := loadRule(nil); r2.Name != "" || len(r2.ListRule) != 0 {
-                t.Fatalf("nil ruleID 仍应全空: %+v", r2)
-        }
+	// nil 语义不变：未使用规则 → 全空
+	if r2 := loadRule(nil); r2.Name != "" || len(r2.ListRule) != 0 {
+		t.Fatalf("nil ruleID 仍应全空: %+v", r2)
+	}
 
-        // 不存在的高段位 ID 语义不变：err 分支 → 全空
-        missing := 95126
-        if r3 := loadRule(&missing); r3.Name != "" || len(r3.BookRule) != 0 {
-                t.Fatalf("不存在 ruleID 应全空: %+v", r3)
-        }
+	// 不存在的高段位 ID 语义不变：err 分支 → 全空
+	missing := 95126
+	if r3 := loadRule(&missing); r3.Name != "" || len(r3.BookRule) != 0 {
+		t.Fatalf("不存在 ruleID 应全空: %+v", r3)
+	}
 }
 
 func TestSeedJSONAllRulesHaveIDR125(t *testing.T) {
-        // seed 固化完整性：所有规则必须携带显式 id（缺 id 字段 → 零值 0 播种 →
-        // 与「未使用规则」历史语义混淆，且 repairRuleCorruption 按 id 匹配失配）
-        var doc seedDoc
-        if err := json.Unmarshal(seedBlob, &doc); err != nil {
-                t.Fatalf("seed.json 解析: %v", err)
-        }
-        rules := doc.Rules
-        if len(rules) == 0 {
-                t.Fatalf("seed.json 规则为空")
-        }
-        seen := map[int64]bool{}
-        for _, r := range rules {
-                if r.ID <= 0 {
-                        t.Fatalf("规则 %q 缺显式 id（零值 0 播种即 R125 缺陷源）", r.Name)
-                }
-                if seen[r.ID] {
-                        t.Fatalf("规则 id 重复: %d", r.ID)
-                }
-                seen[r.ID] = true
-        }
+	// seed 固化完整性：所有规则必须携带显式 id（缺 id 字段 → 零值 0 播种 →
+	// 与「未使用规则」历史语义混淆，且 repairRuleCorruption 按 id 匹配失配）
+	var doc seedDoc
+	if err := json.Unmarshal(seedBlob, &doc); err != nil {
+		t.Fatalf("seed.json 解析: %v", err)
+	}
+	rules := doc.Rules
+	if len(rules) == 0 {
+		t.Fatalf("seed.json 规则为空")
+	}
+	seen := map[int64]bool{}
+	for _, r := range rules {
+		if r.ID <= 0 {
+			t.Fatalf("规则 %q 缺显式 id（零值 0 播种即 R125 缺陷源）", r.Name)
+		}
+		if seen[r.ID] {
+			t.Fatalf("规则 id 重复: %d", r.ID)
+		}
+		seen[r.ID] = true
+	}
 }

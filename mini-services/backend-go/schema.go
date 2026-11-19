@@ -280,6 +280,6 @@ CREATE INDEX IF NOT EXISTS "TranslationQueue_state_idx" ON "TranslationQueue" ("
 // ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训：
 // 严禁 once 外经 exec/query 助手再入 getDB）。
 func ensureBaseSchema(db *sql.DB) error {
-        _, err := db.Exec(baseSchemaDDL)
-        return err
+	_, err := db.Exec(baseSchemaDDL)
+	return err
 }

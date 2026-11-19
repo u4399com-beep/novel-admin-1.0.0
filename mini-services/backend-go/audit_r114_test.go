@@ -41,9 +41,14 @@ func TestServiceElapsedMs_R114(t *testing.T) {
 
 // TestLaneFreezeSemantic_R114 复现 R112 锁死场景并验证新口径解锁：
 // 场景=健康站 + 满车道并发，每章 total=4800ms（域槽排队 4000 + 服务 800）。
-//   旧口径：EWMA 采样 total → 数样本内越过 3500 阈值 → laneBumpFrozen=true → 回升冻结。
-//   新口径：EWMA 采样 ServiceElapsedMs → 稳定在 800ms 附近 → 永不冻结 → 连捷 24 章正常回升。
+//
+//	旧口径：EWMA 采样 total → 数样本内越过 3500 阈值 → laneBumpFrozen=true → 回升冻结。
+//	新口径：EWMA 采样 ServiceElapsedMs → 稳定在 800ms 附近 → 永不冻结 → 连捷 24 章正常回升。
+//
 // 同时验证向后兼容：queue=0（旧引擎）时新口径退化为旧口径行为（冻结照旧触发）。
+// R143 语义更新：慢站（服务耗时 4s）不再冻结回升（域槽限速已钾死源站压力，慢站多车道
+// 补吞吐；真保护闸=shrinkLanes+熔断+AIMD），laneBumpFrozen 仅作观测日志门槛——
+// 本测试锁定「观测判定」布尔语义；回归锁保留 R114 的口径剔除断言不变。
 func TestLaneFreezeSemantic_R114(t *testing.T) {
 	const samples = 8
 
@@ -70,12 +75,13 @@ func TestLaneFreezeSemantic_R114(t *testing.T) {
 		t.Fatalf("queue=0 应原样返回 total（旧口径回退）")
 	}
 
-	// 站点真慢仍冻结（R99 本意保留）：服务耗时本身 4s/章
+	// 站点真慢仍被观测判定为慢站（R99 判定保留，R143 起仅日志观测不冻结——
+	// 见 laneQueueFreezeEWMA 注释）
 	var ewSlow int64
 	for i := 0; i < samples; i++ {
 		ewSlow = ewmaNext(ewSlow, ServiceElapsedMs(4000, 0))
 	}
 	if !laneBumpFrozen(ewSlow) {
-		t.Fatalf("站点真慢（服务 4000ms）EWMA=%d 应冻结回升（R99 本意）", ewSlow)
+		t.Fatalf("站点真慢（服务 4000ms）EWMA=%d 应命中慢站观测门槛", ewSlow)
 	}
 }

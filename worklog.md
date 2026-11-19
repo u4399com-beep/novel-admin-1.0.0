@@ -5386,3 +5386,31 @@ Stage Summary:
 - 用户指令：jiuxiaozw.com 主题模版 1:1 克隆交付为第 14 套主题 jiuxiaozw（原站全量 CSS/字体/纸纹本地化+原站类名体系+双轨响应式+分页阅读器+日夜双主题），默认主题已切换，R140 jiuxiao 主题一字未动
 - 反反爬（R137③）：原站采集全程 curl_chrome116 Chrome TLS 指纹通道（普通 curl 被 WAF 静默降权超时）
 - 移交下一轮：①PAT 轮换（用户侧，第 12 次提醒：ghp_*** 务必去 GitHub 吊销换新）②stealth venv/cloak chromium 重建完成后复验 :3031 过盾通道 ③全库 gofmt whitespace 规范化独立轮次（R141 移交保持）④rl-hero 自动轮换 6s/移动轮播 6s 与原站节奏一致，如需原站其他微交互（书页里程碑滚动条等）可后续按 chunk 反推
+
+Task ID: R143
+Agent: Z.ai Code (main)
+Task: 「1、继续完成遗留问题。2、继续探索章节内容获取效率，还是太慢，但要去兼顾源站的封禁等。3、强化采集和反反爬能力。4、完善精简优化整体代码。5、需要增加翻译功能。需要至少是繁体和英文，不排除后续需要其他语种的情况。建议用已有成熟的方案/搞个本地的翻译模型。6、更新一键安装命令。」
+
+Work Log:
+- 【开局核查（第 24 次重置后 R142 交付态继承）】四服务全绿（backend :3000 dbOk/scraper :3030/stealth :3031 iv8 可用 cloak 二进制缺/translate :3032 五语种）；DB 1414 书/139.9 万章/25 规则 20 启用；《葬神渊》2151 章固化确认；任务舰队运行中。
+- 【效率根因审计（常设②，三层实测闭环）】①引擎实测：fetch-browser 网络耗时 0.37s/200 OK 但整链墙钟 32-48s → queueMs=32059ms 实锤域槽排队（非源站慢）；②iqxsw 直连实测 3 连发 2 reset（0.35s 即断）——12 车道同时新建 TLS 触发源站 syn 防护形态；③吞吐数学：域槽礼貌上限 0.83 req/s≈44 章/分 vs 实际 5.4 章/分——EWMA 慢站冻结把车道锁死 4-6（iqxsw EWMA 4-6.5s 恒超 3500ms 阈），冻结锁吞吐 8 倍。
+- 【E1 车道冻结退役（backend worker.go/engineclient.go）】数学依据：域槽已钳死源站压力（≤0.83 req/s），车道数不影响源站节奏只影响本地流水线填充度；慢站（服务耗时>槽间隔）车道不足=槽位空转。bumpLaneOnSuccess 删除冻结分支改「慢站观测日志」（不清零连捷/不冻结回升，首条+每 50 条防刷屏）；laneRestoreEvery 24→12 回升加速一倍；laneBumpFrozen 降级为观测门槛（布尔语义保留）；慢站真保护闸不变（shrinkLanes 429/空壳降档+PHASE2_FAIL_BREAKER 熔断+引擎 AIMD）；audit_r114/audit99a 测试同步锁定新语义。
+- 【E2 连接 reset 快速恢复（scraper httpguard.go/strategies.go）】Transport 层：MaxConnsPerHost=8（同主机并发连接硬顶——稳态在途≈发射率×服务耗时≈5-6 条，8 余量充足；新建连接排队进行，源站 syn 防护不再被 12 车道齐发触发）；IdleConnTimeout 90→30s（对齐 nginx/CDN keepalive_timeout，消灭「服务端已掐本地不知道」的死连接复用 reset）；MaxIdleConnsPerHost 8→4。策略层：fetch 系策略新增网络级瞬态失败（status=0，reset/EOF/dial）同画像快速重试（整策略预算 2 次；重试同样过域槽礼貌不破；结构性失败 ssrf-blocked/bad-scheme/queue-saturated 与 HTTP 层失败不触发；429/503 同口径停梯）。AIMD 记账复核：仅 429/503 触发乘性增大，reset 不误伤 ✓。
+- 【E3 browser spawn 实测】tier3 browser 策略单次 4.0s 墙钟（含槽排 1.03s）——spawn~3s，仅挑战站触发，常驻池改造收益不抵 playwright venv 脆弱性（R142 venv 丢失教训），决策不改留档。
+- 【S2 cloak 复验（R142 移交）】cloakbrowser 包在但 chromium 二进制缺失（installed=false）；重建尝试：cloakbrowser.dev 直连超时+ghfast 镜像 404——源站不可达，诚实留档（/health cloakBinary=false 严格上报不误报），引擎链自动降级 iv8/browser 兜底，功能面无损。
+- 【L1+T1 翻译遗留核验（R139 移交两项）】admin 翻译缓存管理页已完整交付（总览 50.5MB/按书预热/按书清理/归属 Top20 四区块，stats API 实测正常）；TXT 导出译文通道全链实证：《民国：王牌飞行员》zh-Hant 130755/130755 段全命中（12.5MB 文件落盘）、en cache-only 按设计 0 命中保留原文标注；translate-service en LLM 通道遇上游 429 风暴——重试 2s/6s/15s 全拒后 deadline 121s 优雅失败（failedCount:1 空串返回非 hang 死），R138 架构健康实证；繁体链路（OpenCC 即时+13 万段缓存+预热 30 段/轮）全绿。
+- 【I1 一键安装复查】deploy-cn.sh 语法/四服务步骤全覆盖 ✓；engine.env 单一来源机制完备（5 host 分桶）；发现缺口：/tmp/restart-scraper.sh 手工重启脚本漏 source engine.env（R110 教训只闭环了 ensureEngine 自动拉起路径，手工路径漏网）——已重建两 restart 脚本（scraper 版补 set -a source engine.env set +a），当前进程环境 SCRAPE_PROXY_BUCKET_HOSTS 实证生效。
+- 【C1+L3 代码精简（常设④）】staticcheck 2023.1.7 双端零输出 ✓；gofmt 全库规范化 61 文件（R141 移交 33 文件独立轮次+本轮改动文件，~19000 行 whitespace 重排）双端 vet 零告警。
+- 【jiuxiaozw 主题移动端溢出修复】E2E（agent-browser）发现书页 390px scrollWidth=438（.book-hero-backdrop 486px 顶穿——原站 CSS 的 .book-detail overflow-x:clip 只在 @media(min-width:768px) 作用域）；CSS 尾部追加全局 .book-detail{overflow-x:clip}（与既有 min-width 版本叠加零冲突）+ backend 重启穿透 staticVer；复验 book/52+首页 390px 双 390 满分零溢出、console 零错误。
+- 【部署实证（E1/E2 生效证明）】bin 双端重编（-trimpath -ldflags="-s -w"）+重启；iqxsw 任务实测：软起步 4 车道 11 分钟回满 12（旧参数 24 连捷需 20+ 分钟且被冻结锁死在 4-6），14:19 慢站观测日志与车道回升 10→12 同刻出现（冻结退役直接证据）；全库 47 分钟 +12 万章（139.9→151.9 万）；13 任务并行各站独立槽推进正常。
+- 【质量闸】scraper 全量 go test 52.1s PASS；backend 全量 66.4s PASS；staticcheck/vet 双端零输出；E2E agent-browser 五步 5/5 PASS 零 console 错误 + 溢出修复复验 PASS。
+- 【运维】/tmp/restart-backend.sh、/tmp/restart-scraper.sh 重建（R143 形态：scraper 版带 engine.env）；DB 备份循环在跑；爬虫舰队持续回血。
+
+Stage Summary:
+- 章节获取效率（R137②）：域槽排队 32s 根因三层闭环（EWMA 慢站冻结退役+Transport 连接池三调优+网络级瞬态同画像重试），慢站车道爬坡 11 分钟回满（旧版永久冻结 4-6），全库 +12 万章/47min 实证；单站速率仍受合规红线 0.83 req/s 钳制（iqxsw 3.4-5 章/分为礼貌上限的正常表现，源站保护优先）
+- 反反爬（R137③）：AIMD 记账口径复核（reset 不误伤）+ syn 防护形态识别（MaxConnsPerHost 钳新建并发）+ 死连接复用 reset 根修（IdleConnTimeout 30s）+ 网络级瞬态同画像重试（省 6+ 次链上白烧尝试）
+- 代码精简（R137④）：staticcheck 双端零残留 + gofmt 全库 61 文件规范化（R141 移交轮次完成）
+- 翻译（R137⑤）：admin 翻译缓存管理页完整 + TXT 导出 zh-Hant 全命中实证 + en/ja/ko LLM 通道 deadline 优雅失败实证（上游 429 为外部约束，五语种注册不变）
+- 一键安装（R137⑥）：restart 脚本 engine.env 缺口闭环（R110 教训最后一块拼图：手工重启路径）
+- 遗留清理（R137①）：R139 两项移交全部闭环（admin 缓存页核验完整/TXT 通道实证）+ R142 移交 cloak 诚实留档 + jiuxiaozw 移动端溢出修复
+- 移交下一轮：①PAT 轮换（用户侧，第 13 次提醒：ghp_*** 务必去 GitHub 吊销换新）②cloak chromium 源站（cloakbrowser.dev）恢复后补下载复验过盾通道 ③iqxsw 单站吞吐已到合规上限，如需再提速可选：规则 proxy 字段补优质代理出口启用分桶（免费公共代理 20-50s 延迟反而拖慢，需先测质量）④translatewarm 预热覆盖面（当前 zh-Hant/zh-HK，en/ja/ko LLM 成本闸维持按需）

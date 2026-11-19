@@ -8,38 +8,38 @@
 package main
 
 import (
-        "context"
-        "encoding/binary"
-        "hash/fnv"
-        "net/http"
-        "strings"
-        "time"
+	"context"
+	"encoding/binary"
+	"hash/fnv"
+	"net/http"
+	"strings"
+	"time"
 )
 
 // 策略分层（Task 102-a，微信文章《实测 iv8 vs CloakBrowser》三层架构落地）：
 //
-//      tierStrategyHTTP    = 1：纯 HTTP 层（毫秒级，默认执行环境——文章核心论点：
-//                             「真实浏览器不应是爬虫系统的默认执行环境」）；
-//      tierStrategyIv8     = 2：iv8 轻执行层（~100ms，V8 补环境跑页内 JS 算 cookie/参数/补 DOM，
-//                             不启动 Chromium，纯脚本吞吐是真实浏览器的 ~100 倍）；
-//      tierStrategyBrowser = 3：重渲染层（秒级+，隐身 Chromium/浏览器桥接，深度 SPA/WAF 指纹对抗兑底）。
+//	tierStrategyHTTP    = 1：纯 HTTP 层（毫秒级，默认执行环境——文章核心论点：
+//	                       「真实浏览器不应是爬虫系统的默认执行环境」）；
+//	tierStrategyIv8     = 2：iv8 轻执行层（~100ms，V8 补环境跑页内 JS 算 cookie/参数/补 DOM，
+//	                       不启动 Chromium，纯脚本吞吐是真实浏览器的 ~100 倍）；
+//	tierStrategyBrowser = 3：重渲染层（秒级+，隐身 Chromium/浏览器桥接，深度 SPA/WAF 指纹对抗兑底）。
 //
 // 链序按成本递增排列；亲和记忆（recordStrategySuccess）按 host 记住「哪层攻克」自动提位，
 // 挑战感知跳层（recommendTierForChallenge → promoteTierAfter）按响应形态智能跳层。
 const (
-        tierStrategyHTTP    = 1
-        tierStrategyIv8     = 2
-        tierStrategyBrowser = 3
+	tierStrategyHTTP    = 1
+	tierStrategyIv8     = 2
+	tierStrategyBrowser = 3
 )
 
 // strategyDef 策略定义（对齐 TS StrategyDef）
 type strategyDef struct {
-        name         string
-        description  string
-        probe        func() bool
-        run          func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult
-        selfRetrying bool
-        tier         int // 策略分层（1=HTTP 2=iv8 轻执行 3=重渲染；/api/strategies 透出）
+	name         string
+	description  string
+	probe        func() bool
+	run          func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult
+	selfRetrying bool
+	tier         int // 策略分层（1=HTTP 2=iv8 轻执行 3=重渲染；/api/strategies 透出）
 }
 
 // strategyRunCtx 策略 run 的可选上下文。
@@ -48,185 +48,224 @@ type strategyDef struct {
 // NewRequestWithContext 挂接），消除「硬闸已超时放行、策略 goroutine 仍空转到自身超时」
 // 的有界泄漏；nil = 无取消（保持旧行为）。仅策略 goroutine 自身读写，无跨 goroutine 竞态。
 type strategyRunCtx struct {
-        referer     string
-        proxy       string
-        insecureTLS bool
-        hardCtx     context.Context
-        // waitSelector R120: 关键选择器等待（仅 fetch-cloak 消费——透传侧车 /cloak 由
-        // 子进程 wait_for_selector；其余策略不读此字段，零行为变化）
-        waitSelector string
+	referer     string
+	proxy       string
+	insecureTLS bool
+	hardCtx     context.Context
+	// waitSelector R120: 关键选择器等待（仅 fetch-cloak 消费——透传侧车 /cloak 由
+	// 子进程 wait_for_selector；其余策略不读此字段，零行为变化）
+	waitSelector string
 }
 
 // attemptResult 单次尝试结果（对齐 TS AttemptResult；warnings 为策略自持切片）
 type attemptResult struct {
-        ok          bool
-        status      int
-        bytes       []byte
-        contentType string
-        warnings    []string
-        note        string
-        subAttempts []SubAttempt
-        retryAfter  *int64
-        // waitSelectorFound R120: 侧车 cloak 渲染对 waitSelector 的命中结果（仅
-        // fetch-cloak 置位；其余策略零值=false 但无 waitSelector 语义，不参与判定）
-        waitSelectorFound bool
-        // waitApplied R120b: 获胜策略是否真正消费了 waitSelector（cloak 恒消费；
-        // browser 桥接经 render.py 消费；HTTP 系策略恒 false）。观测语义：响应
-        // waitSelectorApplied=false 时 waitSelectorFound=false 只是「该策略不等待」，
-        // 不构成「JS 空壳」证据——防止把 HTTP 快车道胜出误读为慢渲染未命中。
-        waitApplied bool
-        // queueMs R114: 本次尝试在域槽上累计的排队等待（acquireDomainSlotBudgeted 返回的
-        // waited 求和，跨内部画像梯子）。0=未排队或旧路径未埋点。用途：backend 车道控制
-        // 的饱和感知 EWMA 改用「服务耗时=总耗时−排队」口径——车道自身造成的排队是
-        // 流水线化的正常形态（域槽按礼貌间隔放行，吞吐与车道数无关），不算站点拥堵，
-        // 不得冻结车道回升（R112 实证：12 车道纯排队把 EWMA 顶过 3.5s 阈值，车道永久
-        // 锁死在低位；排队深但 budget 闸未 shed = 供需健康）
-        queueMs int64
+	ok          bool
+	status      int
+	bytes       []byte
+	contentType string
+	warnings    []string
+	note        string
+	subAttempts []SubAttempt
+	retryAfter  *int64
+	// waitSelectorFound R120: 侧车 cloak 渲染对 waitSelector 的命中结果（仅
+	// fetch-cloak 置位；其余策略零值=false 但无 waitSelector 语义，不参与判定）
+	waitSelectorFound bool
+	// waitApplied R120b: 获胜策略是否真正消费了 waitSelector（cloak 恒消费；
+	// browser 桥接经 render.py 消费；HTTP 系策略恒 false）。观测语义：响应
+	// waitSelectorApplied=false 时 waitSelectorFound=false 只是「该策略不等待」，
+	// 不构成「JS 空壳」证据——防止把 HTTP 快车道胜出误读为慢渲染未命中。
+	waitApplied bool
+	// queueMs R114: 本次尝试在域槽上累计的排队等待（acquireDomainSlotBudgeted 返回的
+	// waited 求和，跨内部画像梯子）。0=未排队或旧路径未埋点。用途：backend 车道控制
+	// 的饱和感知 EWMA 改用「服务耗时=总耗时−排队」口径——车道自身造成的排队是
+	// 流水线化的正常形态（域槽按礼貌间隔放行，吞吐与车道数无关），不算站点拥堵，
+	// 不得冻结车道回升（R112 实证：12 车道纯排队把 EWMA 顶过 3.5s 阈值，车道永久
+	// 锁死在低位；排队深但 budget 闸未 shed = 供需健康）
+	queueMs int64
 }
 
 // makeFetchStrategy fetch 系策略工厂：同一执行骨架 × 不同请求头画像梯子（selfRetrying=true）
 // fetch 系全部属 Tier 1 HTTP 层（毫秒级默认执行环境，三层架构见 tierStrategyHTTP 注）
 func makeFetchStrategy(name, description string, profiles []headerProfile) strategyDef {
-        return strategyDef{
-                name:         name,
-                description:  description,
-                probe:        func() bool { return true }, // Go 原生 HTTP 客户端恒可用
-                selfRetrying: true,                        // 内部画像梯子即是重试路径
-                tier:         tierStrategyHTTP,
-                run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
-                        warnings := []string{}
-                        subAttempts := []SubAttempt{}
-                        deadline := nowMs() + timeoutMs
-                        var last *attemptResult
-                        // Task 38-a: 本策略内最近一次限流记忆（混合失败时提升返回，保住链层退避记忆）
-                        lastLimitedStatus := 0
-                        var lastLimitedRetryAfter *int64
-                        // R114: 域槽排队累计（跨画像梯子求和；成功/失败路径都带回，饱和观测口径）
-                        totalWaited := int64(0)
-                        // R141: JS cookie 挑战求解重放——本策略全程限 1 次（见循环内注释）
-                        cookieSolveReplayed := false
+	return strategyDef{
+		name:         name,
+		description:  description,
+		probe:        func() bool { return true }, // Go 原生 HTTP 客户端恒可用
+		selfRetrying: true,                        // 内部画像梯子即是重试路径
+		tier:         tierStrategyHTTP,
+		run: func(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
+			warnings := []string{}
+			subAttempts := []SubAttempt{}
+			deadline := nowMs() + timeoutMs
+			var last *attemptResult
+			// Task 38-a: 本策略内最近一次限流记忆（混合失败时提升返回，保住链层退避记忆）
+			lastLimitedStatus := 0
+			var lastLimitedRetryAfter *int64
+			// R114: 域槽排队累计（跨画像梯子求和；成功/失败路径都带回，饱和观测口径）
+			totalWaited := int64(0)
+			// R141: JS cookie 挑战求解重放——本策略全程限 1 次（见循环内注释）
+			cookieSolveReplayed := false
+			// R143 E2: 网络级瞬态重试预算（整策略 2 次，见循环内注释）
+			netRetryBudget := 2
 
-                        for _, profile := range profiles {
-                                // Task 35-b: 预算感知取槽（预计等待超预算时 shed，不预约不睡眠）+
-                                // 排队时间补偿 deadline（排队不吃服务时间窗；ixdzs8 12 车道实证：
-                                // 末位车道纯排队 18-30s 吃穿 20s 策略预算 → timeout-budget 全灭）
-                                waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
-                                if !granted {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
-                                        if last != nil {
-                                                last.subAttempts = subAttempts // 同步快照防丢失（Task 34 P3-2 口径）
-                                        }
-                                        break
-                                }
-                                deadline += waited
-                                totalWaited += waited // R114: 饱和观测口径（见 attemptResult.queueMs 注）
-                                // 限速等待可能耗时 >1s：剩余预算必须在等待之后计算
-                                remaining := deadline - nowMs()
-                                if remaining < 1000 {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
-                                        if last != nil {
-                                                last.subAttempts = subAttempts // Task 34 (P3-2): budget 耗尽前 last 快照不含本条，同步防丢失
-                                        }
-                                        break
-                                }
-                                s0 := nowMs()
-                                // 显式 Referer 只覆盖「带 Referer」画像的来路；无 Referer 变体保持无 Referer（链内多样性保留）
-                                hdrs := profile.headers(targetURL, profile.withReferer, ctx.referer)
-                                r := fetchWithRedirectGuard(targetURL, hdrs, remaining, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
-                                a := assess(r.status, r.bytes, r.contentType, r.serverChallenge)
-                                // R112: 守卫层判定的 JS 挑战弹回（challenge-landing）优先于 assess——
-                                // 落地页是 200+正常页外观的入口页/书籍页（aijjxs 实证），必须按失败
-                                // 处理，链层才能回退到 curl-impersonate 等指纹差异策略
-                                bounceFail := r.note == "challenge-landing"
-                                ms := nowMs() - s0
-                                note := r.note
-                                if note == "" {
-                                        note = a.note
-                                }
-                                subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: a.ok && !bounceFail, Status: r.status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: note})
-                                if r.warning != "" || a.warning != "" {
-                                        w := r.warning
-                                        if w == "" {
-                                                w = a.warning
-                                        }
-                                        warnings = append(warnings, "["+profile.id+"] "+w)
-                                }
+			for _, profile := range profiles {
+				// Task 35-b: 预算感知取槽（预计等待超预算时 shed，不预约不睡眠）+
+				// 排队时间补偿 deadline（排队不吃服务时间窗；ixdzs8 12 车道实证：
+				// 末位车道纯排队 18-30s 吃穿 20s 策略预算 → timeout-budget 全灭）
+				waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
+				if !granted {
+					subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+					if last != nil {
+						last.subAttempts = subAttempts // 同步快照防丢失（Task 34 P3-2 口径）
+					}
+					break
+				}
+				deadline += waited
+				totalWaited += waited // R114: 饱和观测口径（见 attemptResult.queueMs 注）
+				// 限速等待可能耗时 >1s：剩余预算必须在等待之后计算
+				remaining := deadline - nowMs()
+				if remaining < 1000 {
+					subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+					if last != nil {
+						last.subAttempts = subAttempts // Task 34 (P3-2): budget 耗尽前 last 快照不含本条，同步防丢失
+					}
+					break
+				}
+				s0 := nowMs()
+				// 显式 Referer 只覆盖「带 Referer」画像的来路；无 Referer 变体保持无 Referer（链内多样性保留）
+				hdrs := profile.headers(targetURL, profile.withReferer, ctx.referer)
+				r := fetchWithRedirectGuard(targetURL, hdrs, remaining, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
+				a := assess(r.status, r.bytes, r.contentType, r.serverChallenge)
+				// R112: 守卫层判定的 JS 挑战弹回（challenge-landing）优先于 assess——
+				// 落地页是 200+正常页外观的入口页/书籍页（aijjxs 实证），必须按失败
+				// 处理，链层才能回退到 curl-impersonate 等指纹差异策略
+				bounceFail := r.note == "challenge-landing"
+				ms := nowMs() - s0
+				note := r.note
+				if note == "" {
+					note = a.note
+				}
+				subAttempts = append(subAttempts, SubAttempt{Profile: profile.id, OK: a.ok && !bounceFail, Status: r.status, Ms: ms, Blocked: a.blocked, Bytes: a.size, Note: note})
+				if r.warning != "" || a.warning != "" {
+					w := r.warning
+					if w == "" {
+						w = a.warning
+					}
+					warnings = append(warnings, "["+profile.id+"] "+w)
+				}
 
-                                if r.status == 429 || r.status == 503 {
-                                        // Task 38-a: 记录限流状态供失败返回时提升（promoteRateLimitedStatus）
-                                        lastLimitedStatus = r.status
-                                        lastLimitedRetryAfter = r.retryAfter
-                                }
-                                if a.ok && !bounceFail {
-                                        return attemptResult{ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r.retryAfter, queueMs: totalWaited}
-                                }
+				if r.status == 429 || r.status == 503 {
+					// Task 38-a: 记录限流状态供失败返回时提升（promoteRateLimitedStatus）
+					lastLimitedStatus = r.status
+					lastLimitedRetryAfter = r.retryAfter
+				}
+				if a.ok && !bounceFail {
+					return attemptResult{ok: true, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r.retryAfter, queueMs: totalWaited}
+				}
 
-                                // R141：JS 计算 cookie 型挑战本地求解（ixdzs8 __cn_v 实测）——挑战页被
-                                // assess 判失败后，若响应体含 document.cookie=<name>=<expr> 的白名单可求值
-                                // 形态，本地算出 cookie 种入会话桶并同画像重放一次（限本策略全程 1 次，
-                                // 防挑战值被拒时重复重放）。重放成功则整链成功；cookie 被服务端拒绝
-                                // （IP/UA 绑定型）时失败语义与旧版一致，零回归。
-                                if !cookieSolveReplayed && (len(r.bytes) > 0) {
-                                        cookieSolveReplayed = true // 无论成败，求解重试机会只花一次
-                                        if ckline, solved := solveJSCookieChallenge(r.bytes); solved {
-                                                if tu, perr := urlParse(targetURL); perr == nil {
-                                                        recordSetCookieLines(hostOf(targetURL), []string{ckline}, tu.Scheme == "https")
-                                                        preview := ckline
-                                                        if len(preview) > 30 {
-                                                                preview = preview[:30] + "..."
-                                                        }
-                                                        warnings = append(warnings, "[cookie-challenge] 已求解 JS 挑战 cookie（"+preview+"），同画像重放一次")
-                                                        waited2, granted2 := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
-                                                        if granted2 {
-                                                                deadline += waited2
-                                                                totalWaited += waited2
-                                                                remaining2 := deadline - nowMs()
-                                                                if remaining2 >= 1000 {
-                                                                        r2 := fetchWithRedirectGuard(targetURL, hdrs, remaining2, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
-                                                                        a2 := assess(r2.status, r2.bytes, r2.contentType, r2.serverChallenge)
-                                                                        bounce2 := r2.note == "challenge-landing"
-                                                                        ms2 := nowMs() - s0
-                                                                        subAttempts = append(subAttempts, SubAttempt{Profile: profile.id + "+cookieReplay", OK: a2.ok && !bounce2, Status: r2.status, Ms: ms2, Blocked: a2.blocked, Bytes: a2.size, Note: r2.note})
-                                                                        if a2.ok && !bounce2 {
-                                                                                return attemptResult{ok: true, status: r2.status, bytes: r2.bytes, contentType: r2.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r2.retryAfter, queueMs: totalWaited}
-                                                                        }
-                                                                        last = &attemptResult{ok: false, status: r2.status, bytes: r2.bytes, contentType: r2.contentType, warnings: warnings, note: r2.note, subAttempts: subAttempts, retryAfter: r2.retryAfter, queueMs: totalWaited}
-                                                                }
-                                                        }
-                                                }
-                                        }
-                                }
-                                last = &attemptResult{ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, note: note, subAttempts: subAttempts, retryAfter: r.retryAfter, queueMs: totalWaited}
-                                if r.status == 429 || r.status == 503 {
-                                        // Task 38-a: 限流中换 UA 画像只会加重刺激（对齐 got 系「429/5xx 停止内部梯子，
-                                        // 链层退避/健康记忆接手」口径），停止画像梯子
-                                        break
-                                }
-                        }
-                        if last != nil {
-                                last.status, last.retryAfter = promoteRateLimitedStatus(last.status, last.retryAfter, lastLimitedStatus, lastLimitedRetryAfter)
-                                return *last
-                        }
-                        return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "no-profile-attempted", subAttempts: subAttempts, queueMs: totalWaited}
-                },
-        }
+				// R141：JS 计算 cookie 型挑战本地求解（ixdzs8 __cn_v 实测）——挑战页被
+				// assess 判失败后，若响应体含 document.cookie=<name>=<expr> 的白名单可求值
+				// 形态，本地算出 cookie 种入会话桶并同画像重放一次（限本策略全程 1 次，
+				// 防挑战值被拒时重复重放）。重放成功则整链成功；cookie 被服务端拒绝
+				// （IP/UA 绑定型）时失败语义与旧版一致，零回归。
+				if !cookieSolveReplayed && (len(r.bytes) > 0) {
+					cookieSolveReplayed = true // 无论成败，求解重试机会只花一次
+					if ckline, solved := solveJSCookieChallenge(r.bytes); solved {
+						if tu, perr := urlParse(targetURL); perr == nil {
+							recordSetCookieLines(hostOf(targetURL), []string{ckline}, tu.Scheme == "https")
+							preview := ckline
+							if len(preview) > 30 {
+								preview = preview[:30] + "..."
+							}
+							warnings = append(warnings, "[cookie-challenge] 已求解 JS 挑战 cookie（"+preview+"），同画像重放一次")
+							waited2, granted2 := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
+							if granted2 {
+								deadline += waited2
+								totalWaited += waited2
+								remaining2 := deadline - nowMs()
+								if remaining2 >= 1000 {
+									r2 := fetchWithRedirectGuard(targetURL, hdrs, remaining2, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
+									a2 := assess(r2.status, r2.bytes, r2.contentType, r2.serverChallenge)
+									bounce2 := r2.note == "challenge-landing"
+									ms2 := nowMs() - s0
+									subAttempts = append(subAttempts, SubAttempt{Profile: profile.id + "+cookieReplay", OK: a2.ok && !bounce2, Status: r2.status, Ms: ms2, Blocked: a2.blocked, Bytes: a2.size, Note: r2.note})
+									if a2.ok && !bounce2 {
+										return attemptResult{ok: true, status: r2.status, bytes: r2.bytes, contentType: r2.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: r2.retryAfter, queueMs: totalWaited}
+									}
+									last = &attemptResult{ok: false, status: r2.status, bytes: r2.bytes, contentType: r2.contentType, warnings: warnings, note: r2.note, subAttempts: subAttempts, retryAfter: r2.retryAfter, queueMs: totalWaited}
+								}
+							}
+						}
+					}
+				}
+				last = &attemptResult{ok: false, status: r.status, bytes: r.bytes, contentType: r.contentType, warnings: warnings, note: note, subAttempts: subAttempts, retryAfter: r.retryAfter, queueMs: totalWaited}
+				if r.status == 429 || r.status == 503 {
+					// Task 38-a: 限流中换 UA 画像只会加重刺激（对齐 got 系「429/5xx 停止内部梯子，
+					// 链层退避/健康记忆接手」口径），停止画像梯子
+					break
+				}
+				// R143 E2: 网络级瞬态失败（status=0：连接 reset/EOF/dial 失败）同画像快速重试
+				// 1 次。iqxsw 实证直连 ~2/3 连接 reset（0.35s 即断）且 2-3 连发必通——瞬态
+				// 抖动非站点拒绝，同画像重试比换画像/换策略（每次都重烧 1.2s 域槽）省 6+ 次
+				// 尝试；重试同样过域槽（礼貌间隔不破）。限整策略 2 次，防持续故障站打满预算；
+				// 结构性失败（ssrf-blocked/bad-scheme/queue-saturated）与 HTTP 层失败不在此列。
+				if r.status == 0 && netRetryBudget > 0 && note != "ssrf-blocked" && note != "bad-scheme" && note != "queue-saturated" && deadline-nowMs() >= 2000 {
+					netRetryBudget--
+					waitedN, grantedN := acquireDomainSlotBudgeted(slotKeyFor(hostOf(targetURL), ctx.proxy), deadline, 1000)
+					if grantedN {
+						deadline += waitedN
+						totalWaited += waitedN
+						remainingN := deadline - nowMs()
+						if remainingN >= 1000 {
+							sN := nowMs()
+							rN := fetchWithRedirectGuard(targetURL, hdrs, remainingN, &warnings, ctx.proxy, ctx.insecureTLS, ctx.hardCtx)
+							aN := assess(rN.status, rN.bytes, rN.contentType, rN.serverChallenge)
+							bounceN := rN.note == "challenge-landing"
+							msN := nowMs() - sN
+							noteN := rN.note
+							if noteN == "" {
+								noteN = aN.note
+							}
+							subAttempts = append(subAttempts, SubAttempt{Profile: profile.id + "+netRetry", OK: aN.ok && !bounceN, Status: rN.status, Ms: msN, Blocked: aN.blocked, Bytes: aN.size, Note: noteN})
+							if rN.status == 429 || rN.status == 503 {
+								lastLimitedStatus = rN.status
+								lastLimitedRetryAfter = rN.retryAfter
+							}
+							if aN.ok && !bounceN {
+								return attemptResult{ok: true, status: rN.status, bytes: rN.bytes, contentType: rN.contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: rN.retryAfter, queueMs: totalWaited}
+							}
+							last = &attemptResult{ok: false, status: rN.status, bytes: rN.bytes, contentType: rN.contentType, warnings: warnings, note: noteN, subAttempts: subAttempts, retryAfter: rN.retryAfter, queueMs: totalWaited}
+							if rN.status == 429 || rN.status == 503 {
+								break // 重试后仍限流：同口径停止梯子
+							}
+						}
+					}
+				}
+			}
+			if last != nil {
+				last.status, last.retryAfter = promoteRateLimitedStatus(last.status, last.retryAfter, lastLimitedStatus, lastLimitedRetryAfter)
+				return *last
+			}
+			return attemptResult{ok: false, status: 0, bytes: []byte{}, contentType: "", warnings: warnings, note: "no-profile-attempted", subAttempts: subAttempts, queueMs: totalWaited}
+		},
+	}
 }
 
 var fetchBrowserStrategy = makeFetchStrategy("fetch-browser",
-        "原生 fetch + 完整 Chrome 桌面请求头（UA/Accept/Accept-Language/Referer 链/Sec-Fetch 族/客户端提示），最快最稳的默认策略",
-        []headerProfile{chromeDesktopProfile})
+	"原生 fetch + 完整 Chrome 桌面请求头（UA/Accept/Accept-Language/Referer 链/Sec-Fetch 族/客户端提示），最快最稳的默认策略",
+	[]headerProfile{chromeDesktopProfile})
 
 var fetchUaRotateStrategy = makeFetchStrategy("fetch-ua-rotate",
-        "UA 轮换：Firefox → Safari（无 Referer 变体）→ Edge 桌面画像，对抗 UA 白名单类拦截",
-        []headerProfile{firefoxDesktopProfile, safariDesktopProfile, edgeDesktopProfile})
+	"UA 轮换：Firefox → Safari（无 Referer 变体）→ Edge 桌面画像，对抗 UA 白名单类拦截",
+	[]headerProfile{firefoxDesktopProfile, safariDesktopProfile, edgeDesktopProfile})
 
 var fetchMobileStrategy = makeFetchStrategy("fetch-mobile",
-        "移动端画像：Android Chrome（带 Referer）→ iPhone Safari（无 Referer），部分站点仅放行移动端 UA",
-        []headerProfile{androidChromeProfile, iphoneSafariProfile})
+	"移动端画像：Android Chrome（带 Referer）→ iPhone Safari（无 Referer），部分站点仅放行移动端 UA",
+	[]headerProfile{androidChromeProfile, iphoneSafariProfile})
 
 var fetchSpiderStrategy = makeFetchStrategy("fetch-spider",
-        "搜索引擎 spider UA 降级：Googlebot → Baiduspider（仅采集公开内容，不伪造登录态/不破解验证码）",
-        []headerProfile{googlebotProfile, baiduspiderProfile})
+	"搜索引擎 spider UA 降级：Googlebot → Baiduspider（仅采集公开内容，不伪造登录态/不破解验证码）",
+	[]headerProfile{googlebotProfile, baiduspiderProfile})
 
 // ==================== got-scraping 的 Go 等价实现 ====================
 
@@ -251,13 +290,13 @@ const gotProfileStickinessWindowMs int64 = 45 * 60 * 1000
 // 同一 Accept-Language，E14 声明的「同画像不同站语言形态可异」跨站去相关被截断破坏；
 // 盐位+完整 host+定长 8B 窗口的拼接序保持 (salt, host, window) 语义不变。
 func stickyHashIndex(salt byte, host string, window int64, n int) int {
-        h := fnv.New64a()
-        h.Write([]byte{salt})
-        h.Write([]byte(host))
-        var buf [8]byte
-        binary.BigEndian.PutUint64(buf[:], uint64(window))
-        h.Write(buf[:])
-        return int(h.Sum64() % uint64(n))
+	h := fnv.New64a()
+	h.Write([]byte{salt})
+	h.Write([]byte(host))
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], uint64(window))
+	h.Write(buf[:])
+	return int(h.Sum64() % uint64(n))
 }
 
 // headerGeneratorHeaders 主机粘性真实桌面头（等价 header-generator 桌面 zh-CN）：
@@ -267,237 +306,237 @@ func stickyHashIndex(salt byte, host string, window int64, n int) int {
 // 固定双画像在站点侧的 UA 统计里呈可聚类的窄分布（同一 IP 段反复出现同两组 UA+头组合），
 // 补 Firefox（无客户端提示、头集差异大）拉开熵距，与 fetch-ua-rotate 的画像覆盖对齐。
 func headerGeneratorHeaders(firstURL string) map[string]string {
-        host := hostOf(firstURL)
-        window := nowMs() / gotProfileStickinessWindowMs
-        var base map[string]string
-        switch stickyHashIndex('p', host, window, 3) {
-        case 0:
-                base = chromeDesktopProfile.headers(firstURL, true, "")
-        case 1:
-                base = edgeDesktopProfile.headers(firstURL, true, "")
-        default:
-                base = firefoxDesktopProfile.headers(firstURL, true, "")
-        }
-        langs := []string{
-                "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-                "zh-CN,zh;q=0.9",
-                "zh-CN,zh;q=0.9,en;q=0.8",
-        }
-        base["accept-language"] = langs[stickyHashIndex('l', host, window, len(langs))]
-        return base
+	host := hostOf(firstURL)
+	window := nowMs() / gotProfileStickinessWindowMs
+	var base map[string]string
+	switch stickyHashIndex('p', host, window, 3) {
+	case 0:
+		base = chromeDesktopProfile.headers(firstURL, true, "")
+	case 1:
+		base = edgeDesktopProfile.headers(firstURL, true, "")
+	default:
+		base = firefoxDesktopProfile.headers(firstURL, true, "")
+	}
+	langs := []string{
+		"zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+		"zh-CN,zh;q=0.9",
+		"zh-CN,zh;q=0.9,en;q=0.8",
+	}
+	base["accept-language"] = langs[stickyHashIndex('l', host, window, len(langs))]
+	return base
 }
 
 // gotStrategyRun 单变体（h2 → http1.1）执行：手动逐跳重定向 + SSRF + Cookie 会话。
 // 语义对齐 TS got-scraping.ts：followRedirect:false 逐跳处理；429/5xx 直接结束梯子
 // （换协议不会改变服务端决策，对限流中的站点追加降级请求只会加重刺激）。
 func gotStrategyRun(targetURL string, timeoutMs int64, ctx *strategyRunCtx) attemptResult {
-        warnings := []string{}
-        subAttempts := []SubAttempt{}
-        deadline := nowMs() + timeoutMs
-        var lastRetryAfter *int64
-        lastHTTPStatus := 0
-        // R114: 域槽排队累计（跨变体/跨跳求和；饱和观测口径见 attemptResult.queueMs 注）
-        totalWaited := int64(0)
-        explicitReferer := ctx.referer
-        // Task 27-c: 硬时间闸取消 context 挂接（nil → Background，保持旧行为）
-        baseCtx := ctx.hardCtx
-        if baseCtx == nil {
-                baseCtx = context.Background()
-        }
-        variants := []struct {
-                profile string
-                noH2    bool
-        }{{profile: "h2", noH2: false}, {profile: "http1.1", noH2: true}}
+	warnings := []string{}
+	subAttempts := []SubAttempt{}
+	deadline := nowMs() + timeoutMs
+	var lastRetryAfter *int64
+	lastHTTPStatus := 0
+	// R114: 域槽排队累计（跨变体/跨跳求和；饱和观测口径见 attemptResult.queueMs 注）
+	totalWaited := int64(0)
+	explicitReferer := ctx.referer
+	// Task 27-c: 硬时间闸取消 context 挂接（nil → Background，保持旧行为）
+	baseCtx := ctx.hardCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	variants := []struct {
+		profile string
+		noH2    bool
+	}{{profile: "h2", noH2: false}, {profile: "http1.1", noH2: true}}
 
-        // Task 34 (P3-11): 画像头在 variant 循环外生成一次——旧实现每跳重新随机，
-        // 同一会话链内 UA/头在跳间跳变（真实浏览器跨跳恒定），属可被服务端识别的指纹矛盾
-        variantHeaders := headerGeneratorHeaders(targetURL)
-        for _, variant := range variants {
-                current := targetURL
-                hops := 0
-                // prevURL 上一跳 URL（Task 49-a E6：hop>0 头族拓扑精化）
-                prevURL := ""
-                stopVariants := false
-                for {
-                        // Task 35-b: 预算感知取槽 + 排队时间补偿（与 fetch 系同口径，见 makeFetchStrategy）
-                        waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(current), ctx.proxy), deadline, 1000)
-                        if !granted {
-                                subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
-                                break
-                        }
-                        deadline += waited
-                        totalWaited += waited // R114: 饱和观测口径
-                        remaining := deadline - nowMs()
-                        if remaining < 1000 {
-                                subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
-                                break
-                        }
-                        s0 := nowMs()
-                        hopHeaders := map[string]string{}
-                        for hk, hv := range variantHeaders {
-                                hopHeaders[hk] = hv
-                        }
-                        if explicitReferer != "" {
-                                hopHeaders["referer"] = explicitReferer
-                                // Task 49-a（E7）: 首跳 sec-fetch-site 与显式 Referer 拓扑一致（got 不经
-                                // baseHeaders 的 explicitReferer 通道，需在此接线；hop>0 由下方
-                                // refineHopHeaders 按跳拓扑接管）。误杀面：仅改写已存在且非 none 的键。
-                                if hops == 0 {
-                                        if cur, ok := hopHeaders["sec-fetch-site"]; ok && cur != "none" {
-                                                if site := deriveSecFetchSite(current, explicitReferer); site != "" {
-                                                        hopHeaders["sec-fetch-site"] = site
-                                                }
-                                        }
-                                }
-                        } else {
-                                hopHeaders["referer"] = urlParseHost(targetURL)
-                        }
-                        // Task 49-a（E6）: hop>0 按重定向拓扑精化 sec-fetch-site/referer（got 恒发
-                        // Referer，跨站跳旧实现仍携带首跳来路并声称 same-origin，同 fetch 系自曝面）
-                        if hops > 0 && prevURL != "" {
-                                refineHopHeaders(hopHeaders, prevURL, current)
-                        }
-                        hopHost := hostOf(current)
-                        if hopCookie := cookieHeaderFor(hopHost, strings.HasPrefix(current, "https:")); hopCookie != "" {
-                                hopHeaders["cookie"] = hopCookie
-                        }
+	// Task 34 (P3-11): 画像头在 variant 循环外生成一次——旧实现每跳重新随机，
+	// 同一会话链内 UA/头在跳间跳变（真实浏览器跨跳恒定），属可被服务端识别的指纹矛盾
+	variantHeaders := headerGeneratorHeaders(targetURL)
+	for _, variant := range variants {
+		current := targetURL
+		hops := 0
+		// prevURL 上一跳 URL（Task 49-a E6：hop>0 头族拓扑精化）
+		prevURL := ""
+		stopVariants := false
+		for {
+			// Task 35-b: 预算感知取槽 + 排队时间补偿（与 fetch 系同口径，见 makeFetchStrategy）
+			waited, granted := acquireDomainSlotBudgeted(slotKeyFor(hostOf(current), ctx.proxy), deadline, 1000)
+			if !granted {
+				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+				break
+			}
+			deadline += waited
+			totalWaited += waited // R114: 饱和观测口径
+			remaining := deadline - nowMs()
+			if remaining < 1000 {
+				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: 0, Blocked: false, Bytes: 0, Note: "timeout-budget"})
+				break
+			}
+			s0 := nowMs()
+			hopHeaders := map[string]string{}
+			for hk, hv := range variantHeaders {
+				hopHeaders[hk] = hv
+			}
+			if explicitReferer != "" {
+				hopHeaders["referer"] = explicitReferer
+				// Task 49-a（E7）: 首跳 sec-fetch-site 与显式 Referer 拓扑一致（got 不经
+				// baseHeaders 的 explicitReferer 通道，需在此接线；hop>0 由下方
+				// refineHopHeaders 按跳拓扑接管）。误杀面：仅改写已存在且非 none 的键。
+				if hops == 0 {
+					if cur, ok := hopHeaders["sec-fetch-site"]; ok && cur != "none" {
+						if site := deriveSecFetchSite(current, explicitReferer); site != "" {
+							hopHeaders["sec-fetch-site"] = site
+						}
+					}
+				}
+			} else {
+				hopHeaders["referer"] = urlParseHost(targetURL)
+			}
+			// Task 49-a（E6）: hop>0 按重定向拓扑精化 sec-fetch-site/referer（got 恒发
+			// Referer，跨站跳旧实现仍携带首跳来路并声称 same-origin，同 fetch 系自曝面）
+			if hops > 0 && prevURL != "" {
+				refineHopHeaders(hopHeaders, prevURL, current)
+			}
+			hopHost := hostOf(current)
+			if hopCookie := cookieHeaderFor(hopHost, strings.HasPrefix(current, "https:")); hopCookie != "" {
+				hopHeaders["cookie"] = hopCookie
+			}
 
-                        tr, trWarn := transportFor(ctx.proxy, ctx.insecureTLS, variant.noH2)
-                        if trWarn != "" {
-                                warnings = append(warnings, trWarn)
-                        }
-                        req, err := http.NewRequestWithContext(baseCtx, "GET", current, nil)
-                        if err != nil {
-                                subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "bad-url"})
-                                stopVariants = true
-                                break
-                        }
-                        for k, v := range hopHeaders {
-                                req.Header.Set(k, v)
-                        }
-                        client := manualClient(tr, time.Duration(remaining)*time.Millisecond)
-                        res, err := client.Do(req)
-                        if err != nil {
-                                // Task 38-a: 分类抽 netErrNote（与 fetch 系同口径）——硬时间闸 hcancel()
-                                // 中止的在途请求按 engine-cancel 归引擎自状态，不再落 network-error
-                                note := netErrNote(err)
-                                subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: note})
-                                warnings = append(warnings, "got-scraping 网络错误（"+variant.profile+"）: "+note)
-                                break
-                        }
-                        status := res.StatusCode
-                        hopHTTPS := strings.HasPrefix(current, "https:")
+			tr, trWarn := transportFor(ctx.proxy, ctx.insecureTLS, variant.noH2)
+			if trWarn != "" {
+				warnings = append(warnings, trWarn)
+			}
+			req, err := http.NewRequestWithContext(baseCtx, "GET", current, nil)
+			if err != nil {
+				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "bad-url"})
+				stopVariants = true
+				break
+			}
+			for k, v := range hopHeaders {
+				req.Header.Set(k, v)
+			}
+			client := manualClient(tr, time.Duration(remaining)*time.Millisecond)
+			res, err := client.Do(req)
+			if err != nil {
+				// Task 38-a: 分类抽 netErrNote（与 fetch 系同口径）——硬时间闸 hcancel()
+				// 中止的在途请求按 engine-cancel 归引擎自状态，不再落 network-error
+				note := netErrNote(err)
+				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: 0, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: note})
+				warnings = append(warnings, "got-scraping 网络错误（"+variant.profile+"）: "+note)
+				break
+			}
+			status := res.StatusCode
+			hopHTTPS := strings.HasPrefix(current, "https:")
 
-                        // 3xx：解析 Location → 协议白名单 + 逐跳 SSRF 校验 → 限速后请求下一跳
-                        if isRedirectStatus(status) {
-                                lastHTTPStatus = status                       // Task 34 (P3-3): 终态 3xx 时 status 不再回 0（对齐 curl 系口径）
-                                recordResponseCookies(hopHost, res, hopHTTPS) // 中间跳下发的 Set-Cookie 也要入会话
-                                loc := res.Header.Get("Location")
-                                _ = res.Body.Close()
-                                if loc == "" {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "redirect-no-location"})
-                                        break
-                                }
-                                next := urlJoin(loc, current)
-                                if next == nil {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "redirect-bad-location"})
-                                        warnings = append(warnings, "got-scraping 非法 Location 头: "+truncateStr(loc, 200))
-                                        break
-                                }
-                                if next.Scheme != "http" && next.Scheme != "https" {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "ssrf-blocked"})
-                                        warnings = append(warnings, "SSRF 防护: 重定向到非 http/https 协议已拒绝: "+next.Scheme)
-                                        stopVariants = true
-                                        break
-                                }
-                                check := assertHostPublic(next.Hostname())
-                                if !check.ok {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "ssrf-blocked"})
-                                        warnings = append(warnings, "SSRF 防护: 重定向终点 "+check.reason)
-                                        stopVariants = true
-                                        break
-                                }
-                                hops++
-                                if hops > maxRedirectHops {
-                                        subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "too-many-redirects"})
-                                        warnings = append(warnings, "got-scraping 重定向超过 "+itoa(maxRedirectHops)+" 跳，已停止")
-                                        break
-                                }
-                                prevURL = current // E6: 本跳 URL 即下一跳的「上一跳」
-                                current = next.String()
-                                continue
-                        }
+			// 3xx：解析 Location → 协议白名单 + 逐跳 SSRF 校验 → 限速后请求下一跳
+			if isRedirectStatus(status) {
+				lastHTTPStatus = status                       // Task 34 (P3-3): 终态 3xx 时 status 不再回 0（对齐 curl 系口径）
+				recordResponseCookies(hopHost, res, hopHTTPS) // 中间跳下发的 Set-Cookie 也要入会话
+				loc := res.Header.Get("Location")
+				_ = res.Body.Close()
+				if loc == "" {
+					subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "redirect-no-location"})
+					break
+				}
+				next := urlJoin(loc, current)
+				if next == nil {
+					subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "redirect-bad-location"})
+					warnings = append(warnings, "got-scraping 非法 Location 头: "+truncateStr(loc, 200))
+					break
+				}
+				if next.Scheme != "http" && next.Scheme != "https" {
+					subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "ssrf-blocked"})
+					warnings = append(warnings, "SSRF 防护: 重定向到非 http/https 协议已拒绝: "+next.Scheme)
+					stopVariants = true
+					break
+				}
+				check := assertHostPublic(next.Hostname())
+				if !check.ok {
+					subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "ssrf-blocked"})
+					warnings = append(warnings, "SSRF 防护: 重定向终点 "+check.reason)
+					stopVariants = true
+					break
+				}
+				hops++
+				if hops > maxRedirectHops {
+					subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: 0, Note: "too-many-redirects"})
+					warnings = append(warnings, "got-scraping 重定向超过 "+itoa(maxRedirectHops)+" 跳，已停止")
+					break
+				}
+				prevURL = current // E6: 本跳 URL 即下一跳的「上一跳」
+				current = next.String()
+				continue
+			}
 
-                        recordResponseCookies(hopHost, res, hopHTTPS)
-                        body := readBodyCapped(res)
-                        contentType := body.contentType
-                        // Task 54（E15）：末跳响应头自报挑战（cf-mitigated）→ assess 短路判挑战页
-                        serverChallenge := headerSaysChallenge(res.Header.Values("Cf-Mitigated"))
-                        if body.note == "too-large" {
-                                lastHTTPStatus = status
-                                subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: body.size, Note: "too-large"})
-                                warnings = append(warnings, "got-scraping 响应超过 "+itoa(maxBytes)+"B 上限，已放弃")
-                                stopVariants = true
-                                break
-                        }
-                        a := assess(status, body.bytes, contentType, serverChallenge)
-                        // Task 49-a（F1·P3 错误吞没）：与 fetch 系口径对齐——body.note（响应体读取
-                        // 中断等传输层证据）非空时优先于 assess 派生 note，warning 同步透传。
-                        // 旧实现只特判 too-large：响应头 200 但中途断流时 body.bytes=nil，被记成
-                        // "empty-body"（空壳语义），「源站连接中断」证据（body.warning 携带底层
-                        // 错误）整条丢弃——排障与 backend 分类双失真；fetch 系同形态透传 r.note/r.warning。
-                        note := a.note
-                        if body.note != "" {
-                                note = body.note
-                        }
-                        if body.warning != "" && body.note != "too-large" {
-                                warnings = append(warnings, "["+variant.profile+"] "+body.warning)
-                        }
-                        subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: a.ok, Status: status, Ms: nowMs() - s0, Blocked: a.blocked, Bytes: a.size, Note: note})
-                        if a.warning != "" {
-                                warnings = append(warnings, "["+variant.profile+"] "+a.warning)
-                        }
-                        if status >= 400 {
-                                warnings = append(warnings, "got-scraping 收到 HTTP "+itoa(status))
-                        }
-                        if status == 429 || status == 503 {
-                                if ra := parseRetryAfterMs(res.Header.Get("Retry-After")); ra != nil {
-                                        lastRetryAfter = ra
-                                }
-                        }
-                        if a.ok {
-                                return attemptResult{ok: true, status: status, bytes: body.bytes, contentType: contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: nil, queueMs: totalWaited}
-                        }
-                        lastHTTPStatus = status
-                        // HTTP 状态码失败（含 429/5xx）直接结束梯子
-                        if status >= 400 {
-                                stopVariants = true
-                        }
-                        break
-                }
-                if stopVariants {
-                        break
-                }
-        }
-        return attemptResult{ok: false, status: lastHTTPStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: lastRetryAfter, queueMs: totalWaited}
+			recordResponseCookies(hopHost, res, hopHTTPS)
+			body := readBodyCapped(res)
+			contentType := body.contentType
+			// Task 54（E15）：末跳响应头自报挑战（cf-mitigated）→ assess 短路判挑战页
+			serverChallenge := headerSaysChallenge(res.Header.Values("Cf-Mitigated"))
+			if body.note == "too-large" {
+				lastHTTPStatus = status
+				subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: false, Status: status, Ms: nowMs() - s0, Blocked: false, Bytes: body.size, Note: "too-large"})
+				warnings = append(warnings, "got-scraping 响应超过 "+itoa(maxBytes)+"B 上限，已放弃")
+				stopVariants = true
+				break
+			}
+			a := assess(status, body.bytes, contentType, serverChallenge)
+			// Task 49-a（F1·P3 错误吞没）：与 fetch 系口径对齐——body.note（响应体读取
+			// 中断等传输层证据）非空时优先于 assess 派生 note，warning 同步透传。
+			// 旧实现只特判 too-large：响应头 200 但中途断流时 body.bytes=nil，被记成
+			// "empty-body"（空壳语义），「源站连接中断」证据（body.warning 携带底层
+			// 错误）整条丢弃——排障与 backend 分类双失真；fetch 系同形态透传 r.note/r.warning。
+			note := a.note
+			if body.note != "" {
+				note = body.note
+			}
+			if body.warning != "" && body.note != "too-large" {
+				warnings = append(warnings, "["+variant.profile+"] "+body.warning)
+			}
+			subAttempts = append(subAttempts, SubAttempt{Profile: variant.profile, OK: a.ok, Status: status, Ms: nowMs() - s0, Blocked: a.blocked, Bytes: a.size, Note: note})
+			if a.warning != "" {
+				warnings = append(warnings, "["+variant.profile+"] "+a.warning)
+			}
+			if status >= 400 {
+				warnings = append(warnings, "got-scraping 收到 HTTP "+itoa(status))
+			}
+			if status == 429 || status == 503 {
+				if ra := parseRetryAfterMs(res.Header.Get("Retry-After")); ra != nil {
+					lastRetryAfter = ra
+				}
+			}
+			if a.ok {
+				return attemptResult{ok: true, status: status, bytes: body.bytes, contentType: contentType, warnings: warnings, subAttempts: subAttempts, retryAfter: nil, queueMs: totalWaited}
+			}
+			lastHTTPStatus = status
+			// HTTP 状态码失败（含 429/5xx）直接结束梯子
+			if status >= 400 {
+				stopVariants = true
+			}
+			break
+		}
+		if stopVariants {
+			break
+		}
+	}
+	return attemptResult{ok: false, status: lastHTTPStatus, bytes: []byte{}, contentType: "", warnings: warnings, note: "all-variants-failed", subAttempts: subAttempts, retryAfter: lastRetryAfter, queueMs: totalWaited}
 }
 
 var gotScrapingStrategy = strategyDef{
-        name:         "got-scraping",
-        description:  "随机真实浏览器头 + Go 原生 HTTP/2，失败自动降级 HTTP/1.1（got-scraping 策略的 Go 等价实现），对抗请求头/协议指纹拦截",
-        probe:        func() bool { return true },
-        selfRetrying: true,
-        run:          gotStrategyRun,
-        tier:         tierStrategyHTTP,
+	name:         "got-scraping",
+	description:  "随机真实浏览器头 + Go 原生 HTTP/2，失败自动降级 HTTP/1.1（got-scraping 策略的 Go 等价实现），对抗请求头/协议指纹拦截",
+	probe:        func() bool { return true },
+	selfRetrying: true,
+	run:          gotStrategyRun,
+	tier:         tierStrategyHTTP,
 }
 
 // urlParseHost 取 origin+"/"（Referer 缺省值）
 func urlParseHost(raw string) string {
-        u, err := urlParse(raw)
-        if err != nil {
-                return ""
-        }
-        return u.Scheme + "://" + u.Host + "/"
+	u, err := urlParse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host + "/"
 }
 
 // netErrNote Go 传输层网络错误 → 结构化备注（fetch 系 fetchWithRedirectGuard / got 系共用）。
@@ -507,14 +546,14 @@ func urlParseHost(raw string) string {
 // 摊平进 attempts → hasRealNetworkAttempt=true → noteChainFailure(allNetErr=true) →
 // netStreak 2 次即熔断——把「站点响应停滞（硬闸兜底）」误判成「站点连接层拒绝本机」提前熔断。
 func netErrNote(err error) string {
-        le := strings.ToLower(err.Error())
-        if strings.Contains(le, "context canceled") {
-                return "engine-cancel"
-        }
-        if strings.Contains(le, "timeout") || strings.Contains(le, "deadline") {
-                return "timeout"
-        }
-        return "network-error"
+	le := strings.ToLower(err.Error())
+	if strings.Contains(le, "context canceled") {
+		return "engine-cancel"
+	}
+	if strings.Contains(le, "timeout") || strings.Contains(le, "deadline") {
+		return "timeout"
+	}
+	return "network-error"
 }
 
 // promoteRateLimitedStatus Task 38-a: 混合失败时的限流状态提升。
@@ -524,10 +563,10 @@ func netErrNote(err error) string {
 // 末位状态非限流」时把返回状态提升为限流码（attempts 明细不受影响——子尝试自带各跳真实状态码，
 // 提升只作用于链层策略级 status 的健康记忆消费点）。
 func promoteRateLimitedStatus(finalStatus int, finalRA *int64, limitedStatus int, limitedRA *int64) (int, *int64) {
-        if limitedStatus == 0 || finalStatus == 429 || finalStatus == 503 {
-                return finalStatus, finalRA
-        }
-        return limitedStatus, limitedRA
+	if limitedStatus == 0 || finalStatus == 429 || finalStatus == 503 {
+		return finalStatus, finalRA
+	}
+	return limitedStatus, limitedRA
 }
 
 // runWithHardGate 策略硬时间闸：任何策略都不得挂死整条链。底层库自身超时可能失效，
@@ -538,26 +577,26 @@ func promoteRateLimitedStatus(finalStatus int, finalRA *int64, limitedStatus int
 // 空转到自身超时；curl 系/browser 桥接为外部进程（自带 --max-time/SIGALRM 看门狗，
 // 残余后台收尾 ≤3s，维持有界）；正常完成路径同样 cancel 释放 context 资源。
 func runWithHardGate(f func(context.Context) attemptResult, hardMs int64, budgetNoteMs int64) (attemptResult, bool) {
-        type out struct {
-                res attemptResult
-        }
-        hctx, hcancel := context.WithCancel(context.Background())
-        done := make(chan out, 1)
-        go func() {
-                defer hcancel() // 正常完成也释放（幂等，与超时分支的 cancel 不冲突）
-                done <- out{res: f(hctx)}
-        }()
-        timer := time.NewTimer(time.Duration(hardMs) * time.Millisecond)
-        defer timer.Stop()
-        select {
-        case o := <-done:
-                return o.res, false
-        case <-timer.C:
-                hcancel() // Task 27-c: 通知在途 HTTP 请求立即中止
-                return attemptResult{
-                        ok: false, status: 0, bytes: []byte{}, contentType: "",
-                        warnings: []string{"策略超过硬性时间闸（" + itoa(int(budgetNoteMs/1000)) + "s），已强制跳过（底层库超时失效保护）"},
-                        note:     "hard-timeout",
-                }, true
-        }
+	type out struct {
+		res attemptResult
+	}
+	hctx, hcancel := context.WithCancel(context.Background())
+	done := make(chan out, 1)
+	go func() {
+		defer hcancel() // 正常完成也释放（幂等，与超时分支的 cancel 不冲突）
+		done <- out{res: f(hctx)}
+	}()
+	timer := time.NewTimer(time.Duration(hardMs) * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case o := <-done:
+		return o.res, false
+	case <-timer.C:
+		hcancel() // Task 27-c: 通知在途 HTTP 请求立即中止
+		return attemptResult{
+			ok: false, status: 0, bytes: []byte{}, contentType: "",
+			warnings: []string{"策略超过硬性时间闸（" + itoa(int(budgetNoteMs/1000)) + "s），已强制跳过（底层库超时失效保护）"},
+			note:     "hard-timeout",
+		}, true
+	}
 }

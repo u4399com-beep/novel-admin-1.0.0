@@ -222,3 +222,6 @@ a.jxzw-gcover:hover{filter:brightness(1.05)}
 .dark .book-catalog-body li a{color:#c9bfaf;border-color:#34302a}
 .dark .book-catalog-body .idx,.dark .book-catalog-body .wc{color:#9c9284}
 .dark .book-catalog-body li a:hover{background:#ffffff0d}
+
+/* R143: 移动端书页水平溢出根修——.book-detail 的 overflow-x:clip 在拼接的原站 CSS 里只出现在 @media(min-width:768px) 作用域，<768px 的暗幕 hero（backdrop inset calc(50% - 50vw) + img width calc(100% + 180px)）顶穿视口（390px 实测 scrollWidth 438）。全局补 clip（与既有 min-width 版本叠加，语义一致零冲突）。 */
+.book-detail{overflow-x:clip}
