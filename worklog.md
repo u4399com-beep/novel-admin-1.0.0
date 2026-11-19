@@ -5469,3 +5469,21 @@ Stage Summary:
 - 首页图文模块封面硬过滤交付：展示侧六列表+HomeBlocks 全接入（文件存在+可解码+>=30x40 三重门槛）、写入侧单咽喉拒占位图、空态补标封面优先、17 张存量微图清理+118 本封面补抓
 - 首页视觉契约：真实封面图 100%（宁缺毋假）；/list 频道页保持全集口径（无图书走渐变块，角标数字=全集总数不变）
 - 移交下一轮：①PAT 轮换（用户侧，第 16 次提醒：ghp_*** 务必去 GitHub 吊销换新）②14 本重置书封面随巡检收敛（写入门已保证占位图不落库，若源站持续限流可按需扩 proxy 出口）③其余主题（非 jiuxiaozw）首页如需同款硬过滤可复用 queryNovelListCovers（当前仅 jiuxiaozw 默认主题接入）
+
+Task ID: R147
+Agent: Z.ai Code (main)
+Task: 「阅读页加入向上、下滑动和左、右滑动翻页，加个翻页特效。」
+
+Work Log:
+- 【四向滑动状态机（jiuxiaozw.js reader 模块轴向通用化）】12px 死区→主轴判定（x/y）→跟手位移→释放判定；上/左滑=下一页、下/右滑=上一页；采样窗 6 帧算 flick 速度（vel≥0.5px/ms 判甩）。同一状态机四向复用，surface/preview 位移表达式按轴取 X/Y。
+- 【影子层（chapter.html 注入 + jiuxiaozw.js 驱动）】reader-page-preview hidden 层为 pageWindow 首子（绘于 surface 之下）；fillPreview=克隆 textWindow(false)+cols(true) 并置目标页列偏移——同几何故分页断点与主层严格一致；CSS [hidden]/data-moving=X/Y 钩子原已克隆就绪（byte 级核验推翻"损坏"疑云：[h 序列系工具输出显示伪影，od -c 实证文件完好）。
+- 【翻页特效三件套】①跟手位移（surface 离场页 + preview incoming 页随指）②data-moving=X/Y 高度阴影——离场页投影子层；prev 向 preview z-index=2 翻转让影子可见（条带模型无重叠区，影子正好落在接缝）③释放 260ms cubic-bezier(.22,.61,.36,1) 收尾滑出/滑入。热区/键盘翻页同步升级：goPage 改 240ms 同贝塞尔动画（render 即时更新进度，anim 互斥旗防并发；drag 成手即 cols.transition=none 防动画拖拽冲突）。
+- 【边界语义】章内边界橡皮筋 0.3 阻尼不出影子层；强甩（vel≥0.5px/ms 且 dist≥48px，或 dist≥0.5W）→ 上一/下一章（与热区同语义，navChapter disabled 兜底）；pointercancel 一律弹回。
+- 【指针策略】触摸靠浏览器隐式捕获（显式 setPointerCapture 会重定向 click 破坏热区——弃用）；鼠标成手后显式捕获+释放；pointerType 不限（touch/mouse/pen 全通）；拖拽成手 suppressClick 捕获段拦截派生 click，pointerup 后 400ms 自愈防悬挂吞点；userSelect=none+removeAllRanges 防拖选。
+- 【E2E（agent-browser iPhone 14 + 1280x800）】左滑 1/14→2/14、右滑→1/14、上滑→2/14、下滑→1/14 全对且事后 surface/preview/turning/userSelect 全复位；热区右/中回归（翻页+菜单开合）；末页慢速上滑（80ms 间隔去甩）橡皮筋保持 14/14 原地；末页快甩跳第 2 章（/chapter/363630 1/11）；首页慢速右滑边界不动；桌面鼠标拖拽左滑 1/9→2/9；console/页面错误双零。
+- 【质量闸】bun new Function 语法闸过；backend 重编重启（pid 16446，模板/静态虽走磁盘仍重编保 fallback 完整性）；推 origin/main 6534bcf。
+- 【坑存档】①连发手势间隔 320ms<290ms commit 动画窗会被 anim 互斥旗吞一次手势（真实手势间隔远大于此，非缺陷；测试需 ≥350ms）②bash 双引号内 JS 变量 $i 不插值致上轮 ReferenceError——本轮全用固定 pointerId③worklog 曾记 eval 不支持 promise，本轮实测 await 生效（慢速手势 80ms 间隔生效为证），旧坑结论作废。
+
+Stage Summary:
+- 阅读页翻页交互完整交付：四向滑动（上下左右）+ 全路径翻页特效（滑动跟手/热区/键盘统一贝塞尔平移+高度阴影）+ 章界橡皮筋/强甩跨章 + 触摸/鼠标双通道，机制与原站 data-moving=X/Y+preview 钩子 1:1
+- 移交下一轮：①PAT 轮换（用户侧，第 17 次提醒：ghp_*** 务必去 GitHub 吊销换新）②阅读进度跨会话记忆未实现（原站有断点续读；如需可加 localStorage 恢复 cur）③如需"仿真卷页"级特效可另开轮评估（当前平移+阴影与原站行为对齐）
