@@ -99,7 +99,9 @@ CREATE TABLE IF NOT EXISTS "SiteSetting" (
         "proxyPool" TEXT NOT NULL DEFAULT '',
         -- R97: TXT/封面自定义存储目录（绝对路径；空=默认 {repoRoot}/download/novels 与 {repoRoot}/public/covers）
         "txtDir" TEXT NOT NULL DEFAULT '',
-        "coversDir" TEXT NOT NULL DEFAULT ''
+        "coversDir" TEXT NOT NULL DEFAULT '',
+        -- R148: 阅读页分页模式（'' / auto=跟随设备：PC 全文滚动+移动端分页；scroll=全端全文；page=全端分页）
+        "readerMode" TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS "PseoKeyword" (
@@ -280,6 +282,6 @@ CREATE INDEX IF NOT EXISTS "TranslationQueue_state_idx" ON "TranslationQueue" ("
 // ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训：
 // 严禁 once 外经 exec/query 助手再入 getDB）。
 func ensureBaseSchema(db *sql.DB) error {
-	_, err := db.Exec(baseSchemaDDL)
-	return err
+        _, err := db.Exec(baseSchemaDDL)
+        return err
 }

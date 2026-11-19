@@ -16,63 +16,63 @@
 package main
 
 import (
-	"database/sql"
-	"encoding/json"
-	"math"
-	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
+        "database/sql"
+        "encoding/json"
+        "math"
+        "net/http"
+        "regexp"
+        "strconv"
+        "strings"
+        "sync"
+        "time"
 )
 
 func init() {
-	register("GET", "/api/settings", handleSettingsGet)
-	register("PATCH", "/api/settings", handleSettingsPatch)
+        register("GET", "/api/settings", handleSettingsGet)
+        register("PATCH", "/api/settings", handleSettingsPatch)
 }
 
 // serializeSettingsWrite：SiteSetting 单例行读-改-写的进程内串行锁（防并发 PATCH 互覆丢字段）
 var settingsWriteMu sync.Mutex
 
 func withSettingsLock(fn func()) {
-	settingsWriteMu.Lock()
-	defer settingsWriteMu.Unlock()
-	fn()
+        settingsWriteMu.Lock()
+        defer settingsWriteMu.Unlock()
+        fn()
 }
 
 // ==================== DEFAULT_SEO（逐字段照抄 src/lib/seo.ts） ====================
 
 var defaultSeo = map[string]string{
-	"homeTitle":           "{siteName} - 免费小说在线阅读_原创小说网站",
-	"homeDescription":     "{siteName}是领先的免费原创小说在线阅读网站，提供玄幻、仙侠、都市、历史、科幻等全品类小说，每日更新，畅享极致阅读体验。",
-	"homeKeywords":        "小说,免费小说,在线阅读,{siteName},玄幻小说,都市小说",
-	"categoryTitle":       "{categoryName}小说大全_最新{categoryName}小说排行榜 - {siteName}",
-	"categoryDescription": "{siteName}{categoryName}频道为您提供海量精品{categoryName}小说在线阅读，{categoryName}小说每日更新，尽在{siteName}。",
-	"bookTitle":           "{novelTitle}最新章节列表_{author}小说 - {siteName}",
-	"bookDescription":     "{novelTitle}连载于{siteName}，作者{author}，{statusText}。{descShort}",
-	"bookKeywords":        "{novelTitle},{novelTitle}最新章节,{author},{categoryName}小说",
-	"tocTitle":            "{novelTitle}目录_全部章节列表 - {siteName}",
-	"tocDescription":      "{novelTitle}全部章节目录一览，按顺序阅读《{novelTitle}》最新章节，尽在{siteName}。",
-	"chapterTitle":        "{chapterTitle}_《{novelTitle}》第{idx}章 - {siteName}",
-	"chapterDescription":  "《{novelTitle}》{chapterTitle}在线阅读，作者{author}，精彩章节尽在{siteName}。",
-	"chapterKeywords":     "{novelTitle},{chapterTitle},{author}",
-	"searchTitle":         "“{query}”的搜索结果 - {siteName}",
-	"searchDescription":   "在{siteName}搜索“{query}”找到的相关小说列表。",
-	"pseoTitle":           "{keyword}小说推荐_关于{keyword}的小说 - {siteName}",
-	"pseoDescription":     "{siteName}为您精选与“{keyword}”相关的小说合集，包含 {count} 本热门作品，在线免费阅读。",
-	"pseoKeywords":        "{keyword},{keyword}小说,{keyword}推荐",
+        "homeTitle":           "{siteName} - 免费小说在线阅读_原创小说网站",
+        "homeDescription":     "{siteName}是领先的免费原创小说在线阅读网站，提供玄幻、仙侠、都市、历史、科幻等全品类小说，每日更新，畅享极致阅读体验。",
+        "homeKeywords":        "小说,免费小说,在线阅读,{siteName},玄幻小说,都市小说",
+        "categoryTitle":       "{categoryName}小说大全_最新{categoryName}小说排行榜 - {siteName}",
+        "categoryDescription": "{siteName}{categoryName}频道为您提供海量精品{categoryName}小说在线阅读，{categoryName}小说每日更新，尽在{siteName}。",
+        "bookTitle":           "{novelTitle}最新章节列表_{author}小说 - {siteName}",
+        "bookDescription":     "{novelTitle}连载于{siteName}，作者{author}，{statusText}。{descShort}",
+        "bookKeywords":        "{novelTitle},{novelTitle}最新章节,{author},{categoryName}小说",
+        "tocTitle":            "{novelTitle}目录_全部章节列表 - {siteName}",
+        "tocDescription":      "{novelTitle}全部章节目录一览，按顺序阅读《{novelTitle}》最新章节，尽在{siteName}。",
+        "chapterTitle":        "{chapterTitle}_《{novelTitle}》第{idx}章 - {siteName}",
+        "chapterDescription":  "《{novelTitle}》{chapterTitle}在线阅读，作者{author}，精彩章节尽在{siteName}。",
+        "chapterKeywords":     "{novelTitle},{chapterTitle},{author}",
+        "searchTitle":         "“{query}”的搜索结果 - {siteName}",
+        "searchDescription":   "在{siteName}搜索“{query}”找到的相关小说列表。",
+        "pseoTitle":           "{keyword}小说推荐_关于{keyword}的小说 - {siteName}",
+        "pseoDescription":     "{siteName}为您精选与“{keyword}”相关的小说合集，包含 {count} 本热门作品，在线免费阅读。",
+        "pseoKeywords":        "{keyword},{keyword}小说,{keyword}推荐",
 }
 
 // seoStringKeys TDK 字符串模板键（DEFAULT_SEO 中除 autoFromContent 外的全部键）
 var seoStringKeys = []string{
-	"homeTitle", "homeDescription", "homeKeywords",
-	"categoryTitle", "categoryDescription",
-	"bookTitle", "bookDescription", "bookKeywords",
-	"tocTitle", "tocDescription",
-	"chapterTitle", "chapterDescription", "chapterKeywords",
-	"searchTitle", "searchDescription",
-	"pseoTitle", "pseoDescription", "pseoKeywords",
+        "homeTitle", "homeDescription", "homeKeywords",
+        "categoryTitle", "categoryDescription",
+        "bookTitle", "bookDescription", "bookKeywords",
+        "tocTitle", "tocDescription",
+        "chapterTitle", "chapterDescription", "chapterKeywords",
+        "searchTitle", "searchDescription",
+        "pseoTitle", "pseoDescription", "pseoKeywords",
 }
 
 // obfuscateEncodeRatioDefault 对抗模式实体化比例默认值（Task 45-a，落在任务要求的 20%-60% 区间）
@@ -82,13 +82,13 @@ var tplVarRe = regexp.MustCompile(`\{(\w+)\}`)
 
 // renderTpl 模板变量替换：命中替换，未命中 {xxx} → 空串（与 TS renderTpl 一致）
 func renderTpl(tpl string, vars map[string]string) string {
-	return tplVarRe.ReplaceAllStringFunc(tpl, func(m string) string {
-		k := m[1 : len(m)-1]
-		if v, ok := vars[k]; ok {
-			return v
-		}
-		return ""
-	})
+        return tplVarRe.ReplaceAllStringFunc(tpl, func(m string) string {
+                k := m[1 : len(m)-1]
+                if v, ok := vars[k]; ok {
+                        return v
+                }
+                return ""
+        })
 }
 
 // sanitizeSeoConfig TDK 白名单清洗：非字符串回落默认并 1000 截断；pseo 对象原样透传；未知键丢弃
@@ -97,433 +97,462 @@ func renderTpl(tpl string, vars map[string]string) string {
 // PATCH seo 合并写回（不带键=保持现值）；admin 表单不展示（admin.js 只提交白名单 TDK 键，
 // 本组键经「读旧合并写回」天然保持），配置走 API+文档说明。
 func sanitizeSeoConfig(raw any) map[string]any {
-	out := map[string]any{}
-	for _, k := range seoStringKeys {
-		out[k] = defaultSeo[k]
-	}
-	out["autoFromContent"] = true
-	out["obfuscateEnable"] = true
-	out["obfuscateEncodeRatio"] = obfuscateEncodeRatioDefault
-	out["obfuscateZeroWidth"] = true
-	out["obfuscateNoise"] = true
-	r, ok := raw.(map[string]any)
-	if !ok {
-		return out
-	}
-	for _, k := range seoStringKeys {
-		if s, ok := r[k].(string); ok {
-			out[k] = truncateRunes(s, 1000)
-		}
-	}
-	if b, ok := r["autoFromContent"].(bool); ok {
-		out["autoFromContent"] = b
-	}
-	// 对抗模式键清洗（类型守卫 + 比例钳制 0-100；bool 键非 bool 丢弃回落默认）。
-	// Task 49-b: 比例钳制改 float 域——旧 clampInt(int(f),0,100) 对 1e300 是实现定义
-	// 溢出（amd64 得 MinInt64 → 被钳到 0，与「越界=上限」的直觉相反）
-	if b, ok := r["obfuscateEnable"].(bool); ok {
-		out["obfuscateEnable"] = b
-	}
-	if f, ok := r["obfuscateEncodeRatio"].(float64); ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
-		out["obfuscateEncodeRatio"] = clampRatioFloat(f)
-	}
-	if b, ok := r["obfuscateZeroWidth"].(bool); ok {
-		out["obfuscateZeroWidth"] = b
-	}
-	if b, ok := r["obfuscateNoise"].(bool); ok {
-		out["obfuscateNoise"] = b
-	}
-	if p, ok := r["pseo"].(map[string]any); ok {
-		out["pseo"] = p
-	}
-	return out
+        out := map[string]any{}
+        for _, k := range seoStringKeys {
+                out[k] = defaultSeo[k]
+        }
+        out["autoFromContent"] = true
+        out["obfuscateEnable"] = true
+        out["obfuscateEncodeRatio"] = obfuscateEncodeRatioDefault
+        out["obfuscateZeroWidth"] = true
+        out["obfuscateNoise"] = true
+        r, ok := raw.(map[string]any)
+        if !ok {
+                return out
+        }
+        for _, k := range seoStringKeys {
+                if s, ok := r[k].(string); ok {
+                        out[k] = truncateRunes(s, 1000)
+                }
+        }
+        if b, ok := r["autoFromContent"].(bool); ok {
+                out["autoFromContent"] = b
+        }
+        // 对抗模式键清洗（类型守卫 + 比例钳制 0-100；bool 键非 bool 丢弃回落默认）。
+        // Task 49-b: 比例钳制改 float 域——旧 clampInt(int(f),0,100) 对 1e300 是实现定义
+        // 溢出（amd64 得 MinInt64 → 被钳到 0，与「越界=上限」的直觉相反）
+        if b, ok := r["obfuscateEnable"].(bool); ok {
+                out["obfuscateEnable"] = b
+        }
+        if f, ok := r["obfuscateEncodeRatio"].(float64); ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
+                out["obfuscateEncodeRatio"] = clampRatioFloat(f)
+        }
+        if b, ok := r["obfuscateZeroWidth"].(bool); ok {
+                out["obfuscateZeroWidth"] = b
+        }
+        if b, ok := r["obfuscateNoise"].(bool); ok {
+                out["obfuscateNoise"] = b
+        }
+        if p, ok := r["pseo"].(map[string]any); ok {
+                out["pseo"] = p
+        }
+        return out
 }
 
 // clampRatioFloat 比例值 float 域钳制 0-100（int 转换前完成，杜绝 1e300 类溢出翻转；
 // Task 49-b。obfConfigFromSeo 读取侧共用同一实现）
 func clampRatioFloat(f float64) int {
-	switch {
-	case f <= 0:
-		return 0
-	case f >= 100:
-		return 100
-	default:
-		return int(f)
-	}
+        switch {
+        case f <= 0:
+                return 0
+        case f >= 100:
+                return 100
+        default:
+                return int(f)
+        }
 }
 
 // ==================== 页脚配置（移植 src/lib/footer.ts） ====================
 
 const (
-	footerTextMax   = 300
-	footerExtraMax  = 300
-	footerLinkCount = 10
-	footerLabelMax  = 20
-	footerHrefMax   = 300
+        footerTextMax   = 300
+        footerExtraMax  = 300
+        footerLinkCount = 10
+        footerLabelMax  = 20
+        footerHrefMax   = 300
 )
 
 var (
-	hrefAbsRe     = regexp.MustCompile(`(?i)^https?://`)
-	hrefRelRe     = regexp.MustCompile(`^[/#?]`)
-	hrefJSProtoRe = regexp.MustCompile(`(?i)^javascript:`)
+        hrefAbsRe     = regexp.MustCompile(`(?i)^https?://`)
+        hrefRelRe     = regexp.MustCompile(`^[/#?]`)
+        hrefJSProtoRe = regexp.MustCompile(`(?i)^javascript:`)
 )
 
 // sanitizeHref href 白名单：http(s) 绝对地址或站内相对路径（/、#、? 开头）
 func sanitizeHref(raw string) string {
-	h := trimSpaceStr(raw)
-	if h == "" {
-		return ""
-	}
-	if hrefAbsRe.MatchString(h) {
-		return truncateRunes(h, footerHrefMax)
-	}
-	if hrefRelRe.MatchString(h) && !hrefJSProtoRe.MatchString(h) {
-		return truncateRunes(h, footerHrefMax)
-	}
-	return ""
+        h := trimSpaceStr(raw)
+        if h == "" {
+                return ""
+        }
+        if hrefAbsRe.MatchString(h) {
+                return truncateRunes(h, footerHrefMax)
+        }
+        if hrefRelRe.MatchString(h) && !hrefJSProtoRe.MatchString(h) {
+                return truncateRunes(h, footerHrefMax)
+        }
+        return ""
 }
 
 // sanitizeFooterConfig 清洗任意输入为安全 FooterConfig（非法字段丢弃，绝不抛错）
 func sanitizeFooterConfig(raw any) map[string]any {
-	out := map[string]any{}
-	r, ok := raw.(map[string]any)
-	if !ok {
-		return out
-	}
-	if s, ok := r["text"].(string); ok {
-		out["text"] = truncateRunes(trimSpaceStr(s), footerTextMax)
-	}
-	if s, ok := r["extra"].(string); ok {
-		out["extra"] = truncateRunes(trimSpaceStr(s), footerExtraMax)
-	}
-	if arr, ok := r["links"].([]any); ok {
-		links := make([]map[string]string, 0)
-		seen := map[string]bool{}
-		for _, item := range arr {
-			if len(links) >= footerLinkCount {
-				break
-			}
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			label := ""
-			if s, ok := m["label"].(string); ok {
-				label = truncateRunes(trimSpaceStr(s), footerLabelMax)
-			}
-			href := ""
-			if s, ok := m["href"].(string); ok {
-				href = sanitizeHref(s)
-			}
-			if label == "" || href == "" {
-				continue
-			}
-			key := label + "|" + href
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			links = append(links, map[string]string{"label": label, "href": href})
-		}
-		if len(links) > 0 {
-			out["links"] = links
-		}
-	}
-	// Task 32-a: 友情链接（friendLinks [{name,url}]，≤30 条）——友链语义=站外互链，
-	// url 仅接受 http(s):// 绝对地址（区别于 links 的站内相对路径白名单）；name/url
-	// 非空清洗 + 批内去重，非法项丢弃（与 links 同款「绝不抛错」语义）
-	if arr, ok := r["friendLinks"].([]any); ok {
-		friends := make([]map[string]string, 0)
-		seen := map[string]bool{}
-		for _, item := range arr {
-			if len(friends) >= footerFriendLinkCount {
-				break
-			}
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			name := ""
-			if s, ok := m["name"].(string); ok {
-				name = truncateRunes(trimSpaceStr(s), footerFriendNameMax)
-			}
-			u := ""
-			if s, ok := m["url"].(string); ok {
-				u = truncateRunes(trimSpaceStr(s), footerFriendURLMax)
-			}
-			if name == "" || !hrefAbsRe.MatchString(u) {
-				continue
-			}
-			key := name + "|" + u
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			friends = append(friends, map[string]string{"name": name, "url": u})
-		}
-		if len(friends) > 0 {
-			out["friendLinks"] = friends
-		}
-	}
-	return out
+        out := map[string]any{}
+        r, ok := raw.(map[string]any)
+        if !ok {
+                return out
+        }
+        if s, ok := r["text"].(string); ok {
+                out["text"] = truncateRunes(trimSpaceStr(s), footerTextMax)
+        }
+        if s, ok := r["extra"].(string); ok {
+                out["extra"] = truncateRunes(trimSpaceStr(s), footerExtraMax)
+        }
+        if arr, ok := r["links"].([]any); ok {
+                links := make([]map[string]string, 0)
+                seen := map[string]bool{}
+                for _, item := range arr {
+                        if len(links) >= footerLinkCount {
+                                break
+                        }
+                        m, ok := item.(map[string]any)
+                        if !ok {
+                                continue
+                        }
+                        label := ""
+                        if s, ok := m["label"].(string); ok {
+                                label = truncateRunes(trimSpaceStr(s), footerLabelMax)
+                        }
+                        href := ""
+                        if s, ok := m["href"].(string); ok {
+                                href = sanitizeHref(s)
+                        }
+                        if label == "" || href == "" {
+                                continue
+                        }
+                        key := label + "|" + href
+                        if seen[key] {
+                                continue
+                        }
+                        seen[key] = true
+                        links = append(links, map[string]string{"label": label, "href": href})
+                }
+                if len(links) > 0 {
+                        out["links"] = links
+                }
+        }
+        // Task 32-a: 友情链接（friendLinks [{name,url}]，≤30 条）——友链语义=站外互链，
+        // url 仅接受 http(s):// 绝对地址（区别于 links 的站内相对路径白名单）；name/url
+        // 非空清洗 + 批内去重，非法项丢弃（与 links 同款「绝不抛错」语义）
+        if arr, ok := r["friendLinks"].([]any); ok {
+                friends := make([]map[string]string, 0)
+                seen := map[string]bool{}
+                for _, item := range arr {
+                        if len(friends) >= footerFriendLinkCount {
+                                break
+                        }
+                        m, ok := item.(map[string]any)
+                        if !ok {
+                                continue
+                        }
+                        name := ""
+                        if s, ok := m["name"].(string); ok {
+                                name = truncateRunes(trimSpaceStr(s), footerFriendNameMax)
+                        }
+                        u := ""
+                        if s, ok := m["url"].(string); ok {
+                                u = truncateRunes(trimSpaceStr(s), footerFriendURLMax)
+                        }
+                        if name == "" || !hrefAbsRe.MatchString(u) {
+                                continue
+                        }
+                        key := name + "|" + u
+                        if seen[key] {
+                                continue
+                        }
+                        seen[key] = true
+                        friends = append(friends, map[string]string{"name": name, "url": u})
+                }
+                if len(friends) > 0 {
+                        out["friendLinks"] = friends
+                }
+        }
+        return out
 }
 
 // parseFooterConfig 解析 DB footerConfig JSON（损坏回退空配置）
 func parseFooterConfig(blob sql.NullString) map[string]any {
-	if !blob.Valid || blob.String == "" {
-		return map[string]any{}
-	}
-	var v any
-	if json.Unmarshal([]byte(blob.String), &v) != nil {
-		return map[string]any{}
-	}
-	return sanitizeFooterConfig(v)
+        if !blob.Valid || blob.String == "" {
+                return map[string]any{}
+        }
+        var v any
+        if json.Unmarshal([]byte(blob.String), &v) != nil {
+                return map[string]any{}
+        }
+        return sanitizeFooterConfig(v)
 }
 
 // safeParseJSONBlob 安全解析 JSON 文本（损坏/空 → {}）
 func safeParseJSONBlob(blob sql.NullString) map[string]any {
-	if !blob.Valid || blob.String == "" {
-		return map[string]any{}
-	}
-	var v any
-	if json.Unmarshal([]byte(blob.String), &v) != nil {
-		return map[string]any{}
-	}
-	if m, ok := v.(map[string]any); ok {
-		return m
-	}
-	return map[string]any{}
+        if !blob.Valid || blob.String == "" {
+                return map[string]any{}
+        }
+        var v any
+        if json.Unmarshal([]byte(blob.String), &v) != nil {
+                return map[string]any{}
+        }
+        if m, ok := v.(map[string]any); ok {
+                return m
+        }
+        return map[string]any{}
+}
+
+// readerModeOrAuto 阅读页分页模式归一化：空/未知值回落 auto（跟随设备），三态白名单外不透出
+func readerModeOrAuto(s string) string {
+        switch s {
+        case "scroll", "page":
+                return s
+        default:
+                return "auto"
+        }
 }
 
 // ensureSettingRow 单例行 upsert 兜底（避免首次并发 GET 双 create 撞 id 唯一约束）
 func ensureSettingRow() error {
-	_, err := exec(
-		`INSERT INTO "SiteSetting" ("id","siteName","activeTheme","notice","seoConfig","footerConfig") VALUES (1,'青阅文学','aijjxs','本站所有小说仅供学习演示使用，请支持正版。','{}','{}') ON CONFLICT("id") DO NOTHING`,
-	)
-	return err
+        _, err := exec(
+                `INSERT INTO "SiteSetting" ("id","siteName","activeTheme","notice","seoConfig","footerConfig") VALUES (1,'青阅文学','aijjxs','本站所有小说仅供学习演示使用，请支持正版。','{}','{}') ON CONFLICT("id") DO NOTHING`,
+        )
+        return err
 }
 
 // ==================== GET /api/settings ====================
 
 func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	if err := ensureSettingRow(); err != nil {
-		failJSON(w, "服务器错误", firstLineErr(err), 500)
-		return
-	}
-	var siteName, activeTheme, notice string
-	var seoConfig, footerConfig, homeConfig sql.NullString
-	var proxyPool, txtDir, coversDir, alertWebhookURL, probeTargets sql.NullString
-	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir","alertWebhookURL","probeTargets" FROM "SiteSetting" WHERE "id" = 1`,
-		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir, &alertWebhookURL, &probeTargets})
-	if err != nil {
-		failJSON(w, "服务器错误", firstLineErr(err), 500)
-		return
-	}
-	// 读回也过白名单：历史行可能已存入非字符串 TDK（旧版 PATCH 不设防）
-	seo := sanitizeSeoConfig(safeParseJSONBlob(seoConfig))
-	footer := parseFooterConfig(footerConfig)
-	home := parseHomeConfig(homeConfig)
-	writeJSON(w, 200, map[string]any{
-		"siteName":    siteName,
-		"activeTheme": activeTheme,
-		"notice":      notice,
-		"seo":         seo,
-		"footer":      footer,
-		"home":        home,
-		// R97: 采集全局设置（全局代理池 + TXT/封面自定义存储目录；空=默认）
-		"proxyPool": proxyPool.String,
-		"txtDir":    txtDir.String,
-		"coversDir": coversDir.String,
-		// R135: 可观测设置（告警 webhook + 自定义拨测目标；空=默认行为）
-		"alertWebhookURL": alertWebhookURL.String,
-		"probeTargets":    probeTargets.String,
-	})
+        if err := ensureSettingRow(); err != nil {
+                failJSON(w, "服务器错误", firstLineErr(err), 500)
+                return
+        }
+        var siteName, activeTheme, notice string
+        var seoConfig, footerConfig, homeConfig sql.NullString
+        var proxyPool, txtDir, coversDir, alertWebhookURL, probeTargets sql.NullString
+        var readerMode string
+        err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir","alertWebhookURL","probeTargets","readerMode" FROM "SiteSetting" WHERE "id" = 1`,
+                []any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir, &alertWebhookURL, &probeTargets, &readerMode})
+        if err != nil {
+                failJSON(w, "服务器错误", firstLineErr(err), 500)
+                return
+        }
+        // 读回也过白名单：历史行可能已存入非字符串 TDK（旧版 PATCH 不设防）
+        seo := sanitizeSeoConfig(safeParseJSONBlob(seoConfig))
+        footer := parseFooterConfig(footerConfig)
+        home := parseHomeConfig(homeConfig)
+        writeJSON(w, 200, map[string]any{
+                "siteName":    siteName,
+                "activeTheme": activeTheme,
+                "notice":      notice,
+                "seo":         seo,
+                "footer":      footer,
+                "home":        home,
+                // R97: 采集全局设置（全局代理池 + TXT/封面自定义存储目录；空=默认）
+                "proxyPool": proxyPool.String,
+                "txtDir":    txtDir.String,
+                "coversDir": coversDir.String,
+                // R135: 可观测设置（告警 webhook + 自定义拨测目标；空=默认行为）
+                "alertWebhookURL": alertWebhookURL.String,
+                "probeTargets":    probeTargets.String,
+                // R148: 阅读页分页模式（'' 归一化为 auto=跟随设备）
+                "readerMode": readerModeOrAuto(readerMode),
+        })
 }
 
 // ==================== PATCH /api/settings ====================
 
 func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-	v, ok := readBodyValue(r)
-	if !ok {
-		writeJSON(w, 400, map[string]string{"error": "请求体不是合法 JSON"})
-		return
-	}
-	body := bodyMap(v)
+        v, ok := readBodyValue(r)
+        if !ok {
+                writeJSON(w, 400, map[string]string{"error": "请求体不是合法 JSON"})
+                return
+        }
+        body := bodyMap(v)
 
-	sets := []string{}
-	args := []any{}
-	if s, ok2 := body["siteName"].(string); ok2 {
-		if t := trimSpaceStr(s); t != "" {
-			sets = append(sets, `"siteName" = ?`)
-			args = append(args, truncateRunes(t, 50))
-		}
-	}
-	if s, ok2 := body["activeTheme"].(string); ok2 {
-		// Task 31-d: 主题白名单校验（对齐 ?theme= 预览与 api_sites.go 写入侧同款防线）。
-		// 旧版任意 ≤50 字符串直接入库 → renderPage→loadPageTemplate(templatesRoot, theme)
-		// 的 filepath.Join 存在路径穿越面（templates/../../etc 等），且非法主题会让全站
-		// 模板缺失整体降级 _fallback。非白名单值与空串同款「忽略不写」（PATCH 宽松语义）。
-		if t := trimSpaceStr(s); t != "" && isKnownTheme(t) {
-			sets = append(sets, `"activeTheme" = ?`)
-			args = append(args, t)
-		}
-	}
-	if s, ok2 := body["notice"].(string); ok2 {
-		sets = append(sets, `"notice" = ?`)
-		args = append(args, truncateRunes(s, 500))
-	}
-	if h, exists := body["home"]; exists {
-		if _, isObj := h.(map[string]any); isObj {
-			sets = append(sets, `"homeConfig" = ?`)
-			args = append(args, marshalCompact(sanitizeHomeConfig(h)))
-		} else {
-			// 病理输入（数组/标量）：TS 版 sanitize 返回 {blocks:[]}，行为一致
-			sets = append(sets, `"homeConfig" = ?`)
-			args = append(args, marshalCompact(map[string]any{"blocks": []any{}}))
-		}
-	}
-	if f, exists := body["footer"]; exists {
-		if _, isObj := f.(map[string]any); isObj {
-			sets = append(sets, `"footerConfig" = ?`)
-			args = append(args, marshalCompact(sanitizeFooterConfig(f)))
-		} else if _, isArr := f.([]any); isArr {
-			// TS typeof [] === 'object' → sanitize 丢弃全部字段 → 空对象
-			sets = append(sets, `"footerConfig" = ?`)
-			args = append(args, marshalCompact(map[string]any{}))
-		}
-	}
+        sets := []string{}
+        args := []any{}
+        if s, ok2 := body["siteName"].(string); ok2 {
+                if t := trimSpaceStr(s); t != "" {
+                        sets = append(sets, `"siteName" = ?`)
+                        args = append(args, truncateRunes(t, 50))
+                }
+        }
+        if s, ok2 := body["activeTheme"].(string); ok2 {
+                // Task 31-d: 主题白名单校验（对齐 ?theme= 预览与 api_sites.go 写入侧同款防线）。
+                // 旧版任意 ≤50 字符串直接入库 → renderPage→loadPageTemplate(templatesRoot, theme)
+                // 的 filepath.Join 存在路径穿越面（templates/../../etc 等），且非法主题会让全站
+                // 模板缺失整体降级 _fallback。非白名单值与空串同款「忽略不写」（PATCH 宽松语义）。
+                if t := trimSpaceStr(s); t != "" && isKnownTheme(t) {
+                        sets = append(sets, `"activeTheme" = ?`)
+                        args = append(args, t)
+                }
+        }
+        if s, ok2 := body["notice"].(string); ok2 {
+                sets = append(sets, `"notice" = ?`)
+                args = append(args, truncateRunes(s, 500))
+        }
+        if h, exists := body["home"]; exists {
+                if _, isObj := h.(map[string]any); isObj {
+                        sets = append(sets, `"homeConfig" = ?`)
+                        args = append(args, marshalCompact(sanitizeHomeConfig(h)))
+                } else {
+                        // 病理输入（数组/标量）：TS 版 sanitize 返回 {blocks:[]}，行为一致
+                        sets = append(sets, `"homeConfig" = ?`)
+                        args = append(args, marshalCompact(map[string]any{"blocks": []any{}}))
+                }
+        }
+        if f, exists := body["footer"]; exists {
+                if _, isObj := f.(map[string]any); isObj {
+                        sets = append(sets, `"footerConfig" = ?`)
+                        args = append(args, marshalCompact(sanitizeFooterConfig(f)))
+                } else if _, isArr := f.([]any); isArr {
+                        // TS typeof [] === 'object' → sanitize 丢弃全部字段 → 空对象
+                        sets = append(sets, `"footerConfig" = ?`)
+                        args = append(args, marshalCompact(map[string]any{}))
+                }
+        }
 
-	// R97: 采集全局设置 PATCH（宽松语义与 TDK 一致：键缺失=不动；非法值拒绝该键不报整单错，
-	// 但目录校验失败直接 400——写错路径会静默写进默认目录，用户无感知，宁可报错）
-	if v, exists := body["proxyPool"]; exists {
-		s, isStr := v.(string)
-		if !isStr {
-			writeJSON(w, 400, map[string]string{"error": "proxyPool 必须是字符串"})
-			return
-		}
-		pf := parseProxyField(s)
-		if pf.err != "" {
-			writeJSON(w, 400, map[string]string{"error": "proxyPool " + pf.err})
-			return
-		}
-		sets = append(sets, `"proxyPool" = ?`)
-		args = append(args, pf.value)
-	}
-	if v, exists := body["txtDir"]; exists {
-		d, err := sanitizeStorageDir(v, "txtDir")
-		if err != "" {
-			writeJSON(w, 400, map[string]string{"error": err})
-			return
-		}
-		sets = append(sets, `"txtDir" = ?`)
-		args = append(args, d)
-	}
-	if v, exists := body["coversDir"]; exists {
-		d, err := sanitizeStorageDir(v, "coversDir")
-		if err != "" {
-			writeJSON(w, 400, map[string]string{"error": err})
-			return
-		}
-		sets = append(sets, `"coversDir" = ?`)
-		args = append(args, d)
-	}
-	// R135: 可观测设置两键（宽松语义同 proxyPool：键缺失=不动；非法值拒绝该键）。
-	// alertWebhookURL：仅 http/https 绝对地址（钉钉/飞书/企微机器人均为 https；
-	// 错误协议会让 fireAlert 每次事件都白打 5s 超时，保存端拦截）。空串=清除。
-	if v, exists := body["alertWebhookURL"]; exists {
-		s, isStr := v.(string)
-		if !isStr {
-			writeJSON(w, 400, map[string]string{"error": "alertWebhookURL 必须是字符串"})
-			return
-		}
-		t := trimSpaceStr(s)
-		if t != "" && !strings.HasPrefix(t, "http://") && !strings.HasPrefix(t, "https://") {
-			writeJSON(w, 400, map[string]string{"error": "alertWebhookURL 仅支持 http/https 绝对地址"})
-			return
-		}
-		sets = append(sets, `"alertWebhookURL" = ?`)
-		args = append(args, t)
-	}
-	// probeTargets：逗号分隔 http/https 绝对地址（逐个校验，允许空串=清除）。
-	// 违规项直接拒绝整键（与 proxyPool 逐口校验同口径——静默丢弃会让用户误以为已生效）。
-	if v, exists := body["probeTargets"]; exists {
-		s, isStr := v.(string)
-		if !isStr {
-			writeJSON(w, 400, map[string]string{"error": "probeTargets 必须是字符串"})
-			return
-		}
-		cleaned := []string{}
-		for _, raw := range strings.Split(s, ",") {
-			t := trimSpaceStr(raw)
-			if t == "" {
-				continue
-			}
-			if !strings.HasPrefix(t, "http://") && !strings.HasPrefix(t, "https://") {
-				writeJSON(w, 400, map[string]string{"error": "probeTargets 仅支持逗号分隔的 http/https 绝对地址: " + t})
-				return
-			}
-			cleaned = append(cleaned, t)
-		}
-		sets = append(sets, `"probeTargets" = ?`)
-		args = append(args, strings.Join(cleaned, ","))
-	}
+        // R97: 采集全局设置 PATCH（宽松语义与 TDK 一致：键缺失=不动；非法值拒绝该键不报整单错，
+        // 但目录校验失败直接 400——写错路径会静默写进默认目录，用户无感知，宁可报错）
+        if v, exists := body["proxyPool"]; exists {
+                s, isStr := v.(string)
+                if !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "proxyPool 必须是字符串"})
+                        return
+                }
+                pf := parseProxyField(s)
+                if pf.err != "" {
+                        writeJSON(w, 400, map[string]string{"error": "proxyPool " + pf.err})
+                        return
+                }
+                sets = append(sets, `"proxyPool" = ?`)
+                args = append(args, pf.value)
+        }
+        if v, exists := body["txtDir"]; exists {
+                d, err := sanitizeStorageDir(v, "txtDir")
+                if err != "" {
+                        writeJSON(w, 400, map[string]string{"error": err})
+                        return
+                }
+                sets = append(sets, `"txtDir" = ?`)
+                args = append(args, d)
+        }
+        if v, exists := body["coversDir"]; exists {
+                d, err := sanitizeStorageDir(v, "coversDir")
+                if err != "" {
+                        writeJSON(w, 400, map[string]string{"error": err})
+                        return
+                }
+                sets = append(sets, `"coversDir" = ?`)
+                args = append(args, d)
+        }
+        // R148: 阅读页分页模式 readerMode（宽松语义同 activeTheme：键缺失=不动；非白名单值
+        // 忽略不写不报错）。三态：auto=跟随设备（PC 全文滚动/移动端分页），scroll=全端全文，
+        // page=全端分页。空串同 auto（降级语义，列默认值即空串）。
+        if v, exists := body["readerMode"]; exists {
+                s, isStr := v.(string)
+                if isStr {
+                        switch trimSpaceStr(s) {
+                        case "auto", "scroll", "page":
+                                sets = append(sets, `"readerMode" = ?`)
+                                args = append(args, trimSpaceStr(s))
+                        case "":
+                                sets = append(sets, `"readerMode" = ?`)
+                                args = append(args, "")
+                        }
+                }
+        }
+        // R135: 可观测设置两键（宽松语义同 proxyPool：键缺失=不动；非法值拒绝该键）。
+        // alertWebhookURL：仅 http/https 绝对地址（钉钉/飞书/企微机器人均为 https；
+        // 错误协议会让 fireAlert 每次事件都白打 5s 超时，保存端拦截）。空串=清除。
+        if v, exists := body["alertWebhookURL"]; exists {
+                s, isStr := v.(string)
+                if !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "alertWebhookURL 必须是字符串"})
+                        return
+                }
+                t := trimSpaceStr(s)
+                if t != "" && !strings.HasPrefix(t, "http://") && !strings.HasPrefix(t, "https://") {
+                        writeJSON(w, 400, map[string]string{"error": "alertWebhookURL 仅支持 http/https 绝对地址"})
+                        return
+                }
+                sets = append(sets, `"alertWebhookURL" = ?`)
+                args = append(args, t)
+        }
+        // probeTargets：逗号分隔 http/https 绝对地址（逐个校验，允许空串=清除）。
+        // 违规项直接拒绝整键（与 proxyPool 逐口校验同口径——静默丢弃会让用户误以为已生效）。
+        if v, exists := body["probeTargets"]; exists {
+                s, isStr := v.(string)
+                if !isStr {
+                        writeJSON(w, 400, map[string]string{"error": "probeTargets 必须是字符串"})
+                        return
+                }
+                cleaned := []string{}
+                for _, raw := range strings.Split(s, ",") {
+                        t := trimSpaceStr(raw)
+                        if t == "" {
+                                continue
+                        }
+                        if !strings.HasPrefix(t, "http://") && !strings.HasPrefix(t, "https://") {
+                                writeJSON(w, 400, map[string]string{"error": "probeTargets 仅支持逗号分隔的 http/https 绝对地址: " + t})
+                                return
+                        }
+                        cleaned = append(cleaned, t)
+                }
+                sets = append(sets, `"probeTargets" = ?`)
+                args = append(args, strings.Join(cleaned, ","))
+        }
 
-	// seoConfig 为「读旧 JSON → 合并 → 写回」的读改写，与 PSEO 配置共用一行存储，
-	// 统一经进程内串行锁执行（serializeSettingsWrite 语义）
-	patchSeo, hasPatchSeo := body["seo"].(map[string]any)
-	hasSeoArr := false
-	if !hasPatchSeo {
-		if _, isArr := body["seo"].([]any); isArr {
-			hasSeoArr = true // TS 会 spread 数组（等价无 TDK 字段），sanitize 后无变化
-		}
-	}
+        // seoConfig 为「读旧 JSON → 合并 → 写回」的读改写，与 PSEO 配置共用一行存储，
+        // 统一经进程内串行锁执行（serializeSettingsWrite 语义）
+        patchSeo, hasPatchSeo := body["seo"].(map[string]any)
+        hasSeoArr := false
+        if !hasPatchSeo {
+                if _, isArr := body["seo"].([]any); isArr {
+                        hasSeoArr = true // TS 会 spread 数组（等价无 TDK 字段），sanitize 后无变化
+                }
+        }
 
-	var siteName, activeTheme string
-	// Task 56-b: UPDATE 失败不再静默吞掉——旧版 _, _ = exec(...) 在写失败（如并发
-	// 写高峰 SQLITE_BUSY 超 5s busy_timeout）时仍返回 200 ok:true，TDK/主题/页脚
-	// 保存丢失而后台无任何提示（TS 版 prisma.update 抛错 → 500）。错误上返对齐契约。
-	var updateErr error
-	withSettingsLock(func() {
-		if err := ensureSettingRow(); err != nil {
-			return
-		}
-		if hasPatchSeo || hasSeoArr {
-			var seoBlob sql.NullString
-			if err := queryOne(`SELECT "seoConfig" FROM "SiteSetting" WHERE "id" = 1`, []any{&seoBlob}); err == nil {
-				current := safeParseJSONBlob(seoBlob)
-				// 合并后过白名单：非字符串 TDK 丢弃回落默认；pseo 运行配置原样保留
-				merged := map[string]any{}
-				for k, val := range current {
-					merged[k] = val
-				}
-				for k, val := range patchSeo {
-					merged[k] = val
-				}
-				sets = append(sets, `"seoConfig" = ?`)
-				args = append(args, marshalCompact(sanitizeSeoConfig(merged)))
-			}
-		}
-		if len(sets) > 0 {
-			if _, err := exec(`UPDATE "SiteSetting" SET `+strings.Join(sets, ", ")+` WHERE "id" = 1`, args...); err != nil {
-				updateErr = err
-			}
-		}
-		if updateErr == nil && len(sets) > 0 {
-			// R97: 全局池/存储目录保存成功后失效读取缓存（loadRule/coversDir/txtdir 下一跳重查库）
-			invalidateScraperSettings()
-			_ = queryOne(`SELECT "siteName","activeTheme" FROM "SiteSetting" WHERE "id" = 1`, []any{&siteName, &activeTheme})
-		}
-	})
+        var siteName, activeTheme string
+        // Task 56-b: UPDATE 失败不再静默吞掉——旧版 _, _ = exec(...) 在写失败（如并发
+        // 写高峰 SQLITE_BUSY 超 5s busy_timeout）时仍返回 200 ok:true，TDK/主题/页脚
+        // 保存丢失而后台无任何提示（TS 版 prisma.update 抛错 → 500）。错误上返对齐契约。
+        var updateErr error
+        withSettingsLock(func() {
+                if err := ensureSettingRow(); err != nil {
+                        return
+                }
+                if hasPatchSeo || hasSeoArr {
+                        var seoBlob sql.NullString
+                        if err := queryOne(`SELECT "seoConfig" FROM "SiteSetting" WHERE "id" = 1`, []any{&seoBlob}); err == nil {
+                                current := safeParseJSONBlob(seoBlob)
+                                // 合并后过白名单：非字符串 TDK 丢弃回落默认；pseo 运行配置原样保留
+                                merged := map[string]any{}
+                                for k, val := range current {
+                                        merged[k] = val
+                                }
+                                for k, val := range patchSeo {
+                                        merged[k] = val
+                                }
+                                sets = append(sets, `"seoConfig" = ?`)
+                                args = append(args, marshalCompact(sanitizeSeoConfig(merged)))
+                        }
+                }
+                if len(sets) > 0 {
+                        if _, err := exec(`UPDATE "SiteSetting" SET `+strings.Join(sets, ", ")+` WHERE "id" = 1`, args...); err != nil {
+                                updateErr = err
+                        }
+                }
+                if updateErr == nil && len(sets) > 0 {
+                        // R97: 全局池/存储目录保存成功后失效读取缓存（loadRule/coversDir/txtdir 下一跳重查库）
+                        invalidateScraperSettings()
+                        _ = queryOne(`SELECT "siteName","activeTheme" FROM "SiteSetting" WHERE "id" = 1`, []any{&siteName, &activeTheme})
+                }
+        })
 
-	if updateErr != nil {
-		failJSON(w, "服务器错误", firstLineErr(updateErr), 500)
-		return
-	}
-	if siteName == "" && activeTheme == "" {
-		failJSON(w, "服务器错误", "设置行不可用", 500)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"ok": true, "siteName": siteName, "activeTheme": activeTheme})
+        if updateErr != nil {
+                failJSON(w, "服务器错误", firstLineErr(updateErr), 500)
+                return
+        }
+        if siteName == "" && activeTheme == "" {
+                failJSON(w, "服务器错误", "设置行不可用", 500)
+                return
+        }
+        writeJSON(w, 200, map[string]any{"ok": true, "siteName": siteName, "activeTheme": activeTheme})
 }
 
 // ==================== homeConfig（首页自定义图文区块，Task 23 对齐 src/lib/home-blocks.ts） ====================
@@ -532,86 +561,86 @@ var catSourceRe = regexp.MustCompile(`^cat:\d{1,6}$`)
 
 // isHomeBlockSource 数据来源白名单：latest / hot / featured / cat:<正整数>
 func isHomeBlockSource(v any) (string, bool) {
-	s, ok := v.(string)
-	if !ok {
-		return "", false
-	}
-	if s == "latest" || s == "hot" || s == "featured" {
-		return s, true
-	}
-	if catSourceRe.MatchString(s) {
-		return s, true
-	}
-	return "", false
+        s, ok := v.(string)
+        if !ok {
+                return "", false
+        }
+        if s == "latest" || s == "hot" || s == "featured" {
+                return s, true
+        }
+        if catSourceRe.MatchString(s) {
+                return s, true
+        }
+        return "", false
 }
 
 // sanitizeHomeBlock 单区块白名单（title 1-30 字、count 4-24、id ≤40 字符）
 func sanitizeHomeBlock(raw any) map[string]any {
-	obj, ok := raw.(map[string]any)
-	if !ok {
-		return nil
-	}
-	title, _ := obj["title"].(string)
-	title = trimSpaceStr(title)
-	if title == "" || runeLen(title) > 30 {
-		return nil
-	}
-	source, ok := isHomeBlockSource(obj["source"])
-	if !ok {
-		return nil
-	}
-	count := 8
-	if f, ok2 := obj["count"].(float64); ok2 && !math.IsNaN(f) && !math.IsInf(f, 0) {
-		c := int(math.Floor(f))
-		if c < 4 {
-			c = 4
-		}
-		if c > 24 {
-			c = 24
-		}
-		count = c
-	}
-	id, _ := obj["id"].(string)
-	if id == "" || runeLen(id) > 40 {
-		id = "blk" + strconv.FormatInt(time.Now().UnixNano()%1e12, 36)
-	}
-	return map[string]any{"id": id, "title": title, "source": source, "count": count}
+        obj, ok := raw.(map[string]any)
+        if !ok {
+                return nil
+        }
+        title, _ := obj["title"].(string)
+        title = trimSpaceStr(title)
+        if title == "" || runeLen(title) > 30 {
+                return nil
+        }
+        source, ok := isHomeBlockSource(obj["source"])
+        if !ok {
+                return nil
+        }
+        count := 8
+        if f, ok2 := obj["count"].(float64); ok2 && !math.IsNaN(f) && !math.IsInf(f, 0) {
+                c := int(math.Floor(f))
+                if c < 4 {
+                        c = 4
+                }
+                if c > 24 {
+                        c = 24
+                }
+                count = c
+        }
+        id, _ := obj["id"].(string)
+        if id == "" || runeLen(id) > 40 {
+                id = "blk" + strconv.FormatInt(time.Now().UnixNano()%1e12, 36)
+        }
+        return map[string]any{"id": id, "title": title, "source": source, "count": count}
 }
 
 // sanitizeHomeConfig 区块数组白名单（上限 8 个区块，防止配置爆炸）
 func sanitizeHomeConfig(raw any) map[string]any {
-	out := map[string]any{"blocks": []any{}}
-	obj, ok := raw.(map[string]any)
-	if !ok {
-		return out
-	}
-	arr, ok := obj["blocks"].([]any)
-	if !ok {
-		return out
-	}
-	blocks := []any{}
-	for i, b := range arr {
-		if i >= 8 {
-			break
-		}
-		if s := sanitizeHomeBlock(b); s != nil {
-			blocks = append(blocks, s)
-		}
-	}
-	out["blocks"] = blocks
-	return out
+        out := map[string]any{"blocks": []any{}}
+        obj, ok := raw.(map[string]any)
+        if !ok {
+                return out
+        }
+        arr, ok := obj["blocks"].([]any)
+        if !ok {
+                return out
+        }
+        blocks := []any{}
+        for i, b := range arr {
+                if i >= 8 {
+                        break
+                }
+                if s := sanitizeHomeBlock(b); s != nil {
+                        blocks = append(blocks, s)
+                }
+        }
+        out["blocks"] = blocks
+        return out
 }
 
 // parseHomeConfig 读回白名单过滤（历史行可能存非法结构，渲染链不抛错）
 func parseHomeConfig(blob sql.NullString) map[string]any {
-	if !blob.Valid || blob.String == "" {
-		return map[string]any{"blocks": []any{}}
-	}
-	var parsed any
-	if err := json.Unmarshal([]byte(blob.String), &parsed); err != nil {
-		return map[string]any{"blocks": []any{}}
-	}
-	return sanitizeHomeConfig(parsed)
+        if !blob.Valid || blob.String == "" {
+                return map[string]any{"blocks": []any{}}
+        }
+        var parsed any
+        if err := json.Unmarshal([]byte(blob.String), &parsed); err != nil {
+                return map[string]any{"blocks": []any{}}
+        }
+        return sanitizeHomeConfig(parsed)
 }
 
 // ==================== R97: 存储目录校验 ====================
@@ -624,35 +653,35 @@ const storageDirMaxLen = 300
 // （.. 本身在绝对路径中合法（/data/a/../b 规范化后即 /data/b），此处拒绝含 .. 的段
 // 以免 os.MkdirAll 前后语义漂移）→ 长度 ≤300。返回 (清洗值, 错误消息)；错误非空时清洗值为 ""。
 func sanitizeStorageDir(raw any, field string) (string, string) {
-	s, ok := raw.(string)
-	if !ok {
-		return "", field + " 必须是字符串"
-	}
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return "", "" // 重置为默认目录
-	}
-	if len(s) > storageDirMaxLen {
-		return "", field + " 过长（上限 300 字符）"
-	}
-	if !strings.HasPrefix(s, "/") {
-		return "", field + " 必须是绝对路径（以 / 开头），留空使用默认目录"
-	}
-	for _, r := range s {
-		if r < 0x20 || r == 0x7F {
-			return "", field + " 含非法控制字符"
-		}
-	}
-	for _, seg := range strings.Split(s, "/") {
-		if seg == ".." {
-			return "", field + " 不允许包含 .. 路径段"
-		}
-	}
-	if strings.HasSuffix(s, "/") {
-		s = strings.TrimRight(s, "/")
-		if s == "" {
-			return "", field + " 非法"
-		}
-	}
-	return s, ""
+        s, ok := raw.(string)
+        if !ok {
+                return "", field + " 必须是字符串"
+        }
+        s = strings.TrimSpace(s)
+        if s == "" {
+                return "", "" // 重置为默认目录
+        }
+        if len(s) > storageDirMaxLen {
+                return "", field + " 过长（上限 300 字符）"
+        }
+        if !strings.HasPrefix(s, "/") {
+                return "", field + " 必须是绝对路径（以 / 开头），留空使用默认目录"
+        }
+        for _, r := range s {
+                if r < 0x20 || r == 0x7F {
+                        return "", field + " 含非法控制字符"
+                }
+        }
+        for _, seg := range strings.Split(s, "/") {
+                if seg == ".." {
+                        return "", field + " 不允许包含 .. 路径段"
+                }
+        }
+        if strings.HasSuffix(s, "/") {
+                s = strings.TrimRight(s, "/")
+                if s == "" {
+                        return "", field + " 非法"
+                }
+        }
+        return s, ""
 }
