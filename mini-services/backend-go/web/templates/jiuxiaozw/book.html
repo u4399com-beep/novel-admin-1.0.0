@@ -3,7 +3,7 @@
 {{define "content"}}{{$n := .Novel}}{{$sn := .Site.siteName}}
 <nav class="book-home-actions" aria-label="详情页导航">
   <a aria-label="返回首页" class="book-home-back" href="/"><svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>
-  <a aria-label="首页" class="book-home-link" href="/"><img alt="{{$sn}}" loading="eager" width="24" height="24" decoding="async" class="book-home-logo" src="/static/icon.png"></a>
+  <a aria-label="首页" class="book-home-link" href="/"><img alt="{{$sn}}" loading="eager" width="24" height="24" decoding="async" class="book-home-logo" src="/static/icon.png?v={{staticVer}}"></a>
 </nav>
 <div class="book-detail min-h-screen bg-gray-50 dark:bg-[#0a0a0a] pb-24">
 <div class="book-layout max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex flex-col gap-3">

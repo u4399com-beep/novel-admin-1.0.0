@@ -15,7 +15,7 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
 {{if .pageKeywords}}<meta name="keywords" content="{{.pageKeywords}}">{{end}}
 <meta name="theme-color" content="#f9fafb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
-<link rel="icon" href="/static/icon.png" type="image/png">
+<link rel="icon" href="/static/icon.png?v={{staticVer}}" type="image/png">
 <link rel="stylesheet" href="/static/css/cover-gradients.css?v={{staticVer}}">
 <link rel="stylesheet" href="/static/css/jiuxiaozw.css?v={{staticVer}}">
 <style>/* 首屏日夜闪避：localStorage 已存夜间时先于渲染应用 .dark */(function(){try{if(localStorage.getItem('jxzw-theme')==='dark'){document.documentElement.classList.add('dark')}}catch(e){}})();</style>
@@ -25,7 +25,7 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
   <div class="dn-in">
     <div class="dn-start">
       <a class="dn-brand" href="/" aria-label="{{$sn}}首页">
-        <img alt="Logo" width="30" height="30" decoding="async" src="/static/icon.png">
+        <img alt="Logo" width="30" height="30" decoding="async" src="/static/icon.png?v={{staticVer}}">
         <span class="dn-name">{{$sn}}</span>
       </a>
       <form role="search" autocomplete="off" class="book-search book-search--navbar" action="/search" method="get">
