@@ -198,6 +198,14 @@ var reDescShuyouTrunc = regexp.MustCompile(`(?s)\s*(?:微博连接[:：]?\s*)?�
 // 其它规则截断后残留）。
 var reDescWeiboOrphan = regexp.MustCompile(`\s*微博(?:连接|链接)[:：]?\s*$`)
 
+// R148: 尾部章节清单块截断（引擎侧，与 backend introx introChapterListRE 同族双侧闭环：
+// 引擎挡新数据，backend getDB once 回填洗存量）。源站书页「章节列表」h2 + 章节清单被
+// 拼进简介（实证 dzrjk 系 2 本，collapse 后「…鳞毛倮羽介。 章节列表 第1章 黎国巡警
+// 第2章 命数五分 …」）。双锚点（UI 标签 + 紧随章节条目，数字集合同 reChapterText）
+// 联合才截，叙事简介不含此强模板形态；清单无 pSEO 转换价值，引擎直接截断
+// （「相关小说」尾块仍不在引擎侧截——长尾词提取归编排侧，Task 41 分工不变）。
+var reDescChapterList = regexp.MustCompile(`(?s)\s*(?:章节列表|章节目录)\s*第[0-9〇零一二两三四五六七八九十百千万]+\s*[章节回卷].*$`)
+
 func cleanDescription(t string) string {
 	// Task 31-c: 简介残留实体再解码——与正文 cleanContainer 同源缺口（实测 ixdzs8 系
 	// 简介以双重转义的 &amp;amp;&amp;amp; 作分隔符，全库 3 本 Novel.description 命中）。
@@ -214,6 +222,8 @@ func cleanDescription(t string) string {
 	// R133: 截断容错起点锚（先截长尾，再收孤儿）
 	t = trimJSSpace(reDescShuyouTrunc.ReplaceAllString(t, ""))
 	t = trimJSSpace(reDescWeiboOrphan.ReplaceAllString(t, ""))
+	// R148: 尾部章节清单块截断
+	t = trimJSSpace(reDescChapterList.ReplaceAllString(t, ""))
 	return trimJSSpace(reDescBoilerplate.ReplaceAllString(t, ""))
 }
 

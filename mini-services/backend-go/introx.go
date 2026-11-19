@@ -17,6 +17,11 @@
  *  8. 转码失败占位符「?」装饰（书 1 实证「??本文只有三个世界。」「。）?世界一:」）：
  *     源站特殊符号（⭐/◆ 类）charset 转换失败落为 ASCII ?，呈串首/段界装饰形态 →
  *     剥除（语气问号「什么？？？」不误伤，见 introAskDecoRE 锚点保守性）
+ *  9. 尾部「章节列表/章节目录」章节清单块（书 4/42 dzrjk 实证，用户指令 R148「内容简介
+ *     有问题，修一下」）：源站书页 h2 章节标题 + 章节清单被拼进简介，collapse 后呈
+ *     「…鳞毛倮羽介。 章节列表 第1章 黎国巡警 第2章 命数五分 …」形态 → 双锚点截断
+ *     （标签 + 紧随章节条目联合才截，叙事简介不含此强模板）；清单非长尾词块不转
+ *     pSEO，直接截（须先于相关词块提取，防「第N章 X」混入词池）
  *
  * 双侧分工：scraper-go 引擎侧 cleanDescription 只做基础修复（实体归一/FFFD/标签，
  * Task 41 同步增强）——「相关小说」尾块与分隔线等**不在引擎侧截断**，完整送达
@@ -89,6 +94,12 @@ var (
 	introWordJunkRE = regexp.MustCompile(`(?i)(?:www\.|https?://|\.[a-z]{2,6}\b)|(?:^[0-9\s]+$)`)
 	// introPromoItemRE 清单内的推广项（相关块之后还可能再拼书友群尾，混入条目流）
 	introPromoItemRE = regexp.MustCompile(`书友群|QQ群|qq群|交流群|粉丝群|微信群|群号`)
+	// introChapterListRE 尾部章节清单块截断（书 4/42 dzrjk 实证，R148）：「章节列表/章节目录」
+	// UI 标签 + 紧随章节条目（第N章节回卷，数字集合同 reChapterText 口径）联合锚点——
+	// 双特征缺一不截，叙事简介不可能含「章节列表 第1章」此形态（「最新章节列表」后缀亦命中，
+	// 无需左边界）。截断即整块移除 → 幂等收敛。与 scraper reDescChapterList 同族双侧闭环：
+	// 引擎挡新数据，本侧 getDB once 回填洗存量。
+	introChapterListRE = regexp.MustCompile(`(?s)(?:章节列表|章节目录)\s*第[0-9〇零一二两三四五六七八九十百千万]+\s*[章节回卷][\s\S]*$`)
 	// introHasTextRE 条目必须含文字
 	introHasTextRE = regexp.MustCompile(`[\p{L}\p{N}]`)
 	// introWordTrimCut 条目首尾装饰字符（书名号/引号/括号/省略号/标点/空白）——
@@ -119,6 +130,12 @@ func cleanNovelIntro(desc string) (string, []string) {
 	s = introTagRE.ReplaceAllString(s, "")
 	s = introAskRunRE.ReplaceAllString(s, "")
 	s = introAskDecoRE.ReplaceAllString(s, "$1")
+
+	// 2.5) 尾部章节清单块截断（R148 家族 9）：必须先于「相关小说」提取——若相关块
+	//    与章节清单共存（相关在前清单在后），不先截清单则「第N章 X」条目会混入词池
+	if m := introChapterListRE.FindStringIndex(s); m != nil {
+		s = s[:m[0]]
+	}
 
 	// 3) 「相关小说」族尾块：截断 + 提取长尾词（用户指令「直接加到pSEO中」）。
 	//    必须先于 promo/sep 截断——若推广尾拼在相关块之后，先截 promo 会连带吃掉词表
