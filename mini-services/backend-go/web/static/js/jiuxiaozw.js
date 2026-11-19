@@ -2,6 +2,7 @@
  * jiuxiaozw 主题交互层（R142）——复刻 jiuxiaozw.com 客户端行为的最小子集：
  * 日/夜切换(.dark + :root.dark 令牌)、桌面 dn-category 下拉、rl-hero 三张轮换、
  * 移动 mh-carousel 无缝循环、reader 分页阅读器（columns+translateX，与原站同机制）+
+ * 触屏垂直滑动翻页（上滑下一页/下滑上一页，reader-page-preview 影子层跟手）+
  * 设置面板（字号/行距/纸色，localStorage 持久）+ 相对时间/分享复制/书架演示位/锚点接驾。
  * 零依赖 vanilla；页面级渐进：JS 失效时 reader 保持 data-reader-ready="false" 滚动兜底。
  */
@@ -318,6 +319,156 @@
         }
       }
     });
+
+    /* ---------- 触屏垂直滑动翻页：上滑下一页 / 下滑上一页（跟手 + 影子层 + 边界橡皮筋，
+       原站 data-moving=Y 同机制；触摸指针依赖浏览器隐式捕获，不 setPointerCapture 以免重定向点击破坏热区） ---------- */
+    var surface = $('.reader-page-surface', pagesRoot);
+    var preview = $('[data-reader-preview]', pagesRoot);
+    if (surface && preview && 'PointerEvent' in window) {
+      var drag = null, anim = false, suppressClick = false;
+      function dragStride() { return (textWindow.clientWidth || 1) + colGap; }
+      function dragWinH() { return pageWindow.clientHeight || 1; }
+      function fillPreview(target) {
+        /* 影子层复制同几何文本窗 + 目标页列偏移，分页断点与主层严格一致 */
+        var tw = textWindow.cloneNode(false);
+        var cc = cols.cloneNode(true);
+        cc.style.transform = 'translateX(-' + (target * dragStride()) + 'px)';
+        tw.appendChild(cc);
+        preview.innerHTML = '';
+        preview.style.display = 'flex';
+        preview.style.flexDirection = 'column';
+        preview.appendChild(tw);
+        preview.removeAttribute('hidden');
+      }
+      function clearPreview() {
+        preview.innerHTML = '';
+        preview.style.display = '';
+        preview.style.flexDirection = '';
+        preview.removeAttribute('data-moving');
+        preview.setAttribute('hidden', '');
+      }
+      function dragCleanup() {
+        surface.style.transition = 'none';
+        surface.style.transform = '';
+        preview.style.transition = 'none';
+        surface.removeAttribute('data-moving');
+        pageWindow.removeAttribute('data-turning');
+        pagesRoot.style.userSelect = '';
+        clearPreview();
+        requestAnimationFrame(function () {
+          surface.style.transition = '';
+          preview.style.transition = '';
+        });
+      }
+      function flickVel(samples) {
+        if (samples.length < 2) return 0;
+        var a = samples[samples.length - 1], b = samples[0];
+        return a.t > b.t ? (a.y - b.y) / (a.t - b.t) : 0;
+      }
+      pageWindow.addEventListener('click', function (ev) {
+        if (suppressClick) { ev.stopPropagation(); ev.preventDefault(); suppressClick = false; }
+      }, true);
+      pageWindow.addEventListener('pointerdown', function (ev) {
+        if (anim || drag || ev.pointerType !== 'touch') return;
+        suppressClick = false;
+        drag = { id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, decided: false, axis: '', mode: null, samples: [{ y: ev.clientY, t: ev.timeStamp }] };
+      });
+      pageWindow.addEventListener('pointermove', function (ev) {
+        if (!drag || ev.pointerId !== drag.id) return;
+        var dy = ev.clientY - drag.y0, dx = ev.clientX - drag.x0;
+        if (!drag.decided) {
+          if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+          drag.decided = true;
+          suppressClick = true;
+          if (Math.abs(dy) <= Math.abs(dx)) { drag.axis = 'x'; return; }
+          drag.axis = 'y';
+          pageWindow.setAttribute('data-turning', '');
+          pagesRoot.style.userSelect = 'none';
+          try { var sel = window.getSelection(); if (sel) sel.removeAllRanges(); } catch (e) {}
+        }
+        if (drag.axis !== 'y') return;
+        drag.samples.push({ y: ev.clientY, t: ev.timeStamp });
+        if (drag.samples.length > 6) drag.samples.shift();
+        var goingUp = dy < 0;
+        var target = goingUp ? cur + 1 : cur - 1;
+        if (goingUp ? cur >= total - 1 : cur <= 0) {
+          /* 章内边界：橡皮筋阻尼，不出影子层 */
+          if (drag.mode !== 'edge') { clearPreview(); drag.mode = 'edge'; }
+          surface.style.transform = 'translateY(' + (dy * 0.3) + 'px)';
+          return;
+        }
+        if (drag.mode !== target) { fillPreview(target); drag.mode = target; }
+        if (goingUp) { surface.setAttribute('data-moving', 'Y'); preview.removeAttribute('data-moving'); }
+        else { preview.setAttribute('data-moving', 'Y'); surface.removeAttribute('data-moving'); }
+        surface.style.transform = 'translateY(' + dy + 'px)';
+        preview.style.transform = goingUp ? 'translateY(' + (dragWinH() + dy) + 'px)' : 'translateY(' + (dy - dragWinH()) + 'px)';
+      });
+      function endDrag(ev, forceCancel) {
+        if (!drag || ev.pointerId !== drag.id) return;
+        var d = drag;
+        drag = null;
+        if (!d.decided || d.axis !== 'y') return;
+        /* 抑制随抬手派生的 click；400ms 后自愈，避免悬挂标记吞掉下一次真实点击 */
+        setTimeout(function () { if (!drag) suppressClick = false; }, 400);
+        var dy = ev.clientY - d.y0;
+        var goingUp = dy < 0;
+        var dist = Math.abs(dy);
+        if (forceCancel) {
+          anim = true;
+          surface.style.transition = 'transform .2s ease-out';
+          preview.style.transition = 'transform .2s ease-out';
+          surface.style.transform = 'translateY(0px)';
+          preview.style.transform = goingUp ? 'translateY(' + dragWinH() + 'px)' : 'translateY(' + (-dragWinH()) + 'px)';
+          setTimeout(function () { anim = false; dragCleanup(); }, 220);
+          return;
+        }
+        var vel = flickVel(d.samples);
+        var fling = (goingUp && vel <= -0.5) || (!goingUp && vel >= 0.5);
+        if (goingUp ? cur >= total - 1 : cur <= 0) {
+          /* 边界强甩 → 上一/下一章（与点击热区同语义，navChapter 自带 disabled 兜底）；否则弹回 */
+          if ((fling && dist >= 48) || dist >= dragWinH() * 0.5) {
+            anim = true;
+            navChapter(goingUp ? 'next' : 'prev');
+            setTimeout(dragCleanup, 90);
+          } else {
+            anim = true;
+            surface.style.transition = 'transform .22s ease-out';
+            surface.style.transform = 'translateY(0px)';
+            setTimeout(function () { anim = false; dragCleanup(); }, 240);
+          }
+          return;
+        }
+        if (dist >= dragWinH() * 0.22 || fling) {
+          anim = true;
+          var target = goingUp ? cur + 1 : cur - 1;
+          surface.style.transition = 'transform .24s ease-out';
+          preview.style.transition = 'transform .24s ease-out';
+          if (goingUp) {
+            surface.style.transform = 'translateY(' + (-dragWinH()) + 'px)';
+            preview.style.transform = 'translateY(0px)';
+          } else {
+            preview.style.transform = 'translateY(0px)';
+            surface.style.transform = 'translateY(' + dragWinH() + 'px)';
+          }
+          setTimeout(function () {
+            anim = false;
+            cur = target;
+            render();
+            dragCleanup();
+          }, 260);
+        } else {
+          anim = true;
+          surface.style.transition = 'transform .22s ease-out';
+          preview.style.transition = 'transform .22s ease-out';
+          surface.style.transform = 'translateY(0px)';
+          preview.style.transform = goingUp ? 'translateY(' + dragWinH() + 'px)' : 'translateY(' + (-dragWinH()) + 'px)';
+          setTimeout(function () { anim = false; dragCleanup(); }, 240);
+        }
+      }
+      pageWindow.addEventListener('pointerup', function (ev) { endDrag(ev, false); });
+      pageWindow.addEventListener('pointercancel', function (ev) { endDrag(ev, true); });
+    }
+
     /* 顶栏开合：中央热区 / 阅读菜单按钮 */
     function toggleToolbar(open) {
       var bar = $('[data-reader-toolbar]');
