@@ -218,8 +218,15 @@ func ensureEngine() {
 	// R90: 引擎目录改为 repoRoot() 推断（任意部署路径自适应；沙箱内推出值与旧硬编码一致）
 	// R116: spawn 注入 scripts/engine.env 前缀（engineEnvPrefix），分桶 env 不再丢失
 	engineDir := filepath.Join(repoRoot(), "mini-services", "scraper-go")
-	_ = runBashSync("pkill -f 'scraper-[g]o.bin' 2>/dev/null; true", 5*time.Second)
-	_ = runBashSync(fmt.Sprintf("cd %q && setsid nohup %s./scraper-go.bin >> /tmp/engine.log 2>&1 < /dev/null &", engineDir, engineEnvPrefix()), 3*time.Second)
+	// R151: 二进制布局兼容——bin/scraper-go（现行仓库布局）优先，scraper-go.bin（旧部署）
+	// 兜底；pkill 模式双形态同盖（旧模式只匹配 *.bin，对 bin/scraper-go 永远失配，
+	// 残留实例杀不掉 → spawn 撞 3030 端口静默失败，互监护名存实亡）。
+	_ = runBashSync("pkill -f 'bin/scraper-go$' 2>/dev/null; pkill -f 'scraper-[g]o.bin' 2>/dev/null; true", 5*time.Second)
+	engineBin := filepath.Join(engineDir, "bin", "scraper-go")
+	if _, err := os.Stat(engineBin); err != nil {
+		engineBin = filepath.Join(engineDir, "scraper-go.bin")
+	}
+	_ = runBashSync(fmt.Sprintf("cd %q && setsid nohup %s%q >> /tmp/engine.log 2>&1 < /dev/null &", engineDir, engineEnvPrefix(), engineBin), 3*time.Second)
 }
 
 // runBashSync 同步执行 bash 命令（Task 33：限时等待完成，超时放后台收敛）。

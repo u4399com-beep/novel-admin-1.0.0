@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# scraper-go 启动脚本：构建（增量，go build 缓存）+ 前台运行。
-# 端口默认 3030（SCRAPER_PORT 可覆盖）；心跳/互监护等行为与 TS 版一致（见 main.go）。
-set -euo pipefail
+# scraper-go 启动（run.sh 循环重启包装，与 stealth-service/run.sh 同架构）：
+# 沙箱会话清理会周期性杀死后台单进程（R151 实证），父循环立即重生。
+# R116：engine.env 单一来源（分桶代理 env 注入，手工/自动拉起路径同源）。
+# flock 单实例闸（防多实例抢 3030 端口崩溃循环）。
+set -u
 cd "$(dirname "$0")"
 
-export PATH="$PATH:/home/z/go-sdk/go/bin"
-export GOPATH="${GOPATH:-/home/z/go}"
-
-mkdir -p bin
-if command -v go >/dev/null 2>&1; then
-  go build -o bin/scraper-go .
-else
-  echo "[scraper-go] go 工具链缺失，使用已有二进制 bin/scraper-go" >&2
-fi
-if [ ! -x bin/scraper-go ]; then
-  echo "[scraper-go] 无可用二进制（bin/scraper-go 缺失且无 go 工具链）" >&2
-  exit 1
+exec 9>/tmp/scraper-go.lock
+if ! flock -n 9; then
+  echo "[scraper-go] 已有实例在运行（flock 持有），退出" >&2
+  exit 0
 fi
 
-exec ./bin/scraper-go
+# R110：分桶代理 env 单一来源（repoRoot/scripts/engine.env）
+if [ -f "../../scripts/engine.env" ]; then
+  set -a
+  . ../../scripts/engine.env
+  set +a
+fi
+
+while true; do
+  ./bin/scraper-go
+  code=$?
+  echo "[scraper-go] exited code=$code, restart in 2s" >&2
+  sleep 2
+done

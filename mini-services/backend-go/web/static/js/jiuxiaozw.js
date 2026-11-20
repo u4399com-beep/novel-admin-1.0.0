@@ -218,6 +218,90 @@
     var tapR = $('.jxzw-tap-right', pagesRoot);
     var tapC = $('.jxzw-tap-center', pagesRoot);
 
+    /* ---------- R151 断点续读（原站同款 key 语义）：章内 reader-page:<chapterId> +
+       书级 reader-progress:v1:guest:<bookId>，reload/hydrate 后自动恢复到上次位置。
+       horizontal 存页码 cur/pages + 渲染参数（font/lh 一致才直跳；不一致按 fraction 换算）；
+       scroll 存滚动比例 fraction。章级 key 带 LRU 上限防 localStorage 膨胀。 */
+    var chapterId = String(pagesRoot.getAttribute('data-chapter-id') || '');
+    var bookIdR = String(pagesRoot.getAttribute('data-book-id') || '');
+    var chapterIdx = parseInt(pagesRoot.getAttribute('data-chapter-idx') || '0', 10) || 0;
+    var chapterTitle = '';
+    var h1El = cols ? cols.querySelector('h1') : null;
+    if (h1El) chapterTitle = (h1El.textContent || '').trim();
+    var PAGE_KEY_PREFIX = 'reader-page:';
+    var BOOK_KEY_PREFIX = 'reader-progress:v1:guest:';
+    var PAGE_KEY_CAP = 40;
+    var saveTimer = null;
+    function readPagePos() {
+      try { return JSON.parse(localStorage.getItem(PAGE_KEY_PREFIX + chapterId) || 'null'); } catch (e) { return null; }
+    }
+    function prunePageKeys() {
+      try {
+        var keys = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf(PAGE_KEY_PREFIX) === 0) {
+            var at = 0;
+            try { at = JSON.parse(localStorage.getItem(k)).at || 0; } catch (e) {}
+            keys.push([k, at]);
+          }
+        }
+        if (keys.length <= PAGE_KEY_CAP) return;
+        keys.sort(function (a, b) { return a[1] - b[1]; });
+        while (keys.length > PAGE_KEY_CAP) { localStorage.removeItem(keys.shift()[0]); }
+      } catch (e) {}
+    }
+    function writePagePos(pos) {
+      if (!chapterId) return;
+      try {
+        pos.at = Date.now();
+        localStorage.setItem(PAGE_KEY_PREFIX + chapterId, JSON.stringify(pos));
+        prunePageKeys();
+      } catch (e) {}
+    }
+    function writeBookProgress(local) {
+      if (!bookIdR) return;
+      try { localStorage.setItem(BOOK_KEY_PREFIX + bookIdR, JSON.stringify({ account: 'guest', local: local, at: Date.now() })); } catch (e) {}
+    }
+    function savePos() {
+      if (!chapterId) return;
+      if (readerMode === 'horizontal') {
+        var frac = total > 0 ? cur / total : 0;
+        writePagePos({ cur: cur, pages: total, fraction: frac, font: st.font, lh: st.lh });
+        writeBookProgress({ chapterId: chapterId, chapterNumber: chapterIdx, chapterTitle: chapterTitle, cur: cur, pages: total, fraction: frac });
+      } else {
+        var max = textWindow.scrollHeight - textWindow.clientHeight;
+        var f = max > 0 ? textWindow.scrollTop / max : 0;
+        writePagePos({ fraction: f });
+        writeBookProgress({ chapterId: chapterId, chapterNumber: chapterIdx, chapterTitle: chapterTitle, fraction: f });
+      }
+    }
+    function savePosThrottled() {
+      if (saveTimer) return;
+      saveTimer = setTimeout(function () { saveTimer = null; savePos(); }, 900);
+    }
+    window.addEventListener('pagehide', function () {
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; savePos(); }
+    });
+    var restored = false;
+    function restorePos() {
+      if (restored || !chapterId) return;
+      restored = true;
+      var pos = readPagePos();
+      if (!pos) return;
+      if (readerMode === 'horizontal') {
+        var target = -1;
+        if (pos.cur >= 0 && pos.cur < total && pos.font === st.font && pos.lh === st.lh) target = pos.cur;
+        else if (pos.fraction > 0 && pos.fraction < 1) target = Math.min(total - 1, Math.round(pos.fraction * total));
+        if (target > 0) { cur = target; render(); }
+      } else {
+        if (pos.fraction > 0 && pos.fraction < 1) {
+          var max = textWindow.scrollHeight - textWindow.clientHeight;
+          if (max > 0) textWindow.scrollTop = pos.fraction * max;
+        }
+      }
+    }
+
     /* ---------- R148 阅读页模式决策：后台 readerMode 设置（data-reader-mode-setting 透传） ----------
        page=全端分页；scroll=全端全文；auto=跟随设备：PC（hover+fine 主指针）全文滚动、触屏分页。
        JS 权威决策一次定终身（服务端 data-mode 初值只作 no-JS 兜底；窗口拖拽跨阈值不做
@@ -294,6 +378,7 @@
         cols.style.transform = '';
         if (pageEl) pageEl.textContent = '全文';
         updateScrollProgress();
+        restorePos();
         return;
       }
       cols.style.columnWidth = w + 'px';
@@ -302,6 +387,7 @@
       total = Math.max(1, Math.round((full + colGap) / (w + colGap)));
       if (cur >= total) cur = total - 1;
       render();
+      restorePos();
     }
     function render() {
       var w = textWindow.clientWidth || 1;
@@ -309,6 +395,7 @@
       if (pageEl) pageEl.textContent = (cur + 1) + '/' + total;
       if (pctEl) pctEl.textContent = Math.round(((cur + 1) / total) * 100) + '%';
       pagesRoot.setAttribute('data-reading-position', String(cur));
+      savePosThrottled();
     }
     function goPage(d) {
       if (anim) return;
@@ -341,6 +428,7 @@
       textWindow.addEventListener('scroll', function () {
         if (rAF) cancelAnimationFrame(rAF);
         rAF = requestAnimationFrame(updateScrollProgress);
+        savePosThrottled();
       }, { passive: true });
     }
     /* 上一轮设置回放 */
@@ -617,5 +705,31 @@
         applyPaper(); saveSt();
       });
     });
+  }
+
+  /* ---------- R151 书页断点续读：reader-progress 书级进度 → CTA「开始/立即阅读」升级为
+     「继续阅读」并直指上次读到的章节（原站同语义：阅读页写入书级进度，书页 hydrate 消费） ---------- */
+  var continueCta = $('[data-continue-cta]');
+  if (continueCta) {
+    var bookIdC = String(continueCta.getAttribute('data-book-id') || '');
+    if (bookIdC) {
+      var prog = null;
+      try { prog = JSON.parse(localStorage.getItem('reader-progress:v1:guest:' + bookIdC) || 'null'); } catch (e) {}
+      var local = prog && prog.local;
+      if (local && local.chapterId) {
+        continueCta.setAttribute('href', '/chapter/' + local.chapterId);
+        var spanEl = continueCta.querySelector('span');
+        if (spanEl) {
+          var chTitle = String(local.chapterTitle || '');
+          var chNum = parseInt(local.chapterNumber || '0', 10) || 0;
+          spanEl.textContent = '继续阅读';
+          var tip = chTitle || (chNum > 0 ? '第' + chNum + '章' : '');
+          if (tip) {
+            continueCta.setAttribute('title', '上次读到：' + tip);
+            continueCta.setAttribute('aria-label', '继续阅读，上次读到：' + tip);
+          }
+        }
+      }
+    }
   }
 })();
