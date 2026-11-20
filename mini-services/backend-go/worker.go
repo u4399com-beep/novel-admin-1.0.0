@@ -1027,9 +1027,10 @@ func laneFloorStore(taskID, limit int) {
 }
 
 // laneRestoreEvery 连续成功多少章回开一档（+2 车道）；软起步日志与 bumpLaneOnSuccess 共用。
-// R143: 24→12——域槽礼貌限速已钾死源站压力（≤0.83 req/s），车道数不影响源站节奏，
-// 回升只改变本地并发等待数，加速回满无害；慢站 12 连捷窗口从 ~10 分钟缩到 ~5 分钟。
-const laneRestoreEvery = int64(12)
+// R143: 24→12；R151: 12→8——域槽礼貌限速已钾死源站压力（≤0.83 req/s），车道数不影响
+// 源站节奏，回升只改变本地并发等待数，加速回满无害（实测 ddyueshu 车道 2 起步爬满
+// 12 需 60 连捷，槽供给利用率长期 <50%）；慢站 8 连捷窗口 ~40 秒。
+const laneRestoreEvery = int64(8)
 
 // laneQueueFreezeEWMA R99 饱和感知阈值（ms），R114 起采样口径改为「章节引擎服务耗时」
 // （总耗时−域槽排队，ServiceElapsedMs）。R143 起**只观测不再冻结回升**：R99 的
@@ -1118,6 +1119,13 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 		laneStart = floor
 	}
 	if laneStart > laneSoftStartLanes {
+		laneStart = laneSoftStartLanes
+	}
+	// R151: 起步下限钳到软起步档（4）——floor 降档记忆可低至 2，起步 2 时槽供给
+	// 利用率 <25%（实测 ddyueshu 6 章/分 vs 槽上限 ~50 章/分）；域槽闸在引擎层保证
+	// 源站压力恒 ≤0.83 req/s，起步宽窄不改变源站压力形态，烧穿保护由 shrinkLanes
+	// 快速响应兜底（R143 语义：降档即时无需起步预收敛）。
+	if laneStart < laneSoftStartLanes {
 		laneStart = laneSoftStartLanes
 	}
 	if laneStart < CHAPTER_CONCURRENCY {

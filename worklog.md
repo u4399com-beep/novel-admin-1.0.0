@@ -5519,3 +5519,27 @@ Stage Summary:
 - 书籍简介页布局与源站 1:1 对齐：桌面三列 grid（封面列/信息列/最新章节玻璃卡）+ 双栏主体（简介 | 里程碑+猜你喜欢竖列），移动端 order 序堆叠 + 目录条 + 里程碑徽章简介卡——全部由既有克隆 CSS 驱动，模板 DOM 补齐即闭环
 - 里程碑/书单/评价/问答四区块的数据诚实策略：只有 clicks 真实值参与渲染（九档阶梯），无收藏/评分/书单数据面则对应区块不渲染，绝不造假
 - 移交下一轮：①PAT 轮换（用户侧，第 19 次提醒：ghp_*** 务必去 GitHub 吊销换新）②书 997 等骨架书 Novel.wordCount=0 显示「0字」为诚实数据态（正文采集后随 R137 章节获取收敛）③移动端完整目录抽屉（book-catalog-sheet，源站页内抽屉 vs 本站 /toc 跳转）如需可另开轮④评价/问答/收录书单如需真实数据面需先扩后台数据模型
+
+Task ID: R151
+Agent: Z.ai Code (main)
+Task: 「1、继续完成遗留问题。2、继续探索章节内容获取效率，还是太慢，但要去兼顾源站的封禁等。3、强化采集和反反爬能力。4、完善精简优化整体代码。5、需要增加翻译功能（繁体/英文起步）。6、更新一键安装命令。」+ 第 26 次沙箱重置全环境重建
+
+Work Log:
+- 【第 26 次沙箱重置自愈（开局）】/tmp 与 gitignored 运行时目录全灭（Go/db/covers/curl-impersonate/stealth venv）；git 仓库完好（R150 在顶）。Go 1.22.12 阿里镜像重装、curl-impersonate 21 二进制 ghfast 重装、ensure-services 拉起四服务、空库 seed（25 规则）+ 手动建 10 个 list 采库引导任务 + 1 个 single 测试任务；PATCH activeTheme=jiuxiaozw；stealth venv 阿里镜像重建。踩坑：ensure-services 11:49 拉起的旧 stealth run.sh（cmdline 为相对路径 bash ./run.sh）pkill 模式匹配不到 → 新实例撞 flock 退出、iv8 恒 false——R148「pkill 模式 vs 相对路径 cmdline」坑的再现，kill 残留 pid 后 venv 生效。
+- 【R151a 断点续读（遗留问题，R147 移交，原站行为 agent-browser 全链取证）】原站 localStorage 五 key 实证：reader-page:<chapterId>={fraction,paragraphKey,charOffset}（章内）+ reader-progress:v1:guest:<bookId>={local:{paragraphKey,paragraphIndex,chapterId,chapterNumber,contentVersion}}（书级）+ jiutian-local-library（书架）+ book-reading-time/reading-realm-last（时长激励，不在本轮范围）；reload 实测 scrollTop 2201/5503（40%）精确恢复。实现（原站同款 key 语义，paragraphKey 简化为 fraction+渲染参数）：chapter.html pagesRoot 加 data-chapter-id/idx/book-id 三锚点；jiuxiaozw.js 章级 reader-page:<chapterId>={cur,pages,fraction,font,lh}（horizontal：font/lh 一致直跳 cur，不一致按 fraction 换算 round(fraction*total)；scroll：fraction×(scrollHeight-clientHeight)）+ 书级 reader-progress:v1:guest:<bookId>={chapterId,chapterNumber,chapterTitle,cur/pages,fraction}；保存时机 render() 节流 900ms + scroll 被动监听 + pagehide 兜底落盘；恢复时机首次 measure() 后 restored 一次闸；章级 key LRU 40 条上限（按 at 淘汰）防 localStorage 膨胀；book.html 桌面/移动两处 CTA 加 data-continue-cta，jiuxiaozw.js 书页模块消费书级 progress → 「开始/立即阅读」升级「继续阅读」+ href 直指上次章节 + title/aria「上次读到：章题」。E2E 全绿：PC scroll 42% 保存/恢复、iPhone horizontal 3/11 恢复、字号 22→24 匹配直跳 + 注入 font=20/pages=11 旧记录换算 round(0.545×13)=7 恢复 8/13、LRU 45 假 key 清到 40、CTA「继续阅读→/chapter/949482+上次读到：2 死一次就增加一年修为」、console 零错误。
+- 【R151b 运行时抗清理架构（本轮实证缺陷根修）】沙箱会话清理会周期性静默杀死后台单进程（setsid/nohup 直拉的 backend 与 scraper 均 60-90s 内消失、无 panic/无 OOM 痕迹），而 stealth 的 run.sh 无限循环架构存活至今——清杀手只杀子进程，父循环立即重生。根修：backend-go/scraper-go 各加 run.sh（flock 单实例闸 + 2s 循环重启 + engine.env source（scraper）+ DB_PATH 推断（backend））；ensure-services.sh/watchdog-services.sh 拉起路径全改 run.sh；与 stealth 四服务架构统一。
+- 【R151c paths.go 布局兼容 + ensureEngine 互监护修复（一键安装路径正确性）】inferRepoRootFromExe 旧「上 2 级+校验 mini-services」不认 bin/ 布局（bin/backend-go 上 2 级=mini-services 非 repo 根）→ 非沙箱路径部署 DB/web/引擎路径全回退沙箱默认全错——改向上 6 级搜索 mini-services 标志目录双布局兼容；inferWebRootFromExe 同构（{binDir}/web + {binDir}/../web 双候选）；ensureEngine pkill 模式 'scraper-[g]o.bin' 对 bin/scraper-go 永远失配（残留杀不掉→spawn 撞 3030 静默失败互监护名存实亡）+ spawn 路径 ./scraper-go.bin 不存在——双形态 pkill + bin/ 优先 .bin 兜底 spawn。
+- 【R151d 一键安装收敛（常设⑥）】二进制单形态收敛：build-go.sh 废 bin/+*.bin 双产物（历史曾致三方消费方路径分裂互拉不同版本）只产 bin/（-trimpath -ldflags "-s -w"）；deploy-cn.sh [4/8] 删 bin→.bin 复制、systemd ExecStart 与 nohup 拉起全改 bin/+run.sh、清旧进程双形态 pkill；deploy-backend.sh 重写（bin/ 原子替换 + run.sh 重启）；upgrade.sh 早已 bin/ 形态 ✓；脚本全链 bash -n 通过。
+- 【R151e 章节获取效率（常设②）】证据链：单章直连 fetch-ua-rotate 379ms 成功 vs 任务内 lastMs 20-37s（全是域槽排队）+ 发射率 0.4 req/s vs 槽上限 0.83（利用率 <50%）+ /tmp/backend-lane-floors.json 车道下限记忆=2（降档被「只降不升」固化）→ 车道 2 起步爬满 12 需 60 连捷（12 章/档），槽供给长期空转。优化（域槽 1.2s 合规闸不动，防封语义不变）：laneRestoreEvery 12→8（回升窗口 ~40s）；起步下限钳 laneSoftStartLanes=4（floor=2 语义仅保留 shrink 档位记忆，起步宽窄不改变源站压力形态——域槽闸在引擎层，烧穿保护由 shrinkLanes 快速响应兜底 R143 语义）。重编上线后起步期实测 15-25 章/分回升中（全库 211 章/分多任务合计）。iqxsw 等严格限流站受 AIMD 惩罚时仍按惩罚间隔走（防封优先）。
+- 【R151f 反反爬（常设③）】cloak chromium 二进制 216MB ghfast 断点续传补下（get_binary_dir 落位 + ensure_binary 校验通过，/health cloakBinary=true——R143/R144 移交的「源站恢复后补下载」闭环；primary cloakbrowser.dev 被墙，GitHub Releases fallback 经 ghfast 代理成立）；iv8 对 pilishuwu 快速失败（403 challenge-page 1.7s）+ cloak 直测确认 CF「Just a moment」v146 指纹不过——101kks/pilishuwu 两强盾站规则禁用止损（notes 留档 CF 对策升级后启用，防 paused 恢复循环空烧），启用规则 25→18；pSEO duckduckgo 引擎 12 连败确认有重试预算硬帽非无限循环。
+- 【R151g 代码精简（常设④）】staticcheck 2023.1.7 重装双端零输出；gofmt 全库零残留；vet 零告警；脚本层 *.bin 双形态清除（防未来路径分裂复发）。
+- 【R151h 翻译核验（常设⑤）】:3032 五语种注册/reqTotal 6418（预热在跑）/cacheSize 2000；backend 代理层实测 zh-Hant 即时转换正确（简体与繁体转换验证→簡體與繁體轉換驗證）；en/ja/ko LLM 通道在位（上游 429 为外部约束）；R139 admin 缓存管理页保持交付态。
+- 【质量闸】backend 全量 go test 82s PASS（paths/worker 改动含车道测试全绿）；staticcheck/vet/gofmt 零输出；JS bun new Function 语法闸过；E2E agent-browser 断点续读五分支+console 零错误。
+
+Stage Summary:
+- 断点续读交付：章级页码/滚动位置跨会话恢复（分页直跳+换算双分支）+ 书级进度 + 书页 CTA 继续阅读——与原站同款 key 语义（简化 paragraphKey 为 fraction+渲染参数），LRU 防膨胀
+- 运行时抗清理：四服务统一 run.sh 循环重启架构（flock 闸），单进程直拉被清不再致服务失踪
+- 一键安装：bin/ 单形态收敛 + paths.go 双布局兼容——任意路径 git clone 部署不再失联；bootstrap-cn.sh 零前提命令不变
+- 效率：车道爬坡 3 倍提速（起步 4/8 连捷回升），域槽合规闸不动；ddyueshu 实证槽利用率回升中
+- 反反爬：cloakBinary=true 补齐三层架构；强盾站禁用止损防空烧
+- 移交下一轮：①PAT 轮换（用户侧，第 20 次提醒：ghp_*** 务必去 GitHub 吊销换新）②CF 强盾站（pilishuwu/101kks）过盾对策（cloak v146 被 Just a moment 拦，可试 CLOAKBROWSER v155/付费 key 或 xvfb 有头模式）③书级 progress 的 paragraphKey 锚点（原站跨内容版本稳定锚点，当前 fraction+渲染参数在字号变更时近似恢复）④translatewarm en/ja/ko LLM 成本闸维持按需 ⑤iqxsw 等严格限流站吞吐受 AIMD 惩罚约束属防封优先正常形态

@@ -1,9 +1,12 @@
 #!/bin/bash
 # build-go.sh —— 构建产物（Task 27 起：Go 单栈，Next.js 构建已拆除；
 # Task 58 起：零 Node/TS——bun/Tailwind 构建期管线拆除，tw.css 为仓库内 vendored 资产）。
-# 产出：
-#   mini-services/backend-go/backend-go.bin  （页面 SSR + API + runner，端口 3000）
-#   mini-services/scraper-go/scraper-go.bin  （采集引擎，端口 3030）
+# 产出（R151 单形态收敛）：
+#   mini-services/backend-go/bin/backend-go  （页面 SSR + API + runner，端口 3000）
+#   mini-services/scraper-go/bin/scraper-go   （采集引擎，端口 3030）
+# R151：废除 bin/ 与 *.bin 双产物（历史双形态曾致 ensureEngine/watchdog/部署脚本三方
+# 路径分裂互拉不同版本）；仓库受控形态统一为 bin/，所有拉起方（run.sh/
+# ensure-services/deploy-cn/systemd/ensureEngine）均消费 bin/。
 # 说明：
 #   web/static/css/tw.css 已固化进仓库（与当前模板类名同步），本脚本不再重新生成。
 #   若模板新增工具类导致样式缺失，用 go run ./scripts/csscheck 检测漂移后按
@@ -30,12 +33,9 @@ export GOPROXY="${GOPROXY:-https://goproxy.cn,direct}"
 
 echo "[build-go] go=$(command -v go) GOPROXY=$GOPROXY"
 echo "[build-go] backend-go ..."
-# R103：双产物布局——backend-go.bin（deploy-cn.sh/run.sh/dev-go.sh 消费）
-# 与 bin/backend-go（ensure-services.sh watchdog 消费）内容一致，防两消费方
-# 各自拉起不同版本互抢 3000 端口（watchdog 60s 循环会把旧 bin 拍回去）。
-( cd mini-services/backend-go && go build -o backend-go.bin . && mkdir -p bin && cp -f backend-go.bin bin/backend-go )
+( cd mini-services/backend-go && go build -trimpath -ldflags="-s -w" -o bin/backend-go . )
 
 echo "[build-go] scraper-go ..."
-( cd mini-services/scraper-go && go build -o scraper-go.bin . && mkdir -p bin && cp -f scraper-go.bin bin/scraper-go )
+( cd mini-services/scraper-go && go build -trimpath -ldflags="-s -w" -o bin/scraper-go . )
 
 echo "[build-go] done"
