@@ -5612,3 +5612,17 @@ Work Log:
 - 【R158-d ② 高水位路径持久化】laneHighWaterPersistPath 默认从 /tmp 迁移 {repoRoot}/db/lane-highwater.json（R157/R158 连续两轮 /tmp 清空实证落档丢失 resume 重爬坡归零）+ persistLaneHighWater 落盘前 MkdirAll + worker.go filepath import；重编 bin/backend-go 重启生效；backend 全量 test 58.7s PASS + gofmt/vet 零输出。实战落档待首个健康段收尾（异步事件，落档后 resume 起步形态下轮观测）。
 - 【R158-e ③ LLM 429 未恢复复测】en/ja 双通道实测：translate-service 5 轮退避重试（10s/15s/20s/30s/60s）全部 429「Too many requests」——上游配额未恢复，维持按需+优雅降级形态（R152 已验证降级路径），translatewarm en/ja/ko 成本闸继续按需。
 - 【R158-f ④ 重扫观测+新库死亡站防烧】DB 第 29 次重置换新库（593→396 本），191 本队列语境失效，观测口径修正为 fleet 双线推进：t0 基线（15 任务多数 0-40 章）→t1（10min：多任务 50-184 章推进 + TOC 补齐爆发 id1 469→22621/id17 377835/id18 164043 章目录）→t2（scraper 重启收敛后 running 6，继续推进）——TOC 补齐与正文填充双线健康。**新库规则状态被种子重置**：x2552/101kks/xinjianpan/pilishuwu 四死亡站重新 enabled=1 空烧——直连/cloak 快速复测三站死亡定性维持（x2552 赌博站 title 实证/101kks CF 回源 521/xinjianpan TCP 黑洞 000）+ pilishuwu cloak 实测——四规则 enabled=0 + notes 留档 + 对应任务 4 条 canceled 终结，启用规则 20→16，fleet 火力收敛健康主机。
+
+Task ID: R159
+Agent: Z.ai Code (main)
+Task: README 主页文档落地（用户指令：做一个 README 传上git 并附上各页面的截图）
+
+Work Log:
+- 【R159-a 截图矩阵】agent-browser 实截 12 张存 docs/images/：home-desktop/home-mobile/list-hot/book-desktop（前台 jiuxiaozw 主题桌面+移动）、chapter-pc（scroll 全文滚动）/chapter-pc-panel（字号行距纸色三行面板）/chapter-mobile（iPhone 14 分页 1/14 悬浮工具栏）、admin-overview/rules/tasks/translate/settings（后台五板块）。中途发现 activeTheme 第 30 次回落 trxsw（仅主题项，venv/cloak/stealth/lane-highwater 全存活）→ PATCH 激活后重截前 4 张（初版 4 张为 trxsw 主题作废重拍）。admin-translate 截图顺带佐证 R156 前台零翻译入口文案在线。
+- 【R159-b ② 高水位实战闭环】db/lane-highwater.json 首次落档确认（{"21":12}——任务 21 车道宽 12），R158 持久化路径改造实战生效，resume 起步形态留待下轮重启观测。
+- 【R159-c README.md】纯 Go 全栈定位 + 四服务架构表/ASCII 架构图 + 核心特性四组（前台 1:1/采集引擎/翻译纯后台/后台九板块）+ 12 截图矩阵表格 + 一键安装命令（bootstrap-cn ghfast 直引 docs/deployment.md）+ 手动构建/目录结构/技术要点（纯 Go sqlite/模板运行时加载/幂等加列/原子落盘/质量闸）+ 文档索引 + 免责声明（演示用途/版权归源站）。零敏感信息（无 token/IP）。
+- 【R159-d 提交推送】1cd6539（13 files +151，截图 ~4.5MB）push 成功 5a5392e..1cd6539，远端同步确认。
+
+Stage Summary:
+- README 主页落地：架构/特性/截图/安装/结构/技术要点/文档索引全覆盖，仓库首页形象完整
+- 高水位持久化实战闭环（{"21":12} 落档实证）
