@@ -477,7 +477,9 @@ func startRunner() {
 	log.Printf("[backend-go-runner] started (polling pending tasks every %s)", runnerPollInterval)
 
 	// R116: 车道下限记忆恢复 + 周期落盘（任何任务派发前恢复，防重启清零回软起步重爬）
+	// R152: 高水位记忆同链路恢复（resume 直接以历史已验证宽度起步，免重爬坡）
 	restoreLaneFloors()
+	restoreLaneHighWaters()
 	go laneFloorPersistLoop()
 
 	// 僵尸任务回收（recoverStaleTasks 语义：Go runner 是唯一任务执行方，启动时把本进程

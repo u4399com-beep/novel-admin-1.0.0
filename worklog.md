@@ -5543,3 +5543,25 @@ Stage Summary:
 - 效率：车道爬坡 3 倍提速（起步 4/8 连捷回升），域槽合规闸不动；ddyueshu 实证槽利用率回升中
 - 反反爬：cloakBinary=true 补齐三层架构；强盾站禁用止损防空烧
 - 移交下一轮：①PAT 轮换（用户侧，第 20 次提醒：ghp_*** 务必去 GitHub 吊销换新）②CF 强盾站（pilishuwu/101kks）过盾对策（cloak v146 被 Just a moment 拦，可试 CLOAKBROWSER v155/付费 key 或 xvfb 有头模式）③书级 progress 的 paragraphKey 锚点（原站跨内容版本稳定锚点，当前 fraction+渲染参数在字号变更时近似恢复）④translatewarm en/ja/ko LLM 成本闸维持按需 ⑤iqxsw 等严格限流站吞吐受 AIMD 惩罚约束属防封优先正常形态
+
+Task ID: R152
+Agent: Z.ai Code (main)
+Task: 常设六连（遗留问题/章节获取效率/采集反反爬/代码精简/翻译功能/一键安装）+ R151 遗留未提交修改落库 + 第 27 次沙箱重置恢复
+
+Work Log:
+- 【第 27 次沙箱重置恢复（开局）】Go 1.22.12 阿里镜像重装 /tmp/go；stealth venv 重建（aliyun pypi）；CloakBrowser chromium-146 216MB 经 ghfast 断点续传循环补下（curl -C - 60 轮，ghfast 单流会断，循环续传 3 分钟拉满）；activeTheme 发现回落 trxsw（DB 重置副作用）→ PATCH 激活 jiuxiaozw；R151 全部修改仍在工作区未提交（上轮会话中断于 commit 前）——本轮终验后随 R152 一并落库。
+- 【R152-a R151 收尾核验】工作区 15 文件 diff 逐项复核（paths.go 双布局/run.sh 循环重启/ensureEngine 双形态 pkill/laneRestoreEvery=8/软起步下限钳 4/断点续读 JS/build 脚本 bin/ 单形态）与 R151 worklog 一致；bin/backend-go+bin/scraper-go 重编（-trimpath -ldflags "-s -w"）后全量 test：backend 64.0s PASS + scraper 50.4s PASS + staticcheck 2023.1.7 双端零输出 + gofmt/vet 零输出。
+- 【R152-b 章节效率·车道高水位记忆（常设②）】实测瓶颈定性三连：①单章引擎直测 2.8s（fetch-browser 实抓仅 642ms）——引擎能力无恙；②引擎发射率 342/min vs 任务章节数推进 51/min（差额=章内分页 iqxsw 5 页/章+列表发现请求）；③每主机 ~25 req/min vs 域槽上限 50/min（利用率 50%）——发射间歇来自「每次 resume 从 4 重爬坡 4→12 需 32 连捷 ≈90-120s」（task18 实证 01:27:46 起步 01:29:16 回满）。根修=高水位记忆：健康收尾（无熔断/无提前停止/有产出/零软拦截失败）把达成车道宽度存档（gLaneHighWater sync.Map + CAS 环只升不降），shrinkLanes 实时封顶高水位（限流证据出现后更宽记忆不可信），下次 resume 直接以已验证宽度起步免重爬坡；持久化独立文件 /tmp/backend-lane-highwater.json（LANE_HIGHWATER_PATH env 可覆盖，与 floors 同款脏标记+60s 周期落盘+启动恢复链）；起步序= floor→上钳软起步→下钳软起步→高水位提升（R151 的 floor 钳制语义保留，高水位叠加其上）。源站压力安全性论证：域槽（≥1.2s/host+出口）是源站节奏唯一闸门，车道宽度只决定本地排队深度——高水位起步不改变发射间隔仅免去槽位空转。
+- 【R152-c 反反爬·强盾站死亡定性+止损（常设③）】cloakBinary 恢复后逐站实测：101kks=CF 边缘存活且 cloak v146 已过挑战（cf_clearance 发放 2027 到期）但回源 521「Web Server Is Down」（waitSelector=.newnovels 30s 不现佐证）——源站宕机非指纹问题；pilishuwu=真挑战拦截（403 Just a moment 44KB，直连/cloak 复测一致，R151 结论不变）；xinjianpan=TCP 黑洞（直连 000/15s、cloak 零响应、proxy-watch 换血 10 出口仍 0 成功）。三规则按 trxsw/23qb 先例 enabled=false+notes 留档（死亡定性+复活路径：101kks 源站复活即可启用（过盾链路已验证）、pilishuwu 待 cloakbrowser >v146 指纹/付费 key/xvfb 有头实验、xinjianpan 待 TCP 恢复）；任务 #5/#6/#8 cancel 终结防空烧（fleet 冷却自动重建循环截断），启用规则 18→15、running 任务收敛 15 条全在健康主机。stealth 三层全绿：cloak/cloakBinary/iv8=true。
+- 【R152-d 阅读页翻译 UI 落地（常设⑤，后端 R137-R139 已备、前端首次接线）】后端栈本已完整（/api/translate 代理缓存优先+TranslationCache+translatewarm 预热+TXT ?lang= 导出+admin 缓存管理页）但阅读页零入口=用户不可达。新增：①chapter.html 设置面板「翻译」行（原文/繁體/English/日本語 四态，jxzw-reader-row 同款样式，语种集=translate-service 注册表）；②jiuxiaozw.js 翻译模块（阅读器闭包内）：逐段 POST /api/translate（chapterId 归属 novelId 由代理单点反查）→ 后端缓存命中秒回（zh-Hant OpenCC 即时+预热）/en/ja LLM 按需；代理上限 300 段对齐（超长章截断余段保原文=诚实降级）；换文后 remeasure() 复用分页重排（horizontal/scroll 两模式同路径）；单飞行闸（请求在途忽略新点击防段序错乱）；按钮 busy 态「译…」；失败静默回弹原文态（正文不半换）；原文快照留存切回零请求还原；语种持久化 jxzw-reader-trans 下一章载入自动应用。E2E（agent-browser 双模式）：scroll 模式繁体即时换文（简→繁逐字验证）+localStorage 持久化+切回原文还原；English LLM 通道实测上游 429 限流（外部约束，R151 已知）→ 代理 150s 超时→按钮态完整还原零报错=优雅降级路径实证；zh-Hant 持久后下一章自动应用（aria-pressed=true）验证；iPhone 14 horizontal 模式 1/24 分页下换文+翻页 transform 正常（2/24 translateX(-398px)）；console/页面错误双零。
+- 【R152-d+ TXT 译文导出通道回归】POST /api/novels/739/export-txt?lang=zh-Hant → 200（20 章/2263 段全部命中 translatewarm 预热缓存），测试文件已清理。
+- 【R152-e 代码精简（常设④）】staticcheck 2023.1.7 双端零输出（GOPROXY=goproxy.cn 预下载后跑）；gofmt worker/runner 规范化；vet 零告警；JS bun new Function 语法闸过。
+- 【R152-f 一键安装核查（常设⑥）】bootstrap-cn.sh bash -n 通过；tarball 镜像链实测（ghfast 14.8MB 下载+解压校验过）；仓库归档内 bin/backend-go+bin/scraper-go 在位=预构建快速路径随本次提交自动更新；docs/deployment.md §0.1 命令不变（`bash -c "$(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/u4399com-beep/novel-admin-1.0.0/main/scripts/bootstrap-cn.sh)"`）。
+- 【观测】重启后 fleet 全量恢复（进度保留），R152-b 高水位将在首个健康填充段收尾时落档（阶段 2/2 尚未开始，下轮观测）。
+
+Stage Summary:
+- R151 遗留未提交修改全部落库（本轮终验：双端全量 test/staticcheck/vet/gofmt 全绿）
+- 章节效率根修第二级：车道高水位记忆（健康宽度跨 resume 复用，免 4→12 重爬坡 ~90-120s；域槽闸不动防封语义不变）
+- 翻译功能用户可达性闭环：阅读页设置面板四语种（繁體即时/English·日本語 LLM 按需）+ 持久语种跨章自动应用 + TXT 译文导出——后端缓存/预热/管理页全链已有，本轮补上「读者看得见的最后一公里」
+- 强盾站死亡定性收官：101kks 源站 521/pilishuwu CF 真挑战/xinjianpan TCP 黑洞——三规则停用+notes 留档+任务终结，fleet 火力收敛到 15 个健康主机
+- 移交下一轮：①PAT 轮换（用户侧，第 21 次提醒：ghp_*** 务必去 GitHub 吊销换新）②高水位记忆首轮实战观测（下一健康段收尾落档+resume 起步形态）③English/日本語 LLM 上游 429 恢复后复测按钮全流程④pilishuwu cloak 升级路径（>v146/付费 key/xvfb）⑤translatewarm en/ja/ko 成本闸维持按需
