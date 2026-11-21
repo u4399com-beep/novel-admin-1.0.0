@@ -39,6 +39,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1109,11 +1110,14 @@ func laneHighWaterCap(taskID, limit int) {
 }
 
 // laneHighWaterPersistPath R152: 高水位落盘路径（env LANE_HIGHWATER_PATH 可覆盖，测试隔离用）。
+// R158: 默认从 /tmp 迁移到 {repoRoot}/db/lane-highwater.json——沙箱 /tmp 周期性清空（R157/R158
+// 连续两轮实证：落档丢失、resume 重爬坡归零），db/ 与数据库同域持久；repoRoot() 推断
+// 失败时返回沙箱兜底根，路径仍可写。
 var laneHighWaterPersistPath = func() string {
 	if p := os.Getenv("LANE_HIGHWATER_PATH"); p != "" {
 		return p
 	}
-	return "/tmp/backend-lane-highwater.json"
+	return filepath.Join(repoRoot(), "db", "lane-highwater.json")
 }()
 
 // persistLaneHighWater 原子落盘（tmp+rename，对齐 persistLaneFloors）。返回条目数。
@@ -1134,6 +1138,7 @@ func persistLaneHighWater() int {
 	if err != nil {
 		return 0
 	}
+	_ = os.MkdirAll(filepath.Dir(laneHighWaterPersistPath), 0o755)
 	tmp := laneHighWaterPersistPath + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return 0

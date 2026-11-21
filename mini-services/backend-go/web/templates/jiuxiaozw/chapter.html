@@ -60,16 +60,5 @@ reader-pages-root 变量系统（米色纸 #dbc49e/墨 #382b19/面板 #faf3e5）
       <button type="button" class="jxzw-paper-dot" data-paper="dark" aria-pressed="false" style="background:#1a1a1a;color:#a0a0a0">夜间</button>
     </div>
   </div>
-  {{/* R152: 阅读页翻译（常设⑤）——原文/繁體/English/日本語；语种集与 translate-service
-  注册表一致（zh-Hant OpenCC 即时+预热缓存，en/ja LLM 按需）。按钮行为由 jiuxiaozw.js
-  翻译模块接管：逐段 POST /api/translate（backend 代理缓存优先），换文后复用分页重排。 */}}
-  <div class="jxzw-reader-row"><b>翻译</b>
-    <div class="jxzw-paper-dots">
-      <button type="button" class="jxzw-reader-btn" data-trans-lang="" aria-pressed="true">原文</button>
-      <button type="button" class="jxzw-reader-btn" data-trans-lang="zh-Hant" aria-pressed="false">繁體</button>
-      <button type="button" class="jxzw-reader-btn" data-trans-lang="en" aria-pressed="false">English</button>
-      <button type="button" class="jxzw-reader-btn" data-trans-lang="ja" aria-pressed="false">日本語</button>
-    </div>
-  </div>
 </div>
 {{end}}

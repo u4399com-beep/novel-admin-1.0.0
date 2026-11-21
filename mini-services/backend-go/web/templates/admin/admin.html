@@ -570,7 +570,7 @@
       </div>
       <div id="tr-stats" class="flex flex-wrap gap-3 text-xs text-neutral-600">加载中…</div>
       <div id="tr-targets" class="mt-2 flex flex-wrap gap-2 text-xs"></div>
-      <p class="mt-2 text-[11px] text-neutral-400">采集期后台自动预热 zh-Hant/zh-HK（translatewarm.go）；en/ja/ko 为读者按需翻译（结果同样持久缓存）。</p>
+      <p class="mt-2 text-[11px] text-neutral-400">采集期后台自动预热 zh-Hant/zh-HK（translatewarm.go）；en/ja/ko 为按需翻译（API/批量预热/TXT 导出触发，结果同样持久缓存；前台阅读页不提供翻译入口——用户指令）。</p>
     </div>
 
     <div class="adm-card">
@@ -604,7 +604,7 @@
         <button type="button" id="tr-clear-btn" class="adm-btn">清理</button>
         <span id="tr-clear-msg" class="text-xs text-neutral-500"></span>
       </div>
-      <p class="mt-1 text-[11px] text-neutral-400">清理后对应段落回到「未翻译」态，读者阅读时会重新生成。</p>
+      <p class="mt-1 text-[11px] text-neutral-400">清理后对应段落回到「未翻译」态，再次预热/翻译请求/TXT 导出时重新生成。</p>
     </div>
 
     <div class="adm-card">

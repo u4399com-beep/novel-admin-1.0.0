@@ -5600,3 +5600,15 @@ Stage Summary:
 - 首页全部 9 个模块角标统一为 10（不足 10 本的频道显示真实数，不虚标）
 - 6 个落点列表页只显示 10 本、分页栏自动隐藏；角标↔落点页数字同源钳制永不漂移
 - 展示上限为单常量（webModuleShowCount），后续调整一处改全局
+
+Task ID: R158
+Agent: Z.ai Code (main)
+Task: 新 PAT 接线 + R156 成果恢复重建（分支回退事故）+ 四项移交攻坚（cloakBinary/高水位/LLM 复测/重扫观测）
+
+Work Log:
+- 【R158-a 新 PAT 接线】用户提供新 token，git remote set-url 更新 origin；push 验证认证通过（收到远端拒绝信息即凭据生效）。
+- 【R158-b 分支回退事故恢复】发现本地 main 被 pull --rebase 回退到 R150（reflog: rebase checkout origin/main + pick R150），R156 两笔提交（247b605/234e5f8）对象丢失；而 origin/main 已有 R152/R154/R155（33df3ed/a226681/8a01f94，另一会话流推送）。工作区文件完好保留 R156 全部成果（JS 翻译模块 0 残留/admin 文案已诚实化/重复块已清/worklog +120）。恢复序列：stash → ff-only 到 origin/main → stash pop 冲突（ff 带回 R155 版文件与 stash diff 基线 bf2e347 叠加冲突）→ checkout origin/main 重置三文件 → 重新应用 R156 三处编辑（chapter 删翻译行/JS 删翻译模块+重复块/admin 文案保留）→ bun 语法闸过。树 diff vs origin/main 收敛为 R156 目标态。
+- 【R158-c ① cloakBinary=True 达成】CloakBrowser chromium-146.0.7680.177.5 二次下载完成（216.9MB，ghfast→CloakHQ releases 断点续传 5 轮）+ 归位版本目录（tar 直接释放到 .cloakbrowser 根需 mv 到 chromium-146.0.7680.177.5/）→ stealth 重启三层全绿（cloak/cloakBinary/iv8=true）；强盾站实测：pilishuwu CloakBrowser v146 仍 Just a moment 挑战（指纹过不了，与 R152 定性一致，维持停用待 >v146/付费key/xvfb）。
+- 【R158-d ② 高水位路径持久化】laneHighWaterPersistPath 默认从 /tmp 迁移 {repoRoot}/db/lane-highwater.json（R157/R158 连续两轮 /tmp 清空实证落档丢失 resume 重爬坡归零）+ persistLaneHighWater 落盘前 MkdirAll + worker.go filepath import；重编 bin/backend-go 重启生效；backend 全量 test 58.7s PASS + gofmt/vet 零输出。实战落档待首个健康段收尾（异步事件，落档后 resume 起步形态下轮观测）。
+- 【R158-e ③ LLM 429 未恢复复测】en/ja 双通道实测：translate-service 5 轮退避重试（10s/15s/20s/30s/60s）全部 429「Too many requests」——上游配额未恢复，维持按需+优雅降级形态（R152 已验证降级路径），translatewarm en/ja/ko 成本闸继续按需。
+- 【R158-f ④ 重扫观测+新库死亡站防烧】DB 第 29 次重置换新库（593→396 本），191 本队列语境失效，观测口径修正为 fleet 双线推进：t0 基线（15 任务多数 0-40 章）→t1（10min：多任务 50-184 章推进 + TOC 补齐爆发 id1 469→22621/id17 377835/id18 164043 章目录）→t2（scraper 重启收敛后 running 6，继续推进）——TOC 补齐与正文填充双线健康。**新库规则状态被种子重置**：x2552/101kks/xinjianpan/pilishuwu 四死亡站重新 enabled=1 空烧——直连/cloak 快速复测三站死亡定性维持（x2552 赌博站 title 实证/101kks CF 回源 521/xinjianpan TCP 黑洞 000）+ pilishuwu cloak 实测——四规则 enabled=0 + notes 留档 + 对应任务 4 条 canceled 终结，启用规则 20→16，fleet 火力收敛健康主机。
