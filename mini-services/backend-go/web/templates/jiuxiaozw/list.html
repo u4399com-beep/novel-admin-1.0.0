@@ -2,7 +2,7 @@
 的同位替代（我们的数据面为频道全集：编辑推荐/热门/最新/点击榜/更新榜/完本）。
 book-list 体系 CSS 与 category.html 同源（jiuxiaozw.css bundle：book-list-page/-nav/-summary/
 -book/-row/-card/-pagination，分页 aria-current 当前页 / aria-disabled 不可点端点为原站机制）。
-角标数字与落点页「共 N 本」同源 webListTotals，双侧永不漂移。 */}}
+角标数字与落点页「共 N 本」同源 webListTotals（R155 起按展示上限 10 钳制），双侧永不漂移。 */}}
 {{define "content"}}{{$l := .List}}
 <div class="book-list-page max-w-3xl mx-auto px-3 md:px-4 py-3 md:py-6">
 <header class="book-list-head">

@@ -5585,3 +5585,18 @@ Stage Summary:
 - 数据面：191 本截断书（ixdzs8 库 88%）全量重扫队列启动，实证 #113 20→1777 章见效中
 - 规则面 24 条全审计：1 死亡定性停用（x2552 转型赌博站）、1 误判翻案（5165）、8 停用复核留档、1 根因留档（ixdzs8）
 - 移交下一轮：①191 本重扫队列消化观测（预计小时级 TOC+天级正文，域槽限速防封优先）②PAT 轮换（用户侧，第 22 次提醒：ghp_*** 务必去 GitHub 吊销换新）③curl-impersonate 二进制补装（101kks 等 TLS 指纹拦站解锁路径，沙箱 ghfast 下载 21 二进制脚本已有先例）④高水位车道记忆首轮实战观测（R152 移交）⑤5165 巡检翻绿确认
+
+Task ID: R155
+Agent: Z.ai Code (main)
+Task: 首页模块角标与落点列表页统一展示上限 10 本（用户指定）
+
+Work Log:
+- 【R155-a 需求定位】用户报「首页的各个模块右上角的书籍数量都改成10，所对应的列表页显示的数量也只显示10本」。首页角标体系（R145 建）：桌面 jxzw-band `rl-all` + 移动 jxzw-mband `mh-list-all`（文本+aria-label）——数据面 6 标准频道（featured/hot/latest/rank-clicks/rank-updates/finished，全部指向 /list/<kind>）+ 后台 homeConfig 自定义区块 3 个（featured/hot/latest，同源 webListTotals）= 实际 9 个角标（当前库 featured=8、hot=10、latest=1456、finished=192）。
+- 【R155-b 单一来源钳制实现（web_list.go）】新增 `webModuleShowCount = 10`（展示上限常量）：①`webListTotals()` 对 4 基数钳制 min(真实全集, 10)——角标（桌面文本/移动文本+aria-label）与落点页「共 N 本」同源永不漂移（R145 承诺保留）；②`handleWebList` COUNT 同步钳制 + 查询 LIMIT 10——落点页只列 10 本，钳后总数 ≤ 每页 10 → 总页数恒 1 → 分页栏由模板 `totalPages>1` 条件自动隐藏（webListPageSize=webModuleShowCount，未来上调常量即自动恢复多页形态，模板零改动）。诚实原则保留：频道不足 10 本时显示真实数（小编精选当前 8 本 → 显示「全部 8 本」不虚标）。
+- 【R155-c 注释/文档同步】web_list.go 头注重写（R155 语义+分页形态说明）；home.html 横带注释、list.html 头注同步。
+- 【R155-d 验证】backend 全量 test 77s PASS + staticcheck/gofmt 零输出；重编 bin/backend-go 重启后 curl 实测：桌面 9 角标 = [8,10,10,10,10,10 | 8,10,10]（6 频道+3 自定义区块，featured=8 为真实数）、移动 aria-label 同语义；/list/featured 共8本 8 行 /list/hot 共10本 10 行 /list/latest 共10本 /list/rank-clicks /list/finished 全部 10 行、分页栏全隐藏；页面 HTTP 200。模板从磁盘运行时加载（web.go templatesRoot），本次仅 web_list.go 需重编。
+
+Stage Summary:
+- 首页全部 9 个模块角标统一为 10（不足 10 本的频道显示真实数，不虚标）
+- 6 个落点列表页只显示 10 本、分页栏自动隐藏；角标↔落点页数字同源钳制永不漂移
+- 展示上限为单常量（webModuleShowCount），后续调整一处改全局

@@ -45,7 +45,8 @@
   {{end}}
 
   {{/* 书单横带：数据面 6 组 + 后台自定义区块；色调 6 色循环；卡 1-3 张随实际；
-  角标「全部 N 本」= 频道全集总数（ListTotals 与 /list/<kind> 落点页同源，R145） */}}
+  角标「全部 N 本」= min(频道全集总数, 10)（R155 展示上限，ListTotals 与 /list/<kind>
+  落点页同源钳制，永不漂移；频道不足 10 本时显示真实数） */}}
   {{$t := .ListTotals}}
   {{template "jxzw-band" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" "apricot" "id" "jxzw-hero-band"}}
   {{template "jxzw-band" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" "straw" "id" "jxzw-hot"}}
