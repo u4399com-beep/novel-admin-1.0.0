@@ -506,9 +506,17 @@ func ssrfDirectTransport(dialTimeout time.Duration) *http.Transport {
 	if !allowPrivate {
 		dialer.Control = ssrfDialControl
 	}
+	// R154：ForceAttemptHTTP2 必须——Go 对自定义 Transport 的自动 h2 升级以
+	// 「无 ForceAttemptHTTP2 且 DialContext 非空」为由拒绝（仅无自定义 Dial 的裸
+	// Transport 才自动升级，audit 实测），本构造恒带 SSRF Dialer → 恒 HTTP/1.1。
+	// ixdzs8.com 实测其 WAF（Apache 层规则）对 HTTP/1.1 请求无条件 403（带正确
+	// 会话 cookie 也不放行，HTTP/2 同 cookie 即 200）——chapterListApi 目录接口
+	// 因此恒 403，全书目录退化为书页内嵌最新 20 章（《炼天图》20 章根因）。
+	// 与策略链 transportFor 的 ForceAttemptHTTP2: !noH2 同口径。
 	return &http.Transport{
 		Proxy:                 nil,
 		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          4,
 		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   dialTimeout,

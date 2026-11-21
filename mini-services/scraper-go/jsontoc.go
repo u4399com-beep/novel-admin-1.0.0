@@ -469,119 +469,154 @@ func extractJsonTocBudgeted(root *goquerySelection, cfg chapterListApiConfig, ba
 	}
 	https := apiURL.Scheme == "https"
 	// Task 38-a: 桶 key 归一 hostOf（小写，与策略层一致，防大小写变体分裂会话）
-	cookie := cookieHeaderFor(hostOf(apiURL.String()), https)
-	var req *http.Request
-	if cfg.method == "POST" {
-		// 用 strings.NewReader 让 NewRequest 自动设置 ContentLength：
-		// 手动赋值 req.Body 会丢失长度（发 chunked 编码），部分严格后端（PHP/宝塔系）
-		// 对无 Content-Length 的表单 POST 解析不出 $_POST
-		form := strings.ReplaceAll(cfg.body, "{bookId}", encodeURIComp(bookId))
-		req, err = http.NewRequest(cfg.method, apiURL.String(), strings.NewReader(form))
-	} else {
-		req, err = http.NewRequest(cfg.method, apiURL.String(), nil)
-	}
-	if err != nil {
-		*warnings = append(*warnings, "chapterListApi：接口请求失败 "+err.Error())
-		return []BookChapterRef{}
-	}
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	// Task 50-a（E8·反反爬指纹一致性）：AJAX 请求显式声明 Accept-Encoding——旧实现不发
-	// 该键时 Go 传输层自动补「Accept-Encoding: gzip」（单 gzip = 稳定 Go 客户端指纹），
-	// 与 46-a F3 已补的 chromeUA 矛盾；只声明引擎能解的 gzip/deflate，解包在响应侧
-	// contentDecodedReader 承接。
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
-	// Task 46-a（F3·反反爬指纹）：AJAX 端点此前不发 User-Agent —— Go 客户端默认落
-	// "Go-http-client/1.1"，同一会话先以浏览器画像拿书页、紧接的目录接口却自曝爬虫 UA，
-	// 既是指纹矛盾也是 UA 白名单类 WAF 的直接拒绝信号（会话 cookie 白种了）。补引擎
-	// 保鲜桌面 Chrome UA，与被回放的 cookie 会话同族。
-	req.Header.Set("User-Agent", chromeUA)
-	// Task 46-a（E5·反反爬指纹一致性）：真实浏览器的同源 XHR 在书页会话内必然携带
-	// Referer（来源=书页）、Origin（POST 必带）与 Accept-Language、Sec-Fetch-*（XHR 形态
-	// 固定值 dest=empty/mode=cors/site=same-origin）。旧实现裸缺这些头——同一会话先以
-	// 全套浏览器画像拿书页、紧接的目录接口却是「无来路、无语言偏好」的头族，服务端
-	// 画像关联检测（WAF 比对页面视图与 AJAX 请求的头族一致性）可直接识别。全部按真实
-	// 浏览器同源 XHR 形态补齐（同源校验已保证 site=same-origin 陈述为真；Origin 仅 POST
-	// 携带——Chrome 对同源 GET XHR 不发 Origin）。
-	req.Header.Set("Accept-Language", acceptLangZH)
-	req.Header.Set("Referer", baseURL)
-	req.Header.Set("Sec-Fetch-Dest", "empty")
-	req.Header.Set("Sec-Fetch-Mode", "cors")
-	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	if cfg.method == "POST" {
-		req.Header.Set("Origin", base.Scheme+"://"+base.Host)
-	}
-	if cookie != "" {
-		req.Header.Set("Cookie", cookie)
-	}
-	if cfg.method == "POST" {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-	}
-	// R103：优先走 curl-impersonate JA3 伪装传输（CF 系对 Go TLS 指纹 AJAX 恒 403），
-	// 二进制缺失/执行失败回退 Go 原生。预算口径同 tocHTTPClient（max-time 由 slotBudget 推导）。
-	if ib, istatus, isc, ierr := tocFetchImpersonate(req, slotBudget); ierr != errNoTransport {
-		if ierr != nil {
-			*warnings = append(*warnings, "chapterListApi：伪装传输失败，回退原生（"+truncateStr(ierr.Error(), 120)+"）")
+	hostKey := hostOf(apiURL.String())
+	// R154：请求构造抽成 buildReq——cookie 每次现取 jar。403 兜底重试前
+	// cookieChallengeProbe 刚把挑战 cookie 种入会话桶，重放必须重读才能带回
+	//（旧实现只取一次 cookie，即便重试也仍发旧头）。
+	buildReq := func() (*http.Request, error) {
+		var req *http.Request
+		var berr error
+		if cfg.method == "POST" {
+			// 用 strings.NewReader 让 NewRequest 自动设置 ContentLength：
+			// 手动赋值 req.Body 会丢失长度（发 chunked 编码），部分严格后端（PHP/宝塔系）
+			// 对无 Content-Length 的表单 POST 解析不出 $_POST
+			form := strings.ReplaceAll(cfg.body, "{bookId}", encodeURIComp(bookId))
+			req, berr = http.NewRequest(cfg.method, apiURL.String(), strings.NewReader(form))
 		} else {
-			if len(isc) > 0 {
-				recordSetCookieLines(hostOf(apiURL.String()), isc, https)
+			req, berr = http.NewRequest(cfg.method, apiURL.String(), nil)
+		}
+		if berr != nil {
+			return nil, berr
+		}
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		// Task 50-a（E8·反反爬指纹一致性）：AJAX 请求显式声明 Accept-Encoding——旧实现不发
+		// 该键时 Go 传输层自动补「Accept-Encoding: gzip」（单 gzip = 稳定 Go 客户端指纹），
+		// 与 46-a F3 已补的 chromeUA 矛盾；只声明引擎能解的 gzip/deflate，解包在响应侧
+		// contentDecodedReader 承接。
+		req.Header.Set("Accept-Encoding", "gzip, deflate")
+		// Task 46-a（F3·反反爬指纹）：AJAX 端点此前不发 User-Agent —— Go 客户端默认落
+		// "Go-http-client/1.1"，同一会话先以浏览器画像拿书页、紧接的目录接口却自曝爬虫 UA，
+		// 既是指纹矛盾也是 UA 白名单类 WAF 的直接拒绝信号（会话 cookie 白种了）。补引擎
+		// 保鲜桌面 Chrome UA，与被回放的 cookie 会话同族。
+		req.Header.Set("User-Agent", chromeUA)
+		// Task 46-a（E5·反反爬指纹一致性）：真实浏览器的同源 XHR 在书页会话内必然携带
+		// Referer（来源=书页）、Origin（POST 必带）与 Accept-Language、Sec-Fetch-*（XHR 形态
+		// 固定值 dest=empty/mode=cors/site=same-origin）。旧实现裸缺这些头——同一会话先以
+		// 全套浏览器画像拿书页、紧接的目录接口却是「无来路、无语言偏好」的头族，服务端
+		// 画像关联检测（WAF 比对页面视图与 AJAX 请求的头族一致性）可直接识别。全部按真实
+		// 浏览器同源 XHR 形态补齐（同源校验已保证 site=same-origin 陈述为真；Origin 仅 POST
+		// 携带——Chrome 对同源 GET XHR 不发 Origin）。
+		req.Header.Set("Accept-Language", acceptLangZH)
+		req.Header.Set("Referer", baseURL)
+		req.Header.Set("Sec-Fetch-Dest", "empty")
+		req.Header.Set("Sec-Fetch-Mode", "cors")
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		if cfg.method == "POST" {
+			req.Header.Set("Origin", base.Scheme+"://"+base.Host)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+		}
+		if ck := cookieHeaderFor(hostKey, https); ck != "" {
+			req.Header.Set("Cookie", ck)
+		}
+		return req, nil
+	}
+	// R154：单次请求分派抽成 dispatch——伪装传输优先（exec 失败警告后回退原生），
+	// 供 403 兜底重试复用（req.Body 一次性，每次分派前经 buildReq 重建）。
+	// 返回值：
+	//   status  最终 HTTP 状态码（0=网络层失败）
+	//   body    2xx 时已解压的响应体（其余为 nil）
+	//   ok      false=终态失败（warning 已就位，调用方直接返回）；true=继续状态判定
+	//   retry403 true=本次以 403 落幕（调用方可走挑战探测兜底）
+	dispatch := func() (status int, body []byte, ok bool, retry403 bool) {
+		req, berr := buildReq()
+		if berr != nil {
+			*warnings = append(*warnings, "chapterListApi：接口请求失败 "+berr.Error())
+			return 0, nil, false, false
+		}
+		// R103：优先走 curl-impersonate JA3 伪装传输（CF 系对 Go TLS 指纹 AJAX 恒 403），
+		// 二进制缺失/执行失败回退 Go 原生。预算口径同 tocHTTPClient（max-time 由 slotBudget 推导）。
+		if ib, istatus, isc, ierr := tocFetchImpersonate(req, slotBudget); ierr != errNoTransport {
+			if ierr != nil {
+				*warnings = append(*warnings, "chapterListApi：伪装传输失败，回退原生（"+truncateStr(ierr.Error(), 120)+"）")
+			} else {
+				if len(isc) > 0 {
+					recordSetCookieLines(hostKey, isc, https)
+				}
+				if isRedirectStatus(istatus) {
+					*warnings = append(*warnings, "chapterListApi：接口返回重定向 HTTP "+itoa(istatus)+"，已拒绝跟随（SSRF 防护）")
+					return istatus, nil, false, false
+				}
+				if istatus < 200 || istatus >= 300 {
+					return istatus, nil, true, istatus == 403
+				}
+				ib, _ = readAllCapped(bytes.NewReader(ib), maxTocBytes)
+				if len(ib) == 0 {
+					*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
+					return istatus, nil, false, false
+				}
+				return istatus, ib, true, false
 			}
-			if isRedirectStatus(istatus) {
-				*warnings = append(*warnings, "chapterListApi：接口返回重定向 HTTP "+itoa(istatus)+"，已拒绝跟随（SSRF 防护）")
-				return []BookChapterRef{}
-			}
-			if istatus < 200 || istatus >= 300 {
-				*warnings = append(*warnings, "chapterListApi：接口返回 HTTP "+itoa(istatus))
-				return []BookChapterRef{}
-			}
-			body, tooLarge := readAllCapped(bytes.NewReader(ib), maxTocBytes)
-			if tooLarge || len(body) == 0 {
+		}
+		res, err := tocHTTPClient.Do(req)
+		if err != nil {
+			*warnings = append(*warnings, "chapterListApi：接口请求失败 "+err.Error())
+			return 0, nil, false, false
+		}
+		defer func() { _ = res.Body.Close() }()
+		if isRedirectStatus(res.StatusCode) {
+			*warnings = append(*warnings, "chapterListApi：接口返回重定向 HTTP "+itoa(res.StatusCode)+"，已拒绝跟随（SSRF 防护：同源校验仅覆盖首跳）")
+			return res.StatusCode, nil, false, false
+		}
+		if res.StatusCode < 200 || res.StatusCode >= 300 {
+			return res.StatusCode, nil, true, res.StatusCode == 403
+		}
+		// Task 50-a（E8）：显式声明 Accept-Encoding 后 tocHTTPClient 不再透明解压，
+		// 响应体统一经 contentDecodedReader 解包（与 readBodyCapped 同一实现）
+		src, decodeClose, derr := contentDecodedReader(res)
+		if derr != nil {
+			// Task 52-a（P3·分类对齐）：声明压缩但 0 字节体（gzip.NewReader 对空流返回 io.EOF）
+			// 按空体处理，与 readBodyCapped 的 E8 语义同口径——旧实现虚报「解包失败 EOF」，
+			// 排障时把「空响应」误读为「解包器故障」。
+			if derr == io.EOF {
 				*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
-				return []BookChapterRef{}
+				return res.StatusCode, nil, false, false
 			}
-			if cfg.responseType == "html" {
-				return extractHtmlToc(body, cfg, baseURL, warnings)
-			}
-			return parseJsonTocBody(body, cfg, bookId, baseURL, warnings)
+			*warnings = append(*warnings, "chapterListApi：响应体解包失败 "+derr.Error())
+			return res.StatusCode, nil, false, false
 		}
-	}
-	res, err := tocHTTPClient.Do(req)
-	if err != nil {
-		*warnings = append(*warnings, "chapterListApi：接口请求失败 "+err.Error())
-		return []BookChapterRef{}
-	}
-	defer func() { _ = res.Body.Close() }()
-	if isRedirectStatus(res.StatusCode) {
-		_ = res.Body.Close()
-		*warnings = append(*warnings, "chapterListApi：接口返回重定向 HTTP "+itoa(res.StatusCode)+"，已拒绝跟随（SSRF 防护：同源校验仅覆盖首跳）")
-		return []BookChapterRef{}
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		*warnings = append(*warnings, "chapterListApi：接口返回 HTTP "+itoa(res.StatusCode))
-		return []BookChapterRef{}
-	}
-	// 会话 cookie 持续回放：接口下发的 Set-Cookie 也入 jar（与策略层行为一致）
-	if lines := res.Header.Values("Set-Cookie"); len(lines) > 0 {
-		recordSetCookieLines(hostOf(apiURL.String()), lines, https)
-	}
-	// Task 50-a（E8）：显式声明 Accept-Encoding 后 tocHTTPClient 不再透明解压，
-	// 响应体统一经 contentDecodedReader 解包（与 readBodyCapped 同一实现）
-	src, decodeClose, derr := contentDecodedReader(res)
-	if derr != nil {
-		// Task 52-a（P3·分类对齐）：声明压缩但 0 字节体（gzip.NewReader 对空流返回 io.EOF）
-		// 按空体处理，与 readBodyCapped 的 E8 语义同口径——旧实现虚报「解包失败 EOF」，
-		// 排障时把「空响应」误读为「解包器故障」。
-		if derr == io.EOF {
+		body, tooLarge := readAllCapped(src, maxTocBytes)
+		decodeClose() // identity 路径与 defer res.Body.Close 双关幂等，解压路径先关解压器
+		if tooLarge || len(body) == 0 {
 			*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
-			return []BookChapterRef{}
+			return res.StatusCode, nil, false, false
 		}
-		*warnings = append(*warnings, "chapterListApi：响应体解包失败 "+derr.Error())
+		// 会话 cookie 持续回放：接口下发的 Set-Cookie 也入 jar（与策略层行为一致）
+		if lines := res.Header.Values("Set-Cookie"); len(lines) > 0 {
+			recordSetCookieLines(hostKey, lines, https)
+		}
+		return res.StatusCode, body, true, false
+	}
+
+	status, body, ok, retry403 := dispatch()
+	// R154（炼天图 20 章根因②）：403 兜底——cookieChallengeProbe（R141 为本形态预留，
+	// 此前从未接线）GET 书页求解 JS 挑战 cookie 种入 jar 后重放一次。实测两形态：
+	// ①书页由浏览器车道攻克（HTTP 层 jar 未种 __cn_v），紧随的同源 AJAX POST 被
+	// 「cookie 缺失」403；②jar 内挑战值已轮换被拒。探测成功 → jar 刷新（buildReq
+	// 重放时现取）→ 重放 200；探测失败（无挑战/不可解/每 host 一次闸已耗）语义与
+	// 旧版一致。预算护栏：slotDeadline 剩余 ≥3s 才探测+重放，防突破消费方超时。
+	if ok && retry403 && nowMs() < slotDeadline-3_000 {
+		if cookieChallengeProbe(baseURL, warnings) {
+			*warnings = append(*warnings, "chapterListApi：403 后挑战探测已种 cookie，重放一次")
+			// 重放后的 403 不再二次探测（cookieChallengeProbe 每 host 一次闸自身已限频）
+			status, body, ok, _ = dispatch()
+		}
+	}
+	if !ok {
 		return []BookChapterRef{}
 	}
-	body, tooLarge := readAllCapped(src, maxTocBytes)
-	decodeClose() // identity 路径与 defer res.Body.Close 双关幂等，解压路径先关解压器
-	if tooLarge || len(body) == 0 {
-		*warnings = append(*warnings, "chapterListApi：响应体为空或超限")
+	if status < 200 || status >= 300 {
+		*warnings = append(*warnings, "chapterListApi：接口返回 HTTP "+itoa(status))
 		return []BookChapterRef{}
 	}
 

@@ -5565,3 +5565,23 @@ Stage Summary:
 - 翻译功能用户可达性闭环：阅读页设置面板四语种（繁體即时/English·日本語 LLM 按需）+ 持久语种跨章自动应用 + TXT 译文导出——后端缓存/预热/管理页全链已有，本轮补上「读者看得见的最后一公里」
 - 强盾站死亡定性收官：101kks 源站 521/pilishuwu CF 真挑战/xinjianpan TCP 黑洞——三规则停用+notes 留档+任务终结，fleet 火力收敛到 15 个健康主机
 - 移交下一轮：①PAT 轮换（用户侧，第 21 次提醒：ghp_*** 务必去 GitHub 吊销换新）②高水位记忆首轮实战观测（下一健康段收尾落档+resume 起步形态）③English/日本語 LLM 上游 429 恢复后复测按钮全流程④pilishuwu cloak 升级路径（>v146/付费 key/xvfb）⑤translatewarm en/ja/ko 成本闸维持按需
+
+Task ID: R154
+Agent: Z.ai Code (main)
+Task: 《炼天图》目录 20 章根修（规则库全审计）——chapterListApi HTTP/2 降级 403 + cookie 挑战兜底接线 + 骨架合并词面折叠 + 191 本截断书全量重扫 + 24 规则逐条体检
+
+Work Log:
+- 【R154-a 根因三连诊断（ixdzs8 画像级取证）】用户报《炼天图》目录仅 20 章（第693-712章，源站 712 章全目录）。三条根因逐一实证：①**tocHTTPClient 恒 HTTP/1.1**——ssrfDirectTransport 未设 ForceAttemptHTTP2，Go 对「自定义 DialContext + 无 ForceAttemptHTTP2」的 Transport 禁自动 h2 升级（audit 实测：同头同 cookie，h2=200、显式 h1=403）；ixdzs8 WAF（Apache 层规则）对 HTTP/1.1 **无条件 403（带正确会话 cookie 也不放行）**，POST /novel/clist/（712 章全目录唯一来源）恒 403 → 目录退化为书页内嵌最新 20 章。协议/cookie 2×2 矩阵取证：GET / h2 no-cookie=200（挑战页）/h2 cookie=200（真页）/h1 *=403；POST clist h2+cookie=200/其余=403。②**cookieChallengeProbe 从未接线**——R141 为「403 后 GET 书页求解 JS 挑战 cookie 种 jar 重放」预留了完整函数（jscookie.go）与单测，但生产代码零调用点（仅测试引用）。③**骨架合并词面精确匹配**——clist JSON 标题「第693章  美人镜…」（双空格）与既有已采行「第693章 美人镜…」（单空格）词面漂移 → 重扫时 20 条重复行（修复前实测：task22 重扫产生 732 行=712+20）。
+- 【R154-b 引擎修复（scraper-go）】①httpguard.go ssrfDirectTransport 加 ForceAttemptHTTP2: true（与策略链 transportFor 同口径，robots/toc/jscontent 三消费方同受益）；②jsontoc.go extractJsonTocBudgeted 重构：请求构造抽 buildReq 闭包（cookie 每次现取 jar——探测种入后重放必须重读）、单次分派抽 dispatch 闭包（伪装传输优先+exec 失败回退原生语义逐字保留、redirect/网络失败/空体 fatal 语义内聚）、403 兜底接线 cookieChallengeProbe（预算护栏 slotDeadline 剩余≥3s，探测成功→重放一次，每 host 一次闸防重复探测）；scraper 全量 test 51s PASS + staticcheck/gofmt/vet 零输出。
+- 【R154-c 骨架合并词面折叠（backend-go storex.go）】storeChapterSkeletons 全函数单一词面：TOC 标题经 t2s+卷识别后做空白折叠归一（jsSpacePlusRe 连续空白含 U+3000→单空格），去重键/入库/续传/fillRows 统一折叠词面；既有行按折叠键对齐已采/空骨架判定（已采行 wc>0 词面不重写保展示层保真）；**空骨架行词面漂移原位对齐**（UPDATE title 到本次 TOC 折叠词面——不对齐则 Phase 2 title→id 精确匹配 miss 再造重复行，ixdzs8 中断续传场景高危）；卷标记表同键。backend 全量 test 66s PASS。
+- 【R154-d 数据修复三部曲（炼天图 #739）】①task22 重扫 712 章全目录入库（旧二进制产生 20 重复行）→ ②精确删除 20 条旧词面重复行（折叠键分组，同组保最后一条=新词面已采行，ChapterContent 同步清理）+ idx 手动紧缩 1..712 连续 + wordCount 重算（66K→2.66M 字）→ ③**回归实证**：重启新二进制后 task26 重扫——「书籍已入库且正文齐全（712 章，续跑无待填充章节）」零新增骨架、712 行保持、无重复=词面折叠闭环验证。前端渲染核验：/book/739 200、/book/739/toc 712 章链、/chapter/1272051 正文+翻页导航正常。
+- 【R154-e 191 本截断书全量重扫】同根因受害者普查：sourceUrl=ixdzs8 且章节<100 共 191 本（占 217 本 ixdzs8 书的 88%！含 #678 劫天运 17 章、#1439 0 章）——全量批量建 single 重扫任务（ruleId=24 storageMode=db），runner 域槽限速 polite 队列消化；**实证见效**：#113 天海仙途 20→1777 章、#390 武逆焚天排队中、双任务并发 in-flight。全目录补齐属小时级，正文填充按既有 fleet 速率属天级常态。
+- 【R154-f 24 规则全库审计（常设指令①③）】ruleHealth 巡检底座 + 逐条引擎实测：①**x2552（17）死亡定性**——站点转型赌博游戏站（title「pg电子游戏试玩平台2026」，18KB 正常页零小说结构），巡检报的「200 空壳」实为站点换域内容；enabled=0+notes 留档（启用规则 15→14）。②**5165（21）误判翻案**——巡检 failStreak=2 系 cloak 渲染 20s 超时+browser 竞态瞬时误判，手工实测 fetch-browser 61KB/262 条全量提取成功（40s 慢链路可用），等巡检自然翻绿。③**8 条停用规则复核**（23qb/xinjianpan/101kks/trxsw/pilishuwu/kelexs/cunshu/dwxwc）——引擎全策略链超时 502 + 直连取证（trxsw 000 连接拒绝/23qb 12s 超时/101kks 403 TLS 指纹拦）——全部维持停用+notes 留档死亡定性（101kks 特别注明：本机无 curl-impersonate 二进制，TLS 伪装车道缺位）。④**ixdzs8（24）notes 更新**：h2 强制要求/403 矩阵/挑战兜底/clist 懒骨架形态/712 章实证全记录。
+- 【质量闸】backend 66s + scraper 51s 全量 PASS；staticcheck 2023.1.7 双端零输出（修掉 jsontoc SA4006 retry403 未使用）；gofmt/vet 零残留；bin/backend-go+bin/scraper-go 重编（-trimpath -ldflags "-s -w"）随提交更新预构建快速路径；重启后 fleet 任务自动恢复进度保留（15/17-20/24/25 等 6 条既有任务 in-flight）。
+
+Stage Summary:
+- 《炼天图》目录根修完成：20→712 章全目录入库+词面折叠防重复+回归验证闭环
+- 引擎层两处战略级修复：tocHTTPClient h2 升级（ixdzs8 WAF 对 h1 恒 403）+ R141 cookie 挑战兜底首次接线——chapterListApi 能力全站恢复
+- 数据面：191 本截断书（ixdzs8 库 88%）全量重扫队列启动，实证 #113 20→1777 章见效中
+- 规则面 24 条全审计：1 死亡定性停用（x2552 转型赌博站）、1 误判翻案（5165）、8 停用复核留档、1 根因留档（ixdzs8）
+- 移交下一轮：①191 本重扫队列消化观测（预计小时级 TOC+天级正文，域槽限速防封优先）②PAT 轮换（用户侧，第 22 次提醒：ghp_*** 务必去 GitHub 吊销换新）③curl-impersonate 二进制补装（101kks 等 TLS 指纹拦站解锁路径，沙箱 ghfast 下载 21 二进制脚本已有先例）④高水位车道记忆首轮实战观测（R152 移交）⑤5165 巡检翻绿确认
