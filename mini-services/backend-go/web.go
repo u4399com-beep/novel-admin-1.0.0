@@ -189,6 +189,8 @@ func webFuncMap() template.FuncMap {
 			return "/pseo/" + url.PathEscape(kw)
 		},
 		// catURL / bookURL / chapterURL / tocURL / searchURL 页面链接
+		// （R162：此处为方案 1 默认形态基线；非默认伪静态方案由 renderPage
+		// Clone+Funcs 覆盖为 urlStyleFuncs 生成，tplCache 原版不动）
 		"catURL":     func(v any) string { return "/category/" + strconv.FormatInt(toInt64(v), 10) },
 		"bookURL":    func(v any) string { return "/book/" + strconv.FormatInt(toInt64(v), 10) },
 		"chapterURL": func(v any) string { return "/chapter/" + strconv.FormatInt(toInt64(v), 10) },
@@ -228,6 +230,12 @@ func webFuncMap() template.FuncMap {
 			return list[from:]
 		},
 		// idx 列表按下标取元素（书籍页取首章 id 等；越界/类型不匹配安全返回 nil）
+		// R160: T/Tf 前台 UI chrome 多语种模板函数（字典在 webi18n.go；T=纯词组，Tf={0} 占位符替换）
+		"T":  tmplT,
+		"Tf": tmplTf,
+		// R160: 语种感知数字格式化（字数/人气值；en 千进制 k，ja/ko/zh-Hant 万进制本地单位）
+		"wcFmtL": wcFmtL,
+		"popL":   popL,
 		"idx": func(v any, i int) any {
 			switch l := v.(type) {
 			case []map[string]any:
@@ -343,7 +351,22 @@ func latestMtime(dir string) time.Time {
 }
 
 // loadPageTemplate parse [_shared.html, {page}.html] 为模板集；返回 nil 表示文件缺失
+// loadPageTemplate 默认形态入口（style=1 走 tplCache，与历史行为一致）。
 func loadPageTemplate(theme, page string) *template.Template {
+	return loadPageTemplateStyled(theme, page, defaultURLStyle)
+}
+
+// styleTplCache 非默认伪静态方案的模板缓存（key=theme/page/s{style}）。
+// ⚠ 语义铁律（R162 html/template 实锤）：本缓存的模板【永不直接 Execute】——
+// html/template 首次 Execute 会 escape 烧定函数集，此后 Clone+同名 Funcs 覆盖
+// 不再生效（时序复现测试见 urlstyle 单测）；每次渲染必须 Clone+Funcs(urlStyleFuncs)
+// 后 Execute，保持「escape 发生在覆盖之后」的时序。
+var styleTplCache sync.Map
+
+// loadPageTemplateStyled 按伪静态方案加载模板：方案 1 = 历史 tplCache 直通；
+// 非 1 = styleTplCache（Parse 后未 escape 原版，由 renderPage Clone+覆盖后 Execute）。
+// mtime 热更新语义与 tplCache 一致。
+func loadPageTemplateStyled(theme, page string, style int64) *template.Template {
 	dir := filepath.Join(templatesRoot, theme)
 	pageFile := filepath.Join(dir, page+".html")
 	if _, err := os.Stat(pageFile); err != nil {
@@ -357,18 +380,23 @@ func loadPageTemplate(theme, page string) *template.Template {
 	files = append(files, pageFile)
 
 	key := theme + "/" + page
+	cache := &tplCache
+	if style != defaultURLStyle {
+		cache = &styleTplCache
+		key = fmt.Sprintf("%s/s%d", key, style)
+	}
 	mt := latestMtime(dir)
-	if v, ok := tplCache.Load(key); ok {
+	if v, ok := cache.Load(key); ok {
 		if e := v.(tplCacheEntry); !mt.After(e.modTime) {
 			return e.tpl
 		}
 	}
 	t, err := template.New(page + ".html").Funcs(webFuncMap()).ParseFiles(files...)
 	if err != nil {
-		log.Printf("[web] 模板解析失败 %s/%s: %v", theme, page, err)
+		log.Printf("[web] 模板解析失败 %s/%s(style=%d): %v", theme, page, style, err)
 		return nil
 	}
-	tplCache.Store(key, tplCacheEntry{tpl: t, modTime: mt})
+	cache.Store(key, tplCacheEntry{tpl: t, modTime: mt})
 	return t
 }
 
@@ -397,17 +425,63 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 	}
 	data["theme"] = theme
 
+	// R160: 前台访客语种判定（判定链/cookie 写回见 langip.go；admin 页保持简体中文——
+	// 后台仅管理员使用，不随访客地区漂移）。Lang 供模板 T/Tf 消费，LangAttr 供 <html lang>。
+	if page == "admin" {
+		data["Lang"] = "zh-CN"
+		data["LangAttr"] = "zh-CN"
+	} else {
+		// cookieWriter 传 nil：geo 判定成功时 handler 装配层已写回偏好 cookie
+		//（webLangOfRequest 每请求被 handler+renderPage 各调一次，此处置 nil 防双份 Set-Cookie）
+		lang := webLangOfRequest(r, nil)
+		data["Lang"] = lang
+		data["LangAttr"] = webLangAttrOf(lang)
+	}
+
+	// R162: 伪静态出站生成参数——站点档案 urlStyle（默认站点/站群站点各自生效）+ 书页族
+	// 当前书上下文（data["Novel"].id，嵌套式章节模板需要；pseo 等跨书页面无 Novel 键 → 0）。
+	urStyle := int64(defaultURLStyle)
+	if st := settingsFromData(data); st != nil && st.URLStyle > 0 {
+		urStyle = st.URLStyle
+	}
+	urBook := int64(0)
+	if m, ok := data["Novel"].(map[string]any); ok {
+		urBook = toInt64(m["id"])
+	}
 	for _, th := range []string{theme, fallbackTheme} {
-		t := loadPageTemplate(th, page)
+		t := loadPageTemplateStyled(th, page, urStyle)
 		if t == nil {
 			continue
+		}
+		// R162: 非默认方案时 Clone 未 escape 原版并覆盖 URL 函数族（styleTplCache 本体
+		// 永不直接 Execute——escape 烧定语义见 loadPageTemplateStyled 注释；Clone 失败
+		// 理论不发生，回退默认形态渲染不中断）。
+		if urStyle != defaultURLStyle {
+			if t2, err2 := t.Clone(); err2 == nil {
+				t = t2.Funcs(urlStyleFuncs(urStyle, urBook))
+			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		var buf strings.Builder
 		if err := t.ExecuteTemplate(&buf, "layout", data); err == nil {
+			html := buf.String()
+			// R164: 渲染出口全站 CJK 清扫（用户指令：只要不是恒简体中文，全站所有文字
+			// 都按对应语种翻译显示）——数据面 T/Tf+字典+显式字段管线之后的最后兜底闸：
+			// 非 zh-CN 语种凡含汉字的可见文本节点统一走 TranslationCache 管线
+			// （命中替换/zh-Hant 同步 OpenCC/en ja ko 异步预热收敛），详见 webi18n_sweep.go。
+			// flightBase：章节页与 i18nChapterParas 预热键同键去重不双飞；其它页按 page 隔离。
+			if langStr, _ := data["Lang"].(string); langStr != "" && langStr != "zh-CN" {
+				fb := "pg|" + page
+				if cm, okc := data["Chapter"].(map[string]any); okc {
+					if cid := toInt64(cm["id"]); cid > 0 {
+						fb = strconv.FormatInt(cid, 10)
+					}
+				}
+				html = i18nSweepHTML(langStr, fb, urBook, html)
+			}
 			// Task 45-a: 渲染层对抗后置处理（实现唯一权威 obfuscate.go）——页面结构混淆/
 			// 关键词转码/干扰注入，视觉与交互零变化；admin 后台页跳过，panic 兜底回原文
-			html := obfMaybe(buf.String(), page)
+			html = obfMaybe(html, page)
 			// R139: reader 前端翻译控件已下线（用户指令）；后端翻译链路保留——
 			// /api/translate 代理、TranslationCache、translatewarm 预热、TXT 导出 ?lang= 译文替换均不受影响
 			_, _ = w.Write([]byte(html))
@@ -417,11 +491,15 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 			continue
 		}
 	}
-	// 最终兜底：极简 HTML（绝不 500 白屏）
+	// 最终兜底：极简 HTML（绝不 500 白屏）——R164 同过语种清扫（直写路径显式接入）
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	name, _ := data["siteName"].(string)
-	_, _ = w.Write([]byte("<!doctype html><html lang=zh-CN><meta charset=utf-8><title>" + template.HTMLEscapeString(name) +
-		"</title><p style='padding:40px;text-align:center;color:#666'>页面渲染异常，请稍后刷新。</p>"))
+	errHTML := "<!doctype html><html lang=" + webLangAttrOf(webLangOfRequest(r, nil)) + "><meta charset=utf-8><title>" + template.HTMLEscapeString(name) +
+		"</title><p style='padding:40px;text-align:center;color:#666'>页面渲染异常，请稍后刷新。</p>"
+	if langStr, _ := data["Lang"].(string); langStr != "" && langStr != "zh-CN" {
+		errHTML = i18nSweepHTML(langStr, "pg|err", 0, errHTML)
+	}
+	_, _ = w.Write([]byte(errHTML))
 }
 
 // ---------- 路由注册 ----------
@@ -507,13 +585,22 @@ func handleSitemap(w http.ResponseWriter, r *http.Request) {
 	// Task 47-a 深审：base 一次性 XML 转义——Host 头来自请求方可含 &/< 等字符，
 	// 首页行此前的点态转义与分类/书籍/pseo 行的裸插值不一致（畸形 Host 可产出非法 XML）。
 	base := xmlEscape(webBaseURL(r))
+	// R162: sitemap loc 按当前站点伪静态方案生成（SEO 与前台出站链接形态一致；
+	// 章节/pseo 不入 sitemap 不涉及嵌套上下文，curBook 恒 0）
+	smStyle := int64(defaultURLStyle)
+	if st := resolveSite(r); st != nil && st.URLStyle > 0 {
+		smStyle = st.URLStyle
+	}
+	smFuncs := urlStyleFuncs(smStyle, 0)
+	smBook, _ := smFuncs["bookURL"].(func(any) string)
+	smCat, _ := smFuncs["catURL"].(func(any) string)
 	var b strings.Builder
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n")
 	b.WriteString("  <url><loc>" + base + "/</loc></url>\n")
 	_ = queryList(`SELECT "id" FROM "Category" ORDER BY "sort" ASC LIMIT 200`, func(rows *sql.Rows) error {
 		var id int64
 		if err := rows.Scan(&id); err == nil {
-			fmt.Fprintf(&b, "  <url><loc>%s/category/%d</loc></url>\n", base, id)
+			fmt.Fprintf(&b, "  <url><loc>%s%s</loc></url>\n", base, smCat(id))
 		}
 		return nil
 	})
@@ -529,10 +616,10 @@ func handleSitemap(w http.ResponseWriter, r *http.Request) {
 				updated = ms
 			}
 			if updated > 0 {
-				fmt.Fprintf(&b, "  <url><loc>%s/book/%d</loc><lastmod>%s</lastmod></url>\n",
-					base, id, time.UnixMilli(updated).UTC().Format("2006-01-02"))
+				fmt.Fprintf(&b, "  <url><loc>%s%s</loc><lastmod>%s</lastmod></url>\n",
+					base, smBook(id), time.UnixMilli(updated).UTC().Format("2006-01-02"))
 			} else {
-				fmt.Fprintf(&b, "  <url><loc>%s/book/%d</loc></url>\n", base, id)
+				fmt.Fprintf(&b, "  <url><loc>%s%s</loc></url>\n", base, smBook(id))
 			}
 		}
 		return nil

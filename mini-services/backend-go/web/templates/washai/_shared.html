@@ -4,7 +4,7 @@
 阅读页（/chapter/）用简化头部：品牌 + 返回书页 + 紧凑搜索。
 布局红线：body flex 纵向 + main flex:1 → 页脚 sticky（短页不悬空）。 */}}
 {{define "layout"}}{{$path := .Path}}{{$sn := .Site.siteName}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

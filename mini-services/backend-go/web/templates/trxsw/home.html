@@ -94,7 +94,8 @@ Go 契约 .Latest 上限 14（TSX 最新更新表取 30）、.RankClicks 上限 
     </aside>
   </div>
 
-  {{/* 后台可配置的首页自定义图文区块：置于「分类导航 + 双榜」上方（无配置时不渲染） */}}
+  {{/* 后台可配置的首页自定义图文区块：置于「分类导航 + 双榜」上方（无配置时不渲染）；
+  R161 用户指令：PC 每模块显示 4 本——lg 网格 6 列改 4 列一行正好 4 本 + 第 5 卡起 lg:hidden（仅 PC 钳制，移动端保持全量显示）；admin 配置 count 与数据面不动 */}}
   <div class="mt-3">
     {{if .HomeBlocks}}<div class="w-full">{{/* Task 42-a: 原 max-w-6xl px-4 嵌套于上方 980 统一容器内，max-w-6xl 失效且 px-4 令区块两侧内缩 16px 与兄弟板块错位；改 w-full 与下方分类导航/双榜同宽 */}}
       {{range .HomeBlocks}}<section class="mb-8" aria-label="{{.title}}">
@@ -102,13 +103,13 @@ Go 契约 .Latest 上限 14（TSX 最新更新表取 30）、.RankClicks 上限 
           <span aria-hidden="true" class="text-[#c42205]"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
           <h2 class="text-base font-bold tracking-wide text-[#333]">{{.title}}</h2>
         </div>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-          {{range .novels}}<a href="{{bookURL .id}}" class="group flex flex-col rounded-none border border-[#a6d3e8] bg-[#f7fbfd] p-2 text-left transition-colors duration-200 hover:border-[#FF6600] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6600]/40">
-            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden {{gcls .cover}}">
-              {{if isLocalCover .cover}}<img src="{{.cover}}" alt="{{.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 .title}}</span>{{end}}
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4">
+          {{range $j, $n := .novels}}<a href="{{bookURL $n.id}}" class="group flex flex-col rounded-none border border-[#a6d3e8] bg-[#f7fbfd] p-2 text-left transition-colors duration-200 hover:border-[#FF6600] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF6600]/40{{if ge $j 4}} lg:hidden{{end}}">
+            <span class="relative block aspect-[3/4] w-full shrink-0 overflow-hidden {{gcls $n.cover}}">
+              {{if isLocalCover $n.cover}}<img src="{{$n.cover}}" alt="{{$n.title}}封面" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover">{{else}}<span class="absolute inset-0 flex items-center justify-center text-2xl font-bold text-white/90">{{title0 $n.title}}</span>{{end}}
             </span>
-            <span class="mt-2 truncate text-xs font-semibold text-[#6f78a7] group-hover:text-[#FF6600]">{{.title}}</span>
-            <span class="truncate text-[11px] text-[#999]">{{.author}}</span>
+            <span class="mt-2 truncate text-xs font-semibold text-[#6f78a7] group-hover:text-[#FF6600]">{{$n.title}}</span>
+            <span class="truncate text-[11px] text-[#999]">{{$n.author}}</span>
           </a>{{else}}<p class="py-6 text-center text-xs text-[#999]">暂无数据</p>{{end}}
         </div>
       </section>{{end}}

@@ -3,7 +3,7 @@
 目录/正文 = #a_head 紧凑顶栏 + #a_footer（正文页 body 淡蓝 #E6F3FF）。
 繁简切换（TradToggle）本版跳过；全部分类类入口因 Go 无全站路由指向首页。 */}}
 {{define "layout"}}{{$path := .Path}}{{$compact := or (eq (printf "%.9s" $path) "/chapter/") (ne (trimSuffixStr $path "/toc") $path)}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

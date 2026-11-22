@@ -12,6 +12,39 @@
  * 契约对照：api_sites.go（清洗复用 api_settings.go：sanitizeSeoConfig/sanitizeFooterConfig/sanitizeHomeConfig）。
  * data-act 全部带 fleet- 前缀且委托在 #adm-sites-tbody 局部——不与 admin.js 的全局委托冲突。
  */
+
+  // R162 伪静态 18 方案展示名（与后端 urlstyle.go urlStyles 同步——值语义以后端白名单清洗为准）
+  var URL_STYLES = [
+    { id: 1, name: '默认动态' }, { id: 2, name: '经典伪静态' }, { id: 3, name: '目录式斜杠' },
+    { id: 4, name: '书内章节' }, { id: 5, name: '书内目录式' }, { id: 6, name: '小说站' },
+    { id: 7, name: '书库站' }, { id: 8, name: '英文站' }, { id: 9, name: '阅读风' },
+    { id: 10, name: '短链风' }, { id: 11, name: '书页索引页' }, { id: 12, name: '书城站' },
+    { id: 13, name: '阁馆风' }, { id: 14, name: '精品站' }, { id: 15, name: 'htm 后缀' },
+    { id: 16, name: '文学站' }, { id: 17, name: '双层目录' }, { id: 18, name: '手机站' }
+  ];
+  function urlStyleOptions(cur) {
+    cur = parseInt(cur, 10) || 1;
+    return URL_STYLES.map(function (u) {
+      return '<option value="' + u.id + '"' + (u.id === cur ? ' selected' : '') + '>' + u.id + '. ' + u.name + '</option>';
+    }).join('');
+  }
+  // R163 站群站点语种模式（与后端 langip.go webLangModeNorm 白名单同步——值语义以后端清洗为准）
+  var LANG_MODES = [
+    { v: '', label: '跟随默认站点设置' },
+    { v: 'auto', label: '自动判定（访客 IP/浏览器语言）' },
+    { v: 'off', label: '关停（恒简体中文）' },
+    { v: 'force:zh-CN', label: '强制简体中文（zh-CN）' },
+    { v: 'force:zh-Hant', label: '强制繁体中文（zh-Hant，OpenCC 即时）' },
+    { v: 'force:en', label: '强制英文（English，按需翻译）' },
+    { v: 'force:ja', label: '强制日文（日本語，按需翻译）' },
+    { v: 'force:ko', label: '强制韩文（한국어，按需翻译）' }
+  ];
+  function langModeOptions(cur) {
+    cur = cur || '';
+    return LANG_MODES.map(function (m) {
+      return '<option value="' + m.v + '"' + (m.v === cur ? ' selected' : '') + '>' + m.label + '</option>';
+    }).join('');
+  }
 (function () {
   'use strict';
 
@@ -165,6 +198,12 @@
     if (!siteName) return toast('站点名称不能为空（≤50 字）', 'err');
     var body = { host: host, siteName: siteName };
     if (themeEl && themeEl.value) body.activeTheme = themeEl.value;
+    // R162: 伪静态方案号（新建站点可选，缺省方案 1）
+    var usEl = $('#adm-site-urlstyle');
+    if (usEl && usEl.value) body.urlStyle = parseInt(usEl.value, 10) || 1;
+    // R163: 站群站点语种模式（''=跟随默认站点设置）
+    var lmEl = $('#adm-site-langmode');
+    if (lmEl) body.langMode = lmEl.value;
     if (noticeEl && noticeEl.value.trim()) body.notice = noticeEl.value;
     // Task 36-b: 防连点（重复 POST 会因 host 唯一约束报错，但前端不应发起）
     var createBtn = $('#adm-site-create');
@@ -222,6 +261,8 @@
           '<label class="adm-field">Host *<input id="adm-site-e-host" class="adm-input adm-mono" value="' + escapeHtml(site.host) + '"></label>' +
           '<label class="adm-field">站点名称 *（≤50 字）<input id="adm-site-e-name" class="adm-input" value="' + escapeHtml(site.siteName) + '"></label>' +
           '<label class="adm-field">主题<select id="adm-site-e-theme" class="adm-input">' + themeOptions(site.activeTheme) + '</select></label>' +
+          '<label class="adm-field">伪静态方案<select id="adm-site-e-urlstyle" class="adm-input">' + urlStyleOptions(site.urlStyle) + '</select></label>' +
+          '<label class="adm-field">语种模式<select id="adm-site-e-langmode" class="adm-input">' + langModeOptions(site.langMode) + '</select></label>' +
           '<div class="flex items-center gap-4 pt-1">' +
             '<label class="flex items-center gap-1.5"><input type="checkbox" id="adm-site-e-enabled"' + (site.enabled ? ' checked' : '') + '> 启用（停用立即回落默认站点）</label>' +
           '</div>' +
@@ -252,6 +293,8 @@
         host: host,
         siteName: siteName,
         activeTheme: $('#adm-site-e-theme').value,
+        urlStyle: parseInt($('#adm-site-e-urlstyle').value, 10) || 1,
+        langMode: $('#adm-site-e-langmode') ? $('#adm-site-e-langmode').value : '',
         notice: $('#adm-site-e-notice').value,
         enabled: $('#adm-site-e-enabled').checked,
         seo: parseJsonTextarea('adm-site-e-seo'),

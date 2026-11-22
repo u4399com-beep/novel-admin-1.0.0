@@ -2,7 +2,7 @@
 规格：980px 定宽居中；顶部欢迎条 + Logo/搜索 + 深蓝导航(#3B76A8) + 公告条 + 页脚。
 配色令牌：主色 #3B76A8 / hover 橙 #FF6600 / 边框 #BFD8EA / 标题栏 #EAF3FB / 链接 #3366BB / 强调红 #CC0000。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

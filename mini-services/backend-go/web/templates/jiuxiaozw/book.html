@@ -8,14 +8,14 @@
 {{define "content"}}{{$n := .Novel}}{{$sn := .Site.siteName}}
 <div class="book-detail min-h-screen bg-gray-50 dark:bg-[#0a0a0a] pb-24">
 <div class="book-layout max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex flex-col gap-3">
-<nav class="book-home-actions" aria-label="详情页导航">
-  <a aria-label="返回首页" class="book-home-back" href="/"><svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>
-  <a aria-label="首页" class="book-home-link" href="/"><img alt="{{$sn}}" loading="eager" width="24" height="24" decoding="async" class="book-home-logo" src="/static/icon.png?v={{staticVer}}"></a>
-  <a aria-label="搜索书籍" class="book-detail-search-toggle" href="/search"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search" aria-hidden="true"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></a>
-  <div class="book-share"><button type="button" class="book-share-toggle" aria-label="复制分享链接" title="复制分享链接" data-share-link><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share2 lucide-share-2" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg></button><span role="status" data-share-status data-visible="false"></span></div>
+<nav class="book-home-actions" aria-label="{{T $.Lang "详情页导航"}}">
+  <a aria-label="{{T $.Lang "返回首页"}}" class="book-home-back" href="/"><svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>
+  <a aria-label="{{T $.Lang "首页"}}" class="book-home-link" href="/"><img alt="{{$sn}}" loading="eager" width="24" height="24" decoding="async" class="book-home-logo" src="/static/icon.png?v={{staticVer}}"></a>
+  <a aria-label="{{T $.Lang "搜索书籍"}}" class="book-detail-search-toggle" href="/search"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search" aria-hidden="true"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></a>
+  <div class="book-share"><button type="button" class="book-share-toggle" aria-label="{{T $.Lang "复制分享链接"}}" title="{{T $.Lang "复制分享链接"}}" data-share-link><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share2 lucide-share-2" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg></button><span role="status" data-share-status data-visible="false"></span></div>
 </nav>
-<nav class="book-breadcrumb" aria-label="位置">
-  <a href="/">首页</a><span aria-hidden="true">/</span>{{if $n.categoryId}}<a href="{{catURL $n.categoryId}}">{{$n.categoryName}}</a><span aria-hidden="true">/</span>{{end}}<span aria-current="page">{{$n.title}}</span>
+<nav class="book-breadcrumb" aria-label="{{T $.Lang "位置"}}">
+  <a href="/">{{T $.Lang "首页"}}</a><span aria-hidden="true">/</span>{{if $n.categoryId}}<a href="{{catURL $n.categoryId}}">{{$n.categoryName}}</a><span aria-hidden="true">/</span>{{end}}<span aria-current="page">{{$n.title}}</span>
 </nav>
 <div class="book-hero bg-white dark:bg-[#1a1a1a] rounded-lg shadow-sm p-4 order-1">
   <div class="book-hero-main flex flex-row gap-4">
@@ -25,37 +25,37 @@
     <div class="book-hero-info flex-1 flex flex-col justify-between">
       <div class="book-hero-heading flex items-start justify-between mb-1"><h1 class="text-lg font-bold text-gray-900 dark:text-gray-100 line-clamp-2">{{$n.title}}</h1></div>
       <div class="book-meta flex flex-col space-y-1 mb-2 text-xs text-gray-600 dark:text-gray-400">
-        <div class="flex items-center"><span class="text-gray-500 dark:text-gray-500 w-12">作者:</span><a class="text-blue-600 hover:text-blue-800 font-medium" href="{{searchURL $n.author}}">{{$n.author}}</a></div>
-        {{if $n.categoryId}}<div class="flex items-center"><span class="text-gray-500 w-12">分类:</span><span class="text-gray-900 dark:text-gray-100">{{$n.categoryName}}</span></div>{{end}}
-        <div class="book-meta-status"><span>状态:</span><span>{{if eq $n.status "finished"}}已完本{{else}}连载中{{end}}</span></div>
+        <div class="flex items-center"><span class="text-gray-500 dark:text-gray-500 w-12">{{T $.Lang "作者:"}}</span><a class="text-blue-600 hover:text-blue-800 font-medium" href="{{searchURL $n.author}}">{{$n.author}}</a></div>
+        {{if $n.categoryId}}<div class="flex items-center"><span class="text-gray-500 w-12">{{T $.Lang "分类:"}}</span><span class="text-gray-900 dark:text-gray-100">{{$n.categoryName}}</span></div>{{end}}
+        <div class="book-meta-status"><span>{{T $.Lang "状态:"}}</span><span>{{if eq $n.status "finished"}}{{T $.Lang "已完本"}}{{else}}{{T $.Lang "连载中"}}{{end}}</span></div>
       </div>
-      <dl class="book-hero-stats" aria-label="作品数据">
-        <div><dt>字数</dt><dd>{{$p := statSplit $n.wordCount "万字" "字"}}{{index $p 0}}<small>{{index $p 1}}</small></dd></div>
-        <div><dt>浏览量</dt><dd>{{$p := statSplit $n.clicks "万" ""}}{{index $p 0}}<small>{{index $p 1}}</small></dd></div>
-        <div><dt>章节</dt><dd>{{.ChaptersTotal}}<small>章</small></dd></div>
+      <dl class="book-hero-stats" aria-label="{{T $.Lang "作品数据"}}">
+        <div><dt>{{T $.Lang "字数"}}</dt><dd>{{$p := statSplit $n.wordCount (T $.Lang "万字") (T $.Lang "字")}}{{index $p 0}}<small>{{index $p 1}}</small></dd></div>
+        <div><dt>{{T $.Lang "浏览量"}}</dt><dd>{{$p := statSplit $n.clicks (T $.Lang "万") ""}}{{index $p 0}}<small>{{index $p 1}}</small></dd></div>
+        <div><dt>{{T $.Lang "章节"}}</dt><dd>{{.ChaptersTotal}}<small>{{T $.Lang "章"}}</small></dd></div>
       </dl>
       <div class="book-hero-actions">
-        {{if .Chapters}}<a class="book-read-now" href="{{chapterURL (idx .Chapters 0).id}}"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open" aria-hidden="true"><path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></svg><span>开始阅读</span></a>
-        <a class="book-shelf-toggle" data-shelf-book="{{$n.id}}" data-shelf-title="{{$n.title}}" href="{{bookURL $n.id}}" rel="nofollow"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bookmark" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg><span>加入书架</span></a>
-        {{else}}<a class="book-read-now" href="{{tocURL $n.id}}"><span>查看目录</span></a>{{end}}
-        <span class="book-hero-share"><button type="button" aria-label="复制分享链接" title="复制分享链接" data-share-link><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share2 lucide-share-2" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg></button><span role="status" data-share-status data-visible="false"></span></span>
+        {{if .Chapters}}<a class="book-read-now" data-continue-cta data-book-id="{{$n.id}}" href="{{chapterURL (idx .Chapters 0).id}}"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-open" aria-hidden="true"><path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></svg><span>{{T $.Lang "开始阅读"}}</span></a>
+        <a class="book-shelf-toggle" data-shelf-book="{{$n.id}}" data-shelf-title="{{$n.title}}" href="{{bookURL $n.id}}" rel="nofollow"><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bookmark" aria-hidden="true"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg><span>{{T $.Lang "加入书架"}}</span></a>
+        {{else}}<a class="book-read-now" href="{{tocURL $n.id}}"><span>{{T $.Lang "查看目录"}}</span></a>{{end}}
+        <span class="book-hero-share"><button type="button" aria-label="{{T $.Lang "复制分享链接"}}" title="{{T $.Lang "复制分享链接"}}" data-share-link><svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-share2 lucide-share-2" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg></button><span role="status" data-share-status data-visible="false"></span></span>
       </div>
     </div>
     <section class="book-latest" aria-labelledby="book-latest-heading">
       <header>
-        <h2 id="book-latest-heading">最新章节</h2>
+        <h2 id="book-latest-heading">{{T $.Lang "最新章节"}}</h2>
         {{if $n.updatedAt}}<span data-live="true" data-rel-ts="{{fullFmt $n.updatedAt}}"></span>{{end}}
       </header>
       {{with .LatestChapters}}
       {{if len .}}
       <ol start="1" class="book-latest-chapters book-latest-newest">
-        {{range $i, $c := .}}{{if eq $i 0}}<li><a href="{{chapterURL $c.id}}"><span class="book-latest-title">{{$c.title}}</span><span class="book-latest-meta">{{if $c.wordCount}}{{wcFmt $c.wordCount}}{{end}}</span></a></li>{{end}}{{end}}
+        {{range $i, $c := .}}{{if eq $i 0}}<li><a href="{{chapterURL $c.id}}"><span class="book-latest-title">{{$c.title}}</span><span class="book-latest-meta">{{if $c.wordCount}}{{wcFmtL $.Lang $c.wordCount}}{{end}}</span></a></li>{{end}}{{end}}
       </ol>
       <ol start="2" class="book-latest-chapters book-latest-scroll">
         {{range $i, $c := .}}{{if gt $i 0}}<li><a href="{{chapterURL $c.id}}"><span class="book-latest-title">{{$c.title}}</span>{{if $c.createdAt}}<time class="book-latest-meta" datetime="{{fullFmt $c.createdAt}}">{{dateFmt $c.createdAt}}</time>{{end}}</a></li>{{end}}{{end}}
       </ol>
       {{end}}{{end}}
-      <a class="book-latest-catalog" href="{{tocURL $n.id}}"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list" aria-hidden="true"><path d="M3 5h.01"></path><path d="M3 12h.01"></path><path d="M3 19h.01"></path><path d="M8 5h13"></path><path d="M8 12h13"></path><path d="M8 19h13"></path></svg><span>完整目录</span>{{if gt .ChaptersTotal 0}}<span class="book-latest-count">{{.ChaptersTotal}} 章</span>{{end}}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+      <a class="book-latest-catalog" href="{{tocURL $n.id}}"><svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list" aria-hidden="true"><path d="M3 5h.01"></path><path d="M3 12h.01"></path><path d="M3 19h.01"></path><path d="M8 5h13"></path><path d="M8 12h13"></path><path d="M8 19h13"></path></svg><span>{{T $.Lang "完整目录"}}</span>{{if gt .ChaptersTotal 0}}<span class="book-latest-count">{{Tf $.Lang "{0} 章" .ChaptersTotal}}</span>{{end}}<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
     </section>
   </div>
   <div class="book-intro md:hidden mt-4 pt-3 border-t border-gray-100 dark:border-[#333]">
@@ -64,41 +64,41 @@
       <div class="book-milestone-entry">
         <span class="milestone-roll" aria-hidden="true"><span class="milestone-roll-item" data-active="true">
           <span class="milestone-mark" data-kind="views"><svg viewBox="0 0 40 44" aria-hidden="true"><path d="M20 1.5 37.5 11.7v20.6L20 42.5 2.5 32.3V11.7Z" fill="currentColor"></path><path d="M20 5 34.5 13.5v17L20 39 5.5 30.5v-17Z" fill="none" stroke="white" stroke-opacity=".24"></path></svg><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up milestone-mark-symbol" aria-hidden="true"><path d="M16 7h6v6"></path><path d="m22 7-8.5 8.5-5-5L2 17"></path></svg></span>
-          <span class="milestone-entry-copy"><strong>{{.label}}</strong><span>{{if gt .level 0}}{{.level}}里程碑{{else}}浏览量{{end}}</span></span>
+          <span class="milestone-entry-copy"><strong>{{.label}}</strong><span>{{if gt .level 0}}{{Tf $.Lang "{0}里程碑" .level}}{{else}}{{T $.Lang "浏览量"}}{{end}}</span></span>
         </span></span>
       </div>
-      <dl class="book-mobile-stats" aria-label="作品数据">
-        <div><dt>字数</dt><dd class="book-stat-count">{{$p := statSplit $n.wordCount "万字" "字"}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
-        <div><dt>浏览量</dt><dd class="book-stat-count">{{$p := statSplit $n.clicks "万" ""}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
-        <div><dt>章节</dt><dd class="book-stat-count"><span class="book-stat-value">{{$.ChaptersTotal}}</span><small>章</small></dd></div>
+      <dl class="book-mobile-stats" aria-label="{{T $.Lang "作品数据"}}">
+        <div><dt>{{T $.Lang "字数"}}</dt><dd class="book-stat-count">{{$p := statSplit $n.wordCount (T $.Lang "万字") (T $.Lang "字")}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
+        <div><dt>{{T $.Lang "浏览量"}}</dt><dd class="book-stat-count">{{$p := statSplit $n.clicks (T $.Lang "万") ""}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
+        <div><dt>{{T $.Lang "章节"}}</dt><dd class="book-stat-count"><span class="book-stat-value">{{$.ChaptersTotal}}</span><small>{{T $.Lang "章"}}</small></dd></div>
       </dl>
     </div>
     {{else}}
-    <dl class="book-mobile-stats" aria-label="作品数据">
-      <div><dt>字数</dt><dd class="book-stat-count">{{$p := statSplit $n.wordCount "万字" "字"}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
-      <div><dt>浏览量</dt><dd class="book-stat-count">{{$p := statSplit $n.clicks "万" ""}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
-      <div><dt>章节</dt><dd class="book-stat-count"><span class="book-stat-value">{{$.ChaptersTotal}}</span><small>章</small></dd></div>
+    <dl class="book-mobile-stats" aria-label="{{T $.Lang "作品数据"}}">
+      <div><dt>{{T $.Lang "字数"}}</dt><dd class="book-stat-count">{{$p := statSplit $n.wordCount (T $.Lang "万字") (T $.Lang "字")}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
+      <div><dt>{{T $.Lang "浏览量"}}</dt><dd class="book-stat-count">{{$p := statSplit $n.clicks (T $.Lang "万") ""}}<span class="book-stat-value">{{index $p 0}}</span><small>{{index $p 1}}</small></dd></div>
+      <div><dt>{{T $.Lang "章节"}}</dt><dd class="book-stat-count"><span class="book-stat-value">{{$.ChaptersTotal}}</span><small>{{T $.Lang "章"}}</small></dd></div>
     </dl>
     {{end}}
     <div class="relative">
       <div class="book-description text-gray-600 dark:text-gray-400 leading-relaxed text-sm whitespace-pre-wrap line-clamp-4" id="jxzw-desc-mobile">{{$n.description}}</div>
-      {{if $n.description}}<button type="button" class="book-desc-toggle book-description-toggle" data-desc-toggle="jxzw-desc-mobile" aria-expanded="false">展开</button>{{end}}
+      {{if $n.description}}<button type="button" class="book-desc-toggle book-description-toggle" data-desc-toggle="jxzw-desc-mobile" aria-expanded="false">{{T $.Lang "展开"}}</button>{{end}}
     </div>
   </div>
   <span class="book-hero-backdrop" aria-hidden="true">{{if isLocalCover $n.cover}}<img loading="eager" src="{{coverSrc $n.id $n.cover}}" sizes="(min-width: 768px) 480px, 240px" alt="" width="240" height="320" decoding="async">{{end}}</span>
 </div>
 {{if gt .ChaptersTotal 0}}
-<div class="book-catalog bg-white dark:bg-[#1a1a1a] rounded-lg shadow-sm order-3 md:hidden" role="region" aria-label="章节目录">
-  <a class="mobile-catalog" href="{{tocURL $n.id}}"><strong>目录</strong><span>连载至{{.ChaptersTotal}}章{{if $n.updatedAt}} · <span data-rel-ts="{{fullFmt $n.updatedAt}}"></span>{{end}}</span><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+<div class="book-catalog bg-white dark:bg-[#1a1a1a] rounded-lg shadow-sm order-3 md:hidden" role="region" aria-label="{{T $.Lang "章节目录"}}">
+  <a class="mobile-catalog" href="{{tocURL $n.id}}"><strong>{{T $.Lang "目录"}}</strong><span>{{Tf $.Lang "连载至{0}章" .ChaptersTotal}}{{if $n.updatedAt}} · <span data-rel-ts="{{fullFmt $n.updatedAt}}"></span>{{end}}</span><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
 </div>
 {{end}}
 <div class="book-body">
   <div class="book-main">
     <section class="book-synopsis" aria-labelledby="book-synopsis-heading">
-      <h2 id="book-synopsis-heading">简介</h2>
+      <h2 id="book-synopsis-heading">{{T $.Lang "简介"}}</h2>
       <div class="relative">
         <div class="book-description text-gray-600 dark:text-gray-400 leading-relaxed text-sm whitespace-pre-wrap line-clamp-6" id="jxzw-desc">{{$n.description}}</div>
-        {{if $n.description}}<button type="button" class="book-desc-toggle book-description-toggle" data-desc-toggle="jxzw-desc" aria-expanded="false">展开</button>{{end}}
+        {{if $n.description}}<button type="button" class="book-desc-toggle book-description-toggle" data-desc-toggle="jxzw-desc" aria-expanded="false">{{T $.Lang "展开"}}</button>{{end}}
       </div>
       {{if .Tags}}<div class="book-tags flex flex-wrap gap-2 mt-3">{{range .Tags}}<a class="book-tag" href="{{pseoURL .}}">{{.}}</a>{{end}}</div>{{end}}
     </section>
@@ -109,21 +109,21 @@
       <div class="book-milestone-entry">
         <span class="milestone-roll" aria-hidden="true"><span class="milestone-roll-item" data-active="true">
           <span class="milestone-mark" data-kind="views"><svg viewBox="0 0 40 44" aria-hidden="true"><path d="M20 1.5 37.5 11.7v20.6L20 42.5 2.5 32.3V11.7Z" fill="currentColor"></path><path d="M20 5 34.5 13.5v17L20 39 5.5 30.5v-17Z" fill="none" stroke="white" stroke-opacity=".24"></path></svg><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trending-up milestone-mark-symbol" aria-hidden="true"><path d="M16 7h6v6"></path><path d="m22 7-8.5 8.5-5-5L2 17"></path></svg></span>
-          <span class="milestone-entry-copy"><strong>{{.label}}</strong><span>{{if gt .level 0}}{{.level}}里程碑{{else}}浏览量{{end}}</span></span>
+          <span class="milestone-entry-copy"><strong>{{.label}}</strong><span>{{if gt .level 0}}{{Tf $.Lang "{0}里程碑" .level}}{{else}}{{T $.Lang "浏览量"}}{{end}}</span></span>
         </span></span>
       </div>
-      {{if .nextLabel}}<div class="milestone-card-progress"><div><p><span>浏览 {{.value}}</span><span>{{.nextLabel}}</span></p><div class="milestone-card-track" aria-hidden="true"><span style="width:{{printf "%.1f" .progressPct}}%"></span></div></div></div>{{end}}
+      {{if .nextLabel}}<div class="milestone-card-progress"><div><p><span>{{Tf $.Lang "浏览 {0}" .value}}</span><span>{{.nextLabel}}</span></p><div class="milestone-card-track" aria-hidden="true"><span style="width:{{printf "%.1f" .progressPct}}%"></span></div></div></div>{{end}}
     </div>
     {{end}}
     {{with .Related}}{{if len .}}
-    <section class="book-recommendations" aria-label="猜你喜欢">
-      <header><h2>猜你喜欢</h2></header>
+    <section class="book-recommendations" aria-label="{{T $.Lang "猜你喜欢"}}">
+      <header><h2>{{T $.Lang "猜你喜欢"}}</h2></header>
       <div class="mh-shelf" role="region" aria-label="猜你喜欢，左右滑动浏览" tabindex="0">
         {{range .}}
         <a class="mh-shelf-book" href="{{bookURL .id}}">
           <div class="mh-shelf-cover"><div class="mh-cover">{{if isLocalCover .cover}}<img src="{{coverSrc .id .cover}}" sizes="(min-width: 768px) 140px, 28vw" alt="{{.title}}封面" width="240" height="320" loading="lazy" decoding="async">{{else}}<span aria-hidden="true">{{title0 .title}}</span>{{end}}</div></div>
           <h3>{{.title}}</h3>
-          {{if or .categoryName .wordCount}}<p class="mh-shelf-length">{{if .categoryName}}{{.categoryName}}{{if .wordCount}} · {{end}}{{end}}{{if .wordCount}}{{wcFmt .wordCount}}{{end}}</p>{{end}}
+          {{if or .categoryName .wordCount}}<p class="mh-shelf-length">{{if .categoryName}}{{.categoryName}}{{if .wordCount}} · {{end}}{{end}}{{if .wordCount}}{{wcFmtL $.Lang .wordCount}}{{end}}</p>{{end}}
           <div class="mh-shelf-meta">{{if .categoryName}}<p>{{.categoryName}}</p>{{end}}</div>
         </a>
         {{end}}
@@ -136,8 +136,8 @@
 </div>
 <div class="book-actions md:hidden fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#1a1a1a]/95 backdrop-blur-md border-t border-gray-100 dark:border-[#333] z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.06)]" style="padding-bottom:calc(0.75rem + env(safe-area-inset-bottom));padding-top:0.75rem;padding-left:1rem;padding-right:1rem">
   <div class="flex gap-3 max-w-md mx-auto h-11">
-    <a data-shelf-book="{{$n.id}}" data-shelf-title="{{$n.title}}" class="flex-1 flex items-center justify-center space-x-1.5 rounded-full text-sm font-bold transition-all active:scale-95 bg-blue-50 dark:bg-[#26303f] text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-[#33415a]" href="{{bookURL $n.id}}" rel="nofollow"><span>加入书架</span></a>
-    {{if .Chapters}}<a class="read-now flex-[1.2] flex items-center justify-center rounded-full text-sm font-bold text-white bg-red-600" href="{{chapterURL (idx .Chapters 0).id}}"><span>立即阅读</span></a>{{else}}<a class="read-now flex-[1.2] flex items-center justify-center rounded-full text-sm font-bold text-white bg-red-600" href="{{tocURL $n.id}}"><span>查看目录</span></a>{{end}}
+    <a data-shelf-book="{{$n.id}}" data-shelf-title="{{$n.title}}" class="flex-1 flex items-center justify-center space-x-1.5 rounded-full text-sm font-bold transition-all active:scale-95 bg-blue-50 dark:bg-[#26303f] text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-[#33415a]" href="{{bookURL $n.id}}" rel="nofollow"><span>{{T $.Lang "加入书架"}}</span></a>
+    {{if .Chapters}}<a class="read-now flex-[1.2] flex items-center justify-center rounded-full text-sm font-bold text-white bg-red-600" data-continue-cta data-book-id="{{$n.id}}" href="{{chapterURL (idx .Chapters 0).id}}"><span>{{T $.Lang "立即阅读"}}</span></a>{{else}}<a class="read-now flex-[1.2] flex items-center justify-center rounded-full text-sm font-bold text-white bg-red-600" href="{{tocURL $n.id}}"><span>{{T $.Lang "查看目录"}}</span></a>{{end}}
   </div>
 </div>
 {{end}}

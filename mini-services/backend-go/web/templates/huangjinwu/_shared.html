@@ -3,7 +3,7 @@
 毛玻璃白导航条（子页返回按钮 + 文字 Logo + 横向菜单 + 搜索框 + 站点工具）+ 移动端左抽屉(270px)
 + 页脚；繁简切换（TradToggle）本版跳过；「书库」入口因 Go 无全站路由指向首页。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

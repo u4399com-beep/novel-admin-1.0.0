@@ -642,15 +642,28 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int, 
 	// 剥前缀后二次识别不再命中）——vol 非空时 rest 作归一标题参与去重/入库/续传（fillRows
 	// 标题与 DB 行标题双侧一致，Phase 2 按标题匹配空骨架才不 miss）；纯卷标题行 rest==原标题
 	// 原样保留。存量库旧前缀标题由 db.go backfillChapterVolume 同口径归一，续传不受影响
+	//
+	// R154（炼天图 20 章重复行根因）：标题**空白折叠归一**（jsSpacePlusRe 连续空白
+	// （含全角空格/U+3000）折叠为单空格）——源站目录词面漂移实证：ixdzs8 clist JSON
+	// 标题「第693章  美人镜…」（双空格）与既有已采行「第693章 美人镜…」（单空格）
+	// 按原词面精确匹配 miss → 全量重扫时 692 条新建骨架里混入 20 条同章不同词面的
+	// 重复行。折叠后的标题统一用于去重键/入库/续传/fillRows（Task 45-b「fillRows
+	// 标题与 DB 行标题双侧一致」契约在折叠词面下继续成立）；存量空骨架行词面漂移
+	// 由下方 alignment UPDATE 原位对齐（fold 语义详见各分支注释）。
 	var order []string
 	urlByTitle := map[string]string{}
 	volByTitle := map[string]string{}
 	for _, r := range refs {
 		// Task 47: 繁转简先于分卷识别（见函数头注）
 		t := trimSpaceStr(t2sField(t2sMode, r.Title))
-		if v, rest := detectVolume(t); v != "" {
-			volByTitle[rest] = v
+		vol, rest := detectVolume(t)
+		if vol != "" {
 			t = rest
+		}
+		// R154: 空白折叠归一（此后 t 即折叠词面，全函数单一词面）
+		t = jsSpacePlusRe.ReplaceAllString(t, " ")
+		if vol != "" {
+			volByTitle[t] = vol
 		}
 		if _, ok := urlByTitle[t]; !ok {
 			urlByTitle[t] = r.URL
@@ -660,13 +673,14 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int, 
 
 	// 与既有章节对齐：区分「已填充跳过」与「空骨架续传」（查询失败视为全新目录，与 TS catch 一致）
 	type existingRow struct {
+		id    int64
 		title string
 		wc    int
 	}
 	var existing []existingRow
-	_ = queryList("SELECT title, wordCount FROM Chapter WHERE novelId = ?", func(rows *sql.Rows) error {
+	_ = queryList("SELECT id, title, wordCount FROM Chapter WHERE novelId = ?", func(rows *sql.Rows) error {
 		var e existingRow
-		if err := rows.Scan(&e.title, &e.wc); err != nil {
+		if err := rows.Scan(&e.id, &e.title, &e.wc); err != nil {
 			return err
 		}
 		existing = append(existing, e)
@@ -674,25 +688,44 @@ func storeChapterSkeletons(run *Run, novelID int, refs []refPair, capLimit int, 
 	}, novelID)
 	filledTitles := map[string]bool{}
 	emptyTitles := map[string]bool{}
+	// R154: 空骨架词面表（续传行词面漂移时原位对齐到本次 TOC 折叠词面，保
+	// fill 期 title→id 精确匹配不 miss、不造重复行）
+	emptyRowTitleByKey := map[string]string{}
 	for _, e := range existing {
+		k := jsSpacePlusRe.ReplaceAllString(e.title, " ")
 		if e.wc > 0 {
-			filledTitles[e.title] = true
+			filledTitles[k] = true
 		} else {
-			emptyTitles[e.title] = true
+			emptyTitles[k] = true
+			emptyRowTitleByKey[k] = e.title
 		}
 	}
 
 	fresh := []refPair{}
 	resume := []refPair{}
 	skippedFilled := 0
+	titleAligns := [][2]string{} // {rowTitle 原词面, TOC 折叠词面}（词面相同则不更新）
 	for _, t := range order {
 		switch {
 		case filledTitles[t]:
 			skippedFilled++
 		case emptyTitles[t]:
 			resume = append(resume, refPair{Title: t, URL: urlByTitle[t]})
+			if emptyRowTitleByKey[t] != t {
+				titleAligns = append(titleAligns, [2]string{emptyRowTitleByKey[t], t})
+			}
 		default:
 			fresh = append(fresh, refPair{Title: t, URL: urlByTitle[t]})
+		}
+	}
+	// R154: 续传行词面原位对齐（空骨架行 title ≠ 本次 TOC 折叠词面时）——不
+	// 对齐则 Phase 2 按 fillRows 折叠词面 title→id 精确匹配 miss → storeChapter
+	// 重复建行（同一章两行，一词面一折叠词面）。仅空骨架行参与（已采行 wc>0
+	// 词面不重写，展示层保真不受影响）；每行一条点更新，量级 = 词面漂移行数。
+	for _, al := range titleAligns {
+		if _, err := execRetry("UPDATE Chapter SET title = ? WHERE novelId = ? AND title = ?",
+			al[1], novelID, al[0]); err != nil {
+			run.Log("骨架标题对齐失败(" + truncateRunes(al[0], 30) + "): " + truncateRunes(err.Error(), 80))
 		}
 	}
 

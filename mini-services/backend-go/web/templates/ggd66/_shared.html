@@ -2,7 +2,7 @@
 青绿顶栏 50px #1abc9c（桌面单行：Logo + 首页/全部小说/前 3 分类 + 工具组；移动端第二行均分导航）
 + 公告条 + 绿底页脚 #56ccb5。深青绿链接 #00886d hover 橙 #f50。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

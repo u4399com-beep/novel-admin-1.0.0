@@ -91,14 +91,16 @@ restart() { # name probe_url probe_timeout
       if [ ! -x "$ROOT/mini-services/backend-go/bin/backend-go" ]; then
         (cd "$ROOT/mini-services/backend-go" && go build -o bin/backend-go .) >>/tmp/backend-go.log 2>&1
       fi
+      # R151：run.sh 循环重启包装拉起（flock 单实例闸，与 stealth 同架构）——
+      # 单进程直拉会被沙箱周期性清理静默杀死（实证 60-90s），父循环立即重生
       # 9>&-：关闭继承的 flock fd（R116 ⑤），子进程不再钉住看门狗锁
-      (cd "$ROOT" && DB_PATH=$ROOT/db/custom.db nohup "$ROOT/mini-services/backend-go/bin/backend-go" >>/tmp/backend-go.log 2>&1 9>&- &)
+      (cd "$ROOT/mini-services/backend-go" && nohup ./run.sh >>/tmp/backend-go.log 2>&1 9>&- &)
       ;;
     scraper)
       if [ ! -x "$ROOT/mini-services/scraper-go/bin/scraper-go" ]; then
         (cd "$ROOT/mini-services/scraper-go" && go build -o bin/scraper-go .) >>/tmp/scraper-go.log 2>&1
       fi
-      (cd "$ROOT/mini-services/scraper-go" && nohup ./bin/scraper-go >>/tmp/scraper-go.log 2>&1 9>&- &)
+      (cd "$ROOT/mini-services/scraper-go" && nohup ./run.sh >>/tmp/scraper-go.log 2>&1 9>&- &)
       ;;
     stealth)
       (cd "$ROOT/mini-services/stealth-service" && nohup bash run.sh >>/tmp/stealth.log 2>&1 9>&- &)

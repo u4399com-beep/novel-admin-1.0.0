@@ -1082,6 +1082,10 @@
       if (s.activeTheme) $('#adm-set-theme').value = s.activeTheme;
       // R148: 阅读页分页模式回显（auto/scroll/page，GET 已归一化）
       if (s.readerMode) $('#adm-set-readermode').value = s.readerMode;
+      // R163: 前台语种模式回显（GET 已归一 auto/off/force:*）
+      $('#adm-set-langmode').value = s.langMode || 'auto';
+      // R162: 伪静态方案号回显（存量库 0 → 归一方案 1）
+      $('#adm-set-urlstyle').value = String(s.urlStyle && s.urlStyle >= 1 && s.urlStyle <= 18 ? s.urlStyle : 1);
       // R97: 采集存储与代理池回显
       $('#adm-set-txtdir').value = s.txtDir || '';
       $('#adm-set-coversdir').value = s.coversDir || '';
@@ -1623,9 +1627,11 @@
           siteName: siteName,
           notice: $('#adm-set-notice').value,
           activeTheme: $('#adm-set-theme').value,
-          readerMode: $('#adm-set-readermode').value
+          readerMode: $('#adm-set-readermode').value,
+          langMode: $('#adm-set-langmode').value || 'auto',
+          urlStyle: parseInt($('#adm-set-urlstyle').value, 10) || 1,
         });
-        toast('基础设置已保存（主题切换后刷新前台生效；阅读页模式刷新章节页生效）', 'ok');
+        toast('基础设置已保存（主题切换后刷新前台生效；阅读页模式刷新章节页生效；语种模式即刻生效）', 'ok');
       } catch (e) { handleErr(e); }
     });
 

@@ -1,12 +1,12 @@
 {{/* jiuxiaozw 首页：1:1 复刻 jiuxiaozw.com /sim 双轨布局。
-桌面 .desktop-home.rl：rl-hero（今日推荐 3 张轮换 + 缩略按钮）→ rl-band 书单横带（色调 apricot/straw/clay/wheat/sand/tea 循环，rl-hz 卡 1-3 张随数据）→ rl-more 更多书单。
+桌面 .desktop-home.rl：rl-hero（今日推荐 3 张轮换 + 缩略按钮）→ rl-band 书单横带（色调 apricot/straw/clay/wheat/sand/tea 循环，rl-hz 卡 PC 4 张 2x2 网格随数据 R161）→ rl-more 更多书单。
 移动 .mobile-home：mh-topbar → mh-carousel 无缝轮播 → mh-list-band（data-tone 1-12）→ mh-list-more。
 数据映射（诚实原则）：人气值=真实点击量（star 徽标），评分/论坛等无数据面不造假。 */}}
 {{define "content"}}{{$f := .Featured}}{{$sn := .Site.siteName}}
 <section class="sr-only" aria-label="推荐书籍与最近更新" data-nosnippet>
-  <h2>推荐书籍</h2>
+  <h2>{{T $.Lang "推荐书籍"}}</h2>
   <ul>{{range $i, $n := $f}}{{if lt $i 3}}<li><a href="{{bookURL $n.id}}">{{$n.title}}</a></li>{{end}}{{end}}</ul>
-  <h2>最近更新</h2>
+  <h2>{{T $.Lang "最近更新"}}</h2>
   <ul>{{range .Latest}}<li><a href="{{bookURL .id}}">{{.title}}</a></li>{{end}}</ul>
 </section>
 <h1 class="sr-only">{{$sn}}</h1>
@@ -14,7 +14,7 @@
 {{/* ---------- 桌面端（.rl 暖纸作用域） ---------- */}}
 <div class="desktop-home rl hidden md:block">
   {{if $f}}
-  <section class="rl-hero" id="jxzw-hero" data-anchor="hero" aria-label="今日推荐">
+  <section class="rl-hero" id="jxzw-hero" data-anchor="hero" aria-label="{{T $.Lang "今日推荐"}}">
     {{range $i, $n := $f}}{{if lt $i 3}}
     <div class="rl-hero-main{{if ne $i 0}} jxzw-hidden{{end}}" data-hero="{{$i}}">
       <a class="rl-hero-art" aria-label="{{$n.title}}" href="{{bookURL $n.id}}">
@@ -24,12 +24,12 @@
       <div class="rl-hero-info">
         <h2 class="rl-clamp" style="--size:40px"><a href="{{bookURL $n.id}}">{{$n.title}}</a></h2>
         <div class="rl-hero-tags">
-          <span class="rl-hero-meta">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}} · {{wcFmt $n.wordCount}}</span>
-          {{if $n.clicks}}<span class="rl-rate" data-nosnippet aria-label="人气 {{trimSuffixStr (wcFmt $n.clicks) "字"}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg><strong>{{trimSuffixStr (wcFmt $n.clicks) "字"}}</strong></span>{{end}}
+          <span class="rl-hero-meta">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}} · {{wcFmtL $.Lang $n.wordCount}}</span>
+          {{if $n.clicks}}<span class="rl-rate" data-nosnippet aria-label="{{T $.Lang "人气"}}{{popL $.Lang $n.clicks}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg><strong>{{popL $.Lang $n.clicks}}</strong></span>{{end}}
         </div>
         {{if $n.description}}<p class="rl-hero-desc rl-clamp">{{$n.description}}</p>{{end}}
-        <p class="rl-note is-line rl-clamp"><span class="rl-note-label">编辑推荐</span>{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}{{$n.title}} 正在连载，欢迎开始阅读。{{end}}</p>
-        <div class="rl-hero-actions"><a class="rl-btn" href="{{bookURL $n.id}}">查看详情</a></div>
+        <p class="rl-note is-line rl-clamp"><span class="rl-note-label">{{T $.Lang "编辑推荐"}}</span>{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}{{$n.title}}{{T $.Lang "正在连载，欢迎开始阅读。"}}{{end}}</p>
+        <div class="rl-hero-actions"><a class="rl-btn" href="{{bookURL $n.id}}">{{T $.Lang "查看详情"}}</a></div>
       </div>
     </div>
     {{end}}{{end}}
@@ -44,23 +44,24 @@
   </section>
   {{end}}
 
-  {{/* 书单横带：数据面 6 组 + 后台自定义区块；色调 6 色循环；卡 1-3 张随实际；
-  角标「全部 N 本」= 频道全集总数（ListTotals 与 /list/<kind> 落点页同源，R145） */}}
+  {{/* 书单横带：数据面 6 组 + 后台自定义区块；色调 6 色循环；桌面卡 4 张随实际（R161 用户指令：PC 每模块 4 本，2 列网格天然 2x2）；
+  角标「全部 N 本」= min(频道全集总数, 10)（R155 展示上限，ListTotals 与 /list/<kind>
+  落点页同源钳制，永不漂移；频道不足 10 本时显示真实数） */}}
   {{$t := .ListTotals}}
-  {{template "jxzw-band" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" "apricot" "id" "jxzw-hero-band"}}
-  {{template "jxzw-band" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" "straw" "id" "jxzw-hot"}}
-  {{template "jxzw-band" dict "title" "最新上架" "tag" "新鲜出炉，抢先开读。" "href" "/list/latest" "total" (index $t "latest") "novels" .Latest "tone" "clay" "id" "jxzw-latest" "anchor" "latest"}}
-  {{template "jxzw-band" dict "title" "点击榜" "tag" "用真实点击数说话的榜单。" "href" "/list/rank-clicks" "total" (index $t "rank-clicks") "novels" .RankClicks "tone" "wheat" "id" "jxzw-rank" "anchor" "rank"}}
-  {{template "jxzw-band" dict "title" "更新榜" "tag" "追更上头，最近动作最快的书。" "href" "/list/rank-updates" "total" (index $t "rank-updates") "novels" .RankUpdates "tone" "sand" "id" "jxzw-updates"}}
-  {{template "jxzw-band" dict "title" "完本佳作" "tag" "一口气看到大结局的安心之选。" "href" "/list/finished" "total" (index $t "finished") "novels" .RankFinished "tone" "tea" "id" "jxzw-finished" "anchor" "finished"}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" (T $.Lang "小编精选") "tag" (T $.Lang "编辑们正在追的作者与故事。") "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" "apricot" "id" "jxzw-hero-band"}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" (T $.Lang "热门小说") "tag" (T $.Lang "全书库点击最高的作品，人气之选。") "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" "straw" "id" "jxzw-hot"}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" (T $.Lang "最新上架") "tag" (T $.Lang "新鲜出炉，抢先开读。") "href" "/list/latest" "total" (index $t "latest") "novels" .Latest "tone" "clay" "id" "jxzw-latest" "anchor" "latest"}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" (T $.Lang "点击榜") "tag" (T $.Lang "用真实点击数说话的榜单。") "href" "/list/rank-clicks" "total" (index $t "rank-clicks") "novels" .RankClicks "tone" "wheat" "id" "jxzw-rank" "anchor" "rank"}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" (T $.Lang "更新榜") "tag" (T $.Lang "追更上头，最近动作最快的书。") "href" "/list/rank-updates" "total" (index $t "rank-updates") "novels" .RankUpdates "tone" "sand" "id" "jxzw-updates"}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" (T $.Lang "完本佳作") "tag" (T $.Lang "一口气看到大结局的安心之选。") "href" "/list/finished" "total" (index $t "finished") "novels" .RankFinished "tone" "tea" "id" "jxzw-finished" "anchor" "finished"}}
   {{range $b := .HomeBlocks}}
-  {{template "jxzw-band" dict "title" $b.title "tag" "书友手择，值得一读。" "href" $b.href "total" $b.total "novels" $b.novels "tone" "tea" "id" (printf "jxzw-block-%v" $b.id)}}
+  {{template "jxzw-band" dict "lang" $.Lang "title" $b.title "tag" (T $.Lang "书友手择，值得一读。") "href" $b.href "total" $b.total "novels" $b.novels "tone" "tea" "id" (printf "jxzw-block-%v" $b.id)}}
   {{end}}
 
   {{/* 更多书单（书单卡：封面三叠 + 标题 + 简介 + 收录书名） */}}
-  <section class="rl-more" aria-label="更多书单" id="jxzw-lists" data-anchor="lists">
+  <section class="rl-more" aria-label="{{T $.Lang "更多书单"}}" id="jxzw-lists" data-anchor="lists">
     <div class="rl-more-in">
-      <div class="rl-more-head"><h2>更多书单</h2><a class="rl-all" href="/#jxzw-lists">全部书单 →</a></div>
+      <div class="rl-more-head"><h2>{{T $.Lang "更多书单"}}</h2><a class="rl-all" href="/#jxzw-lists">{{T $.Lang "全部书单 →"}}</a></div>
       <div class="rl-colls">
         {{range $b := .HomeBlocks}}
         <a class="rl-coll" href="{{$b.href}}">
@@ -68,7 +69,7 @@
             {{range $j, $n := $b.novels}}{{if lt $j 3}}{{if isLocalCover $n.cover}}<img src="{{coverSrc $n.id $n.cover}}" sizes="96px" alt="{{$n.title}}" class="rl-cover" width="240" height="320" loading="lazy" decoding="async">{{else}}<span class="rl-cover jxzw-gcover {{gcls $n.cover}}">{{title0 $n.title}}</span>{{end}}{{end}}{{end}}
           </div>
           <b>{{$b.title}}</b>
-          <span class="rl-coll-blurb rl-one">书友手择，值得一读。</span>
+          <span class="rl-coll-blurb rl-one">{{T $.Lang "书友手择，值得一读。"}}</span>
           <span class="rl-coll-books rl-one">{{range $j, $n := $b.novels}}{{if lt $j 4}}{{if $j}}、{{end}}{{$n.title}}{{end}}{{end}}</span>
         </a>
         {{end}}
@@ -96,10 +97,10 @@
   </header>
 
   {{if $f}}
-  <section class="mh-carousel" aria-label="每日精选推荐" aria-roledescription="轮播图">
+  <section class="mh-carousel" aria-label="{{T $.Lang "每日精选推荐"}}" aria-roledescription="轮播图">
     <div class="mh-banner-track">
       {{range $i, $n := $f}}{{if lt $i 3}}
-      <a class="mh-banner" aria-hidden="{{if eq $i 0}}false{{else}}true{{end}}" aria-label="推荐 {{add $i 1}}/3：{{$n.title}}" href="{{bookURL $n.id}}">
+      <a class="mh-banner" aria-hidden="{{if eq $i 0}}false{{else}}true{{end}}" aria-label="{{Tf $.Lang "推荐{0}/3" (add $i 1)}}：{{$n.title}}" href="{{bookURL $n.id}}">
         <div class="mh-banner-backdrop" aria-hidden="true">{{if isLocalCover $n.cover}}<img loading="eager" src="{{coverSrc $n.id $n.cover}}" sizes="240px" alt="" width="240" height="320" decoding="async">{{else}}<span class="jxzw-gcover {{gcls $n.cover}}" style="position:absolute;inset:0">{{title0 $n.title}}</span>{{end}}</div>
         <div class="mh-banner-copy"><h2>{{$n.title}}</h2><span class="mh-banner-sub"><span>{{$n.author}}</span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></span></div>
         <div class="mh-cover">{{if isLocalCover $n.cover}}<img loading="eager" src="{{coverSrc $n.id $n.cover}}" sizes="72px" alt="{{$n.title}}封面" width="240" height="320" decoding="async">{{else}}<span class="jxzw-gcover {{gcls $n.cover}}">{{title0 $n.title}}</span>{{end}}</div>
@@ -109,18 +110,18 @@
   </section>
   {{end}}
 
-  {{template "jxzw-mband" dict "title" "小编精选" "tag" "编辑们正在追的作者与故事。" "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" 1 "id" "jxzw-m-hero"}}
-  {{template "jxzw-mband" dict "title" "热门小说" "tag" "全书库点击最高的作品，人气之选。" "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" 2 "id" "jxzw-m-hot"}}
-  {{template "jxzw-mband" dict "title" "最新上架" "tag" "新鲜出炉，抢先开读。" "href" "/list/latest" "total" (index $t "latest") "novels" .Latest "tone" 3 "id" "jxzw-m-latest" "anchor" "latest"}}
-  {{template "jxzw-mband" dict "title" "点击榜" "tag" "用真实点击数说话的榜单。" "href" "/list/rank-clicks" "total" (index $t "rank-clicks") "novels" .RankClicks "tone" 4 "id" "jxzw-m-rank" "anchor" "rank"}}
-  {{template "jxzw-mband" dict "title" "更新榜" "tag" "追更上头，最近动作最快的书。" "href" "/list/rank-updates" "total" (index $t "rank-updates") "novels" .RankUpdates "tone" 5 "id" "jxzw-m-updates"}}
-  {{template "jxzw-mband" dict "title" "完本佳作" "tag" "一口气看到大结局的安心之选。" "href" "/list/finished" "total" (index $t "finished") "novels" .RankFinished "tone" 6 "id" "jxzw-m-finished" "anchor" "finished"}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" (T $.Lang "小编精选") "tag" (T $.Lang "编辑们正在追的作者与故事。") "href" "/list/featured" "total" (index $t "featured") "novels" (slice3 $f 3) "tone" 1 "id" "jxzw-m-hero"}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" (T $.Lang "热门小说") "tag" (T $.Lang "全书库点击最高的作品，人气之选。") "href" "/list/hot" "total" (index $t "hot") "novels" .Hot "tone" 2 "id" "jxzw-m-hot"}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" (T $.Lang "最新上架") "tag" (T $.Lang "新鲜出炉，抢先开读。") "href" "/list/latest" "total" (index $t "latest") "novels" .Latest "tone" 3 "id" "jxzw-m-latest" "anchor" "latest"}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" (T $.Lang "点击榜") "tag" (T $.Lang "用真实点击数说话的榜单。") "href" "/list/rank-clicks" "total" (index $t "rank-clicks") "novels" .RankClicks "tone" 4 "id" "jxzw-m-rank" "anchor" "rank"}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" (T $.Lang "更新榜") "tag" (T $.Lang "追更上头，最近动作最快的书。") "href" "/list/rank-updates" "total" (index $t "rank-updates") "novels" .RankUpdates "tone" 5 "id" "jxzw-m-updates"}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" (T $.Lang "完本佳作") "tag" (T $.Lang "一口气看到大结局的安心之选。") "href" "/list/finished" "total" (index $t "finished") "novels" .RankFinished "tone" 6 "id" "jxzw-m-finished" "anchor" "finished"}}
   {{range $b := .HomeBlocks}}
-  {{template "jxzw-mband" dict "title" $b.title "tag" "书友手择，值得一读。" "href" $b.href "total" $b.total "novels" $b.novels "tone" 7 "id" (printf "jxzw-m-block-%v" $b.id)}}
+  {{template "jxzw-mband" dict "lang" $.Lang "title" $b.title "tag" (T $.Lang "书友手择，值得一读。") "href" $b.href "total" $b.total "novels" $b.novels "tone" 7 "id" (printf "jxzw-m-block-%v" $b.id)}}
   {{end}}
 
   <section class="mh-list-more" aria-labelledby="mh-list-more" id="jxzw-m-lists" data-anchor="lists">
-    <header><h2 id="mh-list-more">更多书单</h2><a class="mh-list-all" href="/#jxzw-lists">全部书单<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a></header>
+    <header><h2 id="mh-list-more">{{T $.Lang "更多书单"}}</h2><a class="mh-list-all" href="/#jxzw-lists">{{T $.Lang "全部书单"}}<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a></header>
     <div class="mh-list-collections">
       {{range $b := .HomeBlocks}}
       <a class="mh-list-collection" href="{{$b.href}}">
@@ -136,7 +137,7 @@
 </div>
 {{end}}
 
-{{/* jxzw-band 桌面横带（rl-band + rl-hz 卡 1-3） */}}
+{{/* jxzw-band 桌面横带（rl-band + rl-hz 卡 1-4，R161 用户指令 PC 每模块 4 本） */}}
 {{define "jxzw-band"}}
 {{if .novels}}
 {{$tone := .tone}}
@@ -145,17 +146,17 @@
     <header class="rl-lead">
       <h2><a href="{{.href}}">{{.title}}</a></h2>
       <p>{{.tag}}</p>
-      <a class="rl-all" href="{{.href}}">全部 {{if .total}}{{.total}}{{else}}{{len .novels}}{{end}} 本 →</a>
+      <a class="rl-all" href="{{.href}}">{{Tf .lang "全部{0}本 →" (or .total (len .novels))}}</a>
     </header>
     <div class="rl-cards">
-      {{range $i, $n := .novels}}{{if lt $i 3}}
+      {{range $i, $n := .novels}}{{if lt $i 4}}
       <a class="rl-hz" href="{{bookURL $n.id}}">
         {{if isLocalCover $n.cover}}<img src="{{coverSrc $n.id $n.cover}}" srcSet="{{coverSrc $n.id $n.cover}} 240w" sizes="100px" alt="{{$n.title}}" class="rl-cover" width="240" height="320" loading="lazy" decoding="async">{{else}}<span class="rl-cover jxzw-gcover {{gcls $n.cover}}" aria-hidden="true">{{title0 $n.title}}</span>{{end}}
         <div class="rl-card-text">
-          <div class="rl-card-head"><b class="rl-title rl-one">{{$n.title}}</b>{{if $n.clicks}}<span class="rl-rate" data-nosnippet aria-label="人气 {{trimSuffixStr (wcFmt $n.clicks) "字"}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg><strong>{{trimSuffixStr (wcFmt $n.clicks) "字"}}</strong></span>{{end}}</div>
-          <span class="rl-meta rl-one">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}{{if $n.wordCount}} · {{wcFmt $n.wordCount}}{{end}}</span>
+          <div class="rl-card-head"><b class="rl-title rl-one">{{$n.title}}</b>{{if $n.clicks}}<span class="rl-rate" data-nosnippet aria-label="{{T $.lang "人气"}}{{popL $.lang $n.clicks}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg><strong>{{popL $.lang $n.clicks}}</strong></span>{{end}}</div>
+          <span class="rl-meta rl-one">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}{{if $n.wordCount}} · {{wcFmtL $.lang $n.wordCount}}{{end}}</span>
           {{if $n.description}}<p class="rl-syn rl-clamp">{{$n.description}}</p>{{end}}
-          <p class="rl-note is-line rl-clamp"><span class="rl-note-label">编辑推荐</span>{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}{{$n.title}} 正在连载，欢迎开始阅读。{{end}}</p>
+          <p class="rl-note is-line rl-clamp"><span class="rl-note-label">{{T $.lang "编辑推荐"}}</span>{{if $n.lastChapterTitle}}{{$n.lastChapterTitle}}{{else}}{{$n.title}}{{T $.lang "正在连载，欢迎开始阅读。"}}{{end}}</p>
         </div>
       </a>
       {{end}}{{end}}
@@ -172,7 +173,7 @@
 <section class="mh-list-band" data-layout="cards" data-tone="{{$tone}}"{{if .id}} id="{{.id}}"{{end}}{{if .anchor}} data-anchor="{{.anchor}}"{{end}} aria-labelledby="mh-list-{{$tone}}">
   <header class="mh-list-band-head">
     <h2 id="mh-list-{{$tone}}">{{.title}}</h2>
-    <a class="mh-list-all" aria-label="{{.title}}，全部 {{if .total}}{{.total}}{{else}}{{len .novels}}{{end}} 本" href="{{.href}}">全部 {{if .total}}{{.total}}{{else}}{{len .novels}}{{end}} 本<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
+    <a class="mh-list-all" aria-label="{{.title}}，{{Tf .lang "全部{0}本" (or .total (len .novels))}}" href="{{.href}}">{{Tf .lang "全部{0}本" (or .total (len .novels))}}<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>
     <p>{{.tag}}</p>
   </header>
   <div class="mh-list-cards" data-sheet="true">
@@ -180,9 +181,9 @@
     <a class="mh-list-card" href="{{bookURL $n.id}}">
       {{if isLocalCover $n.cover}}<img src="{{coverSrc $n.id $n.cover}}" sizes="80px" alt="{{$n.title}}封面" class="mh-list-cover" width="240" height="320" loading="lazy" decoding="async">{{else}}<span class="mh-list-cover jxzw-gcover {{gcls $n.cover}}" aria-hidden="true">{{title0 $n.title}}</span>{{end}}
       <div class="mh-list-text">
-        <div class="mh-list-head"><h3 class="mh-list-title">{{$n.title}}</h3>{{if $n.clicks}}<span class="mh-list-rate" data-nosnippet data-rated="true" aria-label="人气 {{trimSuffixStr (wcFmt $n.clicks) "字"}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg>{{trimSuffixStr (wcFmt $n.clicks) "字"}}</span>{{end}}</div>
+        <div class="mh-list-head"><h3 class="mh-list-title">{{$n.title}}</h3>{{if $n.clicks}}<span class="mh-list-rate" data-nosnippet data-rated="true" aria-label="{{T $.lang "人气"}}{{trimSuffixStr (wcFmt $n.clicks) "字"}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star" aria-hidden="true"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path></svg>{{popL $.lang $n.clicks}}</span>{{end}}</div>
         {{if $n.description}}<p class="mh-list-syn">{{$n.description}}</p>{{end}}
-        <div class="mh-list-foot"><span class="mh-list-meta">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}{{if $n.wordCount}} · {{wcFmt $n.wordCount}}{{end}}</span><small class="mh-status mh-list-status" data-status="{{$n.status}}">{{if eq $n.status "finished"}}完本{{else}}连载{{end}}</small></div>
+        <div class="mh-list-foot"><span class="mh-list-meta">{{$n.author}}{{if $n.categoryName}} · {{$n.categoryName}}{{end}}{{if $n.wordCount}} · {{wcFmtL $.lang $n.wordCount}}{{end}}</span><small class="mh-status mh-list-status" data-status="{{$n.status}}">{{if eq $n.status "finished"}}{{T $.lang "完本"}}{{else}}{{T $.lang "连载"}}{{end}}</small></div>
       </div>
     </a>
     {{end}}{{end}}

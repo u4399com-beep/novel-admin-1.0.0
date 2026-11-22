@@ -144,6 +144,12 @@ func dispatch(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimRight(r.URL.Path, "/")
 	segs := splitPath(path)
+	// R162: 伪静态入站宽容——每段剥 .html/.htm 尾（"123.html"→"123"、"search.html"→"search"），
+	// 任意历史/新形态请求均命中既有段路由（尾斜杠已由 TrimRight 兜住）；仅剥尾一次，
+	// 非数字 id 天然 404，无伪造面。
+	for i := range segs {
+		segs[i] = stripStaticExt(segs[i])
+	}
 	method := strings.ToUpper(r.Method)
 
 	// 静态段优先于参数段（与 Next App Router 一致）

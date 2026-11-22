@@ -65,19 +65,28 @@ type webSettings struct {
 	// R148: 阅读页分页模式（''/auto=跟随设备 PC 全文滚动+移动端分页；scroll=全端全文；page=全端分页）
 	// 站群表 SiteSite 无此列（resolveSite 不读），站群站点恒走默认 auto 语义
 	ReaderMode string
+	// R163: 前台语种模式（langip.go 判定引擎唯一权威，取代 R160 geoLang 布尔总闸）：
+	// auto=按访客 IP/浏览器语言自动判定【默认】/ off=恒 zh-CN / force:xx=强制语种。
+	// SiteSite 同名列 ''=跟随默认站点（resolveSite 继承解析后此处恒为生效值）
+	LangMode string
+	// R162: 伪静态方案号（urlstyle.go 18 方案 1-18；1=默认动态形态；越界回落 1）。
+	// 站群表同名列独立生效（用户指令：站群设置中加入伪静态设置——每站点可各自选形态）
+	URLStyle int64
 }
 
 // loadWebSettings 读取 SiteSetting 单例行（不存在时返回 nil）
 func loadWebSettings() *webSettings {
 	var s webSettings
 	var seoBlob, footerBlob sql.NullString
+	var urlStyle int64
 	err := queryOne(
-		`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","readerMode" FROM "SiteSetting" WHERE "id" = 1`,
-		[]any{&s.SiteName, &s.ActiveTheme, &s.Notice, &seoBlob, &footerBlob, &s.HomeConfigRaw, &s.ReaderMode},
+		`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","readerMode","langMode","urlStyle" FROM "SiteSetting" WHERE "id" = 1`,
+		[]any{&s.SiteName, &s.ActiveTheme, &s.Notice, &seoBlob, &footerBlob, &s.HomeConfigRaw, &s.ReaderMode, &s.LangMode, &urlStyle},
 	)
 	if err != nil {
 		return nil
 	}
+	s.URLStyle = urlStyle // R162: 0/越界由 urlStyleByID 兑底回落方案 1，扫描层不清洗
 	s.SeoConfig = map[string]any{}
 	s.FooterConfig = map[string]any{}
 	if seoBlob.Valid && seoBlob.String != "" {
@@ -114,9 +123,11 @@ func resolveSite(r *http.Request) *webSettings {
 		if host := requestHost(r); host != "" {
 			var s webSettings
 			var seoBlob, footerBlob sql.NullString
+			var urlStyle int64
+			var langMode string
 			err := queryOne(
-				`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig" FROM "SiteSite" WHERE "host" = ? AND "enabled" = 1`,
-				[]any{&s.SiteName, &s.ActiveTheme, &s.Notice, &seoBlob, &footerBlob, &s.HomeConfigRaw},
+				`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","urlStyle","langMode" FROM "SiteSite" WHERE "host" = ? AND "enabled" = 1`,
+				[]any{&s.SiteName, &s.ActiveTheme, &s.Notice, &seoBlob, &footerBlob, &s.HomeConfigRaw, &urlStyle, &langMode},
 				host,
 			)
 			if err == nil {
@@ -127,6 +138,16 @@ func resolveSite(r *http.Request) *webSettings {
 				}
 				if footerBlob.Valid && footerBlob.String != "" {
 					_ = json.Unmarshal([]byte(footerBlob.String), &s.FooterConfig)
+				}
+				// R162: 站群站点伪静态方案独立生效（SiteSite.urlStyle 列，ensureColumn 幂等）
+				s.URLStyle = urlStyle
+				// R163: 站群站点语种模式（''=跟随默认站点——继承查询一次 SiteSetting；
+				// 非法值归一层不处理，webLangModeOf 兑底 auto）
+				s.LangMode = strings.TrimSpace(langMode)
+				if s.LangMode == "" {
+					if d := loadWebSettings(); d != nil {
+						s.LangMode = d.LangMode
+					}
 				}
 				return &s
 			}
@@ -199,7 +220,13 @@ func webCommon(r *http.Request) map[string]any {
 	friendLinks := gatherFooterFriendLinks(s.FooterConfig)
 	fleetLinks := gatherFleetLinks(requestHost(r))
 	// Task 46: 链轮三类型（站内随机书籍页/站群随机首页/站群随机书籍页，每请求随机抽样）
-	wheelLinks := gatherWheelLinks(requestHost(r))
+	// R162: 站内轮链跟随当前站点伪静态方案（跨站 fleet 链保持默认形态，见 web_footer.go）
+	wheelLinks := gatherWheelLinks(requestHost(r), func() int64 {
+		if s := resolveSite(r); s != nil {
+			return s.URLStyle
+		}
+		return defaultURLStyle
+	}())
 
 	// Task 30-a: 站点档案透传——applyWebTDK/applyWebKeywords/gatherHomeBlocks 经
 	// settingsFromData 取此解析结果（保证同请求内 Site/TDK/页脚/区块口径一致）；
@@ -479,12 +506,20 @@ func handleWebHome(w http.ResponseWriter, r *http.Request) {
 	data := webCommon(r)
 	ensureFeaturedBootstrap()
 	ensureHotBootstrap()
+	lang := webLangOfRequest(r, w)
 	featured := queryNovelListCovers(` WHERE n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 12)
 	hot := queryNovelListCovers(` WHERE n."isHot" = 1`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10)
 	latest := queryNovelListCovers("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 14)
 	rankClicks := queryNovelListCovers("", ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10)
 	rankUpdates := queryNovelListCovers("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 10)
 	rankFinished := queryNovelListCovers(` WHERE n."status" = 'finished'`, ` ORDER BY n."clicks" DESC, n."id" DESC`, nil, 10)
+	// R160: 首页各频道书籍字段语种化（书名/最新章节标题；en/ja/ko 缓存命中替换/未命中原文）
+	i18nNovelMaps(lang, featured, "title", "lastChapterTitle")
+	i18nNovelMaps(lang, hot, "title", "lastChapterTitle")
+	i18nNovelMaps(lang, latest, "title", "lastChapterTitle")
+	i18nNovelMaps(lang, rankClicks, "title", "lastChapterTitle")
+	i18nNovelMaps(lang, rankUpdates, "title", "lastChapterTitle")
+	i18nNovelMaps(lang, rankFinished, "title", "lastChapterTitle")
 	data["Featured"] = featured
 	data["Hot"] = hot
 	data["Latest"] = latest
@@ -496,6 +531,18 @@ func handleWebHome(w http.ResponseWriter, r *http.Request) {
 	// 必须先于 gatherHomeBlocks 写入（区块角标读同一份总数）
 	data["ListTotals"] = webListTotals()
 	data["HomeBlocks"] = gatherHomeBlocks(data) // Task 30-a: homeConfig 按请求站点档案
+	// R160: 自定义区块内书籍语种化
+	if blocks, ok := data["HomeBlocks"].([]map[string]any); ok {
+		for _, b := range blocks {
+			// R160: 区块标题（后台 homeConfig 配置词）走 UI 字典命中即翻、自定义词原文
+			if tl, ok3 := b["title"].(string); ok3 && tl != "" {
+				b["title"] = tmplT(lang, tl)
+			}
+			if bl, ok2 := b["novels"].([]map[string]any); ok2 {
+				i18nNovelMaps(lang, bl, "title", "lastChapterTitle")
+			}
+		}
+	}
 
 	s := settingsFromData(data)
 	siteName := "青阅文学"
@@ -595,6 +642,7 @@ func homeBlockNovels(source string, count int) []map[string]any {
 
 func handleWebCategory(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	data := webCommon(r)
+	lang := webLangOfRequest(r, w)
 	cid, err := strconv.ParseInt(ps["id"], 10, 64)
 	if err != nil || cid <= 0 {
 		web404(w, r, "分类不存在")
@@ -608,6 +656,10 @@ func handleWebCategory(w http.ResponseWriter, r *http.Request, ps map[string]str
 	novels, _ := queryNovelList(` WHERE n."categoryId" = ?`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, []any{cid}, 500, 0)
 	featuredBlock, _ := queryNovelList(` WHERE n."categoryId" = ? AND n."isFeatured" = 1`, ` ORDER BY n."updatedAt" DESC, n."id" DESC`, []any{cid}, 6, 0)
 	hotBlock, _ := queryNovelList(` WHERE n."categoryId" = ?`, ` ORDER BY n."clicks" DESC, n."id" DESC`, []any{cid}, 8, 0)
+	// R160: 列表书名/简介语种化
+	i18nNovelMaps(lang, novels, "title", "description")
+	i18nNovelMaps(lang, featuredBlock, "title", "description")
+	i18nNovelMaps(lang, hotBlock, "title", "description")
 	data["Category"] = map[string]any{"id": cid, "name": catName}
 	data["Novels"] = novels
 	data["FeaturedBlock"] = featuredBlock
@@ -718,6 +770,7 @@ func milestoneFmt(v int64) string {
 
 func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	data := webCommon(r)
+	lang := webLangOfRequest(r, w)
 	nid, err := strconv.ParseInt(ps["id"], 10, 64)
 	if err != nil || nid <= 0 {
 		web404(w, r, "书籍不存在")
@@ -741,21 +794,31 @@ func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string)
 		go triggerPriorityFill(int(nid), int(missingCh))
 	}
 	data["Novel"] = novel
+	// R160: 书名/简介/最新章节名语种化（单元素切片复用列表管线）
+	i18nNovelMaps(lang, []map[string]any{novel}, "title", "description", "lastChapterTitle")
 	title, _ := novel["title"].(string)
 	author, _ := novel["author"].(string)
 	data["Tags"] = novelPseoTags(title, author)
 	for k, v := range chapterMetaBlock(nid) {
 		data[k] = v
 	}
+	// R160: 最新章节列表/末章标题语种化
+	i18nNovelMaps(lang, data["LatestChapters"].([]map[string]any), "title")
+	if lc, ok := data["LastChapter"].(map[string]any); ok {
+		i18nNovelMaps(lang, []map[string]any{lc}, "title")
+	}
 
 	related, _ := queryNovelList(
 		` WHERE n."categoryId" = (SELECT "categoryId" FROM "Novel" WHERE "id" = ?) AND n."id" != ?`,
 		` ORDER BY n."clicks" DESC, n."id" DESC`, []any{nid, nid}, 6, 0)
+	i18nNovelMaps(lang, related, "title", "description")
 	data["Related"] = related
 	// R150: 浏览量里程碑（源站书籍页 aside 里程碑卡 + 移动端简介徽章的真实数据替代——
 	// 评价/收藏服务端无数据面，此处只用 clicks 真实值；零浏览量不渲染，宁缺毋假）。
 	clicks, _ := novel["clicks"].(int64)
 	if ms := viewsMilestone(clicks); ms != nil {
+		// R160: 里程碑标签语种化（字典词条直查；动态「N浏览」形态 Tf 组装）
+		i18nMilestoneLabels(lang, ms)
 		data["ViewsMilestone"] = ms
 	}
 
@@ -803,6 +866,7 @@ func webNovelFull(nid int64) (map[string]any, error) {
 
 func handleWebToc(w http.ResponseWriter, r *http.Request, ps map[string]string) {
 	data := webCommon(r)
+	lang := webLangOfRequest(r, w)
 	nid, err := strconv.ParseInt(ps["id"], 10, 64)
 	if err != nil || nid <= 0 {
 		web404(w, r, "书籍不存在")
@@ -827,6 +891,9 @@ func handleWebToc(w http.ResponseWriter, r *http.Request, ps map[string]string) 
 		}, nid)
 	// Task 45-b: .Chapters 原样保留（向后兼容——11 主题模板未全适配分卷渲染，未适配主题
 	// 仍走平铺分支零变化）；.Volumes 新增分卷分组（无卷书为空切片，模板判空回退平铺）
+	// R160: 章节标题语种化（LRU+缓存；zh-Hant 未命中同步补译）
+	i18nNovelMaps(lang, chapters, "title")
+	i18nNovelMaps(lang, []map[string]any{novel}, "title")
 	data["Chapters"] = chapters
 	data["Volumes"] = groupChaptersByVolume(chapters)
 	title, _ := novel["title"].(string)
@@ -881,17 +948,36 @@ func groupChaptersByVolume(chapters []map[string]any) []map[string]any {
 // ---------- 阅读页 ----------
 
 func handleWebChapter(w http.ResponseWriter, r *http.Request, ps map[string]string) {
-	data := webCommon(r)
 	chid, err := strconv.ParseInt(ps["id"], 10, 64)
 	if err != nil || chid <= 0 {
 		web404(w, r, "章节不存在")
 		return
 	}
+	renderWebChapter(w, r, chid, 0)
+}
+
+// handleWebChapterNested 嵌套式章节页路由入口（R162 伪静态方案 4/5/6/7/8/12/13/14/16/17/18：
+// /{prefix}/{书id}/{章节id}）。校验章节归属书——书 id 伪造直链一律 404（嵌套 URL 声明
+// 「本书某章」，跨书即失真；独立式路由不受此限）。
+func handleWebChapterNested(w http.ResponseWriter, r *http.Request, ps map[string]string) {
+	chid, err1 := strconv.ParseInt(ps["cid"], 10, 64)
+	bid, err2 := strconv.ParseInt(ps["id"], 10, 64)
+	if err1 != nil || err2 != nil || chid <= 0 || bid <= 0 {
+		web404(w, r, "章节不存在")
+		return
+	}
+	renderWebChapter(w, r, chid, bid)
+}
+
+// renderWebChapter 章节页渲染体（handleWebChapter/嵌套路由共用；forceBook>0 时校验归属）。
+func renderWebChapter(w http.ResponseWriter, r *http.Request, chid, forceBook int64) {
+	data := webCommon(r)
+	lang := webLangOfRequest(r, w)
 	var chID, chNovelID, chIdx, chWC int64
 	var chTitle, chContent string
 	if err := queryOne(
 		`SELECT "id","novelId","idx","title","content","wordCount" FROM "Chapter" WHERE "id" = ?`,
-		[]any{&chID, &chNovelID, &chIdx, &chTitle, &chContent, &chWC}, chid); err != nil {
+		[]any{&chID, &chNovelID, &chIdx, &chTitle, &chContent, &chWC}, chid); err != nil || (forceBook > 0 && chNovelID != forceBook) {
 		web404(w, r, "章节不存在")
 		return
 	}
@@ -909,11 +995,17 @@ func handleWebChapter(w http.ResponseWriter, r *http.Request, ps map[string]stri
 			paras = append(paras, p)
 		}
 	}
+	// R160: 正文段落按语种渲染（zh-Hant 缓存命中/同步补译；en/ja/ko 缓存命中替换、
+	// 未命中原文+后台异步预热）+ 章节标题/书名短文本语种化
+	paras = i18nChapterParas(lang, chNovelID, chID, paras)
+	chTitle = tmplFirst(i18nTexts(lang, chNovelID, []string{chTitle}))
 	data["Chapter"] = map[string]any{
 		"id": chID, "idx": chIdx, "title": chTitle, "wordCount": chWC, "Paragraphs": paras,
 	}
 	// Paragraphs 顶层副本：主题模板存在 {{range .Paragraphs}} 顶层用法（双挂载兼容两种路径）
 	data["Paragraphs"] = paras
+	// R160: 阅读页顶部书名语种化（aria-label/返回链接锚文本）
+	i18nNovelMaps(lang, []map[string]any{novel}, "title")
 	data["Novel"] = novel
 
 	// 上一章/下一章（Task 35-a 修复：idx 相邻存在性查询而非 idx±1 精确匹配）。
@@ -963,6 +1055,7 @@ func handleWebChapter(w http.ResponseWriter, r *http.Request, ps map[string]stri
 
 func handleWebSearch(w http.ResponseWriter, r *http.Request) {
 	data := webCommon(r)
+	lang := webLangOfRequest(r, w)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len([]rune(q)) > 60 {
 		q = string([]rune(q)[:60])
@@ -985,6 +1078,8 @@ func handleWebSearch(w http.ResponseWriter, r *http.Request) {
 		data["Total"] = int64(0)
 	}
 	data["Novels"] = novels
+	// R160: 搜索结果书名/简介语种化
+	i18nNovelMaps(lang, novels, "title", "description")
 	s := data["Site"].(map[string]any)
 	siteName, _ := s["siteName"].(string)
 	data["siteName"] = siteName
@@ -1009,6 +1104,7 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 		return
 	}
 	data := webCommon(r)
+	lang := webLangOfRequest(r, w)
 	var status, srcCol, seedCol string
 	var pageData sql.NullString
 	err := queryOne(`SELECT "status","pageData","source","seed" FROM "PseoKeyword" WHERE "keyword" = ?`, []any{&status, &pageData, &srcCol, &seedCol}, kw)
@@ -1060,6 +1156,8 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	}
 	data["Keyword"] = kw
 	data["Description"] = desc
+	// R160: 聚合页书名/简介语种化
+	i18nNovelMaps(lang, novels, "title", "description")
 	data["Novels"] = novels
 	s := data["Site"].(map[string]any)
 	siteName, _ := s["siteName"].(string)
@@ -1174,6 +1272,8 @@ func handleWebAdmin(w http.ResponseWriter, r *http.Request) {
 	data["Pseo"] = pseoList(50)
 	data["Themes"] = themeNames
 	data["Settings"] = adminSettings()
+	// R162: 伪静态 18 方案下拉数据源（站点设置 tab + 站群新建表单共用）
+	data["URLStyles"] = urlStyleOptionList()
 
 	novels, _ := queryNovelList("", ` ORDER BY n."updatedAt" DESC, n."id" DESC`, nil, 50, 0)
 	data["Novels"] = novels
@@ -1228,7 +1328,19 @@ func adminSettings() map[string]any {
 		"notice":      s.Notice,
 		// R148: 阅读页分页模式（后台站点设置下拉回显用）
 		"readerMode": readerModeOrAuto(s.ReaderMode),
+		// R163: 前台语种模式（后台下拉回显用；空/非法值归一 auto 防 <option> 落空）
+		"langMode": webLangModeOf(s),
+		// R162: 伪静态方案号（后台下拉回显用；越界归一方案 1 防 <option> 落空）
+		"urlStyle": normalizeURLStyle(s.URLStyle),
 	}
+}
+
+// normalizeURLStyle R162: 方案号越界归一（<1 或 >18 → 1）；adminSettings/站群回显共用。
+func normalizeURLStyle(n int64) int64 {
+	if n < 1 || n > int64(len(urlStyles)) {
+		return defaultURLStyle
+	}
+	return n
 }
 
 func adminStats() map[string]any {
@@ -1256,10 +1368,17 @@ func web404(w http.ResponseWriter, r *http.Request, msg string) {
 		name = s.SiteName
 	}
 	// Task 36-b: 站名过 HTML 转义（DB 值手改/历史行非可信输入，与 renderPage 终极兜底同口径）
-	_, _ = w.Write([]byte(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - ` + template.HTMLEscapeString(name) + `</title></head>` +
+	html := `<!doctype html><html lang="` + webLangAttrOf(webLangOfRequest(r, nil)) + `"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - ` + template.HTMLEscapeString(name) + `</title></head>` +
 		`<body style="margin:0;font-family:system-ui,sans-serif;background:#fafafa"><div style="max-width:480px;margin:12vh auto;text-align:center;padding:0 16px">` +
 		`<p style="font-size:64px;margin:0;color:#d4d4d4;font-weight:700">404</p>` +
 		`<p style="color:#525252;margin:16px 0">` + msg + `</p>` +
 		`<a href="/" style="display:inline-block;padding:10px 24px;background:#171717;color:#fff;border-radius:8px;text-decoration:none">返回首页</a>` +
-		`</div></body></html>`))
+		`</div></body></html>`
+	// R164: 直写路径同样过渲染出口语种清扫（用户指令：全站所有文字按语种翻译显示；
+	// 404 兜底页不走主题模板绕过 renderPage——必须显式接入 sweep，zh-Hant OpenCC
+	// 即时转换，en/ja/ko 命中替换+按 pg|404 flight 异步预热收敛）
+	if lang := webLangOfRequest(r, nil); lang != "" && lang != "zh-CN" {
+		html = i18nSweepHTML(lang, "pg|404", 0, html)
+	}
+	_, _ = w.Write([]byte(html))
 }

@@ -324,8 +324,10 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 	var seoConfig, footerConfig, homeConfig sql.NullString
 	var proxyPool, txtDir, coversDir, alertWebhookURL, probeTargets sql.NullString
 	var readerMode string
-	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir","alertWebhookURL","probeTargets","readerMode" FROM "SiteSetting" WHERE "id" = 1`,
-		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir, &alertWebhookURL, &probeTargets, &readerMode})
+	var langMode string
+	var urlStyle int64
+	err := queryOne(`SELECT "siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","proxyPool","txtDir","coversDir","alertWebhookURL","probeTargets","readerMode","langMode","urlStyle" FROM "SiteSetting" WHERE "id" = 1`,
+		[]any{&siteName, &activeTheme, &notice, &seoConfig, &footerConfig, &homeConfig, &proxyPool, &txtDir, &coversDir, &alertWebhookURL, &probeTargets, &readerMode, &langMode, &urlStyle})
 	if err != nil {
 		failJSON(w, "服务器错误", firstLineErr(err), 500)
 		return
@@ -350,6 +352,12 @@ func handleSettingsGet(w http.ResponseWriter, r *http.Request, _ map[string]stri
 		"probeTargets":    probeTargets.String,
 		// R148: 阅读页分页模式（'' 归一化为 auto=跟随设备）
 		"readerMode": readerModeOrAuto(readerMode),
+		// R163: 前台语种模式（auto/off/force:xx；空/非法值归一 auto 回显防 <option> 落空）
+		"langMode": webLangModeEcho(langMode),
+		// R160 legacy 派生（旧 admin.js/脚本兼容：auto=判定链开，off/force=关）
+		"geoLang": langMode == "auto",
+		// R162: 伪静态方案号（1-18；存量库 0 → admin 回显按方案 1 处理）
+		"urlStyle": urlStyle,
 	})
 }
 
@@ -455,6 +463,33 @@ func handleSettingsPatch(w http.ResponseWriter, r *http.Request, _ map[string]st
 				args = append(args, "")
 			}
 		}
+	}
+	// R163: 前台语种模式 langMode（宽松语义同 readerMode：键缺失=不动；非法值忽略不写不报错）。
+	// 白名单 auto/off/force:*（langModeFromBody/webLangModeNorm 归一，allowInherit=false：
+	// 默认站点空串无意义）；取代 R160 geoLang 布尔总闸成为唯一权威。
+	if m, ok := langModeFromBody(body, false); ok {
+		sets = append(sets, `"langMode" = ?`)
+		args = append(args, m)
+	}
+	// R160 legacy geoLang bool 兼容通道（R163 起 langMode 为唯一权威；仅本单未带 langMode
+	// 时映射生效：true→auto / false→off——旧 admin.js/脚本平滑升级，双键同发时 langMode 优先）
+	if _, hasLangMode := body["langMode"]; !hasLangMode {
+		if v, exists := body["geoLang"]; exists {
+			if b, isBool := v.(bool); isBool {
+				m := "auto"
+				if !b {
+					m = "off"
+				}
+				sets = append(sets, `"langMode" = ?`)
+				args = append(args, m)
+			}
+		}
+	}
+	// R162: 伪静态方案号 urlStyle（宽松语义同 geoLang：键缺失=不动；
+	// JSON 数字 1-18 合法写入，非法/越界忽略不写不报错）
+	if n, ok := urlStyleFromBody(body); ok {
+		sets = append(sets, `"urlStyle" = ?`)
+		args = append(args, n)
 	}
 	// R135: 可观测设置两键（宽松语义同 proxyPool：键缺失=不动；非法值拒绝该键）。
 	// alertWebhookURL：仅 http/https 绝对地址（钉钉/飞书/企微机器人均为 https；

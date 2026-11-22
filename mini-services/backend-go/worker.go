@@ -39,6 +39,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -987,13 +988,20 @@ func laneFloorPersistLoop() {
 	t := time.NewTicker(60 * time.Second)
 	defer t.Stop()
 	for range t.C {
-		if !laneFloorDirty.CompareAndSwap(true, false) {
-			continue // 无变化：零 I/O
+		if laneFloorDirty.CompareAndSwap(true, false) {
+			if n := persistLaneFloors(); n > 0 {
+				log.Printf("[lane-floor] 车道下限记忆已落盘（%d 任务）", n)
+			} else {
+				laneFloorDirty.Store(true) // 写失败保留脏标记，下轮重试
+			}
 		}
-		if n := persistLaneFloors(); n > 0 {
-			log.Printf("[lane-floor] 车道下限记忆已落盘（%d 任务）", n)
-		} else {
-			laneFloorDirty.Store(true) // 写失败保留脏标记，下轮重试
+		// R152: 高水位记忆同周期落盘（独立脏标记/独立文件，写失败同样保脏重试）
+		if laneHighWaterDirty.CompareAndSwap(true, false) {
+			if n := persistLaneHighWater(); n > 0 {
+				log.Printf("[lane-highwater] 车道高水位已落盘（%d 任务）", n)
+			} else {
+				laneHighWaterDirty.Store(true)
+			}
 		}
 	}
 }
@@ -1027,9 +1035,147 @@ func laneFloorStore(taskID, limit int) {
 }
 
 // laneRestoreEvery 连续成功多少章回开一档（+2 车道）；软起步日志与 bumpLaneOnSuccess 共用。
-// R143: 24→12——域槽礼貌限速已钾死源站压力（≤0.83 req/s），车道数不影响源站节奏，
-// 回升只改变本地并发等待数，加速回满无害；慢站 12 连捷窗口从 ~10 分钟缩到 ~5 分钟。
-const laneRestoreEvery = int64(12)
+// R143: 24→12；R151: 12→8——域槽礼貌限速已钾死源站压力（≤0.83 req/s），车道数不影响
+// 源站节奏，回升只改变本地并发等待数，加速回满无害（实测 ddyueshu 车道 2 起步爬满
+// 12 需 60 连捷，槽供给利用率长期 <50%）；慢站 8 连捷窗口 ~40 秒。
+const laneRestoreEvery = int64(8)
+
+// ==================== R152: 车道高水位记忆（跨段免重爬坡） ====================
+//
+// 现状（R151 止步处）：降档记忆（floor）只存收缩结果且起步恒钳软起步档 4，健康段爬到
+// 的 8-12 车道宽度在段尾丢弃——每次 resume/新填充段都从 4 重爬坡（4→12 需 32 连捷
+// ≈90-120s，实测 task18 01:27:46 起步 01:29:16 才回满）， fleet 反复 resume 时爬坡
+// 时间占比可达 30%+。
+// 语义：高水位=「本任务历史上被连续成功验证过的最大车道宽度」。健康收尾（无熔断/
+// 无提前停止且有产出）存当前宽度；任何 shrinkLanes 立即把高水位封顶到收缩档
+// （限流证据出现，更高宽度不再可信）。起步= clamp(高水位, 软起步档, 配置上限)。
+// 源站压力安全性不变：域槽（引擎层 ≥1.2s/host+出口）才是源站节奏的唯一闸门，
+// 车道宽度只决定本地排队深度——高水位起步不改变发射间隔，仅免去槽位空转。
+var gLaneHighWater sync.Map // map[int]int（key=任务 id，value=已验证最大车道宽度）
+
+// laneHighWaterLoad 取任务高水位（无记忆返回 0）
+func laneHighWaterLoad(taskID int) int {
+	if v, ok := gLaneHighWater.Load(taskID); ok {
+		if n, ok2 := v.(int); ok2 && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// laneHighWaterDirty 高水位脏标记（独立于 floor：两份记忆分别落盘）
+var laneHighWaterDirty atomic.Bool
+
+// laneHighWaterStore 记录健康达成宽度（只升不降：取历史最大值；CAS 环与 laneFloorStore
+// 镜像——并发双 bump 在首写窗口的后写较大值恰好是期望结果，但保持对称防御写法）。
+func laneHighWaterStore(taskID, limit int) {
+	if limit <= 0 {
+		return
+	}
+	for {
+		cur := laneHighWaterLoad(taskID)
+		if cur >= limit {
+			return
+		}
+		if cur == 0 {
+			if _, loaded := gLaneHighWater.LoadOrStore(taskID, limit); !loaded {
+				laneHighWaterDirty.Store(true)
+				return
+			}
+			continue
+		}
+		if gLaneHighWater.CompareAndSwap(taskID, cur, limit) {
+			laneHighWaterDirty.Store(true)
+			return
+		}
+	}
+}
+
+// laneHighWaterCap 降档时封顶高水位（只降不升：取历史最小值）——限流证据出现后，
+// 高于收缩档的宽度不再可信，防 resume 即全速烧穿。
+func laneHighWaterCap(taskID, limit int) {
+	if limit <= 0 {
+		return
+	}
+	for {
+		cur := laneHighWaterLoad(taskID)
+		if cur == 0 || cur <= limit {
+			return
+		}
+		if gLaneHighWater.CompareAndSwap(taskID, cur, limit) {
+			laneHighWaterDirty.Store(true)
+			return
+		}
+	}
+}
+
+// laneHighWaterPersistPath R152: 高水位落盘路径（env LANE_HIGHWATER_PATH 可覆盖，测试隔离用）。
+// R158: 默认从 /tmp 迁移到 {repoRoot}/db/lane-highwater.json——沙箱 /tmp 周期性清空（R157/R158
+// 连续两轮实证：落档丢失、resume 重爬坡归零），db/ 与数据库同域持久；repoRoot() 推断
+// 失败时返回沙箱兜底根，路径仍可写。
+var laneHighWaterPersistPath = func() string {
+	if p := os.Getenv("LANE_HIGHWATER_PATH"); p != "" {
+		return p
+	}
+	return filepath.Join(repoRoot(), "db", "lane-highwater.json")
+}()
+
+// persistLaneHighWater 原子落盘（tmp+rename，对齐 persistLaneFloors）。返回条目数。
+func persistLaneHighWater() int {
+	snap := map[int]int{}
+	gLaneHighWater.Range(func(k, v any) bool {
+		id, ok1 := k.(int)
+		n, ok2 := v.(int)
+		if ok1 && ok2 && n > 0 {
+			snap[id] = n
+		}
+		return true
+	})
+	if len(snap) == 0 {
+		return 0
+	}
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return 0
+	}
+	_ = os.MkdirAll(filepath.Dir(laneHighWaterPersistPath), 0o755)
+	tmp := laneHighWaterPersistPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return 0
+	}
+	if err := os.Rename(tmp, laneHighWaterPersistPath); err != nil {
+		_ = os.Remove(tmp)
+		return 0
+	}
+	return len(snap)
+}
+
+// restoreLaneHighWaters 启动恢复（与 restoreLaneFloors 同款：只补空缺不覆盖）。返回恢复条目数。
+func restoreLaneHighWaters() int {
+	path := laneHighWaterPersistPath
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var doc map[int]int
+	if err := json.Unmarshal(data, &doc); err != nil {
+		log.Printf("[lane-highwater] 快照解析失败（按冷启动处理）: %v", err)
+		return 0
+	}
+	n := 0
+	for id, limit := range doc {
+		if id <= 0 || limit <= 0 {
+			continue
+		}
+		if _, loaded := gLaneHighWater.LoadOrStore(id, limit); !loaded {
+			n++
+		}
+	}
+	if n > 0 {
+		log.Printf("[lane-highwater] 已从磁盘恢复 %d 个任务的车道高水位（resume 直接以已验证宽度起步）", n)
+	}
+	return n
+}
 
 // laneQueueFreezeEWMA R99 饱和感知阈值（ms），R114 起采样口径改为「章节引擎服务耗时」
 // （总耗时−域槽排队，ServiceElapsedMs）。R143 起**只观测不再冻结回升**：R99 的
@@ -1120,6 +1266,23 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 	if laneStart > laneSoftStartLanes {
 		laneStart = laneSoftStartLanes
 	}
+	// R151: 起步下限钳到软起步档（4）——floor 降档记忆可低至 2，起步 2 时槽供给
+	// 利用率 <25%（实测 ddyueshu 6 章/分 vs 槽上限 ~50 章/分）；域槽闸在引擎层保证
+	// 源站压力恒 ≤0.83 req/s，起步宽窄不改变源站压力形态，烧穿保护由 shrinkLanes
+	// 快速响应兜底（R143 语义：降档即时无需起步预收敛）。
+	if laneStart < laneSoftStartLanes {
+		laneStart = laneSoftStartLanes
+	}
+	// R152: 高水位起步——上一段健康收尾时已连续成功验证的车道宽度直接作为本段起步，
+	// 免每次 resume 从 4 重爬坡（4→12 需 32 连捷 ≈90-120s）。高水位已被 shrinkLanes
+	// 实时封顶：限流证据出现后的更宽记忆不会存在，起步即安全。
+	if hw := laneHighWaterLoad(run.TaskID); hw > laneStart {
+		if hw > CHAPTER_CONCURRENCY {
+			hw = CHAPTER_CONCURRENCY
+		}
+		laneStart = hw
+		run.Log(fmt.Sprintf("[lane-control] 高水位起步：活跃车道 %d（历史已验证宽度，连续 %d 章成功逐档回开至 %d）", laneStart, laneRestoreEvery, CHAPTER_CONCURRENCY))
+	}
 	if laneStart < CHAPTER_CONCURRENCY {
 		laneLimit.Store(int64(laneStart))
 		laneCtl.setLimit(laneStart)
@@ -1152,7 +1315,8 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 		}
 		if laneLimit.CompareAndSwap(cur, next) {
 			laneCtl.setLimit(int(next))
-			laneFloorStore(run.TaskID, int(next)) // Task 33: 跨 resume 记忆
+			laneFloorStore(run.TaskID, int(next))   // Task 33: 跨 resume 记忆
+			laneHighWaterCap(run.TaskID, int(next)) // R152: 高水位同步封顶（限流证据出现，更高宽度不再可信）
 			laneShrinks.Add(1)
 			laneOKStreak.Store(0)
 			run.Log(fmt.Sprintf("[lane-control] 检测到限流类失败（%s），活跃车道 %d→%d（引擎已同步 AIMD 放缓请求间隔）", errClass, cur, next))
@@ -1666,6 +1830,14 @@ func phase2Fill(run *Run, rule LoadedRule, fillMap map[int]fillPlan, storageMode
 			parts = append(parts, fmt.Sprintf("其他×%d", v))
 		}
 		run.Log("[失败形态统计] 共 " + itoa(int(f)) + " 章失败：" + strings.Join(parts, "、"))
+	}
+	// R152: 健康收尾高水位存档——本段无熔断/无提前停止且有产出时，把达成车道宽度存为
+	// 高水位，下次 resume 直接以该宽度起步（免 4→12 重爬坡 ~90-120s）。失败形态统计
+	// 显示限流/空壳占比高时不存（宽度虽达成但伴随限流证据，保守取 shrinkLanes 已封顶值）。
+	if !failBreaker.Load() && !breakerStopped.Load() && !stoppedEarly.Load() && filledCtr.Load() > 0 && failSoftBlock.Load() == 0 {
+		if cur := int(laneLimit.Load()); cur > laneSoftStartLanes {
+			laneHighWaterStore(run.TaskID, cur)
+		}
 	}
 	return Phase2Outcome{Filled: int(filledCtr.Load()), Failed: int(failedCtr.Load()), StoppedEarly: stoppedEarly.Load(),
 		FailBreaker: breakerStopped.Load() || failBreaker.Load(), ConsecFails: breakerConsec.Load(), // Task 29: 用熔断瞬间快照

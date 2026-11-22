@@ -6,7 +6,7 @@
 {{define "layout"}}{{$path := .Path}}<!doctype html>
 {{if eq (printf "%.9s" $path) "/chapter/"}}
 {{/* 正文页：独立沉浸式阅读器，无顶栏/页脚 */}}
-<html lang="zh-Hant">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,7 +23,7 @@
 </body>
 </html>
 {{else}}
-<html lang="zh-Hant">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

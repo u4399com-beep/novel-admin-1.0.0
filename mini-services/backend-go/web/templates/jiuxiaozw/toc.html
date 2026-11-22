@@ -3,20 +3,20 @@
 {{define "content"}}{{$n := .Novel}}
 <div class="jxzw-toc-page" style="--reader-paper:#faf3e5;--reader-ink:#382b19;max-width:680px;margin:0 auto">
   <header class="book-catalog-header" style="position:sticky;top:0">
-    <a class="book-catalog-back" href="{{bookURL $n.id}}" aria-label="返回书籍详情">
+    <a class="book-catalog-back" href="{{bookURL $n.id}}" aria-label="{{T $.Lang "返回书籍详情"}}">
       <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left" aria-hidden="true"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg>
     </a>
     <h2 title="{{$n.title}}">{{$n.title}}</h2>
-    <p>共 {{len .Chapters}} 章</p>
+    <p>{{Tf $.Lang "共{0}章" (len .Chapters)}}</p>
   </header>
   {{if .Chapters}}
   <ol class="book-catalog-body">
     {{range $c := .Chapters}}
-    <li><a href="{{chapterURL $c.id}}"><span class="idx">{{$c.idx}}</span><span class="book-catalog-title">{{$c.title}}</span>{{if $c.wordCount}}<span class="wc">{{$c.wordCount}}字</span>{{end}}</a></li>
+    <li><a href="{{chapterURL $c.id}}"><span class="idx">{{$c.idx}}</span><span class="book-catalog-title">{{$c.title}}</span>{{if $c.wordCount}}<span class="wc">{{$c.wordCount}}{{T $.Lang "字"}}</span>{{end}}</a></li>
     {{end}}
   </ol>
   {{else}}
-  <p style="text-align:center;padding:60px 20px;color:#968263;font-size:14px">目录正在后台采集中，请稍后返回。</p>
+  <p style="text-align:center;padding:60px 20px;color:#968263;font-size:14px">{{T $.Lang "目录正在后台采集中，请稍后返回。"}}</p>
   {{end}}
 </div>
 {{end}}

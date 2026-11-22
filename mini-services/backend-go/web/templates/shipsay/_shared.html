@@ -2,7 +2,7 @@
 现代扁平红白灰三段式：白页头 + 深灰 #3E3D43 导航/页脚 + 960px 容器。
 繁简切换（TradToggle）本版跳过；书库/完本/全部分类快捷入口因 Go 无全站书库路由而移除。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

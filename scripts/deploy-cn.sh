@@ -10,7 +10,7 @@
 #   [2/8] Go 工具链    >=1.22，阿里云镜像 mirrors.aliyun.com/golang，装 /usr/local/go
 #                      （预构建快速路径命中时整个跳过——Go 都不用装）
 #   [3/8] Go 模块代理  GOPROXY=https://goproxy.cn,direct（sumdb 校验经代理透传不降级）
-#   [4/8] 部署双服务   backend-go.bin(:3000 页面+API+采集runner) + scraper-go.bin(:3030 引擎)
+#   [4/8] 部署双服务   bin/backend-go(:3000 页面+API+采集runner) + bin/scraper-go(:3030 引擎)
 #                      ★ R127 预构建快速路径：repo 自带 bin/{backend-go,scraper-go}
 #                      （与源码原子同步提交），架构+glibc 匹配即直接取用，零编译秒级起服务；
 #                      不匹配/过低 glibc/--build 显式指定 → 走源码构建（goproxy.cn）
@@ -221,19 +221,19 @@ fi  # end 非预构建路径（Go 工具链）
 
 # ---------- [3/7]+[4/7] 部署双服务二进制 ----------
 if [ "$USE_PREBUILT" -eq 1 ]; then
-  step "3/8,4/8" "部署仓库预构建二进制（bin/ → .bin，零编译）"
-  cp -f "$ROOT/mini-services/backend-go/bin/backend-go" "$ROOT/mini-services/backend-go/backend-go.bin"
-  cp -f "$ROOT/mini-services/scraper-go/bin/scraper-go" "$ROOT/mini-services/scraper-go/scraper-go.bin"
-  ok "backend-go.bin / scraper-go.bin = 仓库预构建版（与源码原子同步，~10 秒完成）"
+  step "3/8,4/8" "部署仓库预构建二进制（bin/ 原子形态，零编译）"
+  [ -x "$ROOT/mini-services/backend-go/bin/backend-go" ] || die "仓库预构建 bin/backend-go 缺失"
+  [ -x "$ROOT/mini-services/scraper-go/bin/scraper-go" ] || die "仓库预构建 bin/scraper-go 缺失"
+  ok "bin/backend-go / bin/scraper-go = 仓库预构建版（与源码原子同步，零编译）"
 elif [ "$SKIP_BUILD" -eq 1 ]; then
   step "3/8,4/8" "跳过构建（--skip-build）"
-  [ -x "$ROOT/mini-services/backend-go/backend-go.bin" ] || die "--skip-build 但 backend-go.bin 不存在"
-  [ -x "$ROOT/mini-services/scraper-go/scraper-go.bin" ] || die "--skip-build 但 scraper-go.bin 不存在"
+  [ -x "$ROOT/mini-services/backend-go/bin/backend-go" ] || die "--skip-build 但 bin/backend-go 不存在"
+  [ -x "$ROOT/mini-services/scraper-go/bin/scraper-go" ] || die "--skip-build 但 bin/scraper-go 不存在"
   ok "使用既有二进制"
 else
   step "3/8,4/8" "构建 backend-go + scraper-go（goproxy.cn 加速，首次 1-3 分钟）"
   bash "$ROOT/scripts/build-go.sh"
-  ok "backend-go.bin / scraper-go.bin 构建完成"
+  ok "bin/backend-go / bin/scraper-go 构建完成"
 fi
 
 # ---------- [5/8] curl-impersonate ----------
@@ -344,9 +344,11 @@ step "8/9" "启动服务（端口 $PORT，模式: $([ "$INSTALL_SYSTEMD" -eq 1 ]
 # 数据/运行时目录（幂等）
 mkdir -p "$ROOT/db" "$ROOT/public/covers" "$ROOT/download/novels"
 
-# 清旧进程（幂等重启；DB 是 SQLite WAL，进程级安全）
+# 清旧进程（幂等重启；DB 是 SQLite WAL，进程级安全）。R151：双形态 pkill（bin/ 现行 + *.bin 旧部署残留）
 pkill -f 'backend-go[.]bin'  2>/dev/null || true
 pkill -f 'scraper-[g]o.bin'  2>/dev/null || true
+pkill -f 'bin/backend-go'    2>/dev/null || true
+pkill -f 'bin/scraper-go'    2>/dev/null || true
 sleep 1
 
 # R135 P0：管理面写保护令牌（operations-readiness §E）。
@@ -400,8 +402,8 @@ UNIT
     ${SUDO:+$SUDO }cp "/tmp/$1.service" "/etc/systemd/system/$1.service"
     rm -f "/tmp/$1.service"
   }
-  write_unit "novel-backend" "$ROOT/mini-services/backend-go" "$ROOT/mini-services/backend-go/backend-go.bin"
-  write_unit "novel-scraper" "$ROOT/mini-services/scraper-go" "$ROOT/mini-services/scraper-go/scraper-go.bin"
+  write_unit "novel-backend" "$ROOT/mini-services/backend-go" "$ROOT/mini-services/backend-go/bin/backend-go"
+  write_unit "novel-scraper" "$ROOT/mini-services/scraper-go" "$ROOT/mini-services/scraper-go/bin/scraper-go"
   # R137 翻译侧车（run.sh 自带 flock 单实例闸 + 崩溃自动重启；bun 缺失时脚本内明确报错退出，
   # systemd Restart=always 拉起重试——依赖缺失场景日志可见，不阻塞主服务）
   if [ -f "$TRANS_DIR/run.sh" ] && [ -f "$TRANS_DIR/node_modules/opencc-js/package.json" ]; then
@@ -412,13 +414,14 @@ UNIT
   [ -f "/etc/systemd/system/novel-translate.service" ] && ${SUDO:+$SUDO }systemctl enable --now novel-translate
   ok "systemd 单元已安装并启动: novel-backend / novel-scraper $([ -f /etc/systemd/system/novel-translate.service ] && echo '/ novel-translate')"
 else
-  # 默认模式：setsid 托孤 + watchdog 自愈循环（60s/轮，复用 ensure-services.sh）
+  # 默认模式：run.sh 循环重启包装拉起（R151：flock 单实例闸 + 崩溃自动重启，与 stealth 同架构；
+  # 实证对抗周期性进程清理——单进程直拉会被静默清除，父循环立即重生）
   cd "$ROOT/mini-services/backend-go"
   # 注意：必须用 env 前缀传递环境变量——nohup 会把 "VAR=value" 当成命令名
   # （历史 bug: nohup: failed to run command 'BACKEND_PORT=3000': No such file or directory）
-  setsid nohup env "${ENV_LINES[@]}" ./backend-go.bin >> /tmp/backend-go-api.log 2>&1 </dev/null &
+  setsid nohup env "${ENV_LINES[@]}" ./run.sh >> /tmp/backend-go-api.log 2>&1 </dev/null &
   cd "$ROOT/mini-services/scraper-go"
-  setsid nohup ./scraper-go.bin >> /tmp/engine.log 2>&1 </dev/null &
+  setsid nohup ./run.sh >> /tmp/engine.log 2>&1 </dev/null &
   # R137 翻译侧车（run.sh 自带 flock 单实例闸+崩溃自动重启；bun 缺失时 run.sh 日志明示）
   if [ -f "$TRANS_DIR/run.sh" ] && [ -f "$TRANS_DIR/node_modules/opencc-js/package.json" ]; then
     setsid nohup bash "$TRANS_DIR/run.sh" >> /tmp/translate-service.log 2>&1 </dev/null &

@@ -51,3 +51,6 @@ mini-services/stealth-service/data/
 .admin-token
 # backend 内置备份循环快照（运行时产物，R135 backupx.go）
 db/backups/
+
+# R160: 访客 IP→语种判定缓存（运行时数据+隐私面，不入库）
+db/ip-lang.json

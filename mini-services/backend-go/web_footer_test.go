@@ -464,7 +464,7 @@ func TestPickWheelSamples(t *testing.T) {
 		{"host": "a.example.com", "siteName": "站点A", "url": "http://a.example.com/"},
 		{"host": "b.example.com", "siteName": "站点B", "url": "http://b.example.com/"},
 	}
-	out := pickWheelSamples(pool, fleet, "")
+	out := pickWheelSamples(pool, fleet, "", defaultURLStyle)
 	if len(out) != wheelInnerBooks+wheelFleetHomes+wheelFleetBooks {
 		t.Fatalf("满池应 8 条（4+2+2），got %d: %v", len(out), out)
 	}
@@ -507,20 +507,20 @@ func TestPickWheelSamples(t *testing.T) {
 		}
 	}
 	for _, host := range []string{"a.example.com", "b.example.com"} {
-		for _, l := range pickWheelSamples(pool, fleet, host) {
+		for _, l := range pickWheelSamples(pool, fleet, host, defaultURLStyle) {
 			if strings.Contains(l["url"], host) {
 				t.Fatalf("当前 Host %s 不应出现在群链轮: %v", host, l)
 			}
 		}
 	}
-	if n := len(pickWheelSamples(pool, nil, "")); n != wheelInnerBooks {
+	if n := len(pickWheelSamples(pool, nil, "", defaultURLStyle)); n != wheelInnerBooks {
 		t.Fatalf("空群应只剩站内 %d 条，got %d", wheelInnerBooks, n)
 	}
-	if out4 := pickWheelSamples(nil, fleet, ""); len(out4) != 0 {
+	if out4 := pickWheelSamples(nil, fleet, "", defaultURLStyle); len(out4) != 0 {
 		t.Fatalf("空池应返回空，got %v", out4)
 	}
 	ids := map[string]bool{}
-	for _, l := range pickWheelSamples(pool[:2], fleet, "") {
+	for _, l := range pickWheelSamples(pool[:2], fleet, "", defaultURLStyle) {
 		if l["kind"] == "book" || l["kind"] == "fleet-book" {
 			id := l["url"][strings.LastIndex(l["url"], "/")+1:]
 			if ids[id] {
@@ -545,7 +545,7 @@ func TestGatherWheelLinks(t *testing.T) {
 	})
 	mustSeedWheelNovels(t, 5)
 
-	got := gatherWheelLinks("a.example.com")
+	got := gatherWheelLinks("a.example.com", defaultURLStyle)
 	if len(got) == 0 {
 		t.Fatal("有书有站时链轮不应为空")
 	}
@@ -571,7 +571,7 @@ func TestGatherWheelLinks(t *testing.T) {
 		}
 	}
 	resetFleetCache()
-	for _, l := range gatherWheelLinks("") {
+	for _, l := range gatherWheelLinks("", defaultURLStyle) {
 		if l["kind"] != "book" {
 			t.Fatalf("空群应只剩 book，got %v", l)
 		}

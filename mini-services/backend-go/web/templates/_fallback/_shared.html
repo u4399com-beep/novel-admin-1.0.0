@@ -1,7 +1,7 @@
 {{/* _fallback 主题共享骨架：模板契约活样例（各主题照此结构实现 _shared.html）。
 数据字段见 web_data.go 头部契约。html/template 自动转义，无需手工 safe 处理。 */}}
 {{define "layout"}}{{$path := .Path}}{{$sn := .Site.siteName}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

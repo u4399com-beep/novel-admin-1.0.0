@@ -34,23 +34,27 @@ var (
 	repoRootPath string
 )
 
-// inferRepoRootFromExe 从可执行文件路径推断项目根（上 2 级且存在 mini-services/
-// 子目录结构）。布局不符返回 ""（调用方回退兜底）。抽成纯函数便于单测覆盖。
+// inferRepoRootFromExe 从可执行文件路径推断项目根：向上逐级搜索存在 mini-services/
+// 子目录的祖先（最多 6 级，防穿文件系统根）。兼容两种部署布局：
+//
+//	{repo}/mini-services/backend-go/backend-go.bin      （旧：2 级）
+//	{repo}/mini-services/backend-go/bin/backend-go       （新 bin/：3 级）
+//
+// 布局不符返回 ""（调用方回退兜底）。抽成纯函数便于单测覆盖。
 func inferRepoRootFromExe(exe string) string {
 	if exe == "" {
 		return ""
 	}
 	dir := filepath.Dir(exe)
-	// bin 目录 → backend-go → mini-services → repo 根（2 次 parent）
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 6; i++ {
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "" // 已到文件系统根，布局不符
 		}
 		dir = parent
-	}
-	if st, err := os.Stat(filepath.Join(dir, "mini-services")); err == nil && st.IsDir() {
-		return dir
+		if st, err := os.Stat(filepath.Join(dir, "mini-services")); err == nil && st.IsDir() {
+			return dir
+		}
 	}
 	return ""
 }
@@ -73,15 +77,24 @@ func repoRoot() string {
 	return repoRootPath
 }
 
-// inferWebRootFromExe 从可执行文件路径推断 web 资源根（backend-go.bin 与 web/
-// 同级，即 {binDir}/web 存在才采用）。不符返回 ""。纯函数便于单测。
+// inferWebRootFromExe 从可执行文件路径推断 web 资源根。兼容两种布局：
+//
+//	{binDir}/web                （旧：backend-go.bin 与 web/ 同级）
+//	{binDir}/../web             （新 bin/：web 与 backend-go 目录同级）
+//
+// 均不符返回 ""。纯函数便于单测。
 func inferWebRootFromExe(exe string) string {
 	if exe == "" {
 		return ""
 	}
-	cand := filepath.Join(filepath.Dir(exe), "web")
-	if st, err := os.Stat(cand); err == nil && st.IsDir() {
-		return cand
+	binDir := filepath.Dir(exe)
+	for _, cand := range []string{
+		filepath.Join(binDir, "web"),
+		filepath.Join(filepath.Dir(binDir), "web"),
+	} {
+		if st, err := os.Stat(cand); err == nil && st.IsDir() {
+			return cand
+		}
 	}
 	return ""
 }

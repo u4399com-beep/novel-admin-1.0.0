@@ -2,7 +2,7 @@
 深酒红毛玻璃固定顶条 + 奶油纸头部卡 + 青绿琥珀主题 CSS（/static/css/aijjxs.css）。
 数据字段见 web_data.go 头部契约；html/template 自动转义。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

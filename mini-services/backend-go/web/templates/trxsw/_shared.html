@@ -3,7 +3,7 @@
 配色令牌：强调 #c42205 / hover 橙 #FF6600 / 区块框 #a6d3e8 / 标题条 #e1eced / 链接 #6f78a7 / 阅读底 #e9faff。
 搜书名/搜作者为源站杰奇双按钮语义还原（Go 契约 /search 为联合检索，两按钮同参数提交）。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -3,7 +3,7 @@
 全部 CSS 手写自包含、零外部依赖；交互（日/夜切换/轮播/简介展开/键盘翻章）内联本文件，字号与继续阅读复用 /static/js/app.js。
 数据字段契约见 web_data.go 头注；html/template 自动转义。 */}}
 {{define "layout"}}{{$path := .Path}}{{$sn := .Site.siteName}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -452,6 +452,22 @@
             <option value="page"{{if eq $.Settings.readerMode "page"}} selected{{end}}>分页翻页（所有设备，含 PC）</option>
           </select>
         </label>
+        <label class="adm-field">前台语种模式 langMode（R163：auto=按访客 IP/浏览器语言自动判定——港澳台繁体即时/OpenCC 预热，英日韩按需翻译缓存命中替换，未命中原文优雅降级；off=恒简体中文；force:*=强制全站指定语种，判定链整体旁路（?lang=/cookie 亦不覆盖），翻译管线照常运行）
+          <select id="adm-set-langmode" class="adm-input">
+            <option value="auto"{{if eq $.Settings.langMode "auto"}} selected{{end}}>自动判定（按访客 IP/浏览器语言切换前台语种——默认）</option>
+            <option value="off"{{if eq $.Settings.langMode "off"}} selected{{end}}>关停（全站恒简体中文原文）</option>
+            <option value="force:zh-CN"{{if eq $.Settings.langMode "force:zh-CN"}} selected{{end}}>强制简体中文（zh-CN 原文直出）</option>
+            <option value="force:zh-Hant"{{if eq $.Settings.langMode "force:zh-Hant"}} selected{{end}}>强制繁体中文（zh-Hant，OpenCC 即时转换）</option>
+            <option value="force:en"{{if eq $.Settings.langMode "force:en"}} selected{{end}}>强制英文（English，按需翻译+缓存）</option>
+            <option value="force:ja"{{if eq $.Settings.langMode "force:ja"}} selected{{end}}>强制日文（日本語，按需翻译+缓存）</option>
+            <option value="force:ko"{{if eq $.Settings.langMode "force:ko"}} selected{{end}}>强制韩文（한국어，按需翻译+缓存）</option>
+          </select>
+        </label>
+        <label class="adm-field">伪静态方案 urlStyle（R162：全站出站链接形态——书页/章节/目录/分类四族，18 种预设；切换即时生效，历史链接与新形态请求均可访问，SEO 平滑）
+          <select id="adm-set-urlstyle" class="adm-input">
+            {{range .URLStyles}}<option value="{{.id}}"{{if eq .id $.Settings.urlStyle}} selected{{end}}>{{.id}}. {{.name}}（{{.desc}}）</option>{{end}}
+          </select>
+        </label>
       </div>
       <label class="adm-field mt-2 block">站点公告（部分主题在首页展示）<textarea id="adm-set-notice" class="adm-input" rows="2">{{.Settings.notice}}</textarea></label>
       <div class="mt-2 flex justify-end"><button type="button" id="adm-set-basic-save" class="adm-btn adm-btn-primary">保存基础设置</button></div>
@@ -570,7 +586,7 @@
       </div>
       <div id="tr-stats" class="flex flex-wrap gap-3 text-xs text-neutral-600">加载中…</div>
       <div id="tr-targets" class="mt-2 flex flex-wrap gap-2 text-xs"></div>
-      <p class="mt-2 text-[11px] text-neutral-400">采集期后台自动预热 zh-Hant/zh-HK（translatewarm.go）；en/ja/ko 为读者按需翻译（结果同样持久缓存）。</p>
+      <p class="mt-2 text-[11px] text-neutral-400">采集期后台自动预热 zh-Hant/zh-HK（translatewarm.go）；en/ja/ko 为按需翻译（API/批量预热/TXT 导出触发，结果同样持久缓存；前台阅读页不提供翻译入口——用户指令）。</p>
     </div>
 
     <div class="adm-card">
@@ -604,7 +620,7 @@
         <button type="button" id="tr-clear-btn" class="adm-btn">清理</button>
         <span id="tr-clear-msg" class="text-xs text-neutral-500"></span>
       </div>
-      <p class="mt-1 text-[11px] text-neutral-400">清理后对应段落回到「未翻译」态，读者阅读时会重新生成。</p>
+      <p class="mt-1 text-[11px] text-neutral-400">清理后对应段落回到「未翻译」态，再次预热/翻译请求/TXT 导出时重新生成。</p>
     </div>
 
     <div class="adm-card">
@@ -641,6 +657,23 @@
           </select>
         </label>
         <label class="adm-field">站点公告（留空继承默认行为：部分主题首页展示）<input id="adm-site-notice" class="adm-input" placeholder="可选"></label>
+        <label class="adm-field">伪静态方案（R162：该站点前台出站链接形态，18 种预设）
+          <select id="adm-site-urlstyle" class="adm-input">
+            {{range .URLStyles}}<option value="{{.id}}">{{.id}}. {{.name}}</option>{{end}}
+          </select>
+        </label>
+        <label class="adm-field">语种模式（R163：该站点前台渲染语种；空=跟随「站点设置」默认站点）
+          <select id="adm-site-langmode" class="adm-input">
+            <option value="">跟随默认站点设置</option>
+            <option value="auto">自动判定（访客 IP/浏览器语言）</option>
+            <option value="off">关停（恒简体中文）</option>
+            <option value="force:zh-CN">强制简体中文（zh-CN）</option>
+            <option value="force:zh-Hant">强制繁体中文（zh-Hant，OpenCC 即时）</option>
+            <option value="force:en">强制英文（English，按需翻译）</option>
+            <option value="force:ja">强制日文（日本語，按需翻译）</option>
+            <option value="force:ko">强制韩文（한국어，按需翻译）</option>
+          </select>
+        </label>
       </div>
       <div class="mt-2 flex justify-end"><button type="button" id="adm-site-create" class="adm-btn adm-btn-primary">创建站点</button></div>
     </div>
@@ -652,6 +685,7 @@
         <li>未命中（含停用/已删除）→ 默认站点（「站点设置」页配置的那份），行为与站群功能上线前完全一致；</li>
         <li>host 不做通配/后缀匹配；带端口请求会先去端口再匹配（如 novel.example.com:8080 → novel.example.com）；</li>
         <li>编辑弹层中的 SEO/页脚/首页区块为 JSON 高级形态，键集与「站点设置」页一致（保存时白名单清洗）。</li>
+        <li>语种模式（R163）：站点可强制语种（force:zh-CN/zh-Hant/en/ja/ko）、自动判定（auto）、关停（off）或留空跟随「站点设置」默认站点；强制/关停模式下判定链整体旁路，?lang= 与 cookie 均不覆盖。</li>
       </ul>
     </div>
   </section>

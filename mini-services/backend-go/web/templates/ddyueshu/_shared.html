@@ -2,7 +2,7 @@
 经典笔趣阁版式：欢迎条 + 980px 头部搜索 + 天蓝主导航 + dd-box 米黄区块（/static/css/ddyueshu.css）。
 非章节页显示完整头部；章节页仅简化顶条（Logo + 返回首页 + 紧凑搜索）。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

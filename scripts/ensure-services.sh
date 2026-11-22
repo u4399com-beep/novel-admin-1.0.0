@@ -28,16 +28,14 @@ fi
 [ "$OK" = "1" ] && exit 0
 # backend
 if ! curl -s --max-time 2 http://127.0.0.1:3000/api/health | rg -q '"ok":true'; then
-  (cd "$ROOT" && DB_PATH=$ROOT/db/custom.db nohup "$ROOT/mini-services/backend-go/bin/backend-go" >>/tmp/backend-go.log 2>&1 &)
+  # R151: run.sh 循环重启包装拉起（与 stealth 同架构）——沙箱会话清理会周期性杀死
+  # 后台单进程（实证 60-90s），父循环立即重生；flock 单实例闸防重叠
+  (cd "$ROOT/mini-services/backend-go" && nohup ./run.sh >>/tmp/backend-go.log 2>&1 &)
 fi
 # scraper
 if ! curl -s --max-time 2 http://127.0.0.1:3030/api/health | rg -q '"ok":true'; then
-  # R116: 引擎部署 env 单一来源 scripts/engine.env（backend ensureEngine 自动拉起路径同源）
-  # R108 P2-1 代理 per-IP 分桶（逐主机 opt-in，每出口独立合规槽）：
-  # - trxsw/77shuku —— 直连不健康（按 IP 限流/封禁），自动补种出口 ×3
-  # - biqutu —— R115 遗留①：aimd 8000ms 深退避常态（按 IP 限流），R116 4 出口实测入规则 ×4
-  # 删除 engine.env 对应行即回全站单槽语义。
-  (cd "$ROOT/mini-services/scraper-go" && set -a && . "$ROOT/scripts/engine.env" && set +a && nohup ./bin/scraper-go >>/tmp/scraper-go.log 2>&1 &)
+  # R151: 同 backend，走 run.sh（内含 engine.env source + flock + 循环重启）
+  (cd "$ROOT/mini-services/scraper-go" && nohup ./run.sh >>/tmp/scraper-go.log 2>&1 &)
 fi
 # 等待就绪（最多 15s）
 for i in $(seq 1 15); do

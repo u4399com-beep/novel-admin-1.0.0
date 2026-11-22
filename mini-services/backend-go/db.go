@@ -170,6 +170,43 @@ func getDB() (*sql.DB, error) {
 			`ALTER TABLE "SiteSetting" ADD COLUMN "readerMode" TEXT NOT NULL DEFAULT ''`); err != nil {
 			log.Printf("[db] SiteSetting.readerMode 加列失败（阅读页分页模式降级 auto 跟随设备）: %v", err)
 		}
+		// R162: SiteSetting.urlStyle 默认站点伪静态方案号（urlstyle.go 18 方案 1-18，
+		// 1=原始动态形态默认；越界回落 1 零回归）。幂等加列同 readerMode/geoLang 先例。
+		if err := ensureColumn(db, "SiteSetting", "urlStyle",
+			`ALTER TABLE "SiteSetting" ADD COLUMN "urlStyle" INTEGER NOT NULL DEFAULT 1`); err != nil {
+			log.Printf("[db] SiteSetting.urlStyle 加列失败（伪静态降级方案 1 默认形态）: %v", err)
+		}
+		// R162: SiteSite.urlStyle 站群站点伪静态方案号（用户指令：站群设置中加入伪静态设置——
+		// 每站点独立选形态；SiteSite 为运行时建表，DDL 已含列，存量库 ensureColumn 幂等补列）。
+		if err := ensureColumn(db, "SiteSite", "urlStyle",
+			`ALTER TABLE "SiteSite" ADD COLUMN "urlStyle" INTEGER NOT NULL DEFAULT 1`); err != nil {
+			log.Printf("[db] SiteSite.urlStyle 加列失败（站群站点伪静态降级方案 1）: %v", err)
+		}
+		// R160: SiteSetting.geoLang 前台访客语种自动判定总闸（1=开默认/0=关；关停时判定链
+		// 整体旁路恒 zh-CN，param/cookie/geo/Accept-Language 全不生效）。幂等加列同上。
+		if err := ensureColumn(db, "SiteSetting", "geoLang",
+			`ALTER TABLE "SiteSetting" ADD COLUMN "geoLang" INTEGER NOT NULL DEFAULT 1`); err != nil {
+			log.Printf("[db] SiteSetting.geoLang 加列失败（语种判定降级恒 zh-CN）: %v", err)
+		}
+		// R163: SiteSetting.langMode 前台语种模式（auto=按访客 IP/浏览器语言自动判定【默认】/
+		// off=恒 zh-CN / force:zh-CN|zh-Hant|en|ja|ko=强制语种，判定链整体旁路）。
+		// 取代 R160 geoLang 布尔总闸成为唯一权威（geoLang 列保留作数据考古/降级回滚）。
+		// 一次性语义迁移：仅当列刚加（此前缺失）时按存量 geoLang 回填（0→off/1→auto）——
+		// 幂等重启绝不覆盖 admin 后续保存的强设值（force:xx 等）。
+		if !columnExists(db, "SiteSetting", "langMode") {
+			if err := ensureColumn(db, "SiteSetting", "langMode",
+				`ALTER TABLE "SiteSetting" ADD COLUMN "langMode" TEXT NOT NULL DEFAULT 'auto'`); err != nil {
+				log.Printf("[db] SiteSetting.langMode 加列失败（语种模式降级 auto 按 IP 判定）: %v", err)
+			} else if _, err := db.Exec(`UPDATE "SiteSetting" SET "langMode" = CASE WHEN COALESCE("geoLang",1) = 0 THEN 'off' ELSE 'auto' END WHERE "id" = 1`); err != nil {
+				log.Printf("[db] SiteSetting.langMode 存量 geoLang 语义回填失败（按 auto 运行）: %v", err)
+			}
+		}
+		// R163: SiteSite.langMode 站群站点语种模式（''=跟随默认站点；用户指令：站群设置中
+		// 加入强制语种选择/也可 IP 判定——每站点可各自强制或继承，同 urlStyle 先例幂等加列）。
+		if err := ensureColumn(db, "SiteSite", "langMode",
+			`ALTER TABLE "SiteSite" ADD COLUMN "langMode" TEXT NOT NULL DEFAULT ''`); err != nil {
+			log.Printf("[db] SiteSite.langMode 加列失败（站群站点跟随默认站点语种模式）: %v", err)
+		}
 		// Task 60-R18: ScrapeRule.insecureTLS 跳过证书校验开关（存量库幂等加列）。
 		// 历史缺陷：列缺失时 web_data 的 SELECT 中带引号标识符 "insecureTLS" 被 SQLite
 		// DQS 特性当字符串字面量返回（每行值='insecureTLS'）→ /api/scrape-rules Scan
@@ -325,6 +362,30 @@ func ensureColumn(db *sql.DB, table, column, alterDDL string) error {
 	}
 	_, err = db.Exec(alterDDL)
 	return err
+}
+
+// columnExists 列存在性精确检查（R163 一次性迁移守卫用；与 ensureColumn 同款 PRAGMA
+// table_info 读取口径，但只回答「列在不在」——ensureColumn 对「列已在/表不在」均静默
+// 返回 nil，无法区分「刚加列」与「早已存在」，一次性回填必须自行判定）。
+// ⚠ 必须在 getDB once 回调内用传入的局部 *sql.DB 调用（Task 30 P1 死锁教训同 ensureColumn）。
+func columnExists(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(`PRAGMA table_info("` + table + `")`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, ctype string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
 }
 
 // migrateChapterContentSplit 存量正文迁移（Task 32-b 垂直分表，幂等）：
@@ -697,6 +758,9 @@ const siteSiteDDL = `CREATE TABLE IF NOT EXISTS "SiteSite" (
         "seoConfig" TEXT NOT NULL DEFAULT '{}',
         "footerConfig" TEXT NOT NULL DEFAULT '{}',
         "homeConfig" TEXT NOT NULL DEFAULT '{}',
+        "urlStyle" INTEGER NOT NULL DEFAULT 1,
+        -- R163: 站群站点语种模式（''=跟随「站点设置」默认站点 langMode；auto/off/force:xx 同 SiteSetting）
+        "langMode" TEXT NOT NULL DEFAULT '',
         "enabled" INTEGER NOT NULL DEFAULT 1,
         "createdAt" INTEGER NOT NULL DEFAULT 0,
         "updatedAt" INTEGER NOT NULL DEFAULT 0

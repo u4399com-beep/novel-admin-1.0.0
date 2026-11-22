@@ -3,61 +3,61 @@ reader-pages-root 变量系统（米色纸 #dbc49e/墨 #382b19/面板 #faf3e5）
 分页由 jiuxiaozw.js 接管（CSS columns + translateX）；四向滑动翻页（上/左滑下一页、下/右滑上一页，reader-page-preview 影子层跟手 + data-moving=X/Y 影子特效，与原站同机制）；R148 双模式：后台 readerMode 设置（auto=跟随设备：PC 全文滚动 scroll/触屏分页 horizontal；scroll=全端全文；page=全端分页），data-reader-mode-setting 透传设置、data-mode 由 JS 权威决策；JS 失效时 data-reader-ready="false" 走原站同款滚动兜底。
 设置面板（字号/行距/纸色）为站点客户端组件的等价实现，变量口径与其 reader-panel 一致。 */}}
 {{define "content"}}{{$c := .Chapter}}{{$n := .Novel}}
-<div class="reader-pages-root" data-dark="false" data-mode="horizontal" data-reader-ready="false" data-reading-position="0" data-reader-mode-setting="{{.Site.readerMode}}" style="--reader-paper:#dbc49e;--reader-ink:#382b19;--reader-panel:#faf3e5;--reader-width:1000px;--reader-paragraph-gap:0.72em">
-  <section class="reader-frame" data-paper="true" aria-label="章节阅读">
+<div class="reader-pages-root" data-dark="false" data-mode="horizontal" data-reader-ready="false" data-reading-position="0" data-reader-mode-setting="{{.Site.readerMode}}" data-chapter-id="{{$c.id}}" data-chapter-idx="{{$c.idx}}" data-book-id="{{$n.id}}" style="--reader-paper:#dbc49e;--reader-ink:#382b19;--reader-panel:#faf3e5;--reader-width:1000px;--reader-paragraph-gap:0.72em">
+  <section class="reader-frame" data-paper="true" aria-label="{{T $.Lang "章节阅读"}}">
     <header class="reader-status-top reader-mobile-header" data-open="false" data-reader-toolbar>
-      <a class="reader-return" aria-label="返回书籍详情：{{$n.title}}" href="{{bookURL $n.id}}">
+      <a class="reader-return" aria-label="{{T $.Lang "返回书籍详情"}}：{{$n.title}}" href="{{bookURL $n.id}}">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
         <span>{{$n.title}}</span>
       </a>
-      <button type="button" class="site-theme-toggle" aria-label="切换日间/夜间模式" aria-pressed="false" style="width:44px;height:44px;color:inherit;border:0;background:transparent;cursor:pointer;display:grid;place-items:center">
+      <button type="button" class="site-theme-toggle" aria-label="{{T $.Lang "切换日间/夜间模式"}}" aria-pressed="false" style="width:44px;height:44px;color:inherit;border:0;background:transparent;cursor:pointer;display:grid;place-items:center">
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sun site-theme-sun" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
         <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon site-theme-moon" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg>
       </button>
     </header>
-    <button class="reader-menu-access" aria-expanded="false">阅读菜单</button>
-    <div class="reader-page-window" tabindex="0" aria-label="滑动或点击翻页，点击中央打开菜单">
+    <button class="reader-menu-access" aria-expanded="false">{{T $.Lang "阅读菜单"}}</button>
+    <div class="reader-page-window" tabindex="0" aria-label="{{T $.Lang "滑动或点击翻页，点击中央打开菜单"}}">
       <div class="reader-page-preview" data-reader-preview hidden aria-hidden="true"></div>
       <div class="reader-page-surface" style="--reader-paper-position:0px 0px">
         <div class="reader-text-window">
           <div class="reader-columns" style="font-family:&quot;PingFang SC&quot;, &quot;Noto Sans CJK SC&quot;, &quot;Noto Sans SC&quot;, &quot;Microsoft YaHei&quot;, sans-serif;font-size:22px;line-height:1.4;transform:translateX(0px)">
             <h1>{{$c.title}}</h1>
-            {{range .Paragraphs}}<p class="reader-paragraph" tabindex="0"><span class="reader-paragraph-text">{{.}}</span></p>{{else}}<p class="reader-paragraph" tabindex="0"><span class="reader-paragraph-text">本章内容为空，正文正在后台采集中，请稍后返回阅读。</span></p>{{end}}
+            {{range .Paragraphs}}<p class="reader-paragraph" tabindex="0"><span class="reader-paragraph-text">{{.}}</span></p>{{else}}<p class="reader-paragraph" tabindex="0"><span class="reader-paragraph-text">{{T $.Lang "本章内容为空，正文正在后台采集中，请稍后返回阅读。"}}</span></p>{{end}}
           </div>
         </div>
-        <button type="button" class="jxzw-tapzone jxzw-tap-left" aria-label="上一页" tabindex="-1"></button>
-        <button type="button" class="jxzw-tapzone jxzw-tap-center" aria-label="打开阅读菜单" tabindex="-1"></button>
-        <button type="button" class="jxzw-tapzone jxzw-tap-right" aria-label="下一页" tabindex="-1"></button>
+        <button type="button" class="jxzw-tapzone jxzw-tap-left" aria-label="{{T $.Lang "上一页"}}" tabindex="-1"></button>
+        <button type="button" class="jxzw-tapzone jxzw-tap-center" aria-label="{{T $.Lang "打开阅读菜单"}}" tabindex="-1"></button>
+        <button type="button" class="jxzw-tapzone jxzw-tap-right" aria-label="{{T $.Lang "下一页"}}" tabindex="-1"></button>
       </div>
       <footer class="reader-status-bottom">
-        <div class="reader-progress" aria-label="阅读进度"><span data-reader-page>1/1</span><span data-reader-pct>0%</span></div>
+        <div class="reader-progress" aria-label="{{T $.Lang "阅读进度"}}"><span data-reader-page>1/1</span><span data-reader-pct>0%</span></div>
       </footer>
     </div>
   </section>
-  <aside class="reader-rail" data-reader-rail="true" aria-label="阅读工具">
-    <a title="书籍详情" href="{{bookURL $n.id}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></a>
-    <a title="全部目录" href="{{tocURL $n.id}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list" aria-hidden="true"><path d="M3 5h.01"></path><path d="M3 12h.01"></path><path d="M3 19h.01"></path><path d="M8 5h13"></path><path d="M8 12h13"></path><path d="M8 19h13"></path></svg></a>
+  <aside class="reader-rail" data-reader-rail="true" aria-label="{{T $.Lang "阅读工具"}}">
+    <a title="{{T $.Lang "书籍详情"}}" href="{{bookURL $n.id}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-info" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></a>
+    <a title="{{T $.Lang "全部目录"}}" href="{{tocURL $n.id}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list" aria-hidden="true"><path d="M3 5h.01"></path><path d="M3 12h.01"></path><path d="M3 19h.01"></path><path d="M8 5h13"></path><path d="M8 12h13"></path><path d="M8 19h13"></path></svg></a>
     <hr>
-    {{if .Prev}}<a title="上一章" href="{{chapterURL .Prev.id}}" data-nav="prev"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>{{else}}<button type="button" disabled title="已经是第一章"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>{{end}}
-    {{if .Next}}<a title="下一章（Ctrl+→）" href="{{chapterURL .Next.id}}" data-nav="next"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>{{else}}<button type="button" disabled title="已经是最新一章"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>{{end}}
+    {{if .Prev}}<a title="{{T $.Lang "上一章"}}" href="{{chapterURL .Prev.id}}" data-nav="prev"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></a>{{else}}<button type="button" disabled title="{{T $.Lang "已经是第一章"}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-left" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>{{end}}
+    {{if .Next}}<a title="{{T $.Lang "下一章（Ctrl+→）"}}" href="{{chapterURL .Next.id}}" data-nav="next"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></a>{{else}}<button type="button" disabled title="{{T $.Lang "已经是最新一章"}}"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>{{end}}
     <hr>
-    <button type="button" title="切换日间/夜间模式" class="site-theme-toggle" aria-pressed="false" style="border:0;background:transparent;cursor:pointer;color:inherit;padding:0;display:flex">
+    <button type="button" title="{{T $.Lang "切换日间/夜间模式"}}" class="site-theme-toggle" aria-pressed="false" style="border:0;background:transparent;cursor:pointer;color:inherit;padding:0;display:flex">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sun site-theme-sun" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon site-theme-moon" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg>
     </button>
-    <button type="button" title="阅读设置" data-reader-settings><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+    <button type="button" title="{{T $.Lang "阅读设置"}}" data-reader-settings><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings" aria-hidden="true"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
   </aside>
 </div>
-<div class="jxzw-reader-panel" data-open="false" role="dialog" aria-label="阅读设置">
-  <h3>阅读设置</h3>
-  <div class="jxzw-reader-row"><b>字号</b><button type="button" class="jxzw-reader-btn" data-font-step="-1" aria-label="减小字号">A-</button><span class="jxzw-reader-val" data-font-val>22px</span><button type="button" class="jxzw-reader-btn" data-font-step="1" aria-label="增大字号">A+</button></div>
-  <div class="jxzw-reader-row"><b>行距</b><button type="button" class="jxzw-reader-btn" data-lh="1.3" aria-pressed="false">紧凑</button><button type="button" class="jxzw-reader-btn" data-lh="1.4" aria-pressed="true">适中</button><button type="button" class="jxzw-reader-btn" data-lh="1.6" aria-pressed="false">宽松</button></div>
-  <div class="jxzw-reader-row"><b>背景</b>
+<div class="jxzw-reader-panel" data-open="false" role="dialog" aria-label="{{T $.Lang "阅读设置"}}">
+  <h3>{{T $.Lang "阅读设置"}}</h3>
+  <div class="jxzw-reader-row"><b>{{T $.Lang "字号"}}</b><button type="button" class="jxzw-reader-btn" data-font-step="-1" aria-label="{{T $.Lang "减小字号"}}">A-</button><span class="jxzw-reader-val" data-font-val>22px</span><button type="button" class="jxzw-reader-btn" data-font-step="1" aria-label="{{T $.Lang "增大字号"}}">A+</button></div>
+  <div class="jxzw-reader-row"><b>{{T $.Lang "行距"}}</b><button type="button" class="jxzw-reader-btn" data-lh="1.3" aria-pressed="false">{{T $.Lang "紧凑"}}</button><button type="button" class="jxzw-reader-btn" data-lh="1.4" aria-pressed="true">{{T $.Lang "适中"}}</button><button type="button" class="jxzw-reader-btn" data-lh="1.6" aria-pressed="false">{{T $.Lang "宽松"}}</button></div>
+  <div class="jxzw-reader-row"><b>{{T $.Lang "背景"}}</b>
     <div class="jxzw-paper-dots">
-      <button type="button" class="jxzw-paper-dot" data-paper="sepia" aria-pressed="true" style="background:#dbc49e">米色</button>
-      <button type="button" class="jxzw-paper-dot" data-paper="white" aria-pressed="false" style="background:#ffffff">白纸</button>
-      <button type="button" class="jxzw-paper-dot" data-paper="green" aria-pressed="false" style="background:#e2efe0">护眼</button>
-      <button type="button" class="jxzw-paper-dot" data-paper="dark" aria-pressed="false" style="background:#1a1a1a;color:#a0a0a0">夜间</button>
+      <button type="button" class="jxzw-paper-dot" data-paper="sepia" aria-pressed="true" style="background:#dbc49e">{{T $.Lang "米色"}}</button>
+      <button type="button" class="jxzw-paper-dot" data-paper="white" aria-pressed="false" style="background:#ffffff">{{T $.Lang "白纸"}}</button>
+      <button type="button" class="jxzw-paper-dot" data-paper="green" aria-pressed="false" style="background:#e2efe0">{{T $.Lang "护眼"}}</button>
+      <button type="button" class="jxzw-paper-dot" data-paper="dark" aria-pressed="false" style="background:#1a1a1a;color:#a0a0a0">{{T $.Lang "夜间"}}</button>
     </div>
   </div>
 </div>

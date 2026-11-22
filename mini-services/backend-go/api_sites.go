@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -71,16 +72,18 @@ type siteRow struct {
 	FooterBlob  sql.NullString
 	HomeBlob    sql.NullString
 	Enabled     int64
+	URLStyle    int64
+	LangMode    string // R163: 语种模式（''=跟随默认站点；auto/off/force:*）
 	CreatedAt   int64
 	UpdatedAt   int64
 }
 
-const siteRowCols = `"id","host","siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","enabled","createdAt","updatedAt"`
+const siteRowCols = `"id","host","siteName","activeTheme","notice","seoConfig","footerConfig","homeConfig","enabled","urlStyle","langMode","createdAt","updatedAt"`
 
 func scanSiteRow(rows *sql.Rows) (siteRow, error) {
 	var r siteRow
 	err := rows.Scan(&r.ID, &r.Host, &r.SiteName, &r.ActiveTheme, &r.Notice,
-		&r.SeoBlob, &r.FooterBlob, &r.HomeBlob, &r.Enabled, &r.CreatedAt, &r.UpdatedAt)
+		&r.SeoBlob, &r.FooterBlob, &r.HomeBlob, &r.Enabled, &r.URLStyle, &r.LangMode, &r.CreatedAt, &r.UpdatedAt)
 	return r, err
 }
 
@@ -96,8 +99,11 @@ func serializeSiteRow(r siteRow) map[string]any {
 		"footer":      parseFooterConfig(r.FooterBlob),
 		"home":        parseHomeConfig(r.HomeBlob),
 		"enabled":     r.Enabled == 1,
-		"createdAt":   r.CreatedAt,
-		"updatedAt":   r.UpdatedAt,
+		"urlStyle":    r.URLStyle,
+		// R163: 语种模式（webLangModeNorm 归一——非法脏值归 '' 与「跟随默认站点」同语义）
+		"langMode":  webLangModeNorm(r.LangMode),
+		"createdAt": r.CreatedAt,
+		"updatedAt": r.UpdatedAt,
 	}
 }
 
@@ -106,7 +112,7 @@ func getSiteRow(id int64) (siteRow, error) {
 	var r siteRow
 	err := queryOne(`SELECT `+siteRowCols+` FROM "SiteSite" WHERE "id" = ?`,
 		[]any{&r.ID, &r.Host, &r.SiteName, &r.ActiveTheme, &r.Notice,
-			&r.SeoBlob, &r.FooterBlob, &r.HomeBlob, &r.Enabled, &r.CreatedAt, &r.UpdatedAt}, id)
+			&r.SeoBlob, &r.FooterBlob, &r.HomeBlob, &r.Enabled, &r.URLStyle, &r.LangMode, &r.CreatedAt, &r.UpdatedAt}, id)
 	return r, err
 }
 
@@ -245,7 +251,17 @@ func handleSitesPost(w http.ResponseWriter, r *http.Request, _ map[string]string
 		return
 	}
 	// seo/footer/home 建行后补写（siteJSONCols 复用 PUT 同款清洗路径）
+	// R162: 伪静态方案号同段补写（POST body 可带 urlStyle）
 	sets, args := siteJSONCols(body, sql.NullString{})
+	if n, ok := urlStyleFromBody(body); ok {
+		sets = append(sets, `"urlStyle" = ?`)
+		args = append(args, n)
+	}
+	// R163: 站群站点语种模式同段补写（POST body 可带 langMode；''=跟随默认站点）
+	if m, ok := langModeFromBody(body, true); ok {
+		sets = append(sets, `"langMode" = ?`)
+		args = append(args, m)
+	}
 	if len(sets) > 0 {
 		sets = append(sets, `"updatedAt" = ?`)
 		args = append(args, nowMillis())
@@ -267,7 +283,7 @@ func getSiteRowByHost(host string) (siteRow, error) {
 	var r siteRow
 	err := queryOne(`SELECT `+siteRowCols+` FROM "SiteSite" WHERE "host" = ?`,
 		[]any{&r.ID, &r.Host, &r.SiteName, &r.ActiveTheme, &r.Notice,
-			&r.SeoBlob, &r.FooterBlob, &r.HomeBlob, &r.Enabled, &r.CreatedAt, &r.UpdatedAt}, host)
+			&r.SeoBlob, &r.FooterBlob, &r.HomeBlob, &r.Enabled, &r.URLStyle, &r.LangMode, &r.CreatedAt, &r.UpdatedAt}, host)
 	return r, err
 }
 
@@ -348,6 +364,18 @@ func handleSitesUpdate(w http.ResponseWriter, r *http.Request, ps map[string]str
 			sets = append(sets, `"enabled" = 0`)
 		}
 	}
+	// R162: 伪静态方案号（urlstyle.go 1-18；JSON 数字宽松语义——非法/越界忽略不写不报错，
+	// 与 settings PATCH urlStyle 同款清洗）
+	if n, ok := urlStyleFromBody(body); ok {
+		sets = append(sets, `"urlStyle" = ?`)
+		args = append(args, n)
+	}
+	// R163: 站群站点语种模式（langModeFromBody allowInherit=true：''=跟随默认站点，
+	// auto/off/force:* 白名单；非法值忽略不写不报错，与 urlStyle 同款宽松语义）
+	if m, ok := langModeFromBody(body, true); ok {
+		sets = append(sets, `"langMode" = ?`)
+		args = append(args, m)
+	}
 	// seo/footer/home：与 POST 同一份白名单清洗（seo 合并旧值，footer/home 整体替换）
 	jsonSets, jsonArgs := siteJSONCols(body, cur.SeoBlob)
 	sets = append(sets, jsonSets...)
@@ -389,4 +417,54 @@ func handleSitesDelete(w http.ResponseWriter, r *http.Request, ps map[string]str
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// urlStyleFromBody R162: 请求体 urlStyle 清洗——JSON 数字（float64）转方案号，
+// 合法区间 [1, len(urlStyles)] 返回 (值, true)；缺失/非数字/越界一律 (0, false)（键不动，
+// 宽松语义对齐 geoLang/readerMode 先例）。urlstyle.go 未载入时防御 len==0 直接拒绝。
+func urlStyleFromBody(body map[string]any) (int64, bool) {
+	v, exists := body["urlStyle"]
+	if !exists || len(urlStyles) == 0 {
+		return 0, false
+	}
+	n := -1
+	switch x := v.(type) {
+	case float64:
+		n = int(x)
+	case int:
+		n = x
+	case int64:
+		n = int(x)
+	case string:
+		if parsed, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
+			n = parsed
+		}
+	}
+	if n >= 1 && n <= len(urlStyles) {
+		return int64(n), true
+	}
+	return 0, false
+}
+
+// langModeFromBody R163: 请求体 langMode 清洗（settings PATCH / sites POST/PUT 共用，
+// 与 urlStyleFromBody 同款宽松语义）。合法值 auto/off/force:*（webLangModeNorm 白名单）
+// 原样返回；站群站点（allowInherit=true）空串合法=跟随默认站点（写入 ”）；默认站点
+// 空串无意义忽略。缺失/非字符串/非法值一律 ("", false)（键不动不报错）。
+func langModeFromBody(body map[string]any, allowInherit bool) (string, bool) {
+	v, exists := body["langMode"]
+	if !exists {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	m := strings.TrimSpace(s)
+	if m == "" {
+		return "", allowInherit
+	}
+	if webLangModeNorm(m) != "" {
+		return m, true
+	}
+	return "", false
 }

@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS "SiteSetting" (
         "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         "siteName" TEXT NOT NULL DEFAULT '青阅文学',
         "activeTheme" TEXT NOT NULL DEFAULT 'aijjxs',
+        -- R162: 伪静态方案号（urlstyle.go 18 方案 1-18，1=默认动态；运行时 ensureColumn 幂等兜底存量库）
+        "urlStyle" INTEGER NOT NULL DEFAULT 1,
         "notice" TEXT NOT NULL DEFAULT '本站所有小说仅供学习演示使用，请支持正版。',
         "seoConfig" TEXT NOT NULL DEFAULT '{}',
         "footerConfig" TEXT NOT NULL DEFAULT '{}',
@@ -101,7 +103,14 @@ CREATE TABLE IF NOT EXISTS "SiteSetting" (
         "txtDir" TEXT NOT NULL DEFAULT '',
         "coversDir" TEXT NOT NULL DEFAULT '',
         -- R148: 阅读页分页模式（'' / auto=跟随设备：PC 全文滚动+移动端分页；scroll=全端全文；page=全端分页）
-        "readerMode" TEXT NOT NULL DEFAULT ''
+        "readerMode" TEXT NOT NULL DEFAULT '',
+        -- R160: 前台访客语种自动判定总闸（1=开默认 / 0=关：判定链旁路恒 zh-CN）
+        -- R163 起为 legacy 列：语种语义由 langMode 单列承载（geoLang 保留仅供数据考古/降级回滚）
+        "geoLang" INTEGER NOT NULL DEFAULT 1,
+        -- R163: 前台语种模式（auto=按访客 IP/浏览器语言自动判定【默认】 / off=恒 zh-CN /
+        -- force:zh-CN|zh-Hant|en|ja|ko=强制语种，判定链整体旁路）；取代 geoLang 布尔总闸。
+        -- 运行时 ensureColumn 幂等加列 + 存量库按 geoLang 值一次性语义迁移（0→off/1→auto）
+        "langMode" TEXT NOT NULL DEFAULT 'auto'
 );
 
 CREATE TABLE IF NOT EXISTS "PseoKeyword" (

@@ -197,14 +197,14 @@ func wheelNovelPoolCached() []map[string]string {
 //
 // 随机性=每请求抽样（不缓存随机结果——蜘蛛每次抓取发现不同内链入口，链轮价值所在）；
 // 候选池/站点列表走 TTL 缓存，DB 压力恒定。池空/查询故障 → 空切片零 DOM 痕迹。
-func gatherWheelLinks(currentHost string) []map[string]string {
-	return pickWheelSamples(wheelNovelPoolCached(), fleetSitesCached(), currentHost)
+func gatherWheelLinks(currentHost string, style int64) []map[string]string {
+	return pickWheelSamples(wheelNovelPoolCached(), fleetSitesCached(), currentHost, style)
 }
 
 // pickWheelSamples 纯抽样（可测）：rand.Perm 全量洗牌取位。
 // 防重复：usedNid 全局去重（同书不重复出现，站内/群内共享去重域）；
 // fleet-home 与 fleet-book 在随机排列上正/反向取位天然错开 host。
-func pickWheelSamples(pool, fleet []map[string]string, currentHost string) []map[string]string {
+func pickWheelSamples(pool, fleet []map[string]string, currentHost string, style int64) []map[string]string {
 	out := []map[string]string{}
 	usedNid := map[string]bool{}
 	// ① 站内随机书籍页（相对路径：无论默认站/站群命中站，恒指向本站）
@@ -220,7 +220,9 @@ func pickWheelSamples(pool, fleet []map[string]string, currentHost string) []map
 		usedNid[b["nid"]] = true
 		out = append(out, map[string]string{
 			"name": truncateRunes(strings.TrimSpace(b["title"]), footerFriendNameMax),
-			"url":  "/book/" + b["nid"],
+			// R162: 站内轮链跟随站点伪静态方案（与页面出站链接同形态；跨站 fleet-book
+			// 保持默认形态——目标站档案需额外按 host 查询，老形态入站宽容恒可达）
+			"url":  fillTmpl(urlStyleByID(style).book, map[string]string{"id": b["nid"]}),
 			"kind": "book",
 		})
 	}

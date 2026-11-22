@@ -3,7 +3,7 @@
 （品牌 + 首页/分类导航 + 内联搜索）；公告条；正文容器；居中灰字页脚。
 章节页用简化顶条（品牌 + 返回首页 + 紧凑搜索）。全部样式自包含 /static/css/ncnd.css。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

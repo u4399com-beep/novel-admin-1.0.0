@@ -3,7 +3,7 @@
 横向分类导航（选中项红橙渐变短条）+ 右侧「全部分类」下拉 + 移动端抽屉；页脚浅灰。
 配色：浅灰底 #f8f9f9 + 红橙渐变 (#ff9800→#ff2a14) 强调。 */}}
 {{define "layout"}}{{$path := .Path}}<!doctype html>
-<html lang="zh-CN">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

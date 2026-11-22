@@ -6,7 +6,7 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
 交互内联本文件 + /static/js/jiuxiaozw.js；数据契约见 web_data.go（与 jiuxiao 完全一致，零后端面改动）。
 站外功能（论坛/书架/登录/创作）无数据面不渲染假块——与 R140 立场一致。 */}}
 {{define "layout"}}{{$path := .Path}}{{$sn := .Site.siteName}}<!doctype html>
-<html lang="zh">
+<html lang="{{.LangAttr}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -21,42 +21,42 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
 <style>/* 首屏日夜闪避：localStorage 已存夜间时先于渲染应用 .dark */(function(){try{if(localStorage.getItem('jxzw-theme')==='dark'){document.documentElement.classList.add('dark')}}catch(e){}})();</style>
 </head>
 <body class="vLZL9q_variable">
-{{if not .Chapter}}<nav class="dn hidden md:block sticky top-0 z-50" aria-label="桌面导航">
+{{if not .Chapter}}<nav class="dn hidden md:block sticky top-0 z-50" aria-label="{{T $.Lang "桌面导航"}}">
   <div class="dn-in">
     <div class="dn-start">
-      <a class="dn-brand" href="/" aria-label="{{$sn}}首页">
+      <a class="dn-brand" href="/" aria-label="{{$sn}}{{T $.Lang "首页"}}">
         <img alt="Logo" width="30" height="30" decoding="async" src="/static/icon.png?v={{staticVer}}">
         <span class="dn-name">{{$sn}}</span>
       </a>
       <form role="search" autocomplete="off" class="book-search book-search--navbar" action="/search" method="get">
         <div class="book-search-field">
           <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search" aria-hidden="true"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg>
-          <input type="search" role="combobox" aria-label="搜索书名或作者" aria-autocomplete="list" placeholder="搜索书名、作者" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" maxlength="100" name="q" value="{{.Q}}">
+          <input type="search" role="combobox" aria-label="{{T .Lang "搜索书名或作者"}}" aria-autocomplete="list" placeholder="{{T .Lang "搜索书名、作者"}}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" maxlength="100" name="q" value="{{.Q}}">
         </div>
       </form>
       <div class="dn-right">
-        <button type="button" class="site-theme-toggle" aria-label="切换日间/夜间模式" title="日/夜模式切换" aria-pressed="false">
+        <button type="button" class="site-theme-toggle" aria-label="{{T $.Lang "切换日间/夜间模式"}}" title="{{T $.Lang "日/夜模式切换"}}" aria-pressed="false">
           <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sun site-theme-sun" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
           <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon site-theme-moon" aria-hidden="true"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></svg>
         </button>
       </div>
     </div>
   </div>
-  <nav class="dn dn-sections hidden md:block" aria-label="栏目导航">
+  <nav class="dn dn-sections hidden md:block" aria-label="{{T $.Lang "栏目导航"}}">
     <div class="dn-sections-in">
-      <a{{if eq $path "/"}} aria-current="page"{{end}} href="/">首页</a>
-      <a{{if eq $path "/search"}} aria-current="page"{{end}} href="/search">搜索</a>
+      <a{{if eq $path "/"}} aria-current="page"{{end}} href="/">{{T $.Lang "首页"}}</a>
+      <a{{if eq $path "/search"}} aria-current="page"{{end}} href="/search">{{T $.Lang "搜索"}}</a>
       <span class="dn-sections-rule" aria-hidden="true"></span>
       <div class="dn-categories">
-        <button type="button" class="dn-minor" aria-expanded="false" aria-controls="dn-category-menu">分类
+        <button type="button" class="dn-minor" aria-expanded="false" aria-controls="dn-category-menu">{{T $.Lang "分类"}}
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
         </button>
         <div id="dn-category-menu" class="dn-category-menu" hidden>
           {{range .Nav}}<a href="{{catURL .id}}">{{.name}}</a>{{end}}
         </div>
       </div>
-      <a class="dn-minor" href="/#jxzw-latest">最近更新</a>
-      <a class="dn-minor" href="/#jxzw-finished">完本</a>
+      <a class="dn-minor" href="/#jxzw-latest">{{T $.Lang "最近更新"}}</a>
+      <a class="dn-minor" href="/#jxzw-finished">{{T $.Lang "完本"}}</a>
     </div>
   </nav>
 </nav>{{end}}
@@ -66,28 +66,28 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
     <div class="grid md:grid-cols-4 gap-8">
       <div class="space-y-2 md:space-y-4">
         <h3 class="text-base md:text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">{{$sn}}</h3>
-        <p data-site-description="true" class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed md:max-w-xs">{{$sn}}提供玄幻、仙侠、都市、历史等小说免费在线阅读。查看作品简介、章节目录和最新更新，通过热门推荐与排行榜发现好书。</p>
+        <p data-site-description="true" class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed md:max-w-xs">{{$sn}}{{T .Lang "提供玄幻、仙侠、都市、历史等小说免费在线阅读。查看作品简介、章节目录和最新更新，通过热门推荐与排行榜发现好书。"}}</p>
       </div>
       <div class="hidden md:block space-y-4" data-nosnippet>
-        <h3 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100">快速导航</h3>
+        <h3 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100">{{T $.Lang "快速导航"}}</h3>
         <ul class="space-y-2 text-sm text-gray-500 dark:text-gray-400">
-          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-rank">排行榜</a></li>
-          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-lists">书单</a></li>
-          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-latest">最近更新</a></li>
-          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-finished">完本小说</a></li>
-          <li><a class="hover:text-blue-600 transition-colors" href="/sitemap.xml">站点地图</a></li>
+          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-rank">{{T $.Lang "排行榜"}}</a></li>
+          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-lists">{{T $.Lang "书单"}}</a></li>
+          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-latest">{{T $.Lang "最近更新"}}</a></li>
+          <li><a class="hover:text-blue-600 transition-colors" href="/#jxzw-finished">{{T $.Lang "完本小说"}}</a></li>
+          <li><a class="hover:text-blue-600 transition-colors" href="/sitemap.xml">{{T $.Lang "站点地图"}}</a></li>
         </ul>
       </div>
-      <nav aria-label="分类浏览" class="block space-y-2 md:space-y-4" data-nosnippet>
-        <h3 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100">分类浏览</h3>
+      <nav aria-label="{{T $.Lang "分类浏览"}}" class="block space-y-2 md:space-y-4" data-nosnippet>
+        <h3 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100">{{T $.Lang "分类浏览"}}</h3>
         <ul class="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
           {{range .Nav}}<li><a class="hover:text-blue-600 transition-colors" href="{{catURL .id}}">{{.name}}</a></li>{{end}}
-          <li class="md:hidden"><a class="hover:text-blue-600 transition-colors" href="/#jxzw-latest">最近更新</a></li>
-          <li class="md:hidden"><a class="hover:text-blue-600 transition-colors" href="/#jxzw-finished">完本</a></li>
+          <li class="md:hidden"><a class="hover:text-blue-600 transition-colors" href="/#jxzw-latest">{{T $.Lang "最近更新"}}</a></li>
+          <li class="md:hidden"><a class="hover:text-blue-600 transition-colors" href="/#jxzw-finished">{{T $.Lang "完本"}}</a></li>
         </ul>
       </nav>
       <div class="hidden md:block space-y-4" data-nosnippet>
-        <h3 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 flex items-center gap-2">友情链接
+        <h3 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 flex items-center gap-2">{{T $.Lang "友情链接"}}
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-external-link w-3 h-3 opacity-50" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>
         </h3>
         <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
@@ -95,7 +95,7 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
           {{range .WheelLinks}}<a href="{{.url}}">{{.name}}</a>{{end}}
           {{range .Site.footerLinks}}<a href="{{.url}}" rel="nofollow">{{.label}}</a>{{end}}
         </div>
-        {{if .FleetLinks}}<p class="text-sm font-bold text-gray-900 dark:text-gray-100 mt-3">站群导航</p>
+        {{if .FleetLinks}}<p class="text-sm font-bold text-gray-900 dark:text-gray-100 mt-3">{{T $.Lang "站群导航"}}</p>
         <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
           {{range .FleetLinks}}<a href="{{.url}}" target="_blank" rel="noopener noreferrer">{{.siteName}}</a>{{end}}
         </div>{{end}}
@@ -104,9 +104,9 @@ Jiutian List Serif 自带字体 + reader-paper-v2 纸纹均本地化。
     <div data-nosnippet class="mt-0 md:mt-8 pt-2 md:pt-8 md:border-t md:border-gray-100 dark:md:border-[#333] flex flex-col md:flex-row justify-between items-center gap-2 md:gap-4">
       <div class="text-center md:text-left flex flex-col items-center md:items-start">
         <p class="text-[10px] md:text-xs text-gray-400">&copy; 2026 {{$sn}}.</p>
-        <p class="text-[10px] text-gray-400 md:text-gray-500 mt-1 max-w-md md:scale-90 md:origin-left text-center md:text-left">{{if .FleetLinks}}站群：{{range $i, $f := .FleetLinks}}{{if $i}} · {{end}}<a href="{{$f.url}}" target="_blank" rel="noopener noreferrer">{{$f.siteName}}</a>{{end}}{{else if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}{{$sn}} - 专注极速阅读体验{{end}}</p>
+        <p class="text-[10px] text-gray-400 md:text-gray-500 mt-1 max-w-md md:scale-90 md:origin-left text-center md:text-left">{{if .FleetLinks}}{{T .Lang "站群："}}{{range $i, $f := .FleetLinks}}{{if $i}} · {{end}}<a href="{{$f.url}}" target="_blank" rel="noopener noreferrer">{{$f.siteName}}</a>{{end}}{{else if .Site.footerExtra}}{{.Site.footerExtra}}{{else}}{{$sn}} - {{T .Lang "专注极速阅读体验"}}{{end}}</p>
       </div>
-      <nav aria-label="站点信息" class="flex items-center gap-3 text-[11px] md:text-xs text-gray-400 md:text-gray-500">
+      <nav aria-label="{{T $.Lang "站点信息"}}" class="flex items-center gap-3 text-[11px] md:text-xs text-gray-400 md:text-gray-500">
         <span>{{.Site.notice}}</span>
       </nav>
     </div>
