@@ -25,6 +25,16 @@ if [ -f "$ROOT/mini-services/translate-service/index.ts" ] \
     fi
   fi
 fi
+# libretranslate（R168：LibreTranslate 兜底引擎 :5000，LLM 失败段垫底；可选组件不进 OK
+# 早退，拉起模式与 stealth/translate 同构。libretranslate 未安装时 run.sh 日志明示，
+# translate-service 探针熔断自动跳过 libre——不阻塞主链路）
+if [ -x "$HOME/.venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
+  if ! curl -s --max-time 2 http://127.0.0.1:5000/languages >/dev/null 2>&1; then
+    if ! pgrep -f 'libretranslate/run.sh' >/dev/null 2>&1; then
+      (cd "$ROOT/mini-services/libretranslate" && nohup ./run.sh >>/tmp/libretranslate.log 2>&1 &)
+    fi
+  fi
+fi
 [ "$OK" = "1" ] && exit 0
 # backend
 if ! curl -s --max-time 2 http://127.0.0.1:3000/api/health | rg -q '"ok":true'; then

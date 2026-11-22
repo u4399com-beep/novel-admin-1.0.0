@@ -26,9 +26,11 @@
  *   - GEO_LANG_OFF=1 或默认站点 langMode=off（恒 zh-CN）→ 长睡巡检（外语渲染关停
  *     = 无预热需求，省配额；admin 改回 auto/force 后下一轮巡检自动恢复）。
  *
- * 自适应节流（429 配额友好）：
+ * 自适应节流（429 配额友好；R168 libre 兜底升级）：
  *   - 本轮有译文产出 → 片间 2s + 轮间 3s（持续推进）；
- *   - 本轮零成功（429 枯竭期，服务端 ok:true 全空段形态）→ 轮间 90s 等待配额窗口；
+ *   - 本轮零成功（429 枯竭期，服务端 ok:true 全空段形态）→ 不再干睡 90s——改走
+ *     LibreTranslate 兜底引擎垫底落库（libre 前缀键，LLM 恢复后自动升级），
+ *     libre 也不可用时维持 90s 等待配额窗口；
  *   - 上游网络错误 → 轮间 30s。
  * 游标到尾即回零循环巡检——采集新入库书（fleet runner 扩池）与 admin 改动的简介
  * 自然进入下一轮队列，无需事件通知。
@@ -55,11 +57,12 @@ var (
 	prefetchCursor  int64  // Novel.id 游标（分页推进，尾部回零）
 	prefetchLang    string // 当前轮语种
 	prefetchStats   struct {
-		batches    int64  // 累计上游批次数
-		translated int64  // 累计译文产出段数
-		misses     int64  // 累计扫描到的未翻段数
-		lastRunAt  string // 最近一轮完成时间（UTC）
-		lastError  string // 最近一次上游错误（空=无）
+		batches         int64  // 累计上游批次数
+		translated      int64  // 累计译文产出段数
+		misses          int64  // 累计扫描到的未翻段数
+		lastRunAt       string // 最近一轮完成时间（UTC）
+		lastError       string // 最近一次上游错误（空=无）
+		libreTranslated int64  // R168：libre 垘底产出段数（LLM 枯竭期兜底）
 	}
 )
 
@@ -244,7 +247,8 @@ func i18nPrefetchRound(langIdx *int) time.Duration {
 	prefetchStats.lastError = networkErr
 	prefetchMu.Unlock()
 
-	// 自适应节流：有产出持续推进；429 枯竭期（零产出+服务端 ok 全空段）长睡等窗口；
+	// 自适应节流：有产出持续推进；429 枯竭期（零产出+服务端 ok 全空段）不再干睡——
+	// R168：改走 libre 兜底垫底落库（0.6s/段无限量），libre 也不可用时维持 90s 长睡；
 	// 网络错误 30s 重试
 	if produced > 0 {
 		return 3 * time.Second
@@ -252,7 +256,73 @@ func i18nPrefetchRound(langIdx *int) time.Duration {
 	if networkErr != "" {
 		return 30 * time.Second
 	}
+	// R168：LLM 枯竭期（服务端 ok:true 全空段形态）→ libre 垘底
+	libreProduced := i18nPrefetchLibreFallback(lang, miss)
+	prefetchMu.Lock()
+	prefetchStats.libreTranslated += libreProduced
+	prefetchMu.Unlock()
+	if libreProduced > 0 {
+		return 3 * time.Second // libre 无配额限制，继续推进
+	}
 	return 90 * time.Second
+}
+
+// i18nPrefetchLibreFallback R168：LLM 枯竭期（429 窗口）libre 兜底——miss 段经
+// translate-service engine=libre 批量翻译（Argos/ctranslate2 CPU 推理，0.6s/段无限量），
+// 成功段落 libre 前缀键落库（不落普通键不覆盖 short LRU——LLM 恢复后预热器照常
+// 翻译落库自动升级）。已垫底段先过滤（防 LLM 枯竭期每轮重复翻译空转 CPU）。
+func i18nPrefetchLibreFallback(lang string, miss []string) int64 {
+	if len(miss) == 0 {
+		return 0
+	}
+	// 过滤已 libre 垫底段（libre 键命中=已垫底，跳过）
+	lkeys := make([]string, len(miss))
+	for i, t := range miss {
+		lkeys[i] = translateCacheKeyLibre(t, lang)
+	}
+	lmap := translateCacheGet(lkeys)
+	todo := make([]string, 0, len(miss))
+	for i, t := range miss {
+		if c, ok := lmap[lkeys[i]]; !ok || c == "" {
+			todo = append(todo, t)
+		}
+	}
+	if len(todo) == 0 {
+		return 0
+	}
+
+	produced := int64(0)
+	for start := 0; start < len(todo); start += i18nWarmChunk {
+		end := start + i18nWarmChunk
+		if end > len(todo) {
+			end = len(todo)
+		}
+		batch := todo[start:end]
+		orig := translateUpstreamClient
+		translateUpstreamClient = i18nPrefetchClient
+		res, err := translateUpstreamEngine(lang, batch, nil, "libre")
+		translateUpstreamClient = orig
+		if err != nil {
+			log.Printf("[prefetch] libre fallback FAIL: %v", err)
+			break // libre 也不可用（未部署/熔断）：止损等下轮
+		}
+		keys := make([]string, len(batch))
+		idx := make([]int, 0, len(batch))
+		for i, t := range batch {
+			keys[i] = translateCacheKeyLibre(t, lang)
+			if i < len(res) && res[i] != "" {
+				idx = append(idx, i)
+				produced++
+			}
+		}
+		if len(idx) > 0 {
+			translateCachePut(batch, keys, res, idx, 0)
+		}
+		if end < len(todo) {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	return produced
 }
 
 // handleTranslatePrefetchStatus GET /api/translate/prefetch/status——工作器观测面
@@ -266,11 +336,12 @@ func handleTranslatePrefetchStatus(w http.ResponseWriter, r *http.Request, ps ma
 		"lang":    prefetchLang,
 		"targets": i18nPrefetchTargets,
 		"stats": map[string]any{
-			"batches":    prefetchStats.batches,
-			"translated": prefetchStats.translated,
-			"misses":     prefetchStats.misses,
-			"lastRunAt":  prefetchStats.lastRunAt,
-			"lastError":  prefetchStats.lastError,
+			"batches":         prefetchStats.batches,
+			"translated":      prefetchStats.translated,
+			"misses":          prefetchStats.misses,
+			"lastRunAt":       prefetchStats.lastRunAt,
+			"lastError":       prefetchStats.lastError,
+			"libreTranslated": prefetchStats.libreTranslated, // R168
 		},
 	})
 }

@@ -23,6 +23,7 @@
 #   [7/9] 翻译侧车 R137 新增（可选，失败不阻塞）：bun + opencc-js/z-ai-web-dev-sdk
 #                      （npmmirror 镜像）——阅读页繁体（OpenCC 本地）/英文（LLM）翻译，
 #                      缺失时 /api/translate 返回 503 阅读功能不受影响
+#                      R168: WITH_LIBRE=1 可选装 LibreTranslate 兜底引擎（:5000，LLM 失败段垫底）
 #   [8/9] 启动 + 看护  默认 nohup+watchdog 自愈循环；--systemd 用 systemd 托管（推荐生产）
 #   [9/9] 健康检查     /api/health + /api/strategies + translate :3032，空库首次启动自动建表+播种
 # 数据安全：DB(db/custom.db)、封面(public/covers)、TXT(download/novels) 全在 repo 内，
@@ -336,6 +337,24 @@ else
     fi
   else
     warn "bun 运行时不可用且自动安装失败：跳过 translate 侧车（阅读功能不受影响，可重跑补装）"
+  fi
+  # ③ libre 兜底引擎（R168，可选：WITH_LIBRE=1 启用）——LibreTranslate/Argos CPU 推理，
+  #    LLM 枯竭/失败段垫底保证翻译永不空白（0.6s/段无限量）。默认不装（370MB 模型），
+  #    LLM 主引擎不依赖它；未部署时 translate-service 探针熔断自动跳过。
+  if [ "${WITH_LIBRE:-0}" = "1" ]; then
+    echo "  安装 LibreTranslate 兜底引擎（pip 镜像链）..."
+    pip3 install libretranslate -i https://mirrors.aliyun.com/pypi/simple/ >/dev/null 2>&1 \
+      || pip3 install libretranslate >/dev/null 2>&1 || true
+    if command -v libretranslate >/dev/null 2>&1 || [ -x "$HOME/.venv/bin/libretranslate" ]; then
+      echo "  下载 libre 四模型+句切（~370MB，断点续传，最长数分钟）..."
+      bash "$ROOT/mini-services/libretranslate/install-models.sh" >/dev/null 2>&1 \
+        && ok "libre 兜底引擎就绪（zh↔en/en↔ja/en↔ko 模型+句切，:5000 内网）" \
+        || warn "libre 模型安装失败（重跑 mini-services/libretranslate/install-models.sh 补装）"
+    else
+      warn "libretranslate 安装失败（跳过兜底引擎；LLM 主链不受影响，可重跑补装）"
+    fi
+  else
+    ok "libre 兜底引擎未启用（WITH_LIBRE=1 可选装；LLM 主引擎不受影响）"
   fi
 fi
 

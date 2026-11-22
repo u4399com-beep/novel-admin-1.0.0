@@ -132,6 +132,13 @@ func translateCacheKey(text, target string) string {
 	return hex.EncodeToString(sum[:]) + "|" + target
 }
 
+// translateCacheKeyLibre libre 垘底缓存键（R168）：前缀隔离防固化——
+// LibreTranslate 垘底译文与 LLM 文学译文同 key 会让半吊子译文永久挡住升级
+// （缓存命中短路）；双层键让 LLM 落库普通键后读端自动切换优质译文（渐进升级）。
+func translateCacheKeyLibre(text, target string) string {
+	return "libre|" + translateCacheKey(text, target)
+}
+
 // translateCacheGet 批量查缓存（IN 分批 90 段，SQLite 参数上限 999 内安全）
 func translateCacheGet(keys []string) map[string]string {
 	out := make(map[string]string, len(keys))
@@ -182,9 +189,18 @@ var translateUpstreamClient = &http.Client{Timeout: translateUpstreamTimeout}
 
 // translateUpstream 转发上游 /api/translate，返回 results 数组（失败段为空串）
 func translateUpstream(target string, texts []string, ctx map[string]string) ([]string, error) {
+	return translateUpstreamEngine(target, texts, ctx, "")
+}
+
+// translateUpstreamEngine R168：engine 透传（libre=预热器 429 熔断期垗底模式；
+// 空=auto 旧行为）。backend 不感知引擎实现细节，仅转发选择。
+func translateUpstreamEngine(target string, texts []string, ctx map[string]string, engine string) ([]string, error) {
 	body := map[string]any{"target": target, "items": texts}
 	if ctx["novelTitle"] != "" || ctx["chapterTitle"] != "" {
 		body["context"] = ctx
+	}
+	if engine != "" {
+		body["engine"] = engine
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -299,6 +315,7 @@ func handleTranslatePost(w http.ResponseWriter, r *http.Request, _ map[string]st
 	}
 	hits := translateCacheGet(needLookup)
 	cached := 0
+	libreHits := 0
 	for i := range texts {
 		if results[i] != "" {
 			continue
@@ -310,9 +327,29 @@ func handleTranslatePost(w http.ResponseWriter, r *http.Request, _ map[string]st
 			missIdx = append(missIdx, i)
 		}
 	}
+	// R168：libre 垫底层二级查询——普通键 miss 后查 libre 键，命中即垫底返回
+	//（有译文胜过等待 LLM 30-90s/空白）；不回写普通键（LLM 预热落库后自然升级，
+	// 下次访问即读优质译文）。垫底段不计入转发上游的 missIdx。
+	if len(missIdx) > 0 {
+		libreKeys := make([]string, 0, len(missIdx))
+		for _, i := range missIdx {
+			libreKeys = append(libreKeys, translateCacheKeyLibre(texts[i], body.Target))
+		}
+		libreMap := translateCacheGet(libreKeys)
+		stillMiss := make([]int, 0, len(missIdx))
+		for _, i := range missIdx {
+			if c, ok := libreMap[translateCacheKeyLibre(texts[i], body.Target)]; ok && c != "" {
+				results[i] = c
+				libreHits++
+			} else {
+				stillMiss = append(stillMiss, i)
+			}
+		}
+		missIdx = stillMiss
+	}
 	if len(missIdx) == 0 {
 		writeJSON(w, 200, map[string]any{"ok": true, "target": body.Target, "results": results,
-			"cached": cached, "translated": 0, "failedCount": 0})
+			"cached": cached, "translated": 0, "failedCount": 0, "libreFallback": libreHits})
 		return
 	}
 
@@ -342,7 +379,7 @@ func handleTranslatePost(w http.ResponseWriter, r *http.Request, _ map[string]st
 	translateCachePut(texts, keys, results, missIdx, novelID)
 
 	writeJSON(w, 200, map[string]any{"ok": true, "target": body.Target, "results": results,
-		"cached": cached, "translated": len(missIdx), "failedCount": failed})
+		"cached": cached, "translated": len(missIdx), "failedCount": failed, "libreFallback": libreHits})
 }
 
 func handleTranslateHealth(w http.ResponseWriter, r *http.Request, _ map[string]string) {

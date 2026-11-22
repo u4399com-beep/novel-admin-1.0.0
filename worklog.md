@@ -5782,3 +5782,24 @@ Stage Summary:
 - 工作器与 R139 成本闸边界清晰：元数据闭集全翻（~1300 书×4 字段×3 语种）+正文维持访问驱动——页面可见面全兼顾且成本可控
 - 短串优先调度：配额窗口内优先覆盖首页/列表必显面（书名/作者/章题），书页简介二优先级——窗口期用户体验最大化
 - 移交下一轮：①PAT 第 32 次提醒（九轮提交积压+push 网络挂起）②LLM 配额窗口观测（worker status API 可监控 translated 曲线）③admin 页可加预热进度卡（status API 已就绪，UI 待做）④1.4M 正文全翻维持 R139 判断不自动预热 ⑤worker 扫序可改两遍轮（updatedAt DESC 最新可见书优先——可选优化未做）
+
+---
+
+Task ID: R168
+Agent: Z.ai Code (main)
+Task: 研究一下能不能对接开源、可本地部署的翻译工具 LibreTranslate（用户指令）——对接完成：libre 兜底引擎全链上线（translate-service 引擎链+预热器枯竭期垫底+守护体系+一键安装）
+
+Work Log:
+- 【R168-a 调研：依赖树实测（PyPI JSON API 权威源）】沙箱网络严苛（GitHub 挂起/HF 拒连/libretranslate.com CF 挡/argosopentech S3 bucket 已废弃 NoSuchBucket），pypi.org 索引可读但 files.pythonhosted CDN 慢滞、清华镜像包文件 403——**阿里云镜像 6 秒装完**。关键发现：LibreTranslate 1.9.6 依赖的是官方 fork `argos-translate-lt 1.12.1`（**ctranslate2+sentencepiece+minisbd，无 torch/stanza/spacy**，LibreTranslate 官方早已摆脱重依赖）——pip install libretranslate 全家桶 16.8s 落地。模型通道：argospm-index（GitHub raw 经 ghfast.top 代理）→ 模型文件 argos-net.com **直连可达**，四模型 zh_en/en_zh/en_ja/en_ko 共 367MB 断点续传下毕；minisbd 句切 onnx（188-700KB×4）走 gh 代理。语言对：zh↔en/en↔ja/en↔ko 直接对，**zh→ja/ko 由 LibreTranslate 1.9.6 内置 auto-pivot（API 直发 zh-Hans→ja，内部经 en 两跳）**——/languages 实证 targets 含 ja/ko。
+- 【R168-b 质量定性（定位决策核心数据）】argos 直调实测：zh→en 0.6s/段通用级可用；**zh→ja pivot 两跳失真严重**（「被家族长辈看不起」→「家族が亡くなりました」）；zh→ko 生硬（词义错）。结论：**libre 定位=兜底/加速器，不替代 LLM 文学质量**——LLM 仍主引擎（质量），libre 管「LLM 挂了/枯竭时翻译永不空白」+预热收敛加速（0.6s/段无限量 vs LLM 30-90s/段受 429）。zh-Hant 不走 libre（OpenCC 词典转换质量更高零成本）。
+- 【R168-c mini-services/libretranslate 四件套】run.sh（flock 单实例+崩溃 2s 重启循环，:5000 仅 127.0.0.1 内网同 translate-service 定位；LT_ARGS 透传；--update-models 布尔旗标坑修复）；install-models.sh（pip 镜像链引导+四模型断点续传×5 重试+argos package.install_from_path 幂等安装+minisbd 句切预置——首翻惰性下载会卡死离线环境）；requirements.txt（libretranslate==1.9.6）；README.md（部署四步+模型通道备忘+质量观测+与 LLM 关系表）。
+- 【R168-d translate-service libre 引擎集成（对接核心）】LT_URL 环境变量可指向任何自部署实例（含远程 GPU）；translateLibre 客户端（q 数组单次调用标准协议/90s 批超时/长度校验）；**engine 三态**（POST body.engine：缺省 auto=LLM 先行+失败段 libre 垫底/llm=旧行为/libre=全批 libre）——auto 兜底与 engine=libre 全批均**不落 LRU 防半吊子固化**（LLM 恢复后自然升级）；SDK 缺失时 auto 改走 libre 兜底不再硬 503；**熔断探针**（3 连败→5min 冷却）+**冷却期低频后台探针**（60s 一次异步探活成功立即解除，恢复延迟 5min→≤60s 不阻塞读者请求）；health 加 libre/libreUrl/engine 观测，stats 加 libreCalls/libreFallbacks。实测：en 批量/ja pivot/ko pivot 全通，熔断 3 连败快速失败+health libre:false+探针恢复全验证。
+- 【R168-e backend 预热器与读端垫底层】①**libre| 前缀双层缓存键**（translateCacheKeyLibre）——垫底译文与 LLM 译文同 key 会永久挡住升级，双层键让 LLM 落库后读端自动切换优质译文（渐进升级哲学落地）；②读者读端两级查询（api_translate.go handleTranslatePost：普通键 miss→libre 键命中即垫底返回，`libreFallback` 响应字段观测，垫底段不转发上游不烧配额；不回写普通键防固化）——端到端实证：手工插 libre 键→请求回垫底译文+libreFallback:1+translated:0；③R167 预热工作器 429 枯竭期升级：不再干睡 90s——`i18nPrefetchLibreFallback`（engine=libre 批量垫底落 libre 键+已垫底段过滤防重复空转 CPU+libre 也不可用才 90s 长睡），libreTranslated 观测字段入库 status API；④deploy-cn [7/9] 翻译侧车段并入 libre 可选安装（`WITH_LIBRE=1` 启用，默认不装 370MB 模型——LLM 主引擎零依赖）。
+- 【R168-f 守护体系与常设⑥】ensure-services.sh 加 libretranslate 拉起段（未安装时 run.sh 自身退出不拉起风暴）；watchdog-services.sh 加守护（/languages 数组探活适配「code」键匹配+未安装 1h 暂缓+模型冷启动 15s 由连败闸/冷却双闸吸收）；bootstrap-cn 一键命令形态零变化（可选项走 WITH_LIBRE 环境变量）——常设⑥核查完成。全脚本 bash -n 语法过。
+- 【R168-g 质量闸与回归】gofmt/vet 零输出+全量 test 73.55s PASS；en title「Qingyue Literature - Free Novel Reading」/zh-Hant 全繁无回归（静态字典路径零影响）；prefetch status 正常轮转（libreTranslated 字段上线）；沙箱清杀手对策遵循项目既有 ensure 模式（run.sh 重启环+flock+每调用开头 ensure——历史进程 03:13 会话存活实证，新拉起走同款通道）。
+
+Stage Summary:
+- LibreTranslate 对接研究完成且全链落地：**调研结论=完全可行且代价极低**（fork 已去 torch、pip 16.8s+模型 367MB、CPU 推理 0.6s/段无限量免费），**对接形态=translate-service 引擎链**（backend-go 契约零变化，LT_URL 可指任何自部署实例含远程 GPU）
+- 工程价值直击 R164/R167 痛点：LLM 429 枯竭期（动态面收敛慢的根因）由「干睡 90s」升级为「libre 无限量垫底推进」——en/ja/ko 动态串收敛速度从配额窗口约束解放为 CPU 约束；读者视角翻译永不空白（垫底译文秒回 vs 等待/失败）
+- 质量分层设计诚实：libre 结果 libre| 前缀键隔离不固化——LLM 恢复后自动升级（渐进哲学第三落点：静态字典/LLM 落库/libre 垫底三层质量阶梯）
+- 移交下一轮：①PAT 第 33 次提醒（R160~R168 十轮提交积压本地+push 网络挂起）②预热器 libreTranslated 曲线观测（LLM 枯竭窗口触发时可验证加速效果）③libre ja/ko pivot 质量天花板=en 中转两跳（社区 zh→ja 直接模型出现时可换装升级）④zh-Hant 维持 OpenCC 不走 libre（质量更高）⑤deploy-cn 默认不装 libre（WITH_LIBRE=1 可选）——生产部署文档可补一段兜底引擎说明（docs/deployment.md 待补）

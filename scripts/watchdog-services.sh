@@ -62,6 +62,8 @@ restart() { # name probe_url probe_timeout
   body=$(curl -s --max-time "$timeout" "$url" 2>/dev/null) || body=""
   case "$body" in
     *'"ok":true'*|'"ok": *true'*) ok=1 ;;
+    # R168：libretranslate /languages 返回数组（无 ok 字段），用 code 键识别
+    *'"code":'*) ok=1 ;;
   esac
   if [ "$ok" = 1 ]; then
     if [ "${FAILS[$name]:-0}" -gt 0 ]; then
@@ -105,6 +107,15 @@ restart() { # name probe_url probe_timeout
     stealth)
       (cd "$ROOT/mini-services/stealth-service" && nohup bash run.sh >>/tmp/stealth.log 2>&1 9>&- &)
       ;;
+    libretranslate)
+      # R168：LibreTranslate 兜底引擎 :5000（未安装时 run.sh 自身退出，不拉起风暴）
+      if [ -x "$HOME/.venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
+        (cd "$ROOT/mini-services/libretranslate" && nohup bash run.sh >>/tmp/libretranslate.log 2>&1 9>&- &)
+      else
+        LAST_RESTART[$name]=$(( $(now_s) + 3600 )) # 未安装：1h 内不再尝试
+        echo "[$(date +%H:%M:%S)] libretranslate 未安装（pip install libretranslate + bash install-models.sh），暂缓守护"
+      fi
+      ;;
   esac
   echo "[$(date +%H:%M:%S)] restarted $name（连败 $FAIL_STRIKES 次达阈值，冷却 ${RESTART_COOLDOWN_S}s）"
 }
@@ -114,5 +125,6 @@ while true; do
   restart backend  http://127.0.0.1:3000/api/health "$PROBE_TIMEOUT_BACKEND"
   restart scraper  http://127.0.0.1:3030/api/health "$PROBE_TIMEOUT_SCRAPER"
   restart stealth  http://127.0.0.1:3031/health     "$PROBE_TIMEOUT_STEALTH"
+  restart libretranslate http://127.0.0.1:5000/languages "$PROBE_TIMEOUT_STEALTH" # R168：模型冷启动 15s，连败闸+冷却防误重启
   sleep 8
 done

@@ -9,7 +9,15 @@
  *   - en（英文）：z-ai-web-dev-sdk LLM 文学翻译——段落编号批量（8 段/批），批间并发
  *     上限 2，解析失败段单段降级重试；SDK 不可用时 llm=false 明确报错（不编造）。
  *   - ja（日文，R138）：同 LLM 通道，人名保留汉字（prompt namesHint 按语种注入）。
+ *   - libre（R168）：LibreTranslate 兜底引擎（127.0.0.1:5000 内网，Argos/ctranslate2 CPU
+ *     推理，无 torch）——LLM 失败段（429/枯竭/超时）自动垫底，保证全站翻译永不空白。
+ *     libre 结果不写 LRU（防半吊子译文固化挡住 LLM 后续升级）。
  *   - 其余语种预留：targets 表驱动，后续加语种只需注册（prompt + 校验），API 不变。
+ *
+ * 引擎选择（R168，POST body 新增可选 engine 字段）：
+ *   - engine 缺省/"auto"：LLM 先行（文学质量首选）→ 失败段 libre 垫底；
+ *   - engine="llm"：纯 LLM，失败段留空（旧行为，回退开关）；
+ *   - engine="libre"：全批 libre（预热工作器 429 熔断期使用，0.6s/段无限量快速垫底）。
  *
  * 缓存分层（性能契约）：
  *   - 本服务：进程内 LRU（容量 2000）——热章重读零计算；
@@ -43,6 +51,21 @@ const LLM_MIN_ATTEMPT_MS = 8_000;
 const MAX_ITEMS = 300; // R137 实测长章 109+ 段常态；成本主闸是 MAX_TOTAL_CHARS
 const MAX_ITEM_CHARS = 10_000;
 const MAX_TOTAL_CHARS = 120_000;
+
+/** R168：LibreTranslate 兜底引擎配置（127.0.0.1:5000 内网，LibreTranslate 标准协议）。
+ *  LT_URL 可指向任何自部署实例（含远程 GPU 服务器）；探针熔断 3 连败 → 5min 冷却。 */
+const LT_URL = (globalThis as Record<string, unknown>).process
+  ? ((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.LT_URL || 'http://127.0.0.1:5000')
+  : 'http://127.0.0.1:5000';
+const LT_BATCH_TIMEOUT_MS = 90_000;  // pivot 两跳较慢（zh→ja 实测 ~6s/段），批量上限 90s
+const LT_COOLDOWN_MS = 5 * 60_000;   // 熔断冷却：3 连败后 5min 内不再尝试
+const LT_MAX_FAILS = 3;
+/** libre 支持的目标语种映射（zh-Hant/zh-HK 不走 libre：OpenCC 词典转换质量更高零成本） */
+const LT_TARGETS: Record<string, string> = { 'en': 'en', 'ja': 'ja', 'ko': 'ko' };
+const LT_SOURCE = 'zh-Hans'; // 站内内容源固定简中
+
+/** libre 熔断状态（进程内）：probing/lastProbe 支撑冷却期低频后台探针 */
+const libreState = { fails: 0, downUntil: 0, probing: false, lastProbe: 0 };
 
 /** 支持的目标语种注册表：转换器/prompt 表驱动，加语种只动这里（API 契约不变，R138 扩展） */
 const TARGETS: Record<string, { label: string; engine: 'opencc' | 'llm'; conv?: string; lang?: string; namesHint?: string }> = {
@@ -79,6 +102,90 @@ async function getLLM() {
     console.log('[translate] LLM init FAIL:', e instanceof Error ? e.message : e);
   }
   return zai;
+}
+
+// ==================== LibreTranslate 客户端（R168 兜底引擎） ====================
+
+/** libre 健康判定：熔断冷却期内视为不可用（探针惰性，失败计数即探针）。
+ *  R168 补强：冷却期内低频后台探针（60s 一次，异步不阻塞读者请求）——探活成功
+ *  立即解除熔断，LT 恢复延迟从 5min 固定冷却缩短到 ≤60s（实删场景：LT 被沙箱
+ *  清杀后重启，translate-service 无需人工干预自动重新接上）。 */
+function libreAvailable(): boolean {
+  if (Date.now() < libreState.downUntil) {
+    const now = Date.now();
+    if (!libreState.probing && now - libreState.lastProbe > 60_000) {
+      libreState.probing = true;
+      libreState.lastProbe = now;
+      fetch(LT_URL + '/languages', { signal: AbortSignal.timeout(5000) })
+        .then((r) => {
+          libreState.probing = false;
+          if (r.ok) {
+            console.log('[translate] libre probe OK → 解除熔断');
+            libreMarkOk();
+          }
+        })
+        .catch(() => {
+          libreState.probing = false;
+        });
+    }
+    return false;
+  }
+  return true;
+}
+
+function libreMarkFail() {
+  libreState.fails++;
+  if (libreState.fails >= LT_MAX_FAILS) {
+    libreState.downUntil = Date.now() + LT_COOLDOWN_MS;
+    console.log(`[translate] libre DOWN（${LT_MAX_FAILS} 连败）→ 冷却 5min`);
+  }
+}
+
+function libreMarkOk() {
+  if (libreState.fails > 0 || libreState.downUntil > 0) {
+    console.log('[translate] libre recovered');
+  }
+  libreState.fails = 0;
+  libreState.downUntil = 0;
+}
+
+/** LibreTranslate 批量翻译（q 数组单次调用，标准协议）。
+ *  失败/超时/不可用 → 返回 null（调用方保持留空语义，绝不编造）。
+ *  libre 结果调用方不落 LRU（防半吊子固化挡住 LLM 升级，R168）。 */
+async function translateLibre(items: string[], target: string): Promise<string[] | null> {
+  const ltTarget = LT_TARGETS[target];
+  if (!ltTarget || !libreAvailable()) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), LT_BATCH_TIMEOUT_MS);
+  try {
+    const resp = await fetch(LT_URL + '/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: items, source: LT_SOURCE, target: ltTarget, format: 'text' }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) {
+      libreMarkFail();
+      console.log(`[translate] libre HTTP ${resp.status} (${LT_URL})`);
+      return null;
+    }
+    const data = (await resp.json()) as { translatedText?: string | string[] };
+    const out = data?.translatedText;
+    const arr = Array.isArray(out) ? out : typeof out === 'string' ? [out] : [];
+    if (arr.length !== items.length) {
+      libreMarkFail();
+      console.log(`[translate] libre length mismatch: want ${items.length} got ${arr.length}`);
+      return null;
+    }
+    libreMarkOk();
+    return arr.map((s) => (typeof s === 'string' && s.trim() ? s : ''));
+  } catch (e) {
+    libreMarkFail();
+    console.log('[translate] libre FAIL:', e instanceof Error ? e.message : e);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ==================== 进程内 LRU 缓存 ====================
@@ -280,7 +387,7 @@ function json(w: Parameters<Bun.Responder[0]>[0], code: number, body: unknown) {
   });
 }
 
-let stats = { reqTotal: 0, llmCalls: 0, cacheHits: 0 };
+let stats = { reqTotal: 0, llmCalls: 0, cacheHits: 0, libreCalls: 0, libreFallbacks: 0 };
 
 Bun.serve({
   port: PORT,
@@ -295,6 +402,9 @@ Bun.serve({
         service: 'translate-service',
         opencc: openccConv != null,
         llm: llmTried ? zai != null : true, // 未尝试前视为可用（懒加载预热在首次翻译时进行）
+        libre: libreAvailable(), // R168：libre 垗底引擎健康态（熔断冷却期为 false）
+        libreUrl: LT_URL,
+        engine: 'auto=llm-first+libre-fallback, libre, llm (POST body.engine)',
         targets: Object.keys(TARGETS),
         cacheSize: cache.size,
         stats,
@@ -303,7 +413,7 @@ Bun.serve({
     }
 
     if (url.pathname === '/api/translate' && req.method === 'POST') {
-      let body: { target?: string; items?: unknown; context?: { novelTitle?: string; chapterTitle?: string } };
+      let body: { target?: string; items?: unknown; engine?: string; context?: { novelTitle?: string; chapterTitle?: string } };
       try {
         body = await req.json();
       } catch {
@@ -314,6 +424,8 @@ Bun.serve({
       if (!conf) {
         return json(null, 400, { ok: false, error: `unsupported target: ${target} (supported: ${Object.keys(TARGETS).join(',')})` });
       }
+      // R168：引擎选择（auto|llm|libre，缺省 auto=LLM 先行+libre 垗底）
+      const engine = body.engine === 'libre' || body.engine === 'llm' ? body.engine : 'auto';
       const items = body.items;
       if (!Array.isArray(items) || items.length === 0 || items.length > MAX_ITEMS) {
         return json(null, 400, { ok: false, error: `items must be a non-empty array (max ${MAX_ITEMS})` });
@@ -365,24 +477,65 @@ Bun.serve({
               cacheSet(cacheKey(target, texts[i]), out);
             }
           } else {
-            const client = await getLLM();
-            if (!client) {
-              return json(null, 503, { ok: false, error: 'LLM backend unavailable: z-ai-web-dev-sdk not installed in this deployment' });
-            }
-            const { results: translated, failed } = await translateLLM(
-              missIdx.map((i) => texts[i]),
-              conf.lang ?? 'English',
-              conf.namesHint,
-              body.context,
-            );
-            stats.llmCalls += Math.ceil(missIdx.length / LLM_BATCH);
-            for (let k = 0; k < missIdx.length; k++) {
-              const gi = missIdx[k];
-              if (translated[k]) {
-                results[gi] = translated[k];
-                cacheSet(cacheKey(target, texts[gi]), translated[k]);
+            // R168：engine=libre 全批 libre（预热工作器熔断期快速垗底；不落缓存防半吊子固化）
+            if (engine === 'libre' && LT_TARGETS[target]) {
+              const libreOut = await translateLibre(missIdx.map((i) => texts[i]), target);
+              stats.libreCalls++;
+              if (libreOut === null) {
+                return json(null, 503, {
+                  ok: false,
+                  error: `libre engine unavailable (probe down or LibreTranslate not reachable at ${LT_URL})`,
+                });
+              }
+              for (let k = 0; k < missIdx.length; k++) {
+                results[missIdx[k]] = libreOut[k] || ''; // 失败段留空：前端保留原文
+              }
+            } else {
+              const client = await getLLM();
+              if (!client) {
+                // R168 auto 模式：SDK 缺失时不再硬 503——libre 兜底（翻译永不空白）
+                if (engine === 'auto' && LT_TARGETS[target] && libreAvailable()) {
+                  const libreOut = await translateLibre(missIdx.map((i) => texts[i]), target);
+                  stats.libreFallbacks++;
+                  if (libreOut === null) {
+                    return json(null, 503, { ok: false, error: 'LLM unavailable and libre fallback failed (LibreTranslate at ' + LT_URL + ')' });
+                  }
+                  for (let k = 0; k < missIdx.length; k++) {
+                    results[missIdx[k]] = libreOut[k] || '';
+                  }
+                } else {
+                  return json(null, 503, { ok: false, error: 'LLM backend unavailable: z-ai-web-dev-sdk not installed in this deployment' });
+                }
               } else {
-                results[gi] = ''; // 失败段留空：前端保留原文（不编造）
+                const { results: translated, failed } = await translateLLM(
+                  missIdx.map((i) => texts[i]),
+                  conf.lang ?? 'English',
+                  conf.namesHint,
+                  body.context,
+                );
+                stats.llmCalls += Math.ceil(missIdx.length / LLM_BATCH);
+                for (let k = 0; k < missIdx.length; k++) {
+                  const gi = missIdx[k];
+                  if (translated[k]) {
+                    results[gi] = translated[k];
+                    cacheSet(cacheKey(target, texts[gi]), translated[k]);
+                  } else {
+                    results[gi] = ''; // 失败段留空：前端保留原文（不编造）
+                  }
+                }
+                // R168 auto 模式：LLM 失败段 libre 垗底（不落缓存，LLM 恢复后自然升级）
+                if (engine === 'auto' && LT_TARGETS[target]) {
+                  const failedIdx = missIdx.filter((gi) => results[gi] === '');
+                  if (failedIdx.length > 0 && libreAvailable()) {
+                    const libreOut = await translateLibre(failedIdx.map((i) => texts[i]), target);
+                    stats.libreFallbacks++;
+                    if (libreOut) {
+                      for (let k = 0; k < failedIdx.length; k++) {
+                        if (libreOut[k]) results[failedIdx[k]] = libreOut[k];
+                      }
+                    }
+                  }
+                }
               }
             }
           }
