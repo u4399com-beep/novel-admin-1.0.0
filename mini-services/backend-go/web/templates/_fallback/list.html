@@ -1,0 +1,39 @@
+{{/* _fallback 频道列表页（R165）：R145 只建了 jiuxiaozw/list.html——activeTheme 为其它
+缺失 list.html 的主题时 renderPage 主题→fallback 双 nil 命中极简兜底（页面渲染异常）。
+本模板补齐 fallback 基础版（fb-panel 组件库，T 包裹同 R160 哲学），兼作一切无 list.html
+主题的兜底落地。数据契约与 jiuxiaozw/list.html 同一 handler：
+.List{kind,title,tag,total,totalPages,page,pages,novels}。 */}}
+{{define "content"}}{{$l := .List}}
+<div class="fb-panel">
+  <nav aria-label="{{T $.Lang "频道导航"}}" class="fb-nav" style="margin-bottom:8px;font-size:13px;display:flex;flex-wrap:wrap;gap:6px">
+    <a href="/">{{T $.Lang "首页"}}</a>
+    <a{{if eq $l.kind "featured"}} aria-current="page"{{end}} href="/list/featured">{{T $.Lang "小编精选"}}</a>
+    <a{{if eq $l.kind "hot"}} aria-current="page"{{end}} href="/list/hot">{{T $.Lang "热门小说"}}</a>
+    <a{{if eq $l.kind "latest"}} aria-current="page"{{end}} href="/list/latest">{{T $.Lang "最新上架"}}</a>
+    <a{{if eq $l.kind "rank-clicks"}} aria-current="page"{{end}} href="/list/rank-clicks">{{T $.Lang "点击榜"}}</a>
+    <a{{if eq $l.kind "rank-updates"}} aria-current="page"{{end}} href="/list/rank-updates">{{T $.Lang "更新榜"}}</a>
+    <a{{if eq $l.kind "finished"}} aria-current="page"{{end}} href="/list/finished">{{T $.Lang "完本佳作"}}</a>
+  </nav>
+  <h1 class="fb-h2">{{$l.title}} · {{T $.Lang "频道列表"}}</h1>
+  <div class="fb-stats"><span>{{T $.Lang "共"}} <b>{{$l.total}}</b> {{T $.Lang "本"}}</span><span>{{$l.title}} · {{$l.tag}}</span></div>
+</div>
+
+<div class="fb-panel">
+  <ul class="fb-rank">
+    {{range .List.novels}}<li>
+      {{if isLocalCover .cover}}<a href="{{bookURL .id}}"><span class="fb-cover" style="width:56px;height:74px;display:inline-block;vertical-align:middle;overflow:hidden;margin-right:8px"><img src="{{coverSrc .id .cover}}" alt="{{Tf $.Lang "{0}封面" .title}}" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span></a>{{end}}
+      <a class="fb-novel-title" href="{{bookURL .id}}">{{.title}}</a>
+      <span class="fb-novel-meta">{{.author}} · {{.categoryName}} · {{if eq .status "finished"}}{{T $.Lang "完本"}}{{else}}{{T $.Lang "连载"}}{{end}}{{if .wordCount}} · {{wcFmtL $.Lang .wordCount}}{{end}}{{if .clicks}} · {{T $.Lang "人气"}}{{trimSuffixStr (wcFmt .clicks) "字"}}{{end}}</span>
+      {{if .description}}<p class="fb-novel-meta">{{excerpt .description 64}}</p>{{end}}
+    </li>{{else}}<li>{{T $.Lang "该频道暂无收录书籍。"}}</li>{{end}}
+  </ul>
+
+  {{if gt $l.totalPages 1}}
+  <nav aria-label="{{T $.Lang "分页"}}" class="fb-pager" style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;font-size:13px">
+    {{if gt $l.page 1}}<a href="/list/{{$l.kind}}?page={{sub $l.page 1}}" rel="prev">{{T $.Lang "上一页"}}</a>{{else}}<span aria-disabled="true" style="color:#bbb">{{T $.Lang "上一页"}}</span>{{end}}
+    {{range $p := $l.pages}}{{if eq $p $l.page}}<span aria-current="page" style="font-weight:700">{{$p}}</span>{{else}}<a href="/list/{{$l.kind}}?page={{$p}}">{{$p}}</a>{{end}}{{end}}
+    {{if lt $l.page $l.totalPages}}<a href="/list/{{$l.kind}}?page={{add $l.page 1}}" rel="next">{{T $.Lang "下一页"}}</a>{{else}}<span aria-disabled="true" style="color:#bbb">{{T $.Lang "下一页"}}</span>{{end}}
+  </nav>
+  {{end}}
+</div>
+{{end}}

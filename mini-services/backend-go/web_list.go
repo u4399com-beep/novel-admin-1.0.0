@@ -90,8 +90,11 @@ func handleWebList(w http.ResponseWriter, r *http.Request, ps map[string]string)
 	}
 	data["siteName"] = data["Site"].(map[string]any)["siteName"]
 	// seoConfig 无 listTitle/listDescription 键时走默认回落文案（renderSeoKey 空回落）
+	// R165: title 走 Tf 字典形态（「{0}全部小说列表」四语种词条）——此前整段拼串进显式管线
+	// 只能靠 LLM 预热，实测缓存回填半吊子译文（「Latest上架 all novels list」）；Tf 直查
+	// 零上游且译文质量手写可控。description 保持原文简体（SEO 语义面，R164 设计内豁免）。
 	applyWebTDK(data, "listTitle", "listDescription", map[string]string{"listName": k.title},
-		k.title+"全部小说列表", k.title+"，共"+strconv.FormatInt(total, 10)+"本免费在线阅读")
+		tmplTf(lang, "{0}全部小说列表", tmplT(lang, k.title)), k.title+"，共"+strconv.FormatInt(total, 10)+"本免费在线阅读")
 	renderPage(w, r, "list", data)
 }
 

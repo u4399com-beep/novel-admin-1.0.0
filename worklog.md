@@ -5719,3 +5719,23 @@ Stage Summary:
 - 三层查译文链：i18nDict（手写零成本即时，未包 T 主题同样生效）→ LRU 短文本池（空占位转正覆写语义修复）→ SQLite TranslationCache（全文寻址与预热/导出/代理同域复用）；预热 flight 键外置（章级同键去重/页级 hash 隔离）
 - 直写路径收编：web404/renderPage 极简兜底显式接入 sweep+html lang 动态化；obfMaybe 后置隐藏 SEO 词块（font-size:0 零可见性）诚实豁免（非显示文字）
 - 移交下一轮：①PAT 持续失效（第 29 次提醒：Invalid username or token——R160/R161/R162/R163/R164+恢复提交六轮积压待推，需用户提供新 PAT）②今日更新 N 章类动态数字句（实时计数 defeat 全文寻址缓存）每次变更入队小段——可改模板 Tf 形态根治 ③其它 13 主题 UI 词未进字典（sweep+LLM 已覆盖，字典化仅是首访零延迟优化）④meta description/content 属性未入清扫面（SEO 语义面，非显示文字）⑤wordCount/clicks 回填观测（常设②）⑥pilishuwu 过盾（常设③）
+
+---
+
+Task ID: R165
+Agent: Z.ai Code (main)
+Task: 继续推进（用户指令）——第 33 次沙箱重置恢复 + R160~R164 全量回归验证 + /list/* 渲染异常修复（trxsw/_fallback 缺 list.html）+ title Tf 字典化根治 LLM 半吊子译文
+
+Work Log:
+- 【R165-a 第 33 次重置恢复+五轮成果考古】HEAD 回退 bf2e347(R150)+reflog 无 R160~R164 提交（R164-a 恢复提交 1bfe299 一并被抹）——但工作区文件零丢失：langip/webi18n/webi18n_sweep/urlstyle/langmode_test 全在，worklog R160-a~h/R161-a~e/R162-a~f/R163-a~g/R164-a~g 全录。考古结论：上一会话实际完成 R162/R163/R164 全部实现+E2E（摘要滞后记载）。恢复：`git add -A -- . ':!db'` 单提交 717739b（78 文件 4477 insertions，db/ 历史从未入库维持 untracked）。Go 1.22.12 第 4 次重装（后台下载进程被沙箱清杀手清除实证——R151 行为复核，改前台断点续传 5 轮循环 69MB）。
+- 【R165-b R160~R163 全量回归矩阵绿】zh-Hant 首页全繁零简残留+繁体导航；langMode 五态对抗：force:ja/en/zh-Hant 均无视 ?lang=zh-CN+Accept-Language 双覆盖、off 模式 ?lang=ja 被压 zh-CN、auto 恢复后 ?lang= 正常生效；admin GET 回显 langMode+legacy geoLang 派生正确；agent-browser 桌面 1280×900 en 全链 + 移动 390×844 zh-Hant 截图双绿。
+- 【R165-c en 渐进收敛实况与上游枯竭期】21.0.0.1（ip-lang 终身缓存 en）渲染正常；en 页中文残留波动 33→145→131→135——分析定性：残留主体=设计内豁免（meta description/keywords SEO 面+font-size:0 隐藏 SEO 词块）+动态内容（书名/简介/章节标题等 LLM 异步预热中）+动态数字句（今日更新 N 章，实时计数 defeat 全文寻址缓存）；translate 上游直测 90s 超时（429 枯竭期延续 R164-d 观测）——收敛属上游容量问题非代码缺陷，配额恢复窗口自然收敛（昨夜 175 行缓存实证）。
+- 【R165-d /list/* 渲染异常修复（本轮核心缺陷）】普查发现 /list/featured|hot|latest|rank-clicks|rank-updates|finished 六频道全部 175 字节极简兜底页（页面渲染异常）——根因：R145 只建了 jiuxiaozw/list.html，trxsw/_fallback 双缺；renderPage 主题→fallback 双 nil 命中极简兜底。当时 activeTheme=jiuxiaozw 掩盖（E2E 未暴露），R161 起主题切 trxsw 即炸。修复：新建 trxsw/list.html（米黄盒 #fef9ef+2px #a6d3e8 蓝边+蓝底标题条+红计数同源组件语言+频道 chips aria-current+图文卡+分页器）+ _fallback/list.html（fb-panel 组件库+T 包裹兜底一切缺模板主题）；六频道 200 恢复（12KB~30KB 正常 DOM）。同轮发现并恢复 DB 运行时损伤：第 33 次重置清掉 R161 补标（isFeatured/isHot 计数 0）+public/covers 丢 350 本（439 存活）——重启 backend 重新武装 ensureFeatured/HotBootstrap 一次性闸（进程惰性首页渲染路径），封面优先自愈补标 8+10 本全有图（首页三区块恢复编辑推荐 5+热门 6+最新 3 卡实显）；封面批量重取撞源站图片通道反爬（HTML 假图+超时+代理回退×3 亦失败，40s 预算批 2-3 本），按常设②封禁风险约束停手移交。
+- 【R165-e title Tf 字典化根治 LLM 半吊子】E2E 发现 <title> 渲染「Latest上架 all novels list」半吊子混合译文——root cause：list 页 title 走 applyWebTDK 整段拼串（k.title+"全部小说列表"）进显式 i18nTexts 管线，字典无整段键只能 LLM 预热，缓存回填 LLM 随机质量译文且永久直出。根治：web_list.go fbTitle 改 tmplTf(lang, "{0}全部小说列表", tmplT(lang, k.title))——字典四语种新键（zh-Hant「{0}全部小說列表」/en "{0} - All Novels"/ja「{0}の小説一覧」/ko「{0} 전체 소설 목록」）直查零上游、译文手写可控；description 保持原文简体（SEO 语义面 R164 设计内豁免）。五态实测：en "Editors' Picks - All Novels"/ja/ko/zh-Hant 全对 + zh-CN「小编精选全部小说列表」SEO 直通。同题 trxsw/list.html 计数「共 N 部」改三段式 T（共/本 单字键复用 en "Total N books"）。
+- 【R165-f 质量闸+E2E 收口】全量 test 68.35s PASS+gofmt/vet 零输出；agent-browser 移动 featured 页复验：title「Editors' Picks - All Novels」+区块头全英+Total 8 books 红计数+chips aria-current 橙实底+封面正常+console 零错误；zh-CN 全站回归无变化。
+
+Stage Summary:
+- R160~R164 五轮成果全部归位（717739b）并全量回归绿——IP 语种五级链/langMode 三态/伪静态 18 预设/sweep 全站翻译管线在沙箱重置后均复现原行为
+- /list/* 六频道渲染异常修复（R145 遗留：单主题模板+无 fallback 兜底）——trxsw 定制版+_fallback 基础版双落地，自愈机制重启后重新武装恢复首页三区块
+- title Tf 字典化模式确立：动态拼串进显式管线只能 LLM（质量随机+缓存固化），有限闭集句式一律 Tf 字典形态（直查零上游+手写质量）——后续页面 title 形态同款治理可循
+- 移交下一轮：①PAT 持续失效（第 30 次提醒：Invalid username or token——R160~R165 七轮提交积压待推，需用户提供新 PAT）②源站封面通道反爬（图片批量重取 2/3 失败率，需过盾窗口或 stealth 通道扩展——常设②③交叉）③动态书名 en/ja/ko 收敛依赖 LLM 配额恢复（设计内渐进）④其它页面 title 形态（book/chapter/category）同款 Tf 治理待做 ⑤meta description SEO 豁免面维持原判
