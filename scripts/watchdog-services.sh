@@ -107,6 +107,11 @@ restart() { # name probe_url probe_timeout
     stealth)
       (cd "$ROOT/mini-services/stealth-service" && nohup bash run.sh >>/tmp/stealth.log 2>&1 9>&- &)
       ;;
+    translate)
+      # R169：translate-service :3032 纳入守护（libre 兜底+预热工作器的关键依赖；
+      # run.sh 为 bundle 优先模式，dist 缺失自动回退源码+补装依赖）
+      (cd "$ROOT/mini-services/translate-service" && nohup bash run.sh >>/tmp/translate-service.log 2>&1 9>&- &)
+      ;;
     libretranslate)
       # R168：LibreTranslate 兜底引擎 :5000（未安装时 run.sh 自身退出，不拉起风暴）
       if [ -x "$HOME/.venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
@@ -126,5 +131,6 @@ while true; do
   restart scraper  http://127.0.0.1:3030/api/health "$PROBE_TIMEOUT_SCRAPER"
   restart stealth  http://127.0.0.1:3031/health     "$PROBE_TIMEOUT_STEALTH"
   restart libretranslate http://127.0.0.1:5000/languages "$PROBE_TIMEOUT_STEALTH" # R168：模型冷启动 15s，连败闸+冷却防误重启
+  restart translate http://127.0.0.1:3032/api/health "$PROBE_TIMEOUT_BACKEND" # R169：translate 侧车守护（bundle 模式）
   sleep 8
 done

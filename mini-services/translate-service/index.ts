@@ -321,11 +321,16 @@ async function translateLLM(
   lang: string,
   namesHint?: string,
   context?: { novelTitle?: string; chapterTitle?: string },
+  deadlineMs?: number,
 ): Promise<{ results: string[]; failed: number[] }> {
   const n = items.length;
   const results = new Array<string>(n).fill('');
   const failed: number[] = [];
-  const deadline = Date.now() + LLM_DEADLINE_MS;
+  // R169：deadlineMs 钳制（8s..LLM_DEADLINE_MS）——调用方窗口小于 LLM 死线时收窄，
+  // 保证「LLM 让位 + libre 垫底 + 响应返回」全链在客户端超时前完成（修复枯竭期
+  // 预热器 120s 超时阵亡、服务端垫底结果无人接收的死锁）。
+  const dl = Math.max(8_000, Math.min(LLM_DEADLINE_MS, deadlineMs ?? LLM_DEADLINE_MS));
+  const deadline = Date.now() + dl;
 
   const system = SYSTEM_PROMPT
     .replace('{LANG}', lang)
@@ -413,7 +418,7 @@ Bun.serve({
     }
 
     if (url.pathname === '/api/translate' && req.method === 'POST') {
-      let body: { target?: string; items?: unknown; engine?: string; context?: { novelTitle?: string; chapterTitle?: string } };
+      let body: { target?: string; items?: unknown; engine?: string; deadlineMs?: number; context?: { novelTitle?: string; chapterTitle?: string } };
       try {
         body = await req.json();
       } catch {
@@ -512,6 +517,7 @@ Bun.serve({
                   conf.lang ?? 'English',
                   conf.namesHint,
                   body.context,
+                  body.deadlineMs,
                 );
                 stats.llmCalls += Math.ceil(missIdx.length / LLM_BATCH);
                 for (let k = 0; k < missIdx.length; k++) {

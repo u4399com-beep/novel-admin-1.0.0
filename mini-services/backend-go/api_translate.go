@@ -189,18 +189,23 @@ var translateUpstreamClient = &http.Client{Timeout: translateUpstreamTimeout}
 
 // translateUpstream 转发上游 /api/translate，返回 results 数组（失败段为空串）
 func translateUpstream(target string, texts []string, ctx map[string]string) ([]string, error) {
-	return translateUpstreamEngine(target, texts, ctx, "")
+	return translateUpstreamEngine(target, texts, ctx, "", 0)
 }
 
 // translateUpstreamEngine R168：engine 透传（libre=预热器 429 熔断期垗底模式；
-// 空=auto 旧行为）。backend 不感知引擎实现细节，仅转发选择。
-func translateUpstreamEngine(target string, texts []string, ctx map[string]string, engine string) ([]string, error) {
+// llm=显式 LLM 专属（R169 预热器主尝试，杜绝服务端 auto 混流）；空=auto 旧行为）。
+// deadlineMs>0 时透传 LLM 死线钳制（R169：预热器 60000ms——LLM 让位+响应返回全链
+// 压进 120s 客户端窗口）。backend 不感知引擎实现细节，仅转发选择。
+func translateUpstreamEngine(target string, texts []string, ctx map[string]string, engine string, deadlineMs int64) ([]string, error) {
 	body := map[string]any{"target": target, "items": texts}
 	if ctx["novelTitle"] != "" || ctx["chapterTitle"] != "" {
 		body["context"] = ctx
 	}
 	if engine != "" {
 		body["engine"] = engine
+	}
+	if deadlineMs > 0 {
+		body["deadlineMs"] = deadlineMs
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {

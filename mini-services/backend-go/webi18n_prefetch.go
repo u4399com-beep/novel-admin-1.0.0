@@ -209,7 +209,11 @@ func i18nPrefetchRound(langIdx *int) time.Duration {
 		batch := miss[start:end]
 		orig := translateUpstreamClient
 		translateUpstreamClient = i18nPrefetchClient
-		res, err := translateUpstream(lang, batch, nil)
+		// R169：engine=llm 显式专属 + deadlineMs=60000 钳制——修复枯竭期死锁
+		//（原 auto 形态服务端 LLM 死线 130s>客户端 120s：请求必超时阵亡，ok 全空段
+		// 形态永不可达，libre 垫底分支饿死）。llm 专属同时杜绝服务端 auto 混流把
+		// libre 译文混入普通键固化；60s 内 429 退避梯（2s/6s/15s/30s）仍公平尝试。
+		res, err := translateUpstreamEngine(lang, batch, nil, "llm", 60000)
 		translateUpstreamClient = orig
 		batches++
 		if err != nil {
@@ -253,16 +257,19 @@ func i18nPrefetchRound(langIdx *int) time.Duration {
 	if produced > 0 {
 		return 3 * time.Second
 	}
-	if networkErr != "" {
-		return 30 * time.Second
-	}
-	// R168：LLM 枯竭期（服务端 ok:true 全空段形态）→ libre 垘底
+	// R169：libre 垡底零门槛前置——零产出三形态（服务端 ok 全空段/客户端超时
+	// networkErr/上游网络错）一律先试 libre（:5000 本地独立引擎，LLM 通道异常不代表
+	// libre 不可用）。修复 networkErr 提前 return 饿死垫底的 R168 缺陷（枯竭期
+	// 超时即常态形态，垫底分支永不可达=libreTranslated 恒 0）。
 	libreProduced := i18nPrefetchLibreFallback(lang, miss)
 	prefetchMu.Lock()
 	prefetchStats.libreTranslated += libreProduced
 	prefetchMu.Unlock()
 	if libreProduced > 0 {
 		return 3 * time.Second // libre 无配额限制，继续推进
+	}
+	if networkErr != "" {
+		return 30 * time.Second // LLM+libre 双通道皆败：30s 后重试（网络抖动）
 	}
 	return 90 * time.Second
 }
@@ -300,7 +307,7 @@ func i18nPrefetchLibreFallback(lang string, miss []string) int64 {
 		batch := todo[start:end]
 		orig := translateUpstreamClient
 		translateUpstreamClient = i18nPrefetchClient
-		res, err := translateUpstreamEngine(lang, batch, nil, "libre")
+		res, err := translateUpstreamEngine(lang, batch, nil, "libre", 0)
 		translateUpstreamClient = orig
 		if err != nil {
 			log.Printf("[prefetch] libre fallback FAIL: %v", err)
