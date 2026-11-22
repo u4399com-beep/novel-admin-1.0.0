@@ -6,7 +6,7 @@
     <span>收录 <b>{{.Stats.novelCount}}</b> 本</span>
     <span>章节 <b>{{.Stats.chapterCount}}</b> 章</span>
     <span>总字数 <b>{{wcFmt .Stats.totalWordCount}}</b></span>
-    <span>今日更新 <b>{{.Stats.todayUpdates}}</b> 章</span>
+    <span>{{T $.Lang "今日更新"}} <b>{{.Stats.todayUpdates}}</b>{{T $.Lang "章"}}</span>
   </div>
 </div>
 

@@ -326,9 +326,18 @@ func renderSeoKey(seo map[string]any, key string, vars map[string]string, fb str
 	return out
 }
 
-func applyWebTDK(data map[string]any, titleKey, descKey string, vars map[string]string, fbTitle, fbDesc string) {
+func applyWebTDK(data map[string]any, lang, titleKey, descKey string, vars map[string]string, fbTitle, fbDesc string) {
 	seo, vars := seoTplCore(data, vars)
-	data["pageTitle"] = renderSeoKey(seo, titleKey, vars, fbTitle)
+	// R166: title 语种分流——zh-CN（含 admin）seoConfig 配置值优先（admin SEO 模板是搜索
+	// 引擎收录面，爬虫无 geo/AL 信号恒 zh-CN，原文不动）；非 zh-CN 访客语种 fbTitle 优先
+	//（handler 侧 Tf 产出：形态定语字典直查+参数数据面预翻）——配置值整段中文进 sweep 只能
+	// LLM 整段翻，R165 实证半吊子缓存固化（「Latest上架 all novels list」），Tf 形态手写
+	// 质量可控。description 恒配置值原文（SEO 语义面，R164 设计内豁免）。
+	title := renderSeoKey(seo, titleKey, vars, fbTitle)
+	if lang != "" && lang != "zh-CN" {
+		title = fbTitle
+	}
+	data["pageTitle"] = title
 	data["pageDescription"] = renderSeoKey(seo, descKey, vars, fbDesc)
 }
 
@@ -551,8 +560,8 @@ func handleWebHome(w http.ResponseWriter, r *http.Request) {
 	}
 	data["siteName"] = siteName
 	// Task 28-b: TDK 改由 seoConfig homeTitle/homeDescription 模板渲染（原硬编码降为回落文案）
-	applyWebTDK(data, "homeTitle", "homeDescription", nil,
-		siteName+" - 免费小说阅读", "最新热门小说免费在线阅读")
+	applyWebTDK(data, lang, "homeTitle", "homeDescription", nil,
+		tmplTf(lang, "{0} - 免费小说阅读", tmplT(lang, siteName)), "最新热门小说免费在线阅读") // R166: title Tf 化+站名字典直查；description SEO 豁免保持原文
 	// Task 28-c: 后台 seoConfig homeKeywords 模板 → <meta name="keywords">（28-b 移交项）
 	applyWebKeywords(data, "homeKeywords", nil, "")
 	renderPage(w, r, "home", data)
@@ -667,8 +676,8 @@ func handleWebCategory(w http.ResponseWriter, r *http.Request, ps map[string]str
 	data["Stats"] = gatherHomeStats()
 	data["siteName"] = data["Site"].(map[string]any)["siteName"]
 	// Task 28-b: TDK 改由 seoConfig categoryTitle/categoryDescription 模板渲染
-	applyWebTDK(data, "categoryTitle", "categoryDescription", map[string]string{"categoryName": catName},
-		catName+"分类小说列表", catName+"分类热门小说免费在线阅读")
+	applyWebTDK(data, lang, "categoryTitle", "categoryDescription", map[string]string{"categoryName": catName},
+		tmplTf(lang, "{0}分类小说列表", tmplT(lang, catName)), catName+"分类热门小说免费在线阅读") // R166: title Tf 化（catName 分类词 R164-e 字典直查）
 	renderPage(w, r, "category", data)
 }
 
@@ -841,8 +850,8 @@ func handleWebBook(w http.ResponseWriter, r *http.Request, ps map[string]string)
 		"novelTitle": title, "author": author, "statusText": statusText,
 		"descShort": descShort, "categoryName": categoryName,
 	}
-	applyWebTDK(data, "bookTitle", "bookDescription", vars,
-		title+"（"+author+"）最新章节列表 - "+siteName, descShort)
+	applyWebTDK(data, lang, "bookTitle", "bookDescription", vars,
+		tmplTf(lang, "{0}（{1}）最新章节列表 - {2}", title, tmplT(lang, author), tmplT(lang, siteName)), descShort) // R166: title Tf 化（title 数据面已翻；author 专名渐进）
 	// Task 28-c: 后台 seoConfig bookKeywords 模板 → <meta name="keywords">（28-b 移交项）
 	applyWebKeywords(data, "bookKeywords", vars,
 		title+","+title+"最新章节,"+author+","+categoryName+"小说")
@@ -901,8 +910,8 @@ func handleWebToc(w http.ResponseWriter, r *http.Request, ps map[string]string) 
 	siteName, _ := s["siteName"].(string)
 	data["siteName"] = siteName
 	// Task 28-b: TDK 改由 seoConfig tocTitle/tocDescription 模板渲染（目录页原先无 description）
-	applyWebTDK(data, "tocTitle", "tocDescription", map[string]string{"novelTitle": title},
-		title+" 全部章节目录 - "+siteName, "")
+	applyWebTDK(data, lang, "tocTitle", "tocDescription", map[string]string{"novelTitle": title},
+		tmplTf(lang, "{0} 全部章节目录 - {1}", title, tmplT(lang, siteName)), "") // R166: title Tf 化（title 数据面已翻）
 	renderPage(w, r, "toc", data)
 }
 
@@ -1044,8 +1053,8 @@ func renderWebChapter(w http.ResponseWriter, r *http.Request, chid, forceBook in
 	vars := map[string]string{
 		"novelTitle": title, "chapterTitle": chTitle, "idx": itoa(int(chIdx)), "author": chAuthor,
 	}
-	applyWebTDK(data, "chapterTitle", "chapterDescription", vars,
-		title+" "+chTitle+" - "+siteName, "")
+	applyWebTDK(data, lang, "chapterTitle", "chapterDescription", vars,
+		tmplTf(lang, "{0} {1} - {2}", title, chTitle, tmplT(lang, siteName)), "") // R166: title Tf 化（title/chTitle 数据面已翻）
 	// Task 28-c: 后台 seoConfig chapterKeywords 模板 → <meta name="keywords">（28-b 移交项）
 	applyWebKeywords(data, "chapterKeywords", vars, title+","+chTitle+","+chAuthor)
 	renderPage(w, r, "chapter", data)
@@ -1084,8 +1093,8 @@ func handleWebSearch(w http.ResponseWriter, r *http.Request) {
 	siteName, _ := s["siteName"].(string)
 	data["siteName"] = siteName
 	// Task 28-b: TDK 改由 seoConfig searchTitle/searchDescription 模板渲染
-	applyWebTDK(data, "searchTitle", "searchDescription", map[string]string{"query": q},
-		"搜索："+q+" - "+siteName, "在"+siteName+"搜索“"+q+"”找到的相关小说列表。")
+	applyWebTDK(data, lang, "searchTitle", "searchDescription", map[string]string{"query": q},
+		tmplTf(lang, "搜索：{0} - {1}", q, tmplT(lang, siteName)), "在"+siteName+"搜索“"+q+"”找到的相关小说列表。") // R166: title Tf 化（q 用户输入保留原文）
 	renderPage(w, r, "search", data)
 }
 
@@ -1181,8 +1190,8 @@ func handleWebPseo(w http.ResponseWriter, r *http.Request, ps map[string]string)
 
 	// Task 28-b: TDK 改由 seoConfig pseoTitle/pseoDescription 模板渲染（与聚合页生成链路同变量集）
 	vars := map[string]string{"keyword": kw, "count": itoa(len(novels))}
-	applyWebTDK(data, "pseoTitle", "pseoDescription", vars,
-		"关于“"+kw+"”的小说推荐 - "+siteName, excerptN(desc, 100))
+	applyWebTDK(data, lang, "pseoTitle", "pseoDescription", vars,
+		tmplTf(lang, "关于“{0}”的小说推荐 - {1}", kw, tmplT(lang, siteName)), excerptN(desc, 100)) // R166: title Tf 化（kw pSEO 词渐进）
 	// Task 28-c: 后台 seoConfig pseoKeywords 模板 → <meta name="keywords">（28-b 移交项）
 	applyWebKeywords(data, "pseoKeywords", vars, kw+","+kw+"小说,"+kw+"推荐")
 	renderPage(w, r, "pseo", data)

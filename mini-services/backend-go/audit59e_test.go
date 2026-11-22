@@ -20,7 +20,7 @@ func TestApplyWebTDKNilVarsInjectsSiteName(t *testing.T) {
 	data := map[string]any{
 		"Site": map[string]any{"siteName": "测试站名"},
 	}
-	applyWebTDK(data, "homeTitle", "homeDescription", nil, "回退标题", "回退描述")
+	applyWebTDK(data, "zh-CN", "homeTitle", "homeDescription", nil, "回退标题", "回退描述")
 	pt, _ := data["pageTitle"].(string)
 	if !strings.Contains(pt, "测试站名") {
 		t.Fatalf("nil vars 时 siteName 注入丢失: %q", pt)
@@ -46,7 +46,7 @@ func TestApplyWebKeywordsNilVarsInjectsSiteName(t *testing.T) {
 func TestApplyWebTDKNonNilVarsReference(t *testing.T) {
 	vars := map[string]string{"keyword": "K"}
 	data := map[string]any{"Site": map[string]any{"siteName": "测试站名"}}
-	applyWebTDK(data, "bookTitle", "bookDescription", vars, "fb", "fb")
+	applyWebTDK(data, "en", "bookTitle", "bookDescription", vars, "fb", "fb")
 	if vars["siteName"] != "测试站名" {
 		t.Fatalf("非 nil vars 引用语义被破坏: %q", vars["siteName"])
 	}

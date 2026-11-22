@@ -92,6 +92,17 @@ func matchRoute(segs []string, pattern []string) (map[string]string, bool) {
 	return ps, true
 }
 
+// routeStaticCount pattern 中静态段（非参数段）数量——参数路由竞争的特异性度量
+func routeStaticCount(segs []string) int {
+	n := 0
+	for _, s := range segs {
+		if !strings.HasPrefix(s, "{") {
+			n++
+		}
+	}
+	return n
+}
+
 // routeHasParam pattern 是否含参数段
 func routeHasParam(segs []string) bool {
 	for _, s := range segs {
@@ -168,9 +179,16 @@ func dispatch(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		if paramHit == nil && rt.method == method {
-			paramHit = rt
-			paramPS = ps
+		if rt.method == method {
+			// R166: 参数路由竞争改静态段特异性优先——urlstyle.go init 先于 web.go 注册（Go
+			// 同包 init 按文件名序），嵌套章节 /book/{id}/{cid} 抢占 /book/{id}/toc（同三段
+			// 形态注册序决胜）→ "toc" 被当 {cid} ParseInt 失败 404「章节不存在」。静态段多者
+			// 更特异应优先（同 Next App Router 静态段优先语义在参数路由内部的延伸）；同数
+			// 保持注册序（paramHit 已占位即让位）。
+			if paramHit == nil || routeStaticCount(rt.segs) > routeStaticCount(paramHit.segs) {
+				paramHit = rt
+				paramPS = ps
+			}
 		}
 	}
 	if paramHit != nil {

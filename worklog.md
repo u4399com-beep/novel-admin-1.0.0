@@ -5739,3 +5739,26 @@ Stage Summary:
 - /list/* 六频道渲染异常修复（R145 遗留：单主题模板+无 fallback 兜底）——trxsw 定制版+_fallback 基础版双落地，自愈机制重启后重新武装恢复首页三区块
 - title Tf 字典化模式确立：动态拼串进显式管线只能 LLM（质量随机+缓存固化），有限闭集句式一律 Tf 字典形态（直查零上游+手写质量）——后续页面 title 形态同款治理可循
 - 移交下一轮：①PAT 持续失效（第 30 次提醒：Invalid username or token——R160~R165 七轮提交积压待推，需用户提供新 PAT）②源站封面通道反爬（图片批量重取 2/3 失败率，需过盾窗口或 stealth 通道扩展——常设②③交叉）③动态书名 en/ja/ko 收敛依赖 LLM 配额恢复（设计内渐进）④其它页面 title 形态（book/chapter/category）同款 Tf 治理待做 ⑤meta description SEO 豁免面维持原判
+
+---
+
+Task ID: R166
+Agent: Z.ai Code (main)
+Task: 继续完善遗留问题（用户指令）——title Tf 治理全页面族（R165 移交②）+ 今日更新 Tf 根治（R164 移交②）+ 路由层 P1 隐患修复 + 封面窗口期抢跑（常设②③）+ 一键安装命令核查（常设⑥）
+
+Work Log:
+- 【R166-a 环境健康】第 33 次重置后首个无重置轮：HEAD R165+UUID 提交、backend/Go 双存活。七页 title 生成形态普查（applyWebTDK 八调用点）——发现 R165 只改了 fbTitle 回落路径，而 home/category/book/toc/chapter/search/pseo 七页 seoConfig 全有 admin 配置 title 模板（renderSeoKey 配置值优先短路 fbTitle）——R165 list 页生效纯属 listTitle 无配置值的偶然。
+- 【R166-b title Tf 治理八页族+语种分流架构】字典四语种各插入 9 键（站名「青阅文学」+7 个 Tf 形态「{0} - 免费小说阅读」「{0}分类小说列表」「{0}（{1}）最新章节列表 - {2}」「{0} 全部章节目录 - {1}」「{0} {1} - {2}」「搜索：{0} - {1}」「关于“{0}”的小说推荐 - {1}」「今日更新 {0} 章」）+ applyWebTDK 语种分流：zh-CN（含 admin）seoConfig 配置值优先（搜索引擎收录面恒 zh-CN——爬虫无 geo/AL 信号）；非 zh-CN 访客语种 fbTitle（handler Tf 产出）优先——配置值整段中文进 sweep 只能 LLM 整段翻（R165 半吊子固化实证），Tf 形态手写质量直查零上游。签名加 lang 参数（七 handler 调用点机械加参）。设计洞察：Tf 化必须参数预翻（tmplT 包裹）——否则 Tf 产出含中文残留仍被 sweep 整段拿去查，绕回 LLM。参数预翻链：catName 分类词 R164-e 字典直查/书名章节名数据面已翻（i18nNovelMaps 时序在 TDK 装配前——book/toc/chapter 三 handler 取值时序核验）/站名字典直查/作者名与搜索词与 pSEO 词专名渐进（LLM 缓存窗口收敛）。
+- 【R166-c 路由层 P1 隐患修复（本轮最深坑）】/book/236/toc 404「章节不存在」普查实锤：urlstyle.go init 先于 web.go 注册（Go 同包 init 按文件名序 u<w），R162 嵌套章节路由 /{prefix}/{id}/{cid}（book 在别名池）与 /book/{id}/toc 同三段形态——dispatch 参数路由竞争原为注册序决胜（paramHit == nil 锁定首个）→ 嵌套路由抢占，"toc" 被当 {cid} ParseInt 失败 404。**当前方案 1 未激活嵌套故 R162 时代未暴露，admin 一旦切换伪静态方案 4-18 全站 toc 即炸**。修复：参数路由竞争改静态段特异性优先（routeStaticCount 辅助——静态段多者更特异，同数保持注册序）——/book/{id}/toc（2 静态段）胜出 /book/{id}/{cid}（1 静态段）。回归矩阵：九路由 smoke 全 200+嵌套 /book/{bid}/{cid} 归属校验正确（跨书 404/同书 200 双证）+全量 test 70.95s PASS。
+- 【R166-d 今日更新 Tf 根治（R164 移交②闭环）】动态数字句「今日更新 N 章」实时计数 defeat 全文寻址缓存——每次变更入队 LLM（R164-d 有界成本项）。trxsw/home.html 整句 Tf 化「{{Tf $.Lang "今日更新 {0} 章" .Stats.todayUpdates}}」+_fallback/home.html 拆词 T 化（「今日更新」「章」单字键复用）——四语种验证：en "Updated Today: N chapters"/ja「今日更新 N 話」/ko「오늘 업데이트 N화」/zh-Hant 同形——动态数字句不再入队 LLM，直查零上游。23qb 等其余主题同形态句留 sweep 渐进（非主可见面，精简不铺开）。
+- 【R166-e 站名字典化】首页「Qingyue Literature」此前系 LLM 缓存产物（半吊子风险面）——字典 en "Qingyue Literature" 收编为手写权威；ja/ko 同形键「青阅文学」（专名不译惯例，同形命中防 sweep LLM 打捞）；zh-Hant「青閱文學」（OpenCC 同形）。obfMaybe 反爬实体化假象排查记录：zh-CN 页「今日更新」grep 字面失配系 obf 实体化（&#26032; 等）非缺陷，html.unescape 后渲染正常。
+- 【R166-f 封面窗口期抢跑（常设②③交叉）】源站图片通道反爬解除（R165 时 2/3 失败率→8/8 全成）——backfill-covers force=1 全量面连跑 27 批：成功率 80%+ 稳定，累计修复 ~180 本，public/covers 439→1076；首页三区块满血恢复（编辑推荐 8/热门 10/最新 12——R161 目标全达）。采集 runner 同步扩池（fleet 自动任务，Novel id 789→1296 新书带封面自然入库）——剩余长尾随采集自然补。源站窗口有波动（批 3 出现 2 败）如实记录。
+- 【R166-g 常设⑥核查：一键安装命令】deploy-cn.sh（8+1 步）+ bootstrap-cn.sh（零前提引导）四服务链路完整：backend-go :3000+scraper-go :3030 双主服务（bin/ 预构建原子同步）+stealth :3031 可选侧车（R131）+translate :3032 可选侧车（[7/9] opencc-js+z-ai-web-dev-sdk，[8/9] run.sh flock 单实例）+[9/9] 健康检查含 translate。R163-R166 全部改动为 backend-go 内部能力（langMode/伪静态/语种管线/title 治理），部署面（服务清单/端口拓扑/bin 形态）零变化——无需更新，如实记录结论。
+- 【R166-h LLM 配额观测】缓存命中秒回（万界邪尊 0.0007s results 直出）、新串实时翻译 90s 超时——429 枯竭期延续（R164-d 观测态）；静态面（字典+Tf 直查+缓存）完全不受影响，动态串收敛仍待配额窗口。PAT 第 31 次提醒：push 网络层挂起持续（R165 结论），R160~R166 八轮提交积压本地。
+
+Stage Summary:
+- title 全页面族治理闭环：八页 title 语种分流架构（zh-CN=seoConfig SEO 面 / 非 zh-CN=Tf 手写形态）+ 参数预翻链设计（分类词字典/书名数据面/站名字典化/专名渐进）——「Tf 化必须参数预翻否则被 sweep 整段打捞」写入架构注释
+- 路由层 P1 修复：参数路由静态段特异性优先——R162 嵌套方案激活时全站 toc 404 的定时炸弹拆除（当前方案 1 未暴露、切换即炸）
+- 动态数字句 Tf 根治首个落地（今日更新 N 章四语种直查）——R164 移交②闭环，同形态句式（人气 N/共 N 本等）治理路径可循
+- 封面窗口期抢跑 ~180 本+首页三区块满血 8/10/12——常设②数据面伤痕大幅回血；源站反爬窗口瞬时性如实记录
+- 移交下一轮：①PAT 第 31 次提醒（八轮提交积压+push 网络挂起）②book/chapter title 的作者名/章节名等专名收敛依赖 LLM 配额窗口（设计内渐进）③其余 13 主题「今日更新」同形态句 Tf 化可选（sweep 已兜底）④wordCount/clicks 回填观测维持常设② ⑤pilishuwu 过盾维持常设③

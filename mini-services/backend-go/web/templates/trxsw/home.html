@@ -30,7 +30,7 @@ Go 契约 .Latest 上限 14（TSX 最新更新表取 30）、.RankClicks 上限 
       <section class="rounded-[10px] border-2 border-[#a6d3e8] bg-[#f7fbfd]">
         <header class="flex h-[30px] items-center justify-between rounded-t-[8px] border-b border-[#a6d3e8] bg-[#e1eced] px-3">
           <h2 class="text-sm font-bold text-[#333]">最新更新</h2>
-          <div class="text-[11px] text-[#999]"><span>今日更新 {{.Stats.todayUpdates}} 章</span></div>
+          <div class="text-[11px] text-[#999]"><span>{{Tf $.Lang "今日更新 {0} 章" .Stats.todayUpdates}}</span></div>
         </header>
         <div class="px-2 py-1">
           {{range .Latest}}<a href="{{bookURL .id}}" class="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-dotted border-[#a6d3e8] px-1 py-2 text-xs leading-[16px] hover:bg-[#FBFBFB] md:grid-cols-[64px_minmax(0,1fr)_minmax(0,1.4fr)_64px_52px] md:items-center md:py-[7px]">
