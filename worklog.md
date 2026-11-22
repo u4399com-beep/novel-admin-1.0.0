@@ -5762,3 +5762,23 @@ Stage Summary:
 - 动态数字句 Tf 根治首个落地（今日更新 N 章四语种直查）——R164 移交②闭环，同形态句式（人气 N/共 N 本等）治理路径可循
 - 封面窗口期抢跑 ~180 本+首页三区块满血 8/10/12——常设②数据面伤痕大幅回血；源站反爬窗口瞬时性如实记录
 - 移交下一轮：①PAT 第 31 次提醒（八轮提交积压+push 网络挂起）②book/chapter title 的作者名/章节名等专名收敛依赖 LLM 配额窗口（设计内渐进）③其余 13 主题「今日更新」同形态句 Tf 化可选（sweep 已兜底）④wordCount/clicks 回填观测维持常设② ⑤pilishuwu 过盾维持常设③
+
+---
+
+Task ID: R167
+Agent: Z.ai Code (main)
+Task: 翻译缓存的效率不能做到实时，有没有更快的解决办法能够做到实时程度；翻译范围要包括页面上能看到的所有文字；实在不行就落库吧（用户指令）——元数据级 LLM 预热工作器（提前翻+落库，访问时缓存全命中=实时）
+
+Work Log:
+- 【R167-a 痛点定性】前台管线 R160 起是「访问驱动渐进收敛」——首次访问原文兜底+后台预热+下次命中。R164 sweep 已覆盖「页面可见所有文字」，但 en/ja/ko 动态串首次仍原文——用户体感不实时。瓶颈不在存储（TranslationCache 早已 SQLite 落库持久）而在 LLM 网关 429 配额（缓存命中 0.0007s 秒回、新串 90s 超时实测）——「实时」的物理边界=上游枯竭期无法产出译文，工程侧唯一杠杆=把翻译从「访问后」提前到「访问前」+配额窗口内最大化吃配额。
+- 【R167-b 架构：webi18n_prefetch.go 元数据级预热工作器】startI18nPrefetchLoop 后台无限循环（main.go 注册，I18N_PREFETCH_OFF=1 应急停用）：①成本闸巡检（GEO_LANG_OFF/langMode=off → 10min 长睡——外语渲染关停即无预热需求，省配额）②游标分页扫书 24 本/轮（WHERE id > ? ASC 推进，尾回零循环巡检——采集新书/admin 改简介自然进队列）③扫面=页面可见动态串有限闭集：P0 书名+作者/P1 简介/P2 每书最新 1 章题（~1300 书×4 字段）——**与 R139 成本闸边界**：R139 拒绝的是全库正文×LLM（1.4M 章成本爆炸器）维持不变，正文继续章级访问驱动预热；元数据闭集量级可控全翻④含汉字判定（sweepHasHan 复用）+去重+**短串优先排序**（书名/作者/章题 ≤60 rune 首页/列表每页必显面优先吃配额，简介长串尾置）⑤缓存批查 miss→32 段/片上游（i18nPrefetchClient 120s 独立 client 与渲染 150s/章级 90s 三方隔离）→translateCachePut 落库+LRU 回填⑥语种轮转 en→ja→ko（配额三语种均分）⑦自适应节流：有产出片间 2s+轮间 3s 持续推进/零产出（429 枯竭 ok:true 全空段）轮间 90s 等窗口/网络错误 30s——绝不空转烧配额。
+- 【R167-c 观测面】GET /api/translate/prefetch/status——running/cursor/lang/targets/stats{batches,translated,misses,lastRunAt,lastError}（匿名可读同 /api/health 语义；worker 单 goroutine 写+互斥锁）。启动实测：running=true、cursor 24→48 推进、misses 77→171 扫出、en→ja 轮转正常；429 期 batches 累计但 translated=0+120s 超时 err——枯竭期行为符合设计（零产出长睡不空转）。
+- 【R167-d 编译错四连修】cur 未用/queryNovelList 双返回值/unicode 尾巴误留/register 签名 ps 参数；**游标无效化 bug 首版自查自纠**——首版查询 offset=0 恒扫同批书（游标推进但未用于查询），改为 WHERE id > ? 占位符形态（queryNovelList 支持 args 占位先例 homeBlockNovels）。
+- 【R167-e 实时性诚实边界（面向用户的完整答案）】三层实时阶梯：①静态 UI 面（导航/按钮/区块头/分页等 chrome）——字典直查毫秒级实时 ✓；②zh-Hant 全站——OpenCC 本地词典秒级实时 ✓；③en/ja/ko 动态串——受 LLM 网关 429 配额硬限制，R167 工作器把翻译提前落库（TranslationCache 持久层），配额窗口内持续推进、窗口开启后前台全站缓存命中=毫秒级实时；枯竭期物理不可能实时（除非引入第二个翻译引擎——外部依赖不符合项目哲学）。首页 en 区块书名 14/14 原文现状=枯竭期实况（缓存书名译文零存量+worker 零产出），配额恢复窗口 worker 自动补齐。
+- 【R167-f 质量闸】gofmt/vet 零输出+i18n 相关测试绿+全量 test 77.52s PASS；worker 与既有管线并发分工核验：上游总并发 3（worker 1+章级预热闸 2）+客户端三 client 隔离（150s 渲染/90s 章级/120s worker）——配额窗口内页面预热优先、worker 顺势填充，互不挤兑。
+
+Stage Summary:
+- 「实时」工程闭环：静态面字典实时+zh-Hant OpenCC 实时+en/ja/ko 动态串预落库（worker 提前翻+访问驱动预热双管线兜底）——TranslationCache 持久层即「落库」路线的完整实现，缓存覆盖率随配额窗口单调增长且永不回退（缓存永久命中）
+- 工作器与 R139 成本闸边界清晰：元数据闭集全翻（~1300 书×4 字段×3 语种）+正文维持访问驱动——页面可见面全兼顾且成本可控
+- 短串优先调度：配额窗口内优先覆盖首页/列表必显面（书名/作者/章题），书页简介二优先级——窗口期用户体验最大化
+- 移交下一轮：①PAT 第 32 次提醒（九轮提交积压+push 网络挂起）②LLM 配额窗口观测（worker status API 可监控 translated 曲线）③admin 页可加预热进度卡（status API 已就绪，UI 待做）④1.4M 正文全翻维持 R139 判断不自动预热 ⑤worker 扫序可改两遍轮（updatedAt DESC 最新可见书优先——可选优化未做）

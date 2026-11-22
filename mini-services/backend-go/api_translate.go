@@ -370,4 +370,5 @@ func handleTranslateHealth(w http.ResponseWriter, r *http.Request, _ map[string]
 func init() {
 	register("POST", "/api/translate", handleTranslatePost)
 	register("GET", "/api/translate/health", handleTranslateHealth)
+	register("GET", "/api/translate/prefetch/status", handleTranslatePrefetchStatus) // R167: 预热工作器观测面
 }

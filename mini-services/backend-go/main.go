@@ -79,6 +79,7 @@ func main() {
 		go startCoverSweepLoop()      // 封面巡检自愈（30min/轮，COVERSWEEP_OFF=1 停用，见 api_noveltools.go）
 		go startBackupLoop()          // R135 P1：DB 自动备份（VACUUM INTO 原子快照，12h/轮，BACKUP_OFF=1 停用，见 backupx.go）
 		go startTranslateWarmLoop()   // R139：翻译预热（采集期后台预生成译文，2s/轮，TRANSLATEWARM_OFF=1 停用，见 translatewarm.go）
+		go startI18nPrefetchLoop()    // R167：元数据级 LLM 预热（书名/作者/简介/最新章题 ×en/ja/ko 提前翻落库，I18N_PREFETCH_OFF=1 停用，见 webi18n_prefetch.go）
 		go startPseoReenrichSweep()   // 种子重富集自愈（60min/轮，PSEO_REENRICH_OFF=1 停用，见 pseo_reenrich.go）
 		go cleanupFinishedTasksLoop() // R102-b 任务历史清理（6h/轮，见 tasklogx.go）
 	}
