@@ -1,6 +1,25 @@
 #!/usr/bin/env bash
 # 确保双服务在跑（沙箱周期清理后台进程的对策：每个工作调用开头先跑本脚本）
 # 用法：bash scripts/ensure-services.sh && <你的命令>
+# R185（移交① 根治）：
+#   --restart       二段式重启模式——先 pkill 全部 run.sh 循环+服务进程（陈旧/僵死实例
+#                   不再「只拉起不重启」卡死），再走标准拉起链；flock 防重叠仍生效。
+#   ENSURE_RESTART=1  允许对「循环存活>60s 但探活持续失败」的陈旧实例自动判死重启
+#                   （libre 分支已实装；backend/scraper/stealth/translate 的 run.sh
+#                   自带 2s 崩溃重启环，进程死由本脚本拉起，僵死由 watchdog 处置）。
+case "${1:-}" in
+  --restart)
+    export ENSURE_RESTART=1
+    echo "[ensure] --restart：清杀既有实例后重建"
+    pkill -f 'backend-go/run.sh' 2>/dev/null; pkill -f 'scraper-go/run.sh' 2>/dev/null
+    pkill -f 'stealth-service/run.sh' 2>/dev/null; pkill -f 'translate-service/run.sh' 2>/dev/null
+    pkill -f 'libretranslate/run.sh' 2>/dev/null; sleep 1
+    pkill -x backend-go 2>/dev/null; pkill -x scraper-go 2>/dev/null
+    pkill -f 'bun dist/translate-service.js' 2>/dev/null; pkill -f 'bun run index.ts' 2>/dev/null
+    pkill -f 'venv/bin/python3 server.py' 2>/dev/null
+    pkill -f 'libretranslate' 2>/dev/null; sleep 1
+    ;;
+esac
 ROOT=/home/z/my-project
 OK=1
 mkdir -p "$ROOT/db"  # R104: SQLite 打开失败 error14 的根因（沙箱重置后 db/ 目录随 gitignore 丢失）
@@ -25,13 +44,29 @@ if [ -f "$ROOT/mini-services/translate-service/index.ts" ] \
     fi
   fi
 fi
-# libretranslate（R168：LibreTranslate 兜底引擎 :5000，LLM 失败段垫底；可选组件不进 OK
+# libretranslate（R168：LibreTranslate 引擎 :5000，en/ja/ko 主引擎；可选组件不进 OK
 # 早退，拉起模式与 stealth/translate 同构。libretranslate 未安装时 run.sh 日志明示，
 # translate-service 探针熔断自动跳过 libre——不阻塞主链路）
-if [ -x "$HOME/.venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
-  if ! curl -s --max-time 2 http://127.0.0.1:5000/languages >/dev/null 2>&1; then
+# R185：检测面扩容——mini-services/libretranslate/venv（R173 在库 venv 布局）优先，
+# $HOME/.venv 与系统 PATH 兜底；--restart 模式见文末。
+LT_BIN="$ROOT/mini-services/libretranslate/venv/bin/libretranslate"
+if [ ! -x "$LT_BIN" ] && [ -x "$HOME/.venv/bin/libretranslate" ]; then LT_BIN="$HOME/.venv/bin/libretranslate"; fi
+if [ -x "$LT_BIN" ] || command -v libretranslate >/dev/null 2>&1; then
+  if ! curl -s --max-time 4 http://127.0.0.1:5000/languages >/dev/null 2>&1; then
     if ! pgrep -f 'libretranslate/run.sh' >/dev/null 2>&1; then
       (cd "$ROOT/mini-services/libretranslate" && nohup ./run.sh >>/tmp/libretranslate.log 2>&1 &)
+    else
+      # R185 陈旧根治（移交①）：run.sh 循环在但 :5000 探活持续失败=陈旧/僵死实例
+      # （四模型装载窗口 ≤25s 除外：仅在循环存活 >60s 仍探活失败时才判死重启）。
+      lt_loop_start=$(ps -o lstart= -p "$(pgrep -f 'libretranslate/run.sh' | head -1)" 2>/dev/null)
+      if [ -n "$lt_loop_start" ]; then
+        lt_age=$(( $(date +%s) - $(date -d "$lt_loop_start" +%s 2>/dev/null || echo $(date +%s)) ))
+        if [ "$lt_age" -gt 60 ] && [ "${ENSURE_RESTART:-0}" = "1" ]; then
+          pkill -f 'libretranslate/run.sh' 2>/dev/null; sleep 1
+          pkill -f 'libretranslate' 2>/dev/null; sleep 1
+          (cd "$ROOT/mini-services/libretranslate" && nohup ./run.sh >>/tmp/libretranslate.log 2>&1 &)
+        fi
+      fi
     fi
   fi
 fi

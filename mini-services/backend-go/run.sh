@@ -39,6 +39,22 @@ mkdir -p "$(dirname "$DB_FILE")"
   done
 ) &
 
+# R185：libretranslate 同树守护（:5000 四语种模型装载 ~20s，探活给足裕量；
+# run.sh 自带 flock 单实例闸。未安装 venv 时静默跳过——translate 探针熔断自愈）
+(
+  while true; do
+    if ! curl -s --max-time 6 http://127.0.0.1:5000/languages >/dev/null 2>&1; then
+      if ! pgrep -f 'libretranslate' >/dev/null 2>&1; then
+        if [ -x ../libretranslate/venv/bin/libretranslate ] || command -v libretranslate >/dev/null 2>&1; then
+          cd ../libretranslate && nohup bash run.sh >>/tmp/libretranslate.log 2>&1 9>&- &
+          cd "$OLDPWD" || cd ../backend-go
+        fi
+      fi
+    fi
+    sleep 30
+  done
+) &
+
 while true; do
   DB_PATH="$DB_FILE" ./bin/backend-go
   code=$?

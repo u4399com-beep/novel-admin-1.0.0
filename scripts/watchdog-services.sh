@@ -113,8 +113,10 @@ restart() { # name probe_url probe_timeout
       (cd "$ROOT/mini-services/translate-service" && nohup bash run.sh >>/tmp/translate-service.log 2>&1 9>&- &)
       ;;
     libretranslate)
-      # R168：LibreTranslate 兜底引擎 :5000（未安装时 run.sh 自身退出，不拉起风暴）
-      if [ -x "$HOME/.venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
+      # R168：LibreTranslate 引擎 :5000（未安装时 run.sh 自身退出，不拉起风暴）
+      # R185：检测面扩容——mini-services/libretranslate/venv 优先（R173 在库布局）
+      if [ -x "$ROOT/mini-services/libretranslate/venv/bin/libretranslate" ] \
+         || [ -x "$HOME/.venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
         (cd "$ROOT/mini-services/libretranslate" && nohup bash run.sh >>/tmp/libretranslate.log 2>&1 9>&- &)
       else
         LAST_RESTART[$name]=$(( $(now_s) + 3600 )) # 未安装：1h 内不再尝试

@@ -1,0 +1,11 @@
+pymupdf_git_branch = 'aptest-jules'
+pymupdf_git_comment = 'Update version to 2.2.'
+pymupdf_git_diff = ''
+pymupdf_git_diff_n = None
+pymupdf_git_sha = 'ac3ad01a923b647d7f963d288126259ca8a8fdbc'
+mupdf_location = 'https://mupdf.com/downloads/archive/mupdf-1.28.6-source.tar.gz'
+pymupdf_version = '2.2'
+pymupdf_version_tuple = (2, 2)
+swig_version = '4.5.1'
+swig_version_tuple = (4, 5, 1)
+fake_no_gil = False

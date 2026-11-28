@@ -1,0 +1,6 @@
+#!/home/z/my-project/mini-services/libretranslate/venv/bin/python3.12
+import sys
+from chardet.cli import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

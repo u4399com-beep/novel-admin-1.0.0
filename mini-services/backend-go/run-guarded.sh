@@ -16,4 +16,7 @@ if printf '%s' "$health" | grep -q '"service":"backend-go"'; then
 fi
 
 export BACKEND_PORT="${BACKEND_PORT:-3000}"
+# R185（移交① run-guarded 防御）：db/ 目录缺失=SQLite error14 启动崩——守卫层先补
+# （R104 教训：沙箱重置后 db/ 随 gitignore 丢失；run.sh 亦有 mkdir，此处双保险）
+mkdir -p "$(cd ../.. && pwd)/db" 2>/dev/null || mkdir -p ./db
 exec bash run.sh
