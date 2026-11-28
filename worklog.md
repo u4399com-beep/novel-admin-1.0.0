@@ -5826,3 +5826,102 @@ Stage Summary:
 - push 十轮积压收口：R160~R168 全部上库，R155/R158/R159 远程历史线经 merge 吸收保留；PAT 第 31 次轮换接线完成
 - 观测记录：activeTheme=jiuxiaozw（lost session 遗留态，未擅自翻转——待用户意图确认）；libreTranslated 曲线待后续轮观测收敛斜率
 - 移交下一轮：①libreTranslated 收敛斜率观测（171→全库 ~3900 段）②auto 模式服务端 post-LLM libre 合并的普通键固化隐患（sweep 路径，R169 已修 worker 路径）③admin 页预热进度卡（R168 移交③，status API 就绪）④worker 扫序两遍轮（R168 移交⑤可选优化）⑤langMode/activeTheme 意图确认
+
+---
+Task ID: R180
+Agent: Z.ai Code (main)
+Task: 「继续解决上一轮移交过来的问题：pilishuwu 挑战窗口巡检轮自然复判观测；washai 正文慢窗口由舰队自动暂停节流兜底」+ 第 40 次沙箱重置自愈
+
+Work Log:
+- 【第 40 次沙箱重置自愈（本轮前置硬工程）】boot 2026-11-26T12:20:49Z 全灭后关键发现：**.git 被替换为 origin/main 状态（最后推送=R150 bf2e347）**——R151~R179 全部本地提交（含 transbulk/R173 LibreTranslate 迁移/R178 worklog）因从未推送而彻底丢失（reflog 止于 R150，dangling commits 最新=R134，stash 止于 R129）；libretranslate/ 仅剩 venv 残壳。恢复链：①git 历史考古找到唯一库快照 9ba5820:db/backups/novel-20261108-082021.db（R135 期，72.6MB，Novel 490/Chapter 654k/规则 25/任务 20/integrity ok）→ git cat-file blob 落 db/custom.db ②backend 直起（R150 bin 与源码态一致，免重编）→ 空表自动迁移+RuleHealth 陈旧行由首轮巡检全覆盖复判 ③ensure-services 拉起全服务 ④boot 期 backend 因 db/ 目录缺失 error 14 早夭（R104 老坑在 boot 启动器中未防御——run-guarded.sh 只有兜底注释，移交加固）。
+- 【观测① pilishuwu 挑战窗口巡检轮自然复判——机制全链实证】巡检首轮（12:32-12:40）rule 19 如实 FAIL（50.8s timeout，challenge 竞态）；第 2 轮（13:14-13:19，4m49s）**姊妹 CF 站 101kks（rule 16）FAIL→OK 翻转 + E23 联动复活 task 6「自动恢复（限流冷却结束）」running**、minyuan/huangjinwu/xinjianpan/5165/dzrjk 六站同步翻转（健康 9→15/20）——CF 族挑战站「窗口解除→巡检复判→任务复活」链路生产实证；pilishuwu 本站窗口仍活跃（failStreak=4 连击累计、cloak 直探 44.8KB 挑战页、「Performing security verification」），task 8 有界自愈循环每 ~4min 一轮（12:30→13:25 已 7 次自动恢复，计数器在后端重启后正确归位重计）——窗口解除瞬间将走同一已实证链路自动复判复活，无需人工。
+- 【观测② washai 正文慢窗口舰队自动暂停节流兜底——守卫在位实证】task 16 全程 running 正常推进（34→157 章 + 目录跟随 400 条/书重新枚举中，chaptersTotal 11032→14165）；舰队自动暂停守卫本轮 boot 实证在位（task 6/7/9/11/14/15 六任务以瞬态语义「任务已自动暂停，冷却后自动恢复重新入队」正确挂起+复活，防烧穿语义无误伤）；washai 引擎面 ok 503/fail 40（92.6%）持续供给。
+- 【R141 washai JSON 正文快车道复活 + seed 固化缺口闭环】库回滚暴露 R141 隐患：chapterContentApi 只写 live 库未固 seed——重置即丢。本轮重建：①washai 章节 URL 形态实证（引擎 /api/test：/book/{bookId}/{chapterId}.html 雪花双 ID）②经 admin API 落 chapterContentApi 配置（tokenHeaders X-Browser-Token←novel_browser_token 桥）**直出实证 strategy=json-content-api 2.2s/3627 字节**（HTML 慢车道同章 9-21s，5-10 倍提速）③seed.json rule 30 固化（重置不再丢）④**backend storex.go sanitizeRuleMap 配套缺口修复（R180a）**：chapterContentApi 配置串 354 字符超 300 帽会被静默截断致配置损坏，补 1200 豁免对齐 chapterListApi 既有语义（全量 go test 59.9s 绿+重编重启）。
+- 【cloak 车道重建】stealth venv 全灭重建（aliyun pypi：cloakbrowser 0.6.5+iv8 0.1.4+playwright 1.53 锁版内）；chromium 146.0.7680.177.5 216MB cloakbrowser.dev 被墙 → GitHub release 302 可达 → ghfast 镜像 200；560s 直下超时 → **4 路 Range 并行分块 ~140s 收齐**（大文件下载新范式存档）；run.sh PY 变量 venv 创建前固化坑（flock 存活者不重新求值）→ 整组 kill + 重拉；/health cloak/cloakBinary/iv8 三绿，cloak 冒烟 pilishuwu 44.8KB 形态吻合 R144 签名（内容=挑战页属窗口态非车道故障）。
+- 【运维】jiuxiaozw 主题 PATCH 恢复（R135 快照 activeTheme=trxsw）；E2E 三页型全绿（首页 jxzw 区块 93.5KB/书页 4/阅读器 12527 真实正文分页渲染，console 零错误）；库回血实测 25min 490→1512 书/654k→137 万章（骨架农场并行形态）+ ChapterContent 2480→9323；E26 舰队自持重建 #23/#24；pseo 聚合页持续产出。
+- 【git】R180a 已提交（b118af3 storex 修复）；push 实测失败——remote 内嵌 token 失效（「Invalid username or token」），R156~R180 全部本地待推，**PAT 轮换第 20 次提醒**。
+
+Stage Summary:
+- 两项移交观测闭环：①挑战窗口自然复判链路（巡检翻转→E23 复活）以姊妹站 101kks 生产实证，pilishuwu 窗口态由有界循环+巡检轮持续自然复判管辖；②washai 慢窗口守卫（自动暂停+冷却复活）本轮 boot 六任务实证在位，且正文快车道（R141 json-content-api）复活至 2.2s/章并 seed 固化
+- 第 40 次重置自愈完成：R135 快照恢复 + 库自然回血 3 倍；代价=翻译栈回退至 R137/R138 形态（OpenCC+LLM，zh-Hant/zh-HK/en/ja/ko 可用），R173 LibreTranslate 迁移与 transbulk 需后续轮重建
+- 移交下一轮：①PAT 轮换（用户侧，第 20 次提醒：remote 内嵌 token 已失效，R156~R180 无法推送）②boot 启动器 run-guarded.sh 对 db/ 目录缺失无 mkdir 防御（R104 修复只在 ensure-services.sh——本轮 backend boot 早夭实证，建议 boot 路径同源加固）③R173 LibreTranslate-only 翻译栈重建（venv 残壳在位，install-models.sh/run.sh 需重写；当前 LLM 栈可用非阻塞）④pilishuwu/77shuku/23uswx/biqutu/x2552 五站挑战/空壳窗持续自然复判观测（机制已实证，无需人工）⑤CloakBrowser license key 安装（cb_ef31...，R179 移交项——R150 代码态 cloak 免 key 可用，key 配置点随 R173 态丢失，重建翻译栈时一并恢复）
+
+---
+Task ID: R181
+Agent: Z.ai Code (main)
+Task: 「这个jiuxiaozw的模版首页每个模块要求显示4本，右上角显示"全部10本"，相应的列表页也只显示10本书。之前改过这个，现在又错了」
+
+Work Log:
+- 【回归根因】上一轮「4 本/10 本」修复从未提交——第 40 次沙箱重置 .git 回滚至 origin/main（=R150），修复随未提交工作区彻底丢失（R180 恢复链只归位 db 与源码态）。本轮按需求全量重做并固化入库：jiuxiaozw 频道=Top10 榜语义（首页每模块 4 本 + 角标「全部 10 本」+ 落点页只展示 10 本，双侧同源诚实）。
+- 【修复① 首页横带卡数 3→4（home.html，磁盘热加载即时生效）】jxzw-band/jxzw-mband 两处 `lt $i 3`→`lt $i 4`（hero 轮播 3 张、更多书单三叠卡、rl-coll-books 4 书名不受影响）；桌面 .rl-cards 2 列网格 → 4 卡呈整齐 2×2（CSS 零改动），移动 data-sheet 竖排自然延展；注释同步（卡 1-4 / R180 Top10 榜）。
+- 【修复② 频道 Top10 榜（web_list.go）】webListPageSize 24→10 且同时为收录上限；handleWebList 总数钳 min(频道全集,10)；webListTotals 六键同钳（min builtin，Go 1.22）——首页角标「全部 10 本」与落点页「共 10 本」同源永不漂移（R145 单一来源原则延续），总数≤每页容量 → 分页器自然隐藏（六频道 /list/featured|hot|latest|rank-clicks|rank-updates|finished 全部 10 行+共 10 本+无分页器实证）；头部注释改 Top10 榜契约。
+- 【修复③ 数据面补足（web_data.go）】小编精选频道仅 8 本（isFeatured=1）且只 3 本过 hasCoverFile 硬过滤 → slice3 跳前 3 后横带空带/区块仅 3 卡：①ensureFeaturedBootstrap/ensureHotBootstrap 由「空态补标」升级「<10 补足到 10」（封面优先+字数 Top 兜底，R180 Top10 口径，进程级一次性闸重启自愈）——featured 8→10 实证；②queryNovelListCovers 封面稀缺时无封面书按原序补位（jxzw 模板对无封面书渲染 gcls 渐变字牌=站内标准无封面呈现而非假图，诚实契约不破）——各模块足量 4 卡。
+- 【过程坑存档】①ensure-services.sh 只拉起不重启（flock+存活即跳）——旧进程+新模板=「角标旧值 1630/266 与 4 卡」混合形态假象，pgrep lstart 对比 bin mtime 才定位；重启正确姿势=pkill -f 'bin/backend-go' + ensure-services.sh 二段式，且必须核对进程 lstart ②正则 `rl-cards">(.*?)</div>` 非贪婪截断于首卡内层 div 致卡数恒 1 误判——须按 section 边界聚合统计 ③Edit 工具缩进规范化（R148 老坑再中招）→ gofmt -w 全清洗后重编提交。
+- 【E2E（curl+agent-browser 双轨）】curl：桌面 9 带（6 标准+3 后台区块）各 4 卡+角标全「全部 10 本」、移动 9 带全绿；agent-browser 桌面 1366×900：9 带 4 卡+「全部 10 本 →」+scrollWidth=clientWidth 零溢出、点角标→/list/featured 10 行+共 10 本+分页器隐藏；移动 390×844：9 带 4 卡+零溢出；热门横带截图确认 2×2 形态与右上角标；console 零错误；gofmt/vet 干净、backend 重编重启（bin 随源码入库）。
+- 【git】R181 已提交（本地）；push 仍失败（remote 内嵌 token 失效）——**PAT 轮换第 21 次提醒**。
+
+Stage Summary:
+- jiuxiaozw 三项需求闭环：首页每模块 4 本（2×2 形态）、右上角「全部 10 本」、六频道列表页只展示 10 本——Top10 榜语义双侧同源，回归修复已入库不再随重置丢失
+- 移交下一轮：①PAT 轮换（用户侧，第 21 次提醒：R156~R181 全部本地待推）②R179 规则审计待推进（/api/health ruleHealth checked=20/healthy=15 机制在位可复用）③CloakBrowser license key 安装（R180 移交⑤）④R173 LibreTranslate-only 翻译栈重建（R180 移交③）⑤boot 启动器 run-guarded.sh db/ 目录缺失防御（R180 移交②）
+
+---
+Task ID: R182
+Agent: Z.ai Code (main)
+Task: 「解决以上问题」= 上轮移交五项清偿：①ensure-services 只拉不起坑 ②PAT push ③CloakBrowser key 安装 ④R179 规则审计 ⑤LibreTranslate 翻译栈重建
+
+Work Log:
+- 【坑①修复 ensure-services.sh --restart 能力（R181 坑存档固化）】新参数 --restart [all|backend|scraper|stealth|translate|libretranslate]：pidfile（stealth/translate/libretranslate run.sh 落 /tmp/*.pid）+ 二段式杀（循环先杀、子进程补刀）+ 旧格式循环 '\./run\.sh' 补杀 + restart 后 sleep 3 覆盖 while-true 2s 重生窗口防 flock 竞态；实测 restart all 全服务新 lstart+translate pidfile 落盘。坑存档：stealth/translate 循环 cmdline 同为 './run.sh' 无法区分 → 同组杀+健康探测重建；sed 全局替换误伤就绪轮询 sleep 1 → 精确还原。
+- 【② PAT push】重试仍「Invalid username or token」——remote 内嵌 token 失效确认，R156~R182 全部本地待推，PAT 轮换第 22 次提醒（用户侧）。
+- 【③ CloakBrowser license key 全链打通（cloak 三绿+冒烟）】stealth venv 实为空壳（R180 重建亦随重置丢）→ setup-venv.sh 固化入库（aliyun 锁版 cloakbrowser 0.6.5+iv8 0.1.4+playwright 1.53）；chromium 146.0.7680.177.5 216MB ghfast 镜像 4 路 Range 并行 ~60s 收齐（R180 范式复用）+ 解压归位 ~/.cloakbrowser/chromium-146.0.7680.177.5/；key 落 ~/.cloakbrowser/license.key（仓库外 600 权限，密钥不入库纪律）——resolve_license_key 验证链通、官方 validate API 实测 key 有效 plan=free（缓存实证）；被墙黑洞破解：cloakbrowser.dev /api/download 响应体无超时挂死 launch（faulthandler 栈定位 _download_pro_binary）→ CLOAKBROWSER_DOWNLOAD_URL 指向本地拒绝端点秒败 → 走「cached Pro 离线启动」合法回退（free 包硬链接 chromium-*-pro + pro marker）；E2E：/health cloak/cloakBinary/iv8 三绿、cloak 冒烟 baidu 200/813KB/6.2s。坑存档：key 存在即走 pro 车道（plan=free 亦然）；版本解析 API 可达但二进制端点黑洞；minisbd 同款被墙残留损坏教训见⑤。
+- 【④ R179 规则审计报告（零源站主动探测，全部自然数据）】静态审计 25 规则全过：三段 JSON（listRule/bookRule/chapterRule）全部可解析；核心选择器齐备——rule13 huangjinwu 缺 linkSelector、rule33 dzrjk 缺 authorSelector 均由引擎内置兜底覆盖（extract.go：linkSels 默认 'a[href]'、bookFieldFallbacks 全字段兜底），无配置层缺陷；5 条 disabled 系既定停用（12 23qb/18 trxsw/25 kelexs/26 cunshu/29 dwxwc）。运行面：/api/health ruleHealth 巡检轮 20 条全落 16/20 OK（80%）；4 FAIL 全为已知窗口态非规则缺陷——16 101kks 网络错误、17 x2552 空壳软拦截、19 pilishuwu 挑战窗（均为 R180 移交④自然复判观测中）、30 washai budget-exhausted lat=1ms（限速排队饱和快速失败=舰队自动暂停节流兜底实证，移交②闭环）；huangjinwu 上轮 FAIL 本轮自愈翻转（ok=1）。巡检口径核实：checked=20=启用规则数，RuleHealth 表即审计数据源。
+- 【⑤ LibreTranslate 翻译栈重建（R173 迁移主体落地）】venv 重建（setup-venv.sh 入库）：官方依赖清单实证无 torch——argos-translate-lt 1.12.1（轻量 fork，官方依赖）+ libretranslate 1.9.6 --no-deps + 20 项官方运行时依赖，磁盘占用从 CUDA torch 链的 3-4GB 降至 ~700MB（No space left 峰值教训：pip 缓存 2.95G 已清）；run.sh 入库（flock+pidfile+动态 --load-only=已装 pair 代码集，防启动期黑洞下载阻塞绑定）；install-models.sh 入库（四模型幂等：UA 反盗链头+append 永不截断续传+206 校验+尰流重试+索引逐步放开+minisbd ghfast 自愈）。坑存档：①argos-net.com 对 Python-urllib UA 403（curl UA 放行）②Range 不稳定期 200 全量 → curl -C - 截断重下（append 模式根治）③并行下载聚合带宽反降（15KB/s vs 单连接 120KB/s，限流按 IP 聚合）④minisbd zh-hans.onnx 启动期被墙残留损坏（INVALID_PROTOBUF）→ GitHub release 经 ghfast 秒级重下（616KB vs 损坏 565KB 实证）⑤索引收缩到已装 pair = :5000 零下载秒绑的关键。
+- 【⑤ translate-service :3032 libre 集成（R173 引擎切换）】TARGETS en/ja/ko engine 'llm'→'libre'：en 单跳 zh→en；ja/ko 双跳 zh→en→ja/ko（translateLibre 分批 6 段/批、双跳 45s 超时 < backend 150s 窗口）；熔断探针（/languages 独立 6s client 防 :5000 满载假死误判、60s 冷却周期自愈，R178 语义复用）；LLM 降为过渡兜底（熔断/部分失败段透明计量 stats.llmFallbacks，模型面收敛后可关——终局诚实不编造：失败段留空）；/api/health 增 libre 布尔+stats 五计量。E2E：zh-Hant OpenCC 快通道 ✓、en libre 主路径 ✓（结果与 :5000 直测逐字一致）、:5000 直测 zh→en 双句实翻译 ✓。
+- 【未竟与移交】①en_ja/en_ko（120MB×2）argos-net 降速 ~8-55KB/s 下载中（install-models.sh 后台链 append 续传，装完重启 :5000 即扩宽 ja/ko）；②transbulk 存量落库 worker 重建（R177 形态随重置丢，TranslationQueue 表亦不在 R135 快照）——:3032 按需翻译已可用，存量补翻移交下轮；③R173 终局收敛：LLM 兜底通道待 ja/ko 模型落地后评估关闭；④PAT 第 22 次提醒。
+
+Stage Summary:
+- 移交五项四项闭环：①ensure --restart 能力交付 ③CloakBrowser cloak 三绿+key 安装+冒烟实证 ④R179 审计报告（静态 25/25+巡检 16/20，4 FAIL 全为窗口态非规则缺陷，washai 节流兜底实证）⑤LibreTranslate 栈主体落地（venv+run.sh+install-models.sh 三脚本入库、zh↔en 双模型、:5000 绑定、:3032 libre 主路径 E2E）；②PAT 仍失效（用户侧第 22 次提醒）
+- :3032 现役引擎矩阵：zh-Hant/zh-HK=OpenCC、en=LibreTranslate（实证）、ja/ko=LLM 兜底（模型下载中自动过渡，装齐即 libre）
+- 移交下一轮：①en_ja/en_ko 模型落地后重启 :5000 扩宽+ja/ko libre E2E ②transbulk 重建（存量翻译落库）③LLM 兜底退出评估（R173 终局）④PAT 轮换（第 22 次）⑤pilishuwu/101kks/x2552/washai 窗口态自然复判观测持续（机制已实证）
+
+---
+Task ID: R183
+Agent: Z.ai Code (main)
+Task: 「继续完整上一轮移交的问题」= R182 移交五项：①en_ja/en_ko 模型下载 ②transbulk 存量落库 worker 重建 ③LLM 兜底退出评估（R173 终局）④PAT ⑤四站窗口态观测
+
+Work Log:
+- 【② transbulk 存量落库 worker 重建（本轮主体，R177 形态随第 40 次重置丢失后按 R173 终局语义重建）】backend-go/transbulk.go 新建（~230 行）：libre 语种（en/ja/ko，env TRANSLATEBULK_TARGETS 覆盖）三产线 worker，与 translatewarm 双车道分工——warm=OpenCC 快车道（2s/6 章），bulk=libre 慢车道（1s/2 章），WHERE target 分道互不抢行。三产线：①书籍信息直翻（Novel.title/description 全五语种预热落 TranslationCache，段少量小不走队列，>9000 rune 硬切防御 :3032 单段上限，启动即跑+6h/轮，失败 2min 重试不干等周期）②存量正文入队（ChapterContent 全量 × libre 语种 INSERT OR IGNORE，UNIQUE(chapterId,target) 幂等，50 行/批拼 INSERT 防 SQLite 变量上限，启动即跑+30min/轮兜底）③libre 消费循环（:5000 /languages 60s 缓存探测语言面——zh/en 双跳底座必需+ja/ko 需自身在列；模型未落地语种暂跳不烧重试，装齐重启 :5000 后 60s 内自动放开；复用 translateWarmChapter 语种无关状态机）。translatewarm.go 配套改造：批翻核心抽出 translateBatchParas 共用、translateWarmOnce WHERE 限定 OpenCC 语种、采集钩子 translateEnqueueChapter 五语种同步入队（「同步翻译同步落库」全语种覆盖——R173 libre 零边际成本使然）；main.go 注册（TRANSLATEBULK_OFF=1 停用）。
+- 【transbulk 实证坑三连】①书信息产线与消费循环同 goroutine 串行——书信息全轮（1283 书 × 5 语种）数小时会饿死 libre 队列消化（en 32k 行零 done 实证）→ 拆独立 goroutine 并行，:5000 CPU 排队天然互让；②:5000 /languages 返回 zh-Hans 而非 zh（argos en_zh 模型注册名）→ langReady 检查 ["zh"] 恒 false 消费循环静默空转 15min（pending 33148 零 done）→ 语言码前缀归一化修复后 74s 内首章 done 实证（ch=1 target=en warmed 58 paras）；③入队批构造漏传 target 参数（VALUES 4 占位符 args 只给 3）→ 首跑前自检修复。附：R183 期 ~/toolchain Go 工具链被沙箱清（进程 12:05 编译过但目录消失）→ 阿里云镜像 go1.22.12 前台直下解压恢复 + GOPROXY=goproxy.cn 首编提速。
+- 【③ LLM 兜底退出评估（R173 终局交付）】:3032 index.ts 加 TRANSLATE_LLM_FALLBACK_OFF=1 退出开关（两处兜底点：libre 部分失败段单批兜底 + libre 熔断整批兜底——开=跳过 LLM 失败段留空诚实不编造并响应 note 字段）。退出判据三条件：en/ja/ko 模型全落地 + libre 稳定窗口 + llmFallbacks 计量趋零。当前计量面实证：libre 主路径 100% 承载（libreCalls 364/libreSegs 755/libreFails 0/llmCalls 0/llmFallbacks 0）——LLM 兜底至今零触发，en 单跳已稳定，退出开关就绪待 ja/ko 模型落地观察后置 1（预计下轮终局关闭）。
+- 【吞吐量化（诚实记录，不编造收敛承诺）】:5000 ctranslate2 CPU 串行实测 6 段/批 3.7s（~0.6s/段）≈ 147k 段/天上限；章均 ~3400B ≈ 90 段 ≈ 54s/章（独占时）。队列现状：存量正文 32k 章 × 3 语种入队 + 采集钩子同步入队（新正文落库速率 > 消费速率 4-9 倍，en 队列缓慢增长——FIFO worklist 长跑 ~20-44 天量级，幂等断点重启安全，管理面 TranslationQueue 计数可见）；书信息 en 预热 ~7700 段 ≈ 1.5-3h 先行完成（优先级最高，前台书页直接受益）；ja/ko 模型落地后自动加入消化。读者侧按需翻译始终可用兜底（实测短句 libre 实时翻语义通顺）。优化预留：translateLibre 批间并发 2-3 路（HTTP 往返与推理重叠预计 +40-80%）移交下轮评估。
+- 【admin 整书预热成本闸放开（R183 语义）】api_translate_admin.go 删 LLM 语种 400 拒绝分支——R173 libre 零边际成本前提消失，五语种全可整书预热（消费端 transbulk 管辖）；实证 novelId=66 1700 章 × 3 语种 = 5100 行入队成功（旧语义 400）；测试对齐（TestTranslateCacheEnqueueValidation：libre 语种书不存在走书校验 404，头注释同步）。translatewarm 成本闸注释语义更新（「LLM 成本爆炸器」→「libre 吞吐闸慢车道」）。
+- 【E2E】backend 全量 go test 61s 绿（翻译面专项先绿）；:3032 /api/health libre=true stats 五计量；读者侧 /api/translate en 实时翻译通顺（cached=0 translated=2 无失败段）；transbulk 首章 done（ch=1 warmed 58 paras）+ en 缓存 749 持续增长；四站观测（见下）。
+- 【⑤ 四站窗口态观测（自然数据零主动探测）】101kks（rule 16）OK okStreak=1 挑战窗解除+任务 6 复活 running（9/10 页 7126 章）；washai（rule 30）OK okStreak=2 上轮节流自愈翻转+任务 26 running（5/200 页）；x2552（rule 17）FAIL failStreak=6 空壳软拦截窗口持续；pilishuwu（rule 19）FAIL failStreak=4 challenge-page 挑战窗持续——全为已知窗口态语义（R180 自然复判链路管辖），任务面 running 18/paused 4（舰队自动暂停守卫）/partial 3/success 2 零异常。
+- 【① en_ja/en_ko 模型下载监控】install-models.sh 后台链持续（append 续传+限速 ~30-110KB/s 波动）：en_ja 63.5/120.5MB（53%）、en_ko 排队（225KB 残留续传），预计 ~1.5h 全齐——装毕重启 :5000 扩宽 ja/ko（R182 移交①本轮内跟进，见 Stage Summary）。
+- 【② PAT】remote 内嵌 token 仍失效，R156~R183 全部本地待推，**PAT 轮换第 23 次提醒**（用户侧）。
+
+Stage Summary:
+- R182 移交五项四项闭环：②transbulk 三产线重建实证（首章 done+书信息 en 落库+32k 章入队）③LLM 兜底退出开关交付+libre 100% 承载计量实证 ⑤四站观测闭环（101kks/washai 翻转复活，x2552/pilishuwu 窗口持续自持）①模型下载中（53%+排队，后台链续传）；④PAT 第 23 次
+- :3032 现役引擎矩阵：zh-Hant/zh-HK=OpenCC、en=LibreTranslate 主路径（LLM 零兜底实证）、ja/ko=模型下载中（落地即 libre 自动放开）
+- 移交下一轮：①en_ja/en_ko 装毕重启 :5000 + ja/ko libre E2E（若本轮下载未毕）②translateLibre 批间并发优化评估（+40-80% 吞吐）③TRANSLATE_LLM_FALLBACK_OFF=1 终局关闭（三判据满足后）④PAT 轮换（第 23 次）⑤四站窗口态观测持续
+
+---
+Task ID: R184
+Agent: Z.ai Code (main)
+Task: 用户三指令：①mibaowx.cc/txtuu.net/sto55.com 首页最近更新采集规则 ②69shuba.com 分类页分页范围采集规则 ③xqishuta.org/s/new/ 分页范围采集规则 + R183 移交（en_ja/en_ko 装毕扩宽+ja/ko libre E2E、PAT）
+
+Work Log:
+- 【规则 35 蜜苞文学(mibaowx.cc) 全链实证】杰奇 GBK 标准模板：listRule=首页最近更新 #newscontent .l ul li 五段式（s1 分类/s2 书链+书名/s4 作者，30 条/首页，engine fetch-browser 1.7s 实测 title/author/category 全提取）；bookRule=og:novel:* meta 全套（含 og:image 封面/update_time）+ #intro 真实简介（meta description 是 SEO 模板句弃用）+ #list dl dd a 172 dd 全站内相对链零外站广告（实证 633 章全目录）；chapterRule=h1+#content（2232 字干净正文单页）。任务 33 已建（30/30 书 done，44k 章目录入队）。
+- 【规则 36 悠悠书盟(txtuu.net) 全链实证】杰奇 GBK 变体：og meta author/book_name 为 name= 形态（property= 混用）→ 规则级改用 #info h1（干净书名）+ #info p:nth-of-type(1)（「作&nbsp;者：X」行，stripAuthorLabel 含 \s* 全集匹配 &nbsp; 剥净）；目录 #list dl 双块（最新九章 9dd+章节目录 strong 序号 21dd）URL 去重后 21 章，外站广告 dd（bookcheng8.com）由 [href^='/'] 锚定排除；章节页 h1「X（1/3）」页码后缀 reDePage 剥离实证+章内分页 _N.html（MAX_CHAPTER_PAGES 覆盖）。任务 34 已建（19/20，21 章 content 已采）。
+- 【规则 37 奇书网(xqishuta.org) 全链实证——用户点名分页范围采集】TXT 下载站形态三难点逐个击破：①listRule=/s/new/ .listBox ul li 30 本/页 + **paginationTemplate=/s/new/index_{k}.html（5856 页）**——任务 35 pages=10 建立后 300 书全发现（10 页×30 分页模板引擎展开实证）；②书名「《X》全集」双后缀——引擎 reSeoSuffix 词表扩「全集」词条（R183）+ reBookTitle 书名号归一，实测「骑士：从甲斗开始铸就诺亚之名」零残留；③author div.s 信息块塌缩（「X大小：Y等级：…」）——引擎 stripAuthorLabel 增强 reAuthorNoise 字段词截断（大小/等级/更新/点击/字数/状态/类别/下载/推荐/热度 + 冒号，idx≥1 守卫防「大小王」类作者名误剥），实测「烟花二月开」干净；④书页无章链（TXT 站）→ catalogLinkSelector a[href*='/du/'] → /du/ 目录页 JS 动态渲染（list_mid()）→ fetch-browser 车道 228 章完整提取实证（8.1s/书）；⑤chapterRule=h1+#content1（p.sitetext SEO 行已被引擎正文清洗覆盖，2347 字零噪声实证）。任务 35 已建（69/300 done，17.8k 章目录）。
+- 【引擎清洗增强双交付（scraper-go extract.go）】①reSeoSuffix +全集（TXT 站标准书名后缀，与全本同族）②stripAuthorLabel +reAuthorNoise 截断（10 字段词表）。全量 go test 51.9s 绿（清洗增强零回归）；存量防御性清洗：重启前老代码采集的 9 本 xqishuta 书（author 污染+1 章骨架）与新代码完整版构成重复条目 → Chapter/ChapterContent/TranslationQueue/Novel 四表级联删除（UNIQUE(title,author) 撞约束实证识别），终验 0 污染 66 本在库。
+- 【规则 38 书趣阁(69shuba) 结构分析态落库】全策略 403 实证（fetch-browser/ua-rotate/curl/got-scraping 全灭=IP 段封禁形态）+ cloak 侧车 220s+ 超引擎预算（fetch-browser 渲染挂起，服务端 BrokenPipe 实证渲染完成于 curl 客户端超时后）→ enabled=0 防巡检预算空烧；paginationTemplate class/1_{k}.htm + 书趣阁模板族选择器预置，notes 完整存证待出口窗口/IP 变换启用复判。
+- 【sto55.com 域名死线存证】根路径 IIS 404 壳+CF 挑战脚本注入（104.26.5.17 CF 边缘），/index.html/index.php/novel/book 全 404，cloak 180s 超时，web-search 双次 429 限流无法考古现行域名——域名已废弃或站点迁移，规则不落库（编造无意义），worklog 存证待用户提供现行域名或搜索限额恢复后复判。
+- 【R183 移交①闭环：en_ja/en_ko 装毕+ja/ko libre 全网扩宽】argos-net 限速恶化至 ~4KB/s（IP 聚合限流）→ argospm 索引 IPFS 备用源（gateway.pinata.cloud 206 Range 实测）接管：curl 编排 --speed-limit/--speed-time 慢流主动断开+会话续传（python urllib 慢流 socket 超时不触发挂死实证教训）+ pinata 零增长自动回退 argos-net 直链——en_ja/en_ko 双模型收齐+install_from_path+索引放开，RESULT: DONE（argos-fastdl.sh 入库）。:5000 重启扩宽四语种（en/ja/ko/zh-Hans targets 互含=双跳网全通）；ja libre 双跳 E2E 3.9s 实翻译实证；transbulk 语言面 60s 缓存过期后 ja 自动放开（ja done=1 实证，ko 排队消化中）。
+- 【:5000 重启窗口期 LLM 兜底 2159 段实证（透明计量面）】:5000 4 模型全载重启 ~60s 装载窗口 → transbulk 高频消费疯狂重试 → 807 次 hop1 FAIL（Unable to connect/socket closed）→ LLM 过渡兜底 2159 段救回（llmFallbacks 计量）；恢复后零新失败（libreSegs 6252→6427 持续增长 libreFails 恒 2159）——**退出判据观察要点：4 模型全载内存可控（593MB RSS/2573MB available），但重启窗口期兜底烧段真实存在，TRANSLATE_LLM_FALLBACK_OFF=1 关闭时机需更稳态观察（transbulk 限速消费/重启窗口错峰为候选方案，移交评估）**。
+- 【② PAT】remote token 仍失效，**PAT 轮换第 24 次提醒**（R156~R184 全部本地待推）。
+
+Stage Summary:
+- 用户三指令交付：①mibaowx/txtuu 全链规则+任务实证（规则 35/36），sto55 域名死线存证；②69shuba 规则 38 存证态（全策略 403 待窗口）；③xqishuta 全链规则+任务实证含 paginationTemplate 分页范围（规则 37+任务 35 pages=10→300 书实证）
+- 引擎清洗增强双交付（全集词条+author 字段词截断）+ 全量回归 51.9s 绿 + 存量 9 本重复条目清洗
+- R173 终局推进：四模型全齐（argos IPFS 备源接管）+ :5000 四语种扩宽 + ja libre E2E + transbulk ja 自动放开——LLM 兜底退出判据观察面就绪（2159 段窗口期计量实证）
+- 移交下一轮：①sto55 现行域名考古（web-search 限额恢复或用户提供）②69shuba 出口窗口复判（enabled=0→1 全链重验）③LLM 兜底退出时机评估（transbulk 重启窗口错峰方案）④任务 33/34/35 采集推进观测（44k/7.6k/17.8k 章目录队列）⑤PAT 轮换（第 24 次）⑥四站窗口态观测持续

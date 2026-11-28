@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# libretranslate 侧车启动（R168）：开源 NMT 翻译引擎（LibreTranslate/Argos Translate，
-# ctranslate2 CPU 推理，无 torch），端口 5000 固定（仅 127.0.0.1 内网，定位同
-# translate-service :3032——backend/侧车内网调用，不经网关暴露公网）。
-#
-# 定位：translate-service 的「兜底/加速」引擎——LLM 文学翻译仍是质量首选，
-# libre 在 LLM 失败（429/枯竭/超时）时垫底，保证全站翻译永不空白（R168）。
-#
-# 首次部署（详见 README.md）：
-#   pip install libretranslate            # 阿里云镜像优先（清华对包文件 403）
-#   bash install-models.sh                # 四模型 zh_en/en_zh/en_ja/en_ko + 句切 onnx
-#
-# 崩溃自动重启（2s 间隔，与 translate-service/stealth-service 同款形态）。
-# flock 单实例闸（防 run.sh 自身被多重拉起）。
+# LibreTranslate 侧车 :5000（R173：en/ja/ko 唯一引擎；zh-Hant/zh-HK 走 OpenCC 快通道不经此服务）。
+# 依赖：venv（setup-venv.sh）+ 四模型（install-models.sh）。崩溃自动重启（2s 间隔）+ flock 单实例。
 set -u
 cd "$(dirname "$0")"
 
@@ -20,24 +9,31 @@ if ! flock -n 9; then
   echo "[libretranslate] 已有实例在运行（flock 持有），退出" >&2
   exit 0
 fi
+echo $$ > /tmp/libretranslate.pid  # R182：pidfile 供 ensure-services.sh --restart 二段式重启
 
-# python 定位：venv 优先（libretranslate 装在 /home/z/.venv）
-if [ -x "$HOME/.venv/bin/libretranslate" ]; then
-  LT_BIN="$HOME/.venv/bin/libretranslate"
-elif command -v libretranslate >/dev/null 2>&1; then
-  LT_BIN="$(command -v libretranslate)"
+if [ -x "venv/bin/libretranslate" ]; then
+  LT="venv/bin/libretranslate"
 else
-  echo "[libretranslate] libretranslate 不可用：请先 pip install libretranslate（见 README.md）" >&2
-  exit 1
+  LT="libretranslate"
 fi
 
-# LT_ARGS：额外启动参数透传（如 --load-only zh,en,ja,ko）
-# 注意：--update-models 是布尔旗标（无 =false 语法）；不传即不联网检查模型更新
-# （模型由 install-models.sh 预置，离线环境也能起）。
-LT_ARGS="${LT_ARGS:---load-only zh,en,ja,ko --disable-web-ui}"
+# R182：--load-only 按已装模型动态计算——模型面随 install-models.sh 渐进落地，
+# 服务先以现有语种对绑定（零等待），每次重启自动扩宽（防启动期黑洞下载阻塞绑定：
+# 索引缓存已过滤到 4 目标 pair，缺失 pair 由本进程补拉，装齐后即秒绑）。
+PY="venv/bin/python3"
+[ -x "$PY" ] || PY="python3"
+LOAD_ONLY=$("$PY" -c "
+from argostranslate import package
+codes = set()
+for p in package.get_installed_packages():
+    codes.add(p.from_code); codes.add(p.to_code)
+print(','.join(sorted(codes)) if codes else 'zh,en')
+" 2>/dev/null)
+[ -z "$LOAD_ONLY" ] && LOAD_ONLY="zh,en"
+echo "[libretranslate] load-only=$LOAD_ONLY"
 
 while true; do
-  "$LT_BIN" --port 5000 --host 127.0.0.1 $LT_ARGS
+  "$LT" --host 127.0.0.1 --port 5000 --load-only "$LOAD_ONLY" --threads 4
   code=$?
   echo "[libretranslate] exited code=$code, restart in 2s" >&2
   sleep 2

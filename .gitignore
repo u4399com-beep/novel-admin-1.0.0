@@ -54,3 +54,4 @@ db/backups/
 
 # R160: 访客 IP→语种判定缓存（运行时数据+隐私面，不入库）
 db/ip-lang.json
+mini-services/libretranslate/venv/

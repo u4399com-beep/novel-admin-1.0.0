@@ -99,7 +99,7 @@ var (
 	// R132: 「无弹窗」尾缀独立可选（书 635「苏信赵凌免费阅读无弹窗」——旧词表要求后跟「阅读」
 	//        致剥不掉）。⚠ RE2 语义坑：`阅读?` 尾缀可选在 (?:...)+$ 迭代下不回跳（实测
 	//        「X无弹窗」不命中），必须写显式分组 `(?:阅读)?`（实验锁定，见 audit_r132_test）。
-	reSeoSuffix = regexp.MustCompile(`(?i)(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?(?:阅读)?|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt|在线阅读|完整版|无删减版|精校版|完结版|全文|全本|正版))+$`)
+	reSeoSuffix = regexp.MustCompile(`(?i)(?:\s*(?:最新章节(?:列表)?|全文阅读|全本阅读|免费阅读|无弹窗(?:广告)?(?:全文|免费)?(?:阅读)?|无广告阅读|笔趣阁|顶点小说|无错小说|txt下载|全本txt|在线阅读|完整版|无删减版|精校版|完结版|全文|全本|全集|正版))+$`)
 	// reSeoMarker 「小说」尾缀保守判定的样板标记（任意位置命中即视标题为 SEO 拼接形态）
 	reSeoMarker  = regexp.MustCompile(`(?i)最新章节|免费阅读|全文阅读|在线阅读|无弹窗|笔趣阁|完整版|txt下载`)
 	reAuthorTail = regexp.MustCompile(`(?i)作者[:：][^《》]{1,30}$`)
@@ -236,7 +236,19 @@ func stripFieldLabel(t string) string { return trimJSSpace(reFieldLabel.ReplaceA
 // stripAuthorLabel 作者字段清洗：剥「作者：/作 者：/书籍作者：」等标签前缀
 var reAuthorLabel = regexp.MustCompile(`(?i)^(?:(?:书籍)?作\s*者\s*[:：]?\s*|(?:author|writer)\s*[:：]?\s*)`)
 
-func stripAuthorLabel(t string) string { return trimJSSpace(reAuthorLabel.ReplaceAllString(t, "")) }
+// R183: TXT 下载站信息块多行塌缩截断——div.s 形态「作者：X<br/>大小：Y<br/>等级：…」
+// pickText collapse 后合成单行，前缀剥离后尾部仍挂「大小：/等级：/更新：」等字段词。
+// 这些词是 TXT 站信息块标准字段（真实作者名命中概率极低），首个命中即截断；
+// idx≥1 守卫防「作者：大小王」类作者名剥成空串（0 位命中=作者名以字段词开头，保留原值）。
+var reAuthorNoise = regexp.MustCompile(`(?:大小|等级|更新|点击|字数|状态|类别|下载|推荐|热度)[:：]`)
+
+func stripAuthorLabel(t string) string {
+	t = trimJSSpace(reAuthorLabel.ReplaceAllString(t, ""))
+	if idx := reAuthorNoise.FindStringIndex(t); idx != nil && idx[0] >= 1 {
+		t = trimJSSpace(t[:idx[0]])
+	}
+	return t
+}
 
 // Task 28-a: 占位封面 URL 特征（URL 任意段含这些 token 即视为占位图，不做网络探测）。
 // Task 68: 追加 logo——部分站点 og:image 恒指向全站 logo（每本书同一张图，属另类

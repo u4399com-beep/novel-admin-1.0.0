@@ -2,8 +2,8 @@
  * api_translate_admin_test.go —— 翻译缓存管理端点测试（R139）。
  *
  * 覆盖：stats 形状（总量/语种分布/按书归属含未归属桶）、clear 三态（按书/按语种/
- * 双空 400 防全清）、enqueue 四态（缺 novelId 400 / 书不存在 404 / LLM 语种成本闸 400 /
- * 正常入队幂等）。DB 隔离沿用 TestMain（recover_test.go）+ mustInit 表守护。
+ * 双空 400 防全清）、enqueue 态（缺 novelId 400 / 书不存在 404 / libre 语种放行
+ * 后走书校验 404【R183 成本闸放开】/ 正常入队幂等）。DB 隔离沿用 TestMain（recover_test.go）+ mustInit 表守护。
  */
 package main
 
@@ -171,9 +171,10 @@ func TestTranslateCacheEnqueueValidation(t *testing.T) {
 	if rec := translateAdminPost(handleTranslateCacheEnqueue, `{"novelId":12345}`); rec.Code != 404 {
 		t.Fatalf("unknown novel must 404, got %d: %s", rec.Code, rec.Body.String())
 	}
-	// LLM 语种成本闸
-	if rec := translateAdminPost(handleTranslateCacheEnqueue, `{"novelId":901,"targets":["en"]}`); rec.Code != 400 {
-		t.Fatalf("LLM target enqueue must 400, got %d: %s", rec.Code, rec.Body.String())
+	// libre 语种（en）成本闸已放开（R183：R173 LibreTranslate 零边际成本）——
+	// 不再语种级 400，走书存在性校验：书 901 本测试未插入 → 404 语义链验证
+	if rec := translateAdminPost(handleTranslateCacheEnqueue, `{"novelId":901,"targets":["en"]}`); rec.Code != 404 {
+		t.Fatalf("libre target on unknown novel must 404 (target gate lifted), got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -13,9 +13,10 @@
  *        → translateCachePut 回写（novelId 归属已由 api_translate 反查链保证此处直传）
  *     4) 成功 done / 失败 attempts++ 重排队（≤3 次，超限 failed 留痕管理面可见）
  *
- * 语种策略（成本闸）：仅 OpenCC 语种自动预热（TRANSLATE_WARM_TARGETS env 可覆盖，
- * 默认 zh-Hant,zh-HK）；LLM 语种（en/ja/ko）绝不自动入队——1.4M 章 × LLM 是成本
- * 爆炸器，保持读者按需翻译+持久缓存复用；admin 翻译缓存页提供按书手动预热入口。
+ * 语种策略（双车道，R183 更新）：本 worker 只管 OpenCC 语种（TRANSLATE_WARM_TARGETS
+ * env 可覆盖，默认 zh-Hant,zh-HK）秒级快车道；libre 语种（en/ja/ko）由 transbulk.go
+ * 管辖（R173 libre 本地零边际成本，约束只剩 :5000 CPU 推理吞吐，慢车道互不抢行）。
+ * 采集钩子（translateEnqueueChapter）五语种全入队，「同步翻译同步落库」全语种覆盖。
  *
  * 吞吐预算：单章 1 次 upstream 调用（≤300 段上限内）≈ 百毫秒级（OpenCC）；批 6 章/
  * 轮、2s/轮 → 峰值 ~3 章/s，采集入库速率（实测 <1 章/s）不会被队列积压淹没。
@@ -56,12 +57,19 @@ var translateWarmTargets = sync.OnceValue(func() []string {
 // translateEnqueueChapter 采集钩子（persistChapterFill 调用）：best-effort 入队，
 // 失败静默（翻译缺失可由读者按需兜底，绝不反噬采集状态机）。
 func translateEnqueueChapter(novelID, chRowID int64) {
-	targets := translateWarmTargets()
-	if len(targets) == 0 || chRowID <= 0 {
+	if chRowID <= 0 {
 		return
 	}
+	// R183：五语种同步入队——OpenCC 快车道（translatewarm 消费）+ libre 慢车道
+	// （transbulk 消费），同步翻译同步落库全语种覆盖。
 	now := nowMillis()
-	for _, t := range targets {
+	for _, t := range translateWarmTargets() {
+		_, _ = execRetry(
+			`INSERT OR REPLACE INTO "TranslationQueue" ("novelId","chapterId","target","state","attempts","updatedAt")
+                         VALUES (?,?,?,'pending',0,?)`,
+			novelID, chRowID, t, now)
+	}
+	for _, t := range translateBulkTargets() {
 		_, _ = execRetry(
 			`INSERT OR REPLACE INTO "TranslationQueue" ("novelId","chapterId","target","state","attempts","updatedAt")
                          VALUES (?,?,?,'pending',0,?)`,
@@ -88,15 +96,24 @@ func startTranslateWarmLoop() {
 	}
 }
 
-// translateWarmOnce 单轮消费：取 pending 批（重试退避：attempts>0 的行 60s 内跳过）
+// translateWarmOnce 单轮消费：取 pending 批（重试退避：attempts>0 的行 60s 内跳过）。
+// R183：WHERE 限定本车道 OpenCC 语种——libre 行归 transbulk 消费，防双车道抢行。
 func translateWarmOnce(targets []string) {
+	if len(targets) == 0 {
+		return
+	}
+	ph := strings.TrimSuffix(strings.Repeat("?,", len(targets)), ",")
+	args := []any{nowMillis()}
+	for _, t := range targets {
+		args = append(args, t)
+	}
 	rows := []struct {
 		id, novelID, chID int64
 		target            string
 	}{}
 	err := queryList(
 		`SELECT "id","novelId","chapterId","target" FROM "TranslationQueue"
-                 WHERE "state"='pending' AND "updatedAt" <= ?
+                 WHERE "state"='pending' AND "updatedAt" <= ? AND "target" IN (`+ph+`)
                  ORDER BY "id" ASC LIMIT 6`,
 		func(rs *sql.Rows) error {
 			var r struct {
@@ -107,7 +124,7 @@ func translateWarmOnce(targets []string) {
 				rows = append(rows, r)
 			}
 			return nil
-		}, nowMillis())
+		}, args...)
 	if err != nil || len(rows) == 0 {
 		return
 	}
@@ -162,43 +179,11 @@ func translateWarmChapter(qid, novelID, chID int64, target string) {
 		_, _ = execRetry(`UPDATE "TranslationQueue" SET "state"='done', "updatedAt"=? WHERE "id"=?`, nowMillis(), qid)
 		return
 	}
-	// 上游段数上限防御：>300 段拆批（与 api_translate 上游约束一致）
-	const batchSize = 280
-	missTotal := 0
-	for start := 0; start < len(paras); start += batchSize {
-		end := start + batchSize
-		if end > len(paras) {
-			end = len(paras)
-		}
-		batch := paras[start:end]
-		keys := make([]string, len(batch))
-		for i, p := range batch {
-			keys[i] = translateCacheKey(p, target)
-		}
-		hits := translateCacheGet(keys)
-		missTexts := []string{}
-		for i, p := range batch {
-			if _, ok := hits[keys[i]]; !ok {
-				missTexts = append(missTexts, p)
-			}
-		}
-		if len(missTexts) > 0 {
-			upResults, err := translateUpstream(target, missTexts, nil)
-			if err != nil {
-				fail("upstream: " + firstLineErr(err))
-				return
-			}
-			// 回写：复用 translateCachePut 持久层（missIdx=全索引——本函数传入的
-			// missTexts 全部是待翻段；失败段 results 空串被其内部跳过不落缓存，契约一致）
-			keysMiss := make([]string, len(missTexts))
-			missIdxAll := make([]int, len(missTexts))
-			for i, p := range missTexts {
-				keysMiss[i] = translateCacheKey(p, target)
-				missIdxAll[i] = i
-			}
-			translateCachePut(missTexts, keysMiss, upResults, missIdxAll, novelID)
-		}
-		missTotal += len(missTexts)
+	// 批翻核心（R183 抽出共用：translateBatchParas，transbulk 同用）
+	missTotal, err := translateBatchParas(paras, target, novelID)
+	if err != nil {
+		fail("upstream: " + firstLineErr(err))
+		return
 	}
 	_, _ = execRetry(`UPDATE "TranslationQueue" SET "state"='done', "updatedAt"=? WHERE "id"=?`, nowMillis(), qid)
 	if missTotal > 0 {

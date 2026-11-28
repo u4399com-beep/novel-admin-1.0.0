@@ -191,10 +191,10 @@ func handleTranslateCacheEnqueue(w http.ResponseWriter, r *http.Request, _ map[s
 			failJSON(w, "不支持的语种", "supported: "+translateTargetsSupported(), 400)
 			return
 		}
-		if t != "zh-Hant" && t != "zh-HK" {
-			failJSON(w, "该语种不允许批量预热", t+" 为 LLM 语种（成本闸）：仅 zh-Hant/zh-HK 可整书预热；LLM 语种请在阅读页按章翻译（结果同样持久缓存）", 400)
-			return
-		}
+		// R183：libre 语种（en/ja/ko）整书预热放开——R173 LibreTranslate 本地零边际
+		// 成本，原「LLM 成本闸」前提消失；消费端 transbulk 慢车道管辖（:5000 CPU
+		// 推理吞吐闸），不再烧 LLM。
+		// OpenCC/libre 语种均可整书预热（五语种齐活）。
 		clean = append(clean, t)
 	}
 	if len(clean) == 0 {
