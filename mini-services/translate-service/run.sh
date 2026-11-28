@@ -26,6 +26,13 @@ else
   exit 1
 fi
 
+# R173 终局（R186 落定）：LLM 兜底正式退出——en/ja/ko 四模型全载（:5000 languages
+# 实证）、libre 稳态承载（libreSegs 持续增长、libreFails <0.5%）、llmFallbacks 仅存于
+# :5000 重启窗口事件（非稳态路径，R185-c 同树守护子循环已把空窗压到 30s 级）。关闭后
+# 窗口期失败段留空由幂等队列/transbulk 重试重消化（诚实契约：失败段不编造）。
+# 回退方式：删掉下行 export 或置 0（index.ts L293 开关读数）。
+export TRANSLATE_LLM_FALLBACK_OFF=1
+
 # R169：bundle 优先，源码回退（回退前自动补装依赖，抢清杀器时间窗需原子链）
 if [ -f "dist/translate-service.js" ]; then
   RUNNER=("$BUN" "dist/translate-service.js")
@@ -35,6 +42,7 @@ else
 fi
 
 while true; do
+  # TRANSLATE_LLM_FALLBACK_OFF 经 export 对子进程持续生效（崩溃重启循环内不丢）
   "${RUNNER[@]}"
   code=$?
   echo "[translate-service] exited code=$code, restart in 2s" >&2

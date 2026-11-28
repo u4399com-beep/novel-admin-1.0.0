@@ -5925,3 +5925,40 @@ Stage Summary:
 - 引擎清洗增强双交付（全集词条+author 字段词截断）+ 全量回归 51.9s 绿 + 存量 9 本重复条目清洗
 - R173 终局推进：四模型全齐（argos IPFS 备源接管）+ :5000 四语种扩宽 + ja libre E2E + transbulk ja 自动放开——LLM 兜底退出判据观察面就绪（2159 段窗口期计量实证）
 - 移交下一轮：①sto55 现行域名考古（web-search 限额恢复或用户提供）②69shuba 出口窗口复判（enabled=0→1 全链重验）③LLM 兜底退出时机评估（transbulk 重启窗口错峰方案）④任务 33/34/35 采集推进观测（44k/7.6k/17.8k 章目录队列）⑤PAT 轮换（第 24 次）⑥四站窗口态观测持续
+
+---
+Task ID: R185（重置重建收口，本段由提交信息反推补记——第 42 次重置致 R170~R179 worklog 段落永久丢失后的抢救轮）
+Agent: Z.ai Code (main)
+Task: 第 42 次沙箱重置抢救重建（R170~R184 资产移植上库 + bin/bundle 产物收口 + 守护体系四补丁）
+
+Work Log:
+- R185-a（505118a）：R170~R184 抢救资产移植上库——R183 双车道（backend-go/transbulk.go 355 行存量落库 worker + translatewarm OpenCC 单车道 + libre 语种整书预热放开）、translate-service R173 libre 主路径终局架构（en 单跳/ja/ko 双跳 auto-pivot + TRANSLATE_LLM_FALLBACK_OFF 退出开关 + libreSegs/libreFails/llmFallbacks 计量）+ R169 deadlineMs 钳制回植 + 502 外层防护、scraper 清洗增强（reSeoSuffix+全集 + reAuthorNoise 字段词截断 R183/R184）、libretranslate R173 物料（argos-fastdl IPFS 备源 + install-models.sh 四模型 + run.sh）。
+- R185-b（e8f484e）：backend-go/scraper-go bin 随源码入库 + translate-service dist bundle 2.30MB——全量 test backend 45.9s/scraper 52.0s 绿。
+- R185-c（840dd62）：移交①根治守护体系四补丁——①backend run.sh libretranslate 同树守护子循环（translate 同款 30s 巡检）②ensure-services.sh libre 检测面扩容（mini-services venv 优先）+ --restart 二段式重启模式 ③watchdog libre 检测路径扩容 ④run-guarded.sh db/ mkdir 双保险；实证五端口全活、libre 主路径全量承接（libreCalls=23/libreSegs=43/llmFallbacks=0）。
+
+Stage Summary:
+- 重建完成态：五服务全活、四模型全载、bin/bundle 产物入库免疫重置、守护链四层加固
+- 移交下一轮：R184 五项移交 + PAT（R156~R185 全量待推）+ worklog R185 段补记
+
+---
+Task ID: R186
+Agent: Z.ai Code (main)
+Task: 「sto55.com用国外代理进行访问，继续上一轮移交、遗留问题。git token=新PAT」= sto55 国外代理专项 + R184 移交五项清偿 + PAT 轮换
+
+Work Log:
+- 【环境视角异常存档】shell 会话出现同机双路径视角翻转（HOME=/home/user（~/novel-admin-1.0.0）↔ HOME=/home/z（~/my-project））——同一仓库同一 DB 同一组服务进程（ps/ss/git log 三重核验一致，libretranslate 进程路径即 /home/z/my-project/mini-services/...），判定为路径别名/会话复原差异非双实例。应对纪律：一律绝对路径 /home/z/my-project/...，避免 ~ 展开。五服务全活（boot 02:39 全组）、四模型全载、git 干净（840dd62 在库）。
+- 【① sto55.com 国外代理专项——R184「域名死线」翻案，本轮主体】用户指明「国外代理访问」后实证翻案：**直连（本机欧洲机房出口，CF FRA 边缘）根路径 404/615B = 地域封锁假象**，R184 判定「域名已废弃」错误——经国外代理 9 出口 urllib 探测全部 200/29587B 完整首页（0.5-8.4s）。**站点身份：思兔閱讀（繁體中文免費小說網，UTF-8，杰奇系模板）**。
+- 【sto55 代理池两级验证】urllib 通过 ≠ 引擎 curl 通过：102.244.78.61:8081/82.41.42.140:8181/1.20.101.15:80 三口 urllib 200 但引擎 fetch-curl exec-error（CONNECT abort/20s 挂死）→ 剔除；终池 6 口全部引擎级逐口验证（34.105.252.3:3128 1.2s / 102.244.78.61:8089/8082/8086 2.3-2.6s / 61.247.223.134:80 4.3s / 216.125.18.67:3128 5.9s，均 200/29587B）。
+- 【sto55 CF 指纹分型存证（关键新知）】chrome 类 TLS/头画像（fetch-browser/ua-rotate/got-scraping）经代理仍 403/6019B 挑战页；**fetch-curl 与 urllib 指纹通行**——CF 按 TLS 指纹分型而非仅 IP。引擎内建「主机策略亲和」（affinity.go：某主机某策略成功后自动提链首）在单策略验证成功后自动接管——全链试采无需任何代码改动即由 fetch-curl 出正文（3.4s/30 项）。挑战风暴跳层（R120c ≥2 连挑战跳 HTTP 层）误伤 fetch-curl 的场景被亲和前置天然规避。
+- 【sto55 规则 35 + 任务 23 全链落地】三段规则 E2E（经引擎 /api/test 全链验证）：listRule #gengxin ul li 五段式（30 行/页，s1 分类[現代都市]等六类/s2 书名链/s4 作者）；bookRule h1.booktitle/p.booktag span.red(連載)/span.blue(分類)/.bookintro/img.thumbnail@src/#allchapter dd a（书页 67 章全目录，无作者元素——作者由列表 s4 供给，og:meta 全缺走原生选择器）；chapterRule h1/.readcotent（第 1 章 3254 字，loadAdv 广告脚本与「盡在st🔑o55.c🌽om」emoji 域名噪声行被引擎清洗层零残留剥除——盡在 hits=0/emoji hits=0）。繁→简标题规范化入库（同穿：从妖尾无限魔力开始）+ 跨源去重命中（北城雪深時已存在→更新信息 #1212）。规则 35 落库（proxy 池 6 口引擎验证态+notes 存证）→ 任务 23 建立（mode=list pages=1 → 30 书发现/962 章目录/采集运行中）。
+- 【② 69shuba 国外代理复测——R184 移交②闭环存证】6 代理口并发复测：34.105.252.3 等 3 口 URLError（代理层拒）+ 61.247.223.134/216.125.18.67 经口 403 + 直连 403/14B——**IP 段封禁判定维持：国外机房口不解，需住宅 IP 段**。规则 38 已随第 42 次重置丢失，无库面动作。
+- 【③ R173 终局落定：LLM 兜底正式退出】判据核验：模型面 en/ja/ko/zh-Hans 四语种全载（:5000 /languages 实证）+ libre 稳态承载（libreSegs 3122 持续增长/libreFails 14≈0.4%）+ llmFallbacks=610 定性为 :5000 重启窗口事件（非稳态路径，R185-c 同树守护已压空窗）。落地：translate-service run.sh export TRANSLATE_LLM_FALLBACK_OFF=1（index.ts L293 开关，回退=删 export）。**坑存档：重启开关三连踩**——①只杀 bun 子进程不杀 run.sh 循环体→旧环境 2s 重拉（伪生效）；②pkill -f 'translate-service/run.sh' 匹配不上 cwd 相对路径实例（cmdline 为「bash run.sh」）→ 直杀 PID；③ensure-services.sh translate 分支条件依赖 node_modules（R169 bundle 态已删）不生效，实际拉起者=backend run.sh 守护子循环（30s 巡检经新 run.sh 重拉生效）。E2E：ja 双跳（zh→en→ja）真实译文实证（お問い合わせ これはテストです/桃の甘い匂いが…，failedCount=0/libreFallback=0，LLM 兜底关闭态零回退）。
+- 【⑤ PAT 第 24 次闭环】新 token 推送成功 e8f484e..840dd62 main→main——R156~R185 全量历史已上库 GitHub，PAT 轮换事项首次闭环清偿。
+- 【⑥ 四站窗口态观测快照】RuleHealth 17/20（R180 期 15/20）：16 101kks failStreak=3（挑战窗口态回归）、17 x2552 failStreak=2、19 pilishuwu failStreak=2（均为已知 CF 窗口态，自然复判链路管辖）；17/34（blqiuge）等其余全 0。任务面 task 22 ixdzs8 在跑（北城雪深時等传记类新书入库中）。
+- 【R184 移交④任务 33/34/35 观测】随第 42 次重置丢失（规则 35~38/任务 33~35 不在 R135 快照），本项 moot；本轮任务 23（sto55）接续采集面。
+
+Stage Summary:
+- sto55.com 国外代理专项闭环：R184「域名死线」翻案（地域封锁假象）→ 6 口引擎验证代理池 → 规则 35 三段全链 E2E（list 30 项/book 67 章/chapter 3254 字零噪声）→ 任务 23 采集运行中（30 书/962 章目录）；CF 指纹分型新知（chrome 类 403/fetch-curl 通行/亲和自动接管）存档
+- R173 终局落定：TRANSLATE_LLM_FALLBACK_OFF=1 经 run.sh export 生效（三连坑存档：循环体/匹配模式/拉起者），ja 双跳 E2E 零回退实证——翻译栈进入 libre-only 终局态
+- 69shuba 复测闭环（需住宅 IP，判定维持）+ PAT 第 24 次首次清偿（R156~R185 全量上库）+ 四站观测快照（17/20）
+- 移交下一轮：①任务 23 sto55 采集完成度观测（962 章长跑，免费口间歇 CONNECT abort 由亲和+轮换+proxywatch 换血+任务级重试四层兜住）②sto55 章节分页形态核验（长章 _N.html 分页是否有——首章单页 3254 字未见分页链，观察任务期首本全目录章节量 vs 站点书页宣称）③四站窗口态持续观测④worklog R170~R179 段落永久丢失已由 R185 补记部分覆盖，后续如需全量重建仍可从 git 提交信息反推
