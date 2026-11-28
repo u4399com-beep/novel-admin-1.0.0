@@ -45,7 +45,7 @@ mkdir -p "$(dirname "$DB_FILE")"
   while true; do
     if ! curl -s --max-time 6 http://127.0.0.1:5000/languages >/dev/null 2>&1; then
       if ! pgrep -f 'libretranslate' >/dev/null 2>&1; then
-        if [ -x ../libretranslate/venv/bin/libretranslate ] || command -v libretranslate >/dev/null 2>&1; then
+        if [ -x ../libretranslate/venv/bin/libretranslate ] || [ -x "$HOME/.local/share/lt-venv/bin/libretranslate" ] || command -v libretranslate >/dev/null 2>&1; then
           cd ../libretranslate && nohup bash run.sh >>/tmp/libretranslate.log 2>&1 9>&- &
           cd "$OLDPWD" || cd ../backend-go
         fi

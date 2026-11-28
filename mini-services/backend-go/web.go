@@ -482,6 +482,17 @@ func renderPage(w http.ResponseWriter, r *http.Request, page string, data map[st
 			// Task 45-a: 渲染层对抗后置处理（实现唯一权威 obfuscate.go）——页面结构混淆/
 			// 关键词转码/干扰注入，视觉与交互零变化；admin 后台页跳过，panic 兜底回原文
 			html = obfMaybe(html, page)
+			// R190: 客户端动态文字字典注入（主题 JS 运行时注入的 UI 文字绕过服务端
+			// sweep——app.js MutationObserver 用同口径字典在客户端补齐；zh-CN 零注入
+			// 零载荷；置于 obf 之后防混淆触碰脚本数据）
+			if ls, _ := data["Lang"].(string); ls != "" && ls != "zh-CN" {
+				dictScript := i18nDictScript(ls)
+				if i := strings.LastIndex(html, "</head>"); i >= 0 {
+					html = html[:i] + dictScript + html[i:]
+				} else {
+					html = dictScript + html
+				}
+			}
 			// R139: reader 前端翻译控件已下线（用户指令）；后端翻译链路保留——
 			// /api/translate 代理、TranslationCache、translatewarm 预热、TXT 导出 ?lang= 译文替换均不受影响
 			_, _ = w.Write([]byte(html))

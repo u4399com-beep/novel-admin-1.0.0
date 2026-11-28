@@ -81,6 +81,7 @@ func main() {
                 go startTranslateWarmLoop()   // R139：翻译预热（采集期后台预生成译文，2s/轮，TRANSLATEWARM_OFF=1 停用，见 translatewarm.go）
                 go startTranslateBulkLoop()   // R183：存量翻译落库（libre 语种三产线，1s/轮，TRANSLATEBULK_OFF=1 停用，见 transbulk.go）
                 go startI18nPrefetchLoop()    // R167：元数据级 LLM 预热（书名/作者/简介/最新章题 ×en/ja/ko 提前翻落库，I18N_PREFETCH_OFF=1 停用，见 webi18n_prefetch.go）
+                go startChapterTitleWarmLoop() // R190：章题全量预热（48 章/轮 × 就绪语种同轮覆盖，最新章优先降序游标，I18N_TITLEWARM_OFF=1 停用，见 webi18n_prefetch.go）
                 go startPseoReenrichSweep()   // 种子重富集自愈（60min/轮，PSEO_REENRICH_OFF=1 停用，见 pseo_reenrich.go）
                 go cleanupFinishedTasksLoop() // R102-b 任务历史清理（6h/轮，见 tasklogx.go）
         }

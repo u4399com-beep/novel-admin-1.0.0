@@ -287,10 +287,14 @@ const LIBRE_HOP_TIMEOUT_MS = 45_000;  // 单跳批调用（两跳 ≤90s < backe
 const LIBRE_PROBE_TIMEOUT_MS = 6_000; // 探针独立短超时（R178：防 :5000 满载假死误判宕机）
 const LIBRE_COOLDOWN_MS = 60_000;     // 熔断冷却（R178 实证：周期探针自动解除）
 
-// R183 LLM 兜底退出开关（R173 终局评估交付）：TRANSLATE_LLM_FALLBACK_OFF=1 后
-// libre 熔断/段失败一律留空（前端保留原文，诚实不编造），LLM 通道整体退役。
-// 退出判据：en/ja/ko 模型全落地 + libre 稳定窗口（llmFallbacks 计量趋零）后置 1。
-const LLM_FALLBACK_OFF = process.env.TRANSLATE_LLM_FALLBACK_OFF === '1';
+// R183 LLM 兜底退出开关（R173 终局评估交付）：libre 熔断/段失败一律留空
+// （前端保留原文，诚实不编造），LLM 通道整体退役。
+// R191 根治·默认 OFF 反转（第 46 次重置实证复发）：平台裸启（boot 启动器直接
+// bun run index.ts，绕过 package.json dev script 与 run.sh export）永远缺
+// TRANSLATE_LLM_FALLBACK_OFF → :5000 缺位窗口 LLM 兜底 429 风暴挂起（R190 期
+// llmCalls 燃至 1092 止血后本轮再燃）。默认改 OFF（opt-in 才开）后任何启动路径
+// 均安全：显式 TRANSLATE_LLM_FALLBACK_OFF=0 是唯一合法开启方式。
+const LLM_FALLBACK_OFF = process.env.TRANSLATE_LLM_FALLBACK_OFF !== '0';
 
 let libreUp = false;
 let libreLastProbe = 0;
@@ -491,7 +495,7 @@ Bun.serve({
               // libre 部分失败段 → LLM 单批兜底（过渡期语义；失败段留空由前端保留原文）
               if (failed.length > 0) {
                 if (LLM_FALLBACK_OFF) {
-                  console.log('[translate] LLM 兜底已关（TRANSLATE_LLM_FALLBACK_OFF=1），失败段留空 n=', failed.length);
+                  console.log('[translate] LLM 兜底已关（R191 默认 OFF，显式 TRANSLATE_LLM_FALLBACK_OFF=0 可开），失败段留空 n=', failed.length);
                 } else {
                 stats.llmFallbacks += failed.length;
                 const client = await getLLM();
@@ -534,7 +538,7 @@ Bun.serve({
             } else {
               // libre 熔断/失败 → LLM 过渡兜底（透明计量；R183 开关可整体退出）
               if (LLM_FALLBACK_OFF) {
-                console.log('[translate] LLM 兜底已关（TRANSLATE_LLM_FALLBACK_OFF=1），整批留空 n=', missIdx.length);
+                console.log('[translate] LLM 兜底已关（R191 默认 OFF，显式 TRANSLATE_LLM_FALLBACK_OFF=0 可开），整批留空 n=', missIdx.length);
                 return json(null, 200, {
                   ok: true,
                   target,

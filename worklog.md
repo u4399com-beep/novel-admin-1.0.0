@@ -5981,3 +5981,103 @@ Stage Summary:
 - 用户主诉闭环：简介 CSS 污染 132 本根修（DOM 剥除 + 清洗兜底双侧）+ 顺带清偿同族三污染（章节标题零宽 17 行、黄金屋串书 2264 行、站点元数据/附件/标签噪声）
 - 六条常设指令落实：遗留问题清零（本轮三类污染清偿）、代码精简（清洗链复用既有架构零新增文件）、翻译能力不受扰（DB 层零宽清洗利好分词）
 - 移交下一轮：①sto55 任务 23 采集完成度观测（R186 移交延续）②四站窗口态观测（101kks failStreak=3 等）③正文行中零宽字符扫描（txtdir 文件面，本轮只清了标题/简介/章节链接路径的 DB 面）④collapse 全位置零宽剥除后新采集正文自动干净，存量正文（txt 文件）待评估
+
+---
+Task ID: R188
+Agent: Z.ai Code (main)
+Task: 用户三指令：「继续完成上一轮移交：①任务 23 完成度观测（962 章长跑）②sto55 长章 _N.html 分页形态核验（首章单页未见分页链，任务期观察）③四站窗口态持续观测」
+
+Work Log:
+- 【第 43 次重置灾情盘点（开局实证）】DB 回退至 R180 时代快照——sto55 规则 35/任务 23/30 书/962 章目录、R183 32k×3 语种入队**全部丢失**（任务 23 变回夜伴书屋旧任务）；.git 回退 R150 提交（origin fetch 找回 R186/R187 全量历史，工作树即 R187 态零损）；~/toolchain Go、libretranslate venv、stealth venv（cloak/iv8 模块）、四 argos 模型、curl-impersonate 二进制全灭；ProxyExit 420 口为本轮 harvest 新鲜池。
+- 【② sto55 分页形态核验（结论双落）】**章级 _N.html 分页不存在**：章节页「下一頁」是键盘提示文案、「下一章」跳下一章（不同章 id），单章全页全正文（wordCount 2022 实证）；**目录真形态**=静态书页 #allchapter 仅渲染前 40 条 dd（末尾 ${allArr[i]} 模板 dd）+LoadMore `$.ajax GET /book/{id}/ajax_index.html` 全量注入——混沌吞天訣实测静态 40 条 vs ajax 端点 4781 条（598KB 片段，裸 dd 无容器）。R186 移交「首本全目录章节量 vs 站点书页宣称」的答案：宣称 4788（最新章），采集目录曾被截断 40。
+- 【fetch-urllib 新策略（本轮主体，OpenSSL TLS 指纹通道）】TLS 指纹分型再实锤：chrome 类（fetch-browser/ua-rotate）经代理 404/1693B 挑战壳、Go crypto/tls（fetch-curl）同样被拒、**python3 urllib（OpenSSL TLS+默认 UA）经代理 200/29514B 通行**——新 fetchurllib.go：python3 子进程单跳拉取、Go 侧逐跳重定向管理（SSRF 含首跳+DNS rebinding 钉死经 getaddrinfo 猴补同 curl --resolve 口径）、cookie jar 回放/捕获、域槽预算、exec-error 出口轮换（单口/逗号池双形态兼容链层 pickProxy 与 /api/test 透传）；链位 2=fetch-browser 之后（R120c 风暴跳层阈值 2 之前必得一次机会——引擎重启亲和丢失后不卡死，R186 fetch-curl 亲和态丢失教训的根治位）；契约测试更新（链 10→11、iv8 下界 7→8）；坑存档：①python -c 不剥 "--"（argv 偏移致 proxy=URL 错位）②代理串必须带 http:// scheme——parseProxy 拒收裸 host:port 静默置空 → 直连钉死 CF 边缘 20s 挂死（调试落盘 argv 定位）③/3030 引擎请求与采集任务共享域槽，验证请求会 budget-exhausted（限速排队饱和快速失败）——验证需避开采集高峰或取消任务后做。
+- 【代理池换血】R186 六口全灭：34.105.252.3/216.125.18.67 存活但 403（昨日 962 章长跑流量标记判定）、102.244.78.61 三口连接层死、61.247.223.134 拒连。5 源 2608 新候选全量 urllib 验证（9s 超时 40 并发）**仅 3 口过**（全 Azure US 段：20.235.56.94:8080 / 20.98.234.24:8080 / 4.144.146.21:80）——免费口对 sto55 的存活率 ~0.1%，地域门允许 US 云段。
+- 【规则 35 重建 + ajax 目录接线（零新引擎代码）】R103 既有规则键 chapterListHtmlApiTemplate 直接复用：bookRule 配 "/book/{bookId}/ajax_index.html"（{bookId}=书页 path 末段数字）→ 引擎展开并入 tocPages → backend 目录 walker fetchTocPage 经引擎 /api/test（代理+fetch-urllib 全链）逐页跟随；chapterLinkSelector 加 ", dd a" 备选（裸片段无 #allchapter 容器）。E2E：书页测试 tocPages 展开 ✓、ajax 片段 4781 章抽取 ✓、书页命中策略 fetch-urllib（亲和已种）。
+- 【任务重跑（任务 22→24）】任务 22（旧规则截断目录 1158 章）取消→任务 24 新建同参：全量目录长跑落地——**chaptersTotal 17943**（15.5 倍截断态），书 919 骨架 4781 章入库实证，正文填充中（lane-control 12 车道/EWMA 3.3s）；fetch-urllib 引擎面统计 ok=389/fail=0 全承载；中途引擎重启（摘调试日志重编译）瞬断自动暂停 → resume-paused 复活（连带复活 E26 舰队 20 条暂停任务，均为已知窗口态语义）。
+- 【LibreTranslate 翻译栈全量重建（常设指令·翻译能力）】R182 配方重走：venv 阿里镜像重装（argos-translate-lt 1.12.1 + libretranslate 1.9.6 --no-deps + 20 运行时依赖，requirements 仅 libretranslate==1.9.6 顶层）→ install-models.sh 四模型 423M **20 分钟全下完**（ghfast/argos 双源本轮通畅，对比 R182 的 30-110KB/s 长跑）→ :5000 四语对（en/zh-Hans/ja/ko）→ :3032 侧：平台树裸启实例（无 run.sh env）被挂死 LLM 兜底调用阻塞（TRANSLATE_LLM_FALLBACK_OFF 缺失+z-ai 挂起、llmCalls 涨至 241）→ 换血 run.sh 正规实例。E2E：en 单跳 ✓（Fifty years ago...）、ja 双跳 ✓（戦争国の奇妙な古代墓…）、ko 双跳 ✓（긴축의 그룹…）、llmFallbacks=0（LLM 零兜底终局维持）；libreFails=390 为 :5000 重启窗口事件非稳态。
+- 【③ 四站窗口态观测（自然数据零主动探测）】101kks（16）http-403 挑战窗、x2552（17）HTTP 200 空壳软拦截、pilishuwu（19）challenge-page、washai（30）网络层超时——全为 R180 期已知窗口态自然复判（RuleHealth 14/20 本轮）；另 huangjinwu（13）/xinjianpan（15）本轮网络层失败（黑洞站代理池在 420 口 harvest 池中待 proxywatch 换血覆盖）。
+- 【agent-browser E2E 自检】home ✓（编辑推荐/最新更新/分类导航全渲染）、book/919 ✓（混沌吞天訣三列布局、简介无 CSS 污染——零宽为 obfuscate 渲染层特性维持 R187 决策、目录 4781 章骨架、正文待填章显示「本章为空」为长跑中态）、book/920/810354 reader ✓（正文全量渲染 200 字样本零错误）、admin ✓、移动 390 视口无溢出 ✓、console/errors 零输出。
+
+Stage Summary:
+- 用户三指令全闭环：①任务 23 观测→随 43 次重置丢失→**全链重建后超量兑现**（任务 24：全量目录 17943 章 vs 原 962，fetch-urllib 新策略零失败承载）②分页形态双结论（章级 _N.html 不存在；目录 LoadMore ajax 截断形态实证 + chapterListHtmlApiTemplate 接线根治）③四站窗口态快照（全为已知态自然复判）
+- 顺手清偿：翻译栈全量重建（四模型+四语对+LLM 零兜底终局恢复）、fetch-urllib 引擎级新能力（OpenSSL 指纹通道，链位 2 自愈位）、规则 35+代理池 3 口换血
+- 移交下一轮：①任务 24 长跑观测（17943 章正文填充，1.2s/请求礼貌限速 → 6h+ 量级长跑，断点幂等）②代理池仅 3 口偏薄——proxywatch 换血口径 403=可达不换，风暴期补位需人工验证新口（urllib 指纹口径）③四站窗口态持续观测④sto55 正文质量抽查（翻译链 5 语种入队随填充增长，TranslationQueue 消费速率观测）
+
+- 【PAT 第 25 次提醒（用户侧）】R188 提交 45b65fb（7 文件）已落本地；push 鉴权失败「Invalid username or token」——R185 落地的新 PAT 已失效（fetch 读通道早前仍通，写通道拒），**需用户再提供新 PAT**（仅用于 git remote set-url + push，不入库）。git reset 基线已对齐 origin/main（R187 72b605f）——本地链 R187→R188 干净单提交，新 PAT 到位后单次 push 即上库。
+
+---
+Task ID: R189
+Agent: Z.ai Code (main)
+Task: 用户指令「继续优化」——R188 移交四项（任务长跑观测/代理池偏薄/四站窗口态/sto55 正文质量）承接执行，开局即遇第 44 次沙箱重置，主体转为灾情恢复+双缺陷根修。
+
+Work Log:
+- 【第 44 次重置灾情盘点（开局实证）】git HEAD 回退 R150（origin fetch 找回 R186/R187，工作树 R188 态零损含未提交 45b65fb 等价内容与 fetchurllib.go 等未跟踪文件）；DB 全灭（db/ 仅余 lane-highwater.json，无任何备份可依）；~/toolchain Go、libretranslate/stealth venv、argos 四模型、cloak 216MB 二进制、license.key 全灭；仅 scraper-go 僵尸进程持已删 inode 存活。
+- 【快速拉起链（零编译优先）】bin 双幸存（backend 04:03/scraper 05:55 均 R188 构建）→ 僵尸 scraper 清杀 → ensure-services 拉起（backend 秒级自建 DB+seed 25 规则+20 任务舰队+566k 骨架章，ProxyExit 400 口 harvest 自愈）→ Go 1.22.12 golang.google.cn 重装（build/test 需求后置满足）。
+- 【sto55 规则 35 重建（id=35 同构历史）】三口 Azure US 代理 urllib 复验全活（200/29546B 1.0-2.1s）→ 规则全字段落库（list #gengxin ul li s1/s2/s4；book h1.booktitle/booktag red/blue/bookintro/thumbnail/chapterLink "#allchapter dd a, dd a"/chapterListHtmlApiTemplate "/book/{bookId}/ajax_index.html"；chapter h1/.readcotent）→ 引擎 /api/test 三段 E2E 全绿（list 30 项/book 40+ajax 展开/chapter 3727 字）。
+- 【R189 引擎新刀：语音字符混淆域名清洗（cleanx.go）】sto55 正文实测「前往ʂƭơ55.ƈơɱ，不再錯過更新」变体——源站把域名 ASCII 换成 IPA/Latin-Ext-B 语音字符逃过 reURLLine 字面 .com 判定（emoji 变体「🎆sto🍍55.com」因字面 55.com 已被接住，语音变体是唯一缺口）。rePhoneticDomain=[\u0180-\u02AF\u1D400-\u1D7FF] 短行命中即噪声（哲学同 R94 reObfDomain 结构性不可能标记）；cleanx_test 四噪声+二叙事保护用例；scraper 全量 test 50.5s 绿；二段式重启核验（ps lstart>bin mtime）；复测同章水印零残留（3746→3727 字叙事无损）。
+- 【R189 backend 新刀：规则 INSERT notes 双绑定根修（api_scrape_rules.go）】POST 新建规则 15 placeholders/16 实参——truncateRunes(notes) 误绑两次（第 14 参本应 createdAt），modernc 静默吞多余实参 → createdAt 落 notes 文本（SQLite 动态类型不报错；R150 世代潜伏，R186 规则 35 同代际实证，git show R150/R187 双确认在库）。根修+audit189_test.go 回归锁（typeof 断言 integer+notes 哨兵文本不等）+全量 test 52.2s 绿+bin 重建+二段式重启；存量规则 35 行 SQL 修复（createdAt←updatedAt 纪元）。任务表 INSERT 三处同族审计全部正确（9=9/5=5 映射无误）。
+- 【双 backend 幽灵 rooting（任务 22 三度自暂停的真因）】fleetkeeper 自动建任务 22（rule35 pages=10）→ 三度「已暂停（列表阶段中断）」：lsof 实锤双 backend-go 并存（8958 我的实例+19223/19557 幽灵）——R128 锁文件删除陷阱精确复现：重启时 rm /tmp/backend-go.lock → 07:27 世代旧 run.sh 循环 2s 重启环 respawn 子进程持新 inode flock 成功 → 双实例互扫孤儿（A 的任务被 B 的 sweepOrphanRunningTasks 转 paused → A 的 worker stopState 收敛停手 → B 又被 A 派发…振荡）。清场：杀全部非 8958 backend + 杀 07:27 世代循环 1456/1473/1474 + 杀 libre 孤儿循环 14409 → 单实例树（8948 主循环+8955/8956 守护子环）。教训固化：**重启禁删锁文件，先杀进程再清锁**（R128 坑 #2 第二次实证）。任务 22 复跑稳定实证：90s 无中断，49 书/1531 章目录增长，书 607 骨架 180 章（ajax 全量目录生效）、封面落盘、繁→简标题规范化（影視世界：開局降維打擊→影视世界：开局降维打击）。
+- 【LibreTranslate 翻译栈重建（常设指令·翻译能力）】venv 阿里镜像重装（libretranslate==1.9.6 全家桶直达，argos-translate-lt 轻量链无 torch）→ install-models.sh 四模型幂等续传（两轮接力 600s×2 收齐 423MB，ALL_DONE）→ :5000 四语对（en/zh-Hans/ja/ko）。**translate-service 换血**：平台树裸启实例缺 TRANSLATE_LLM_FALLBACK_OFF → :5000 缺位期 LLM 兜底挂起（llmCalls 涨至 244，请求悬挂超时）→ R188 同款处方 run.sh 正规实例重启 → E2E：en 单跳 ✓/ja 双跳 ✓/ko 双跳 ✓/libreCalls=3 libreFails=0 llmFallbacks=0 llmCalls=0（LLM 零兜底终局维持）。
+- 【stealth 三绿重建（反反爬 Tier-3 恢复通道）】venv 阿里镜像重装（锁版 cloakbrowser<0.7+iv8 0.1.4+playwright 1.53）+ cloak 216MB ghfast 断点续传 5 轮收齐 + **解压形态修正**（tar 平铺 ~/.cloakbrowser/ 而库期望 chromium-$VER/ 子目录——归位重排后 --version 146.0.7680.177 通过）→ 整杀 run.sh 重启（R128 坑：PY 变量循环外判定）→ /health cloak/cloakBinary/iv8 三绿 + cloak 冒烟 baidu 200/773KB/7.1s。license.key 随重置丢失，free 车道维持可用（R187 决策兼容）。
+- 【③ 四站窗口态观测（自然数据）】RuleHealth 15/21：15 xinjianpan/16 101kks（challenge-page）/17 x2552（200 空壳）/19 pilishuwu（challenge-page）/21 5165（fetch-urllib exec-error，IP 段封禁维持）/30 washai（network-error）failStreak 1-2——全为 R186/R188 期已知窗口态，无新增伤亡；proxywatch 换血在岗（规则 17/21/30/31 池修复日志实证）。
+- 【agent-browser E2E】home ✓（导航/搜索/分类全渲染零报错）、book/607 ✓（骨架+en 书名翻译链实证「The world of film…」——webi18n 语言面生效；作者名零宽为渲染层 obfuscate 有意功能 R187 决策维持）、book/608 reader ✓（正文 3458 字/77 段全渲染）、admin ✓、移动 390 视口无溢出、console/errors 零输出。
+
+Stage Summary:
+- 第 44 次重置全量恢复闭环：五端口全绿（backend/scraper/stealth/translate/libretranslate）+ sto55 全链重建 + 任务 22 长跑稳定
+- 双缺陷根修：引擎语音混淆域名清洗（sto55 正文质量）+ 规则 INSERT notes 双绑定（R150 世代潜伏，回归锁固化）
+- 双坑再实证：R128 锁文件删除→双实例振荡（禁删锁入册）、解压平铺 vs 库期望子目录（cloak 归位）
+- 移交下一轮：①任务 22 sto55 长跑观测（59 书目录/42403 章量级 vs 单页 30 书，pages=10 舰队自持口径）②四站窗口态持续观测（cloak 通道已恢复，Tier-3 复判链路待自然验证）③sto55 正文质量抽查（水印刀后新采章节应为零水印+翻译入队消费速率）④代理池 3 口偏薄维持 R188 口径
+- 【R189 git 基线勘误（终态修正）】①origin/main 树内本就含 2786 个 venv-old site-packages 垃圾文件（R165-R167 世代 git add -A 事故入库）——本轮提交顺带清库（-619k 行为垃圾清除非内容丢失）；②webi18n/transbulk/urlstyle/langip 族为 R165-R167 旧功能（origin 早已有），第 44 次重置 .git 打回 R150 致其本地看似 untracked 新文件——R189 提交信息中「R188 未上库内容回植」表述过宽，真实增量=12 文件（fetchurllib.go/chain.go/cleanx 两文件+audit57a/sidecar 测试微调= R188 scraper 侧真增量；api_scrape_rules/audit189/bin×2/worklog= R189）；③api_scrape_rules.go 工作树为空格缩进（R188 世代遗留形态，gofmt 等价无害）；④第一次提交 10ba4d6 误基于 R150 链（reset 管道 head 吞错未生效），已 soft-reset 重植为 150524e（parent=72b605f R187）。
+
+---
+Task ID: R190
+Agent: Z.ai Code (main)
+Task: 用户指令「关于翻译的问题：很多书的简介没翻译成功/很多章节名没翻译/页面文字没翻译/章节内容也有没翻译的。要求：在展示之前检查一下是否已完成翻译，没完成翻译的话就再翻译一遍然后再展示到前台」
+
+Work Log:
+- 【第 45 次重置灾情盘点（开局实证）】backend/:5000 未运行、db/custom.db 全灭、~/toolchain Go 丢失、libretranslate venv+四模型全灭；scraper-go :3030 与 translate-service :3032 平台裸启幸存（translate 为源码模式裸启、缺 TRANSLATE_LLM_FALLBACK_OFF → llmCalls 燃烧中）。Go 1.22.12 重装（golang.google.cn 直连）+ GOPROXY=goproxy.cn（proxy.golang.org 被墙 i/o timeout、golang.google.cn mirror 500——goproxy.cn 才通）。
+- 【LibreTranslate 全量重建】venv 阿里镜像 libretranslate==1.9.6 + pin 修复（force-reinstall 把 flask/werkzeug 升破 1.9.6 锁——回钉 flask==2.2.5/werkzeug==2.3.8/itsdangerous==2.1.2/flask-babel==3.1.0）；四模型下载坑：后台 curl 跨工具调用必被收割→前台并行下载收齐 423MB（zh_en/en_zh/en_ja/en_ko）；install-models.sh ALL_DONE。
+- 【R190 核心刀：渲染出口翻译完整性闸（webi18n_syncfill.go 新文件）】用户原话直译为架构：i18nTexts/i18nChapterParas/i18nSweepHTML 三消费面的 en/ja/ko 未命中段统一先经 i18nSyncFillMisses 同步补译（:3032 libre 快通道，译文落库+LRU 回填即展示）→ 预算外残余转异步预热。预算模型：分片并行（en 10 段/片、ja/ko 8 段/片 × par 2）+ 派发窗（en 24s/ja ko 32s）+ 片超时定值 90s（容忍一个在途后台调用让路后完成推理）+ flight 硬墙钟（预算+宽限 en 30s/2H 45s，迟到片后台落库后续渲染命中）+ 全进程 ≤2 flight 单飞闸 + 20s TTL 同段去重（同请求数据面+sweep 双飞/渲染风暴防抖）+ I18N_SYNCFILL_OFF 杀开关 + syncfillStats 六计数并入 prefetch status API。
+- 【防回炉闸 i18nLooksTargetLang】ja 含假名/ko 含谚文的段视为已属目标语种跳过——sweep 会二次收集数据面日文译文（含汉字假名），zh→ja 管线回炉产出垃圾译文且 v!=t 会替换显示；sweep 收集过滤 + 补译入料过滤双位防御。
+- 【渲染优先级反转 syncFillActive】flight 执行期>0，四个后台 worker 检到即让路：transbulk translateBulkOnce 轮头 + translateBatchParas 批间（部分进度落库不丢）、title-warm 轮中、prefetch 轮头、i18nAsyncWarmKey 片间挂起轮询——argos 每模型全局锁串行，不避让时补译片在 60-80s 长调用后排队必超时空手而归。
+- 【transbulk 长批根治】translateBatchParas batchSize 280→24→12（280 段整批 =47 hop 批串行 ≈7min，150s client 必先超时且 :5000 仍空转啃完=队列永久饱和）；批 12 en ≈18s/ja ko ≈36s < 150s 窗——结果必落库。
+- 【异步负缓存 30min→5min】libre 时代失败=瞬态拥塞非配额枯竭，短窗重试收敛（i18nAsyncFailed 两处）。
+- 【zh-HK 补齐同步面】i18nLangIsOpenCC：zh-Hant/zh-HK 双语种渲染路径同步 OpenCC 补译（原 zh-HK 走 LLM 分支首访原文兜底缺口）。
+- 【产线④：章题全量预热 startChapterTitleWarmLoop（webi18n_prefetch.go）】48 章题/轮 × 就绪语种同轮覆盖（translateBulkLangReady 同源探测，:5000 未就绪不烧上游）+ 降序游标（math.MaxInt64 起点=最新章优先；空窗/表尾回 MaxInt64 循环巡检——原 cursor=0 会触发 WHERE id<0 死窗缺陷）+ titleWarmSnapshot 快照防撕裂 + I18N_TITLEWARM_OFF 杀开关；prefetch P2（每书最新 1 章题）并入删除（覆盖面超集去重）。
+- 【api_translate.go 重构】translateUpstreamEngine 拆 translateUpstreamVia(client,...) 核心——补译片以独立短超时 client 调用，不复用 150s 长窗 client。
+- 【客户端动态文字 i18n 闭环】主题 JS 运行时注入的 UI（书架/夜间模式/返回顶部等）绕过服务端 sweep——①webi18n.go 新增 i18nDictScript(lang)（各语种 i18nDict JSON 快照懒构建缓存，zh-CN 零注入零载荷）+ web.go renderPage 在 obf 后、</head> 前注入 window.__WEB_I18N；②app.js 追加 MutationObserver（childList+characterData，wtNode 整段精确匹配替换、译文无汉字查表 miss 即幂等终止）+ 初始全量扫；③字典补 ~30 跨主题 JS 动态串 ×4 语种（en/ja/ko/zh-Hant）。实施坑：dict 追加去重踩了两轮（多键值对同行 regex 误伤全域尾逗号+去重不净→ 39 逗号程序化恢复+残余 1 dup 精准删除+按锚点干净重写收尾）——教训：Go map 字面量程序化追加必须逐键值对校验存在性，勿按行处理。
+- 【LibreTranslate run.sh 两处根治】①LOAD_ONLY 循环外只算一次→崩溃重启环固化旧子集（模型后装齐 ja/ko 永不载入 hop2 全败译文空）——循环内每轮重算；②venv 三级定位（repo venv→~/.local/share/lt-venv→PATH）——磁盘 88%+ 清杀器秒级清除 repo venv（两度装好即被吃、跑中的 libretranslate 持已删 inode），lt-venv 与 argos 模型同区（该区高压下幸存）+ backend run.sh libre 守护检查条件同步扩 lt-venv；运行中 bash run.sh 循环改脚本=陈旧偏移执行乱码（杀循环让守护重spawn 或整树换血）。守护树 09:54 代际全幸存实证（1508/1509 子守护/孙循环三级全活）。
+- 【translate-service 平台裸启根治】package.json dev/start 加 flock -n /tmp/translate-service.lock + TRANSLATE_LLM_FALLBACK_OFF=1（平台 bun run dev 裸启实例永久安全化，与 run.sh bundle 模式互斥共存）；llmCalls 燃烧止血（1092→0）。
+- 【四站窗口态/舰队（自然数据）】20 任务舰队自持采集中（1030 书/88 万章/4653 章正文 @ 11:00）；rulehealth 15 号规则不健康为 R189 期已知窗口态；ProxyExit harvest 自愈在岗。
+- 【agent-browser E2E】home en ✓（书名/作者/章题/UI 全英文收敛——prefetch 元数据+syncfill+titleWarm 三产线合力）、book/825 en ✓（I'm not a Goblin killer + 简介英文）、chapter/772210 en ✓（63/63 段全英文 0 残留、首访 25-64s 补译后缓存秒开）、ja 同章 ✓（56/56 全日文 16.9s——transbulk 后台已收齐）、ko 书页 ✓（370 谚文段 5.9s）、toc ✓（557 章题增量收敛 143 已译+titleWarm 游标推进）、客户端观察器 ✓（Add to Shelf/Night mode 全译、残留汉字仅 logo「天」+obfuscate 有意注入）、移动 390 视口 NO OVERFLOW ✓、console/errors 零输出 ✓。
+
+Stage Summary:
+- 用户四类翻译缺口全闭环：①简介（渲染补译闸+transbulk 产线①+prefetch P1）②章名（titleWarm 全量预热降序游标+渲染补译）③页面文字（服务端 sweep 同步补译+客户端 MutationObserver 字典闭环）④正文（i18nChapterParas 预算内补译+transbulk 队列+异步 5min 收敛）——「展示前检查未翻则补翻再展示」直译落地，首访补译上界 en ≈54s/ja ko ≈77s（等待后台调用让路+推理），缓存命中秒开。
+- 双层吞吐根治：:5000 单模型锁串行约束下的渲染优先级反转（4 worker 让路）+ worker 批 12 化 + 负缓存 5min——补译片从「零进展 6 连败」到「单渲染 40 段落库」。
+- 移交下一轮：①transbulk 存量队列消化速率观测（12 章题/批×2 章/轮，全库 88 万章量级数天收敛）②磁盘高压清杀器威胁常驻（88%+ 会吃 repo venv/node_modules——lt-venv/模型区幸存口径已固化，ms-playwright/puppeteer 缓存已清）③四站窗口态持续观测（stealth :3031 本轮未拉起，Tier-3 通道缺失不阻塞主链）④stealth venv 随本轮清杀器丢失，复判链路需要时按 R189 配方重建。
+- 【PAT 第 26 次提醒（用户侧）】R190 提交已落本地；push 仍无有效 PAT——R185 PAT 已失效（R188 起写通道持续拒绝）。需用户提供新 PAT（仅 git remote set-url + push，严禁入库）。
+
+---
+Task ID: R191
+Agent: Z.ai Code (main)
+Task: 用户指令「处理上一轮的移交项」——R190 移交四项（transbulk 消化速率/磁盘清杀器/四站窗口态/stealth venv 重建）承接，开局即遇第 46 次沙箱重置，主体转为第 46 次灾情恢复+平台裸启翻车根治。
+
+Work Log:
+- 【第 46 次重置灾情盘点（开局实证）】backend-go :3000 未运行（run-guarded 启动即 DB error14 自杀）、db/custom.db 全灭、Go 工具链丢、libretranslate repo venv 残骸（138M 无 python3）、argos 四模型全灭、~/.local/share/lt-venv 丢；scraper-go :3030 与 translate-service :3032 平台裸启幸存（translate 又是源码模式裸启缺 OFF→本轮 429 风暴复发实证）；stealth :3031 未拉起；.git 回退 R150（origin/main 同位——R187+ 从未 push 成功），但工作树完整保留 R190 态（webi18n_syncfill.go/titleWarm/app.js MutationObserver/web.go dict 注入 + bin/backend-go 20,576,562B 11:45 构建）。
+- 【快速拉起链】ensure-services 拉起 backend（fleet-keeper seed 25 规则+20 任务舰队秒级 dispatched，ProxyExit 400 口 harvest 35s 自愈，池 300 活）+ stealth :3031 同步拉起（/health 绿）；R189 已验证「从零 seed」路径再演（旧备份 11-08 为 20 天前快照且 novel-*.db 命名，弃用）。
+- 【LibreTranslate 全量重建（R190 配方复演，两处提速）】venv 阿里镜像 libretranslate==1.9.6（flask 2.2.5/werkzeug 2.3.8/itsdangerous 2.1.2/flask-babel 3.1.0 pin 全对）；四模型 423MB 直链前台并行 curl（install-models.sh 串行路径 600s 超时未完成→绕过脚本手动 4 路并行 4min 收齐，直链 argos-net.com/v1/ 206 250KB/s）→ install_from_path 装 zh→en/en→zh/en→ko/en→ja（en_ko CLI 子进程静默失败改 API 直调）；minisbd 四句界模型幸存于 12:33 首轮下载；index.json 过滤 4 pair 同步。:5000 语对面绑定坑复现：守护早拉起固化 2 语对（启动早于模型装齐）→ pkill 让 run.sh 循环重算 LOAD_ONLY → 四语对齐（en/zh-Hans/ja/ko）。
+- 【translate-service 平台裸启翻车二度根治（R191 核心刀：默认 OFF 反转）】平台 boot 启动器直接 bun run index.ts（绕过 package.json dev script 与 run.sh export，R190 处方失效面）→ :5000 缺位窗口探针熔断 → LLM 过渡通道 429 风暴挂起（日志实证「LLM 429 rate-limited, retry 6/5」，两次测试请求悬挂 90-120s 无响应）。根治：index.ts L297 `LLM_FALLBACK_OFF = env.TRANSLATE_LLM_FALLBACK_OFF !== '0'`（默认 OFF·opt-in 才开），任何启动路径（裸启/run.sh/bundle）均安全；两处日志文案同步 R191 口径；bundle 重建 2.30MB + 杀裸启实例换 run.sh bundle 正规实例（pid 核验）。E2E：en 单跳/ja 双跳/ko 双跳/zh-Hant OpenCC 四语种全通，stats libreFails=0 llmFallbacks=0 llmCalls=0（LLM 零兜底终局维持）。
+- 【Go 工具链重装】golang.google.cn 直连 go1.22.12.linux-amd64.tar.gz（69MB 4min）+ GOPROXY=goproxy.cn（依赖秒拉）→ backend-go/scraper-go 双编译绿：backend 产物 20,576,562B 与幸存 bin 字节数一致（R190 工作树↔二进制双向等价实证）；scraper 10,977,841B 微差 256B（构建时间戳级）。
+- 【sto55 规则 35 重建挂起（站点失效结论）】本轮 DB seed 25 规则不含 35；全库搜规则定义仅引擎侧痕迹（fetchurllib/cleanx/chain 注释）；实测 sto55.com 与 www.sto55.com 全路径 404（Cloudflare 前置+源站 NotFound，非墙非指纹拦截）——站点已失效/换域。决策：不在不可达站点重建规则；fetchurllib 指纹通道+语音混淆清洗引擎级能力就绪，新域名出现即插即用。
+- 【观测①任务舰队】21 任务（15 running/4 paused/1 success/1 partial）；库量 1026 书/852,320 章骨架/7,031 章正文（12:35 seed 起 30min 增长口径）；paused 4 任务（rule16/17/19/30 软拦截限流暂停+rule21 partial 书目连续失败中止）全为 R189/R190 期已知窗口态同款，冷却自愈链路在岗，无新增伤亡。
+- 【观测②sto55 分页形态】站点 404 下不可核验（观测挂起，随规则 35 复活一并恢复）。
+- 【观测③四站窗口态】RuleHealth 抽样 rule15/16/17/19/21/30/35：15 xinjianpan/16 101kks/17 x2552/19 pilishuwu/30 washai 与 R190 期已知态一致（限流/challenge-page/200 空壳同款）；21 5165 IP 段封禁维持；35 sto55 站点失效（新结论）。
+- 【agent-browser E2E（翻译闸真实数据验证）】首页 en 全收敛（书名/章题/作者/分类导航/UI 全英文，846,146 chapters 角标真实）；书详情页简介英文渲染（"Novel Brief: Why are you crying about the eight-year-olds..." 翻译闸实翻）；章节 763568 正文英文补译（"Chen Sheng was with Big Black went all the way down to the mountains"，全页 7225 字符仅 101 中文残字=logo 天+obfuscate 有意注入口径）；待填章显示「本章为空」为长跑中态非缺陷；console/errors 零输出；移动 390 视口 NO OVERFLOW。作者名「远山月剑风」个别残留为 transbulk 队列收敛中态（新采书翻译入队随填充增长，非缺陷）。
+- 【收尾】根目录 R190 期模型中转残留 312MB 清除（模型已装 ~/.local/share/argos-translate 标准位）+ .gitignore 补 db/lane-highwater.json 与 argosmodel-*.argosmodel；PAT 泄露扫描干净（worklog 历史均为 ghp_*** 掩码形态）。
+
+Stage Summary:
+- 第 46 次重置全量恢复闭环：五端口全绿（backend :3000/scraper :3030/stealth :3031/translate :3032/libretranslate :5000）+ 20 任务舰队自持采集 + 翻译闸真实数据四类对象（首页元数据/简介/章题/正文）全英文收敛实证。
+- R191 核心刀：translate-service 默认 OFF 反转——平台裸启翻车面（绕过 dev script/run.sh）结构性根治，R190 期「llmCalls 1092→0」止血后本轮再燃的 429 风暴不再有第三个复发面。
+- 两处配方提速入库：四模型前台 4 路并行直链下载（绕 install-models.sh 串行）+ install_from_path API 直调（CLI 子进程静默失败规避）。
+- 移交下一轮：①任务舰队长跑观测（15 running，最大单任务 365,854 章目标，1.2s/请求礼貌限速）②正文填充速率 vs transbulk 翻译消费速率匹配观测（7031 章正文起步）③四站窗口态持续观测（rule30/19/17/16 冷却自愈复判）④sto55 新域名追踪（站点 404 挂起，规则 35 待复活）⑤磁盘高压清杀器威胁常驻（lt-venv 幸存区口径维持）。
+- 【PAT 第 27 次提醒（用户侧）】R191 提交基于 R150 基线（R151-R190 累计工作树快照），push 仍无有效 PAT——需用户提供新 PAT（仅 git remote set-url + push，严禁入库）。

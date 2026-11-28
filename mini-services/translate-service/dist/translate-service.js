@@ -906,7 +906,7 @@ var LIBRE_BATCH = 6;
 var LIBRE_HOP_TIMEOUT_MS = 45000;
 var LIBRE_PROBE_TIMEOUT_MS = 6000;
 var LIBRE_COOLDOWN_MS = 60000;
-var LLM_FALLBACK_OFF = process.env.TRANSLATE_LLM_FALLBACK_OFF === "1";
+var LLM_FALLBACK_OFF = process.env.TRANSLATE_LLM_FALLBACK_OFF !== "0";
 var libreUp = false;
 var libreLastProbe = 0;
 var libreStats = { libreCalls: 0, libreSegs: 0, libreFails: 0, llmFallbacks: 0 };
@@ -1095,7 +1095,7 @@ Bun.serve({
               }
               if (failed.length > 0) {
                 if (LLM_FALLBACK_OFF) {
-                  console.log("[translate] LLM \u515C\u5E95\u5DF2\u5173\uFF08TRANSLATE_LLM_FALLBACK_OFF=1\uFF09\uFF0C\u5931\u8D25\u6BB5\u7559\u7A7A n=", failed.length);
+                  console.log("[translate] LLM \u515C\u5E95\u5DF2\u5173\uFF08R191 \u9ED8\u8BA4 OFF\uFF0C\u663E\u5F0F TRANSLATE_LLM_FALLBACK_OFF=0 \u53EF\u5F00\uFF09\uFF0C\u5931\u8D25\u6BB5\u7559\u7A7A n=", failed.length);
                 } else {
                   stats.llmFallbacks += failed.length;
                   const client = await getLLM();
@@ -1132,7 +1132,7 @@ Bun.serve({
               }
             } else {
               if (LLM_FALLBACK_OFF) {
-                console.log("[translate] LLM \u515C\u5E95\u5DF2\u5173\uFF08TRANSLATE_LLM_FALLBACK_OFF=1\uFF09\uFF0C\u6574\u6279\u7559\u7A7A n=", missIdx.length);
+                console.log("[translate] LLM \u515C\u5E95\u5DF2\u5173\uFF08R191 \u9ED8\u8BA4 OFF\uFF0C\u663E\u5F0F TRANSLATE_LLM_FALLBACK_OFF=0 \u53EF\u5F00\uFF09\uFF0C\u6574\u6279\u7559\u7A7A n=", missIdx.length);
                 return json(null, 200, {
                   ok: true,
                   target,

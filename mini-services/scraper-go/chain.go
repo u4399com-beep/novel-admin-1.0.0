@@ -30,8 +30,8 @@ var proxyCursor atomic.Int64
 // 的核心论点：「真实浏览器可能根本不应该成为爬虫系统的默认执行环境；HTTP、iv8、CloakBrowser
 // 三者组合，才更接近大规模 Web 数据采集的合理架构」）：
 //
-//	Tier 1 HTTP 层（毫秒级，默认）：fetch-browser → fetch-ua-rotate → fetch-mobile →
-//	                              fetch-spider → curl-impersonate → fetch-curl → got-scraping
+//	Tier 1 HTTP 层（毫秒级，默认）：fetch-browser → fetch-urllib → fetch-ua-rotate →
+//	                              fetch-mobile → fetch-spider → curl-impersonate → fetch-curl → got-scraping
 //	Tier 2 iv8 轻执行层（~100ms）：fetch-iv8（V8 补环境跑页内 JS 算 cookie/参数/补 DOM，
 //	                              不启动 Chromium；文章实测纯脚本吞吐 ~100 倍于真实浏览器）
 //	Tier 3 重渲染层（秒级+）：    fetch-cloak（隐身 Chromium，源码级指纹伪装）→ browser
@@ -47,6 +47,7 @@ var proxyCursor atomic.Int64
 var allStrategies = []strategyDef{
 	// ---- Tier 1：HTTP 层（毫秒级，默认执行环境） ----
 	fetchBrowserStrategy,
+	urllibFetchStrategy, // R188: OpenSSL TLS 指纹通道（sto55 类分型站），链位 2=风暴跳层阈值 2 前必得一次机会
 	fetchUaRotateStrategy,
 	fetchMobileStrategy,
 	fetchSpiderStrategy,

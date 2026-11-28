@@ -55,3 +55,7 @@ db/backups/
 # R160: 访客 IP→语种判定缓存（运行时数据+隐私面，不入库）
 db/ip-lang.json
 mini-services/libretranslate/venv/
+
+# R191: 运行时状态与模型中转不入库
+db/lane-highwater.json
+argosmodel-*.argosmodel

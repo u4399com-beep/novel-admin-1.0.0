@@ -295,11 +295,16 @@ func TestSidecarFailureSemantics(t *testing.T) {
 // R101 的「cloak 紧随 browser、iv8 链尾」旧契约已按成本递增架构升级
 func TestSidecarChainOrder(t *testing.T) {
 	names := strategyNames
-	if len(names) != 10 {
-		t.Fatalf("策略链应 10 条，got %d: %v", len(names), names)
+	if len(names) != 11 {
+		t.Fatalf("策略链应 11 条，got %d: %v", len(names), names)
 	}
 	if names[0] != "fetch-browser" {
 		t.Fatalf("fetch-browser 应为链首，got %v", names)
+	}
+	// R188: fetch-urllib（OpenSSL TLS 指纹通道）恒居第 2 位——挑战风暴跳层
+	// 阈值（2）前必得一次机会的链位契约（fetch-browser 吃 1 个挑战计数后上场）
+	if names[1] != "fetch-urllib" {
+		t.Fatalf("fetch-urllib 应为链位 2（fetch-browser 之后），got %v", names)
 	}
 	// Tier 2：fetch-iv8 位于全部 Tier 1 之后、Tier 3 之前
 	idxIv8, idxCloak, idxBrowser := -1, -1, -1
@@ -316,8 +321,8 @@ func TestSidecarChainOrder(t *testing.T) {
 	if idxIv8 < 0 || idxCloak < 0 || idxBrowser < 0 {
 		t.Fatalf("三侧车/桥接策略应全部在链上，got %v", names)
 	}
-	if idxIv8 < 7 {
-		t.Fatalf("fetch-iv8 应在全部 7 个 Tier 1 策略之后，got idx=%d", idxIv8)
+	if idxIv8 < 8 {
+		t.Fatalf("fetch-iv8 应在全部 8 个 Tier 1 策略之后，got idx=%d", idxIv8)
 	}
 	if !(idxIv8 < idxCloak && idxCloak < idxBrowser) {
 		t.Fatalf("Tier 2/3 顺序应 iv8→cloak→browser，got %v", names)

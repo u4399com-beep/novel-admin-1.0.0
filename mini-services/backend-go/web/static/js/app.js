@@ -104,4 +104,46 @@
     toTop.style.display = window.scrollY > 400 ? 'block' : 'none';
   }, { passive: true });
   toTop.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+
+  /* ---------- R190 客户端动态文字 i18n（服务端渲染出口 sweep 的 JS 注入面闭环） ----------
+   * 服务端 i18nDictScript(lang) 非 zh-CN 页注入 window.__WEB_I18N（与 Go i18nDict 同源）；
+   * 主题 JS（trxsw/shipsay/x2552…）运行时注入的 UI 文字（书架按钮/夜间模式/提示条）
+   * 绕过服务端 sweep——此处 MutationObserver + 初始全量扫对动态文本节点做同口径替换。
+   * 幂等：译文（无汉字或字典 miss）不命中查表即终止；zh-CN 无字典零开销。 */
+  var WEB_I18N = window.__WEB_I18N || null;
+  var WEB_I18N_HAN = /[\u4e00-\u9fff]/;
+  function wtNode(node) {
+    if (!WEB_I18N || !node || node.nodeType !== 3) return;
+    var raw = node.nodeValue || '';
+    var at = raw.search(/[\u4e00-\u9fff]/);
+    if (at < 0) return;
+    var core = raw.trim();
+    if (core.length < 1) return;
+    var t = WEB_I18N[core];
+    if (!t || typeof t !== 'string' || t === core) return;
+    var start = raw.indexOf(core);
+    node.nodeValue = raw.slice(0, start) + t + raw.slice(start + core.length);
+  }
+  if (WEB_I18N) {
+    var wtWalk = function (root) {
+      if (!root) return;
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      var n;
+      while ((n = walker.nextNode())) wtNode(n);
+    };
+    // 初始全量扫：本 IIFE 早前注入的「↑ 顶部/继续阅读」等 + 主题 JS 解析期注入串
+    wtWalk(document.body);
+    var mo = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var m = muts[i];
+        if (m.type === 'characterData') { wtNode(m.target); continue; }
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var a = m.addedNodes[j];
+          if (a.nodeType === 3) { wtNode(a); continue; }
+          if (a.nodeType === 1) wtWalk(a);
+        }
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
 })();

@@ -144,10 +144,18 @@ func TestI18nTextsZhHantCacheHit(t *testing.T) {
 
 func TestI18nTextsEnNoSyncUpstream(t *testing.T) {
 	mustInitTranslationCacheTable(t)
-	// en 缓存全 miss：必须原文直返（渲染路径绝不同步等待 LLM）
+	// R190 契约：en 未命中 → 同步补译完整性闸（i18nSyncFillMisses 预算内补译后展示）；
+	// 上游不可用（503）→ 预算内零译文 → 原文兜底（翻译栈故障绝不拖垮渲染）
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(503)
+	}))
+	defer up.Close()
+	oldURL := translateServiceBaseURL
+	translateServiceBaseURL = up.URL
+	defer func() { translateServiceBaseURL = oldURL }()
 	out := i18nTexts("en", 0, []string{"一本无人问津的书"})
 	if len(out) != 1 || out[0] != "一本无人问津的书" {
-		t.Fatalf("en 未命中应原文兜底: %v", out)
+		t.Fatalf("en 未命中+上游不可用应原文兜底: %v", out)
 	}
 }
 
