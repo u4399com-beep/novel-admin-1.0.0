@@ -34,77 +34,103 @@
 package main
 
 import (
-	"database/sql"
-	"html"
-	"log"
-	"regexp"
-	"strings"
+        "database/sql"
+        "html"
+        "log"
+        "regexp"
+        "strings"
 )
 
 // 简介提取词约束（PseoKeyword 词池质量闸门）
 const (
-	introWordMinRunes = 2
-	introWordMaxRunes = 30
-	introWordsPerBook = 15 // 单书提取上限（防劣质简介灌爆词池）
+        introWordMinRunes = 2
+        introWordMaxRunes = 30
+        introWordsPerBook = 15 // 单书提取上限（防劣质简介灌爆词池）
 )
 
 var (
-	// introEntityFixRE 全角分号实体归一：「&#091；」「&#x1F600；」→ ASCII 分号。
-	// 源站模板/编辑器把实体收尾写成全角「；」（书 67 实证），任何实体解码器都不认，
-	// 归一后交 html.UnescapeString 解码
-	introEntityFixRE = regexp.MustCompile(`&#([xX]?)([0-9a-fA-F]+)[；﹔]`)
-	// introFFFDRE 解码残损字符（书 61 实证「�已完结】」）
-	introFFFDRE = regexp.MustCompile(`\x{FFFD}+`)
-	// introBrRE 换行语义标签 → 换行（书 46 实证）
-	introBrRE = regexp.MustCompile(`(?i)<br\s*/?>`)
-	// introTagRE 其余 HTML 标签剥除（含 </p>，换行语义已由 BrRE 先行转换）
-	introTagRE = regexp.MustCompile(`(?i)</?[a-z][^>]{0,80}>`)
-	// introAskRunRE 转码问号家族 a)：4+ 连续半角 ? 必为转码噪声（正常语气问号叠用
-	// 极少超 3 个；全角 ？ 叠用是正常语气，不参与）
-	introAskRunRE = regexp.MustCompile(`\?{4,}`)
-	// introAskDecoRE 转码问号家族 b)：串首/句末标点（含闭引闭括号）后的 1-3 个半角 ?
-	// 为段首装饰（书 1 实证「??本文…」「。）?世界一:」）。锚点保守性：语气问号
-	// （「什么？？？」「真的吗??」「你确定？！」）前缀均为文字或后随非 ?，不命中。
-	// RE2 无前瞻，捕获组保留锚点；(?m) 使 ^ 覆盖行首（多行简介行首装饰同剥）。
-	// 必须在标签剥除之后调用——源 HTML「<p>?世界」剥标签后 ? 才与句末标点相邻
-	introAskDecoRE = regexp.MustCompile(`(?m)(^|[。！？…；）)”"』」])\?{1,3}`)
-	// introMetaTplRE 整条 SEO 元信息样板（书 150/164 实证）。锚定首尾全串匹配才清空：
-	// 「免费在线阅读，作者：…，分类：…，状态：…，字数：…，章节：N章。」固定键序，
-	// 正常叙事简介不可能整体命中（局部出现时仅因未全串命中而保守保留）
-	introMetaTplRE = regexp.MustCompile(`(?s)^.{1,100}免费在线阅读，作者：.{1,40}，分类：.{1,40}，状态：.{1,20}，字数：.{1,40}，章节：.{1,20}章。?$`)
-	// introSepCutRE 视觉分隔线截断（书 37/41 实证「------------------ 八宝饭，Lv.5」）：
-	// 4+ 连续 -/_/* 为分隔线，其后整块（作者名号/推广）截断。中文破折号「——」（em dash）
-	// 不参与——正文破折号是常规标点，误截风险高
-	introSepCutRE = regexp.MustCompile(`(?s)[-_*]{4,}.*$`)
-	// introSepLineRE 整行分隔线/装饰线（纯符号行，无文字直接去行）
-	introSepLineRE = regexp.MustCompile(`^[-=*·—~×\s]{4,}$`)
-	// introPromoCutRE 书友群/读者群推广截断（书 57 实证「【书友群：790924091欢迎…」）
-	introPromoCutRE = regexp.MustCompile(`(?s)(?:书友群|QQ群|qq群|交流群|粉丝群|微信群|群号)\s*[：:【(（\[].*$`)
-	// introTailOpenBracketRE 截断后尾部孤立开括号剥除（promo 锚点在「【」内时残留）
-	introTailOpenBracketRE = regexp.MustCompile(`\s*[【（\[]$`)
-	// introRelatedRE 「相关小说」族尾部锚点：必带冒号（叙事文本正常使用「类似小说」等词
-	// 不带冒号不会误伤）。锚点起至文末整块 = 下拉词清单 → 截断 + 提取
-	introRelatedRE = regexp.MustCompile(`(?s)(?:【?\s*(?:相关|类似|同类|相似)(?:小说|作品|推荐|阅读)\s*】?|延伸阅读|热门推荐|猜你喜欢)\s*[：:]\s*(.*)$`)
-	// introStatusPrefixRE 行首状态标签残臂（书 61 实证 FFFD 剥后「已完结】 十七岁…」）
-	introStatusPrefixRE = regexp.MustCompile(`^(?:【?\s*(?:已完结|完本|全文完|精彩完本)\s*】)\s*`)
-	// introWordSplitRE 长尾词条目分隔：顿号/逗号/分号/句号/换行。条目**内部空格保留**
-	//（下拉词原形「凡人修仙传 灵婴」是一个词，按空白切会剁碎成无意义短词）
-	introWordSplitRE = regexp.MustCompile(`[、，,；;。\n]+`)
-	// introWordJunkRE 条目垃圾形态：URL/域名碎片、纯数字/空白串
-	introWordJunkRE = regexp.MustCompile(`(?i)(?:www\.|https?://|\.[a-z]{2,6}\b)|(?:^[0-9\s]+$)`)
-	// introPromoItemRE 清单内的推广项（相关块之后还可能再拼书友群尾，混入条目流）
-	introPromoItemRE = regexp.MustCompile(`书友群|QQ群|qq群|交流群|粉丝群|微信群|群号`)
-	// introChapterListRE 尾部章节清单块截断（书 4/42 dzrjk 实证，R148）：「章节列表/章节目录」
-	// UI 标签 + 紧随章节条目（第N章节回卷，数字集合同 reChapterText 口径）联合锚点——
-	// 双特征缺一不截，叙事简介不可能含「章节列表 第1章」此形态（「最新章节列表」后缀亦命中，
-	// 无需左边界）。截断即整块移除 → 幂等收敛。与 scraper reDescChapterList 同族双侧闭环：
-	// 引擎挡新数据，本侧 getDB once 回填洗存量。
-	introChapterListRE = regexp.MustCompile(`(?s)(?:章节列表|章节目录)\s*第[0-9〇零一二两三四五六七八九十百千万]+\s*[章节回卷][\s\S]*$`)
-	// introHasTextRE 条目必须含文字
-	introHasTextRE = regexp.MustCompile(`[\p{L}\p{N}]`)
-	// introWordTrimCut 条目首尾装饰字符（书名号/引号/括号/省略号/标点/空白）——
-	// **仅用于提取词的首尾修剪**，绝不作用于正文行（正文句尾 ！。—— 是合法标点）
-	introWordTrimCut = "【】《》〈〉\"'“”‘’()（）[]<>…·—~-!！?？:：.。,，、;； \t\u00a0\u3000"
+        // introEntityFixRE 全角分号实体归一：「&#091；」「&#x1F600；」→ ASCII 分号。
+        // 源站模板/编辑器把实体收尾写成全角「；」（书 67 实证），任何实体解码器都不认，
+        // 归一后交 html.UnescapeString 解码
+        introEntityFixRE = regexp.MustCompile(`&#([xX]?)([0-9a-fA-F]+)[；﹔]`)
+        // introFFFDRE 解码残损字符（书 61 实证「�已完结】」）
+        introFFFDRE = regexp.MustCompile(`\x{FFFD}+`)
+        // introBrRE 换行语义标签 → 换行（书 46 实证）
+        introBrRE = regexp.MustCompile(`(?i)<br\s*/?>`)
+        // introTagRE 其余 HTML 标签剥除（含 </p>，换行语义已由 BrRE 先行转换）
+        introTagRE = regexp.MustCompile(`(?i)</?[a-z][^>]{0,80}>`)
+        // introAskRunRE 转码问号家族 a)：4+ 连续半角 ? 必为转码噪声（正常语气问号叠用
+        // 极少超 3 个；全角 ？ 叠用是正常语气，不参与）
+        introAskRunRE = regexp.MustCompile(`\?{4,}`)
+        // introAskDecoRE 转码问号家族 b)：串首/句末标点（含闭引闭括号）后的 1-3 个半角 ?
+        // 为段首装饰（书 1 实证「??本文…」「。）?世界一:」）。锚点保守性：语气问号
+        // （「什么？？？」「真的吗??」「你确定？！」）前缀均为文字或后随非 ?，不命中。
+        // RE2 无前瞻，捕获组保留锚点；(?m) 使 ^ 覆盖行首（多行简介行首装饰同剥）。
+        // 必须在标签剥除之后调用——源 HTML「<p>?世界」剥标签后 ? 才与句末标点相邻
+        introAskDecoRE = regexp.MustCompile(`(?m)(^|[。！？…；）)”"』」])\?{1,3}`)
+        // introMetaTplRE 整条 SEO 元信息样板（书 150/164 实证）。锚定首尾全串匹配才清空：
+        // 「免费在线阅读，作者：…，分类：…，状态：…，字数：…，章节：N章。」固定键序，
+        // 正常叙事简介不可能整体命中（局部出现时仅因未全串命中而保守保留）
+        introMetaTplRE = regexp.MustCompile(`(?s)^.{1,100}免费在线阅读，作者：.{1,40}，分类：.{1,40}，状态：.{1,20}，字数：.{1,40}，章节：.{1,20}章。?$`)
+        // introSepCutRE 视觉分隔线截断（书 37/41 实证「------------------ 八宝饭，Lv.5」）：
+        // 4+ 连续 -/_/* 为分隔线，其后整块（作者名号/推广）截断。中文破折号「——」（em dash）
+        // 不参与——正文破折号是常规标点，误截风险高
+        introSepCutRE = regexp.MustCompile(`(?s)[-_*]{4,}.*$`)
+        // introSepLineRE 整行分隔线/装饰线（纯符号行，无文字直接去行）
+        introSepLineRE = regexp.MustCompile(`^[-=*·—~×\s]{4,}$`)
+        // introPromoCutRE 书友群/读者群推广截断（书 57 实证「【书友群：790924091欢迎…」）
+        introPromoCutRE = regexp.MustCompile(`(?s)(?:书友群|QQ群|qq群|交流群|粉丝群|微信群|群号)\s*[：:【(（\[].*$`)
+        // introTailOpenBracketRE 截断后尾部孤立开括号剥除（promo 锚点在「【」内时残留）
+        introTailOpenBracketRE = regexp.MustCompile(`\s*[【（\[]$`)
+        // introRelatedRE 「相关小说」族尾部锚点：必带冒号（叙事文本正常使用「类似小说」等词
+        // 不带冒号不会误伤）。锚点起至文末整块 = 下拉词清单 → 截断 + 提取
+        introRelatedRE = regexp.MustCompile(`(?s)(?:【?\s*(?:相关|类似|同类|相似)(?:小说|作品|推荐|阅读)\s*】?|延伸阅读|热门推荐|猜你喜欢)\s*[：:]\s*(.*)$`)
+        // introStatusPrefixRE 行首状态标签残臂（书 61 实证 FFFD 剥后「已完结】 十七岁…」）
+        introStatusPrefixRE = regexp.MustCompile(`^(?:【?\s*(?:已完结|完本|全文完|精彩完本)\s*】)\s*`)
+        // introWordSplitRE 长尾词条目分隔：顿号/逗号/分号/句号/换行。条目**内部空格保留**
+        //（下拉词原形「凡人修仙传 灵婴」是一个词，按空白切会剁碎成无意义短词）
+        introWordSplitRE = regexp.MustCompile(`[、，,；;。\n]+`)
+        // introWordJunkRE 条目垃圾形态：URL/域名碎片、纯数字/空白串
+        introWordJunkRE = regexp.MustCompile(`(?i)(?:www\.|https?://|\.[a-z]{2,6}\b)|(?:^[0-9\s]+$)`)
+        // introPromoItemRE 清单内的推广项（相关块之后还可能再拼书友群尾，混入条目流）
+        introPromoItemRE = regexp.MustCompile(`书友群|QQ群|qq群|交流群|粉丝群|微信群|群号`)
+        // introChapterListRE 尾部章节清单块截断（书 4/42 dzrjk 实证，R148）：「章节列表/章节目录」
+        // UI 标签 + 紧随章节条目（第N章节回卷，数字集合同 reChapterText 口径）联合锚点——
+        // 双特征缺一不截，叙事简介不可能含「章节列表 第1章」此形态（「最新章节列表」后缀亦命中，
+        // 无需左边界）。截断即整块移除 → 幂等收敛。与 scraper reDescChapterList 同族双侧闭环：
+        // 引擎挡新数据，本侧 getDB once 回填洗存量。
+        introChapterListRE = regexp.MustCompile(`(?s)(?:章节列表|章节目录)\s*第[0-9〇零一二两三四五六七八九十百千万]+\s*[章节回卷][\s\S]*$`)
+        // introHasTextRE 条目必须含文字
+        introHasTextRE = regexp.MustCompile(`[\p{L}\p{N}]`)
+        // R186: 零宽字符剥除（字符级噪声，全库 7 本 U+200C 实证：仙人状/女帝这条路等；
+        // 源站反爬指纹 U+200B/200C/200D/U+FEFF/SHY 不可见字符混入简介，渲染断行/复制/
+        // 翻译分词全受扰）。与 scraper reDescZeroWidth 同族双侧。
+        introZeroWidthRE = regexp.MustCompile(`[\x{200B}-\x{200D}\x{FEFF}\x{00AD}]`)
+        // R186: <style> 内联 CSS 文本块剥除（aijjxs/77shuku 模板族 132 本实证：简介头部
+        // 拼入 .mdi-* 全套 CSS ~1000 字符，含「html.m-night_2 .mdi-fill,html[data-theme=dark]
+        // .mdi-fill{color:#8fcfa5}」逗号连缀复合选择器）。与 scraper reDescCssBlock 同族双侧。
+        introCssBlockRE = regexp.MustCompile(`[.#a-zA-Z][\w\-]*(?:[\w\- \t,.:>+~\[\]="'^$|*!()]{0,120})?\{[^{}]{0,300}[a-zA-Z-]{2,20}\s*:\s*[^;{}]{1,100};?[^{}]{0,200}\}`)
+        // R186: CSS 截断残臂剥除（maxDescriptionChars 拦腰斩断后的孤立声明串，
+        // 书 955 实证「ze:12px;opacity:1}」形态；≥2 组「ASCII词:ASCII值」连缀才剥，
+        // 中文叙事无半角冒号+ASCII 值连缀形态，零误伤）。与 scraper reDescCssStub 同族。
+        introCssStubRE = regexp.MustCompile(`(?:[A-Za-z][\w\-]{0,20}\s*:\s*[\w#%().,\- ]{1,40}[\s;]){2,}\}?`)
+        // R186: 站点元数据统计段剥除（同模板族实证书 6/723/955：「2024完结417.93万字616万
+        // 总推荐」「起点2020.5.2完结2981万总推荐」「起点VIP2025-1-11完结376.72万字
+        // 1199.65万总推荐 6.43万周推荐」——完结日期/字数/推荐数据流与 DB 字段重复，无叙事
+        // 价值）。锚定「完结」前后必带数字统计串（万字/万总推荐/万周推荐，万字可缺省），
+        // 叙事不可能出现「N完结N万…」连缀；模板噪声按分工惯例归编排侧处理。
+        introMetaStatRE = regexp.MustCompile(`(?:起点(?:VIP)?\s*)?\d{2,4}(?:[-.年/]\d{1,2}){0,2}[日]?\s*完结\s*(?:\d+(?:\.\d+)?\s*万字)?(?:\s*\d+(?:\.\d+)?\s*万总(?:推荐|点击|收藏))*(?:\s*\d+(?:\.\d+)?\s*万(?:周|月)推荐)*`)
+        // R186: 附件目录清单截断（书 769 实证：TXT 下载站把「附件目录：盗墓笔记 01 七星
+        // 鲁王宫.txt盗墓笔记 02 怒海潜沙.txt…」整块拼进简介尾）。TXT 文件清单无叙事价值，
+        // 无 pSEO 转换价值，起点锚命中即整段截。
+        introAnnexListRE = regexp.MustCompile(`(?s)\s*附件目录[:：].*$`)
+        // R186: 尾部「标签：」分类标签行剥除（书 6/955 实证「标签：随身流」「标签：玄幻
+        // 异世大陆」——分类标签与 categoryId 字段重复，无叙事价值。只剥串尾短标签行，
+        // 正文中间的「标签：」叙述不碰）。
+        introTailTagsRE = regexp.MustCompile(`\s*标签[:：][\p{Han}A-Za-z0-9 ]{1,24}$`)
+        // introWordTrimCut 条目首尾装饰字符（书名号/引号/括号/省略号/标点/空白）——
+        // **仅用于提取词的首尾修剪**，绝不作用于正文行（正文句尾 ！。—— 是合法标点）
+        introWordTrimCut = "【】《》〈〉\"'“”‘’()（）[]<>…·—~-!！?？:：.。,，、;； \t\u00a0\u3000"
 )
 
 // cleanNovelIntro 简介清洗：返回（清洗后文本，提取出的长尾词）。
@@ -112,72 +138,84 @@ var (
 // 前台 whitespace-pre-line / 原样渲染均可接受）。
 // 幂等：对已清洗文本二次调用返回原文本 + 空词表。
 func cleanNovelIntro(desc string) (string, []string) {
-	if strings.TrimSpace(desc) == "" {
-		return "", nil
-	}
-	words := []string{}
+        if strings.TrimSpace(desc) == "" {
+                return "", nil
+        }
+        words := []string{}
 
-	// 1) 整条元信息样板 → 全清空（先于实体解码：样板无实体，锚点最稳）
-	if introMetaTplRE.MatchString(strings.TrimSpace(desc)) {
-		return "", nil
-	}
+        // R186: 零宽字符最先剥（字符级噪声，防不可见字符干扰后续全部锚点正则）
+        desc = introZeroWidthRE.ReplaceAllString(desc, "")
 
-	// 2) 实体归一 + 解码（×2 兜底双重转义，Task 31-c ixdzs8 实证）+ FFFD + 标签
-	s := introEntityFixRE.ReplaceAllString(desc, `&#${1}${2};`)
-	s = html.UnescapeString(html.UnescapeString(s))
-	s = introFFFDRE.ReplaceAllString(s, "")
-	s = introBrRE.ReplaceAllString(s, "\n")
-	s = introTagRE.ReplaceAllString(s, "")
-	s = introAskRunRE.ReplaceAllString(s, "")
-	s = introAskDecoRE.ReplaceAllString(s, "$1")
+        // 1) 整条元信息样板 → 全清空（先于实体解码：样板无实体，锚点最稳）
+        if introMetaTplRE.MatchString(strings.TrimSpace(desc)) {
+                return "", nil
+        }
 
-	// 2.5) 尾部章节清单块截断（R148 家族 9）：必须先于「相关小说」提取——若相关块
-	//    与章节清单共存（相关在前清单在后），不先截清单则「第N章 X」条目会混入词池
-	if m := introChapterListRE.FindStringIndex(s); m != nil {
-		s = s[:m[0]]
-	}
+        // 2) 实体归一 + 解码（×2 兜底双重转义，Task 31-c ixdzs8 实证）+ FFFD + 标签
+        s := introEntityFixRE.ReplaceAllString(desc, `&#${1}${2};`)
+        s = html.UnescapeString(html.UnescapeString(s))
+        s = introFFFDRE.ReplaceAllString(s, "")
+        s = introBrRE.ReplaceAllString(s, "\n")
+        s = introTagRE.ReplaceAllString(s, "")
+        s = introAskRunRE.ReplaceAllString(s, "")
+        s = introAskDecoRE.ReplaceAllString(s, "$1")
+        // R186: <style> 标签壳已剥，裸 CSS 文本成串——块刀 + 残臂刀；随后站点元数据
+        // 统计段剥除（模板噪声按分工惯例归本侧，引擎侧只剥 CSS/零宽字符级噪声）
+        s = introCssBlockRE.ReplaceAllString(s, "")
+        s = introCssStubRE.ReplaceAllString(s, "")
+        s = introMetaStatRE.ReplaceAllString(s, "")
 
-	// 3) 「相关小说」族尾块：截断 + 提取长尾词（用户指令「直接加到pSEO中」）。
-	//    必须先于 promo/sep 截断——若推广尾拼在相关块之后，先截 promo 会连带吃掉词表
-	if m := introRelatedRE.FindStringSubmatch(s); m != nil {
-		words = extractIntroWords(m[1])
-		s = s[:len(s)-len(m[0])]
-	}
+        // 2.5) 尾部章节清单块截断（R148 家族 9）：必须先于「相关小说」提取——若相关块
+        //    与章节清单共存（相关在前清单在后），不先截清单则「第N章 X」条目会混入词池
+        if m := introChapterListRE.FindStringIndex(s); m != nil {
+                s = s[:m[0]]
+        }
 
-	// 4) 分隔线 / 推广尾截断（此时相关块已摘除，两截断作用于剩余正文尾）
-	s = introSepCutRE.ReplaceAllString(s, "")
-	s = introPromoCutRE.ReplaceAllString(s, "")
-	s = introTailOpenBracketRE.ReplaceAllString(s, "")
+        // 3) 「相关小说」族尾块：截断 + 提取长尾词（用户指令「直接加到pSEO中」）。
+        //    必须先于 promo/sep 截断——若推广尾拼在相关块之后，先截 promo 会连带吃掉词表
+        if m := introRelatedRE.FindStringSubmatch(s); m != nil {
+                words = extractIntroWords(m[1])
+                s = s[:len(s)-len(m[0])]
+        }
 
-	// 5) 行归一：剥行首尾空白、去纯分隔线行与空行、状态残臂剥除。
-	//    ⚠ 仅 TrimSpace，不做装饰字符 Trim——正文句尾 ！。—— 是合法标点
-	lines := strings.Split(s, "\n")
-	kept := make([]string, 0, len(lines))
-	for _, ln := range lines {
-		ln = introStatusPrefixRE.ReplaceAllString(strings.TrimSpace(ln), "")
-		ln = strings.TrimSpace(ln)
-		if ln == "" || introSepLineRE.MatchString(ln) {
-			continue
-		}
-		kept = append(kept, ln)
-	}
-	out := strings.Join(kept, "\n")
-	// Task 59-R14: 尾部推广/样板残臂剥离（语料实形三族，锚定收尾防误伤叙事）
-	out = introTailSitePromoRE.ReplaceAllString(out, "")
-	out = introTailCraftRE.ReplaceAllString(out, "")
-	// R132: 尾部转载声明截断（98 本存量实证，见 introReprintRE 注）
-	out = introReprintRE.ReplaceAllString(out, "")
-	// R132b: 尾部「各位书友」推荐语截断（13 本存量实证，见 introShuyouPromoRE 注）
-	out = introShuyouPromoRE.ReplaceAllString(out, "")
-	// R133: 截断容错起点锚 + 微博空占位孤儿尾（与 scraper reDescShuyouTrunc/reDescWeiboOrphan 同族双侧）
-	out = introShuyouTruncRE.ReplaceAllString(out, "")
-	out = introWeiboOrphanRE.ReplaceAllString(out, "")
-	out = strings.TrimSpace(out)
-	// 整段壳简介拒收（首尾锚定全串模板，introMetaTplRE 同哲学；语料实形 #71/#240）
-	if introShellMetaRE.MatchString(out) {
-		return "", words
-	}
-	return out, words
+        // 4) 分隔线 / 推广尾截断（此时相关块已摘除，两截断作用于剩余正文尾）
+        s = introSepCutRE.ReplaceAllString(s, "")
+        s = introPromoCutRE.ReplaceAllString(s, "")
+        s = introTailOpenBracketRE.ReplaceAllString(s, "")
+        // R186: 附件目录清单整段截断（769 实证 TXT 文件清单尾）
+        s = introAnnexListRE.ReplaceAllString(s, "")
+
+        // 5) 行归一：剥行首尾空白、去纯分隔线行与空行、状态残臂剥除。
+        //    ⚠ 仅 TrimSpace，不做装饰字符 Trim——正文句尾 ！。—— 是合法标点
+        lines := strings.Split(s, "\n")
+        kept := make([]string, 0, len(lines))
+        for _, ln := range lines {
+                ln = introStatusPrefixRE.ReplaceAllString(strings.TrimSpace(ln), "")
+                ln = strings.TrimSpace(ln)
+                if ln == "" || introSepLineRE.MatchString(ln) {
+                        continue
+                }
+                kept = append(kept, ln)
+        }
+        out := strings.Join(kept, "\n")
+        // Task 59-R14: 尾部推广/样板残臂剥离（语料实形三族，锚定收尾防误伤叙事）
+        out = introTailSitePromoRE.ReplaceAllString(out, "")
+        out = introTailCraftRE.ReplaceAllString(out, "")
+        // R132: 尾部转载声明截断（98 本存量实证，见 introReprintRE 注）
+        out = introReprintRE.ReplaceAllString(out, "")
+        // R132b: 尾部「各位书友」推荐语截断（13 本存量实证，见 introShuyouPromoRE 注）
+        out = introShuyouPromoRE.ReplaceAllString(out, "")
+        // R133: 截断容错起点锚 + 微博空占位孤儿尾（与 scraper reDescShuyouTrunc/reDescWeiboOrphan 同族双侧）
+        out = introShuyouTruncRE.ReplaceAllString(out, "")
+        out = introWeiboOrphanRE.ReplaceAllString(out, "")
+        // R186: 尾部「标签：」分类标签行剥除（6/955 实证）
+        out = introTailTagsRE.ReplaceAllString(out, "")
+        out = strings.TrimSpace(out)
+        // 整段壳简介拒收（首尾锚定全串模板，introMetaTplRE 同哲学；语料实形 #71/#240）
+        if introShellMetaRE.MatchString(out) {
+                return "", words
+        }
+        return out, words
 }
 
 // Task 59-R14 语料实形（900 本抽检）：
@@ -223,55 +261,94 @@ var introWeiboOrphanRE = regexp.MustCompile(`\s*微博(?:连接|链接)[:：]?\s
 // introWordsPerBook。条目内部空格保留（下拉词原形「凡人修仙传 灵婴」是一个词）；
 // 条目不过 sanitizeKeyword（危险字符已由清洗器剥除，kwStripRe 语义保留给引擎下拉词路径）。
 func extractIntroWords(tail string) []string {
-	out := []string{}
-	seen := map[string]bool{}
-	for _, item := range introWordSplitRE.Split(tail, -1) {
-		w := strings.Trim(strings.TrimSpace(item), introWordTrimCut)
-		w = strings.Join(strings.Fields(w), " ")
-		rl := runeLen(w)
-		if rl < introWordMinRunes || rl > introWordMaxRunes {
-			continue
-		}
-		if !introHasTextRE.MatchString(w) || introWordJunkRE.MatchString(w) || introPromoItemRE.MatchString(w) {
-			continue
-		}
-		key := kwNormalize(w)
-		if key == "" || seen[key] {
-			continue
-		}
-		seen[key] = true
-		out = append(out, w)
-		if len(out) >= introWordsPerBook {
-			break
-		}
-	}
-	return out
+        out := []string{}
+        seen := map[string]bool{}
+        for _, item := range introWordSplitRE.Split(tail, -1) {
+                w := strings.Trim(strings.TrimSpace(item), introWordTrimCut)
+                w = strings.Join(strings.Fields(w), " ")
+                rl := runeLen(w)
+                if rl < introWordMinRunes || rl > introWordMaxRunes {
+                        continue
+                }
+                if !introHasTextRE.MatchString(w) || introWordJunkRE.MatchString(w) || introPromoItemRE.MatchString(w) {
+                        continue
+                }
+                key := kwNormalize(w)
+                if key == "" || seen[key] {
+                        continue
+                }
+                seen[key] = true
+                out = append(out, w)
+                if len(out) >= introWordsPerBook {
+                        break
+                }
+        }
+        return out
+}
+
+// backfillChapterTitleClean 存量章节标题零宽字符清洗（R186，getDB once 回调内调用，
+// 幂等）：instr 命中零宽族（U+200B/200C/200D/U+FEFF/SHY）的 Chapter.title 行剥除后
+// UPDATE。清洗后行不再命中 → 二次启动零写放大。17 行实证（万相之王/满门忠烈等 9 本）。
+// ⚠ once 回调内严禁经 getDB 共享路径（Task 30 P1 递归自锁教训），全程局部 db 句柄。
+func backfillChapterTitleClean(db *sql.DB) error {
+        rows, err := db.Query(`SELECT "id","title" FROM "Chapter" WHERE instr("title", char(0x200B))>0 OR instr("title", char(0x200C))>0 OR instr("title", char(0x200D))>0 OR instr("title", char(0xFEFF))>0 OR instr("title", char(0xAD))>0`)
+        if err != nil {
+                return err
+        }
+        type fix struct {
+                id    int64
+                title string
+        }
+        fixes := make([]fix, 0, 8)
+        for rows.Next() {
+                var id int64
+                var title string
+                if err := rows.Scan(&id, &title); err != nil {
+                        rows.Close()
+                        return err
+                }
+                fixes = append(fixes, fix{id: id, title: introZeroWidthRE.ReplaceAllString(title, "")})
+        }
+        if err := rows.Err(); err != nil {
+                rows.Close()
+                return err
+        }
+        rows.Close()
+        for _, f := range fixes {
+                if _, err := db.Exec(`UPDATE "Chapter" SET "title" = ? WHERE "id" = ?`, f.title, f.id); err != nil {
+                        return err
+                }
+        }
+        if len(fixes) > 0 {
+                log.Printf("[db] 章节标题零宽清洗回填：%d 行修正", len(fixes))
+        }
+        return nil
 }
 
 // insertIntroKeywords 简介提取词入库（best-effort，采集热路径零网络调用）：
 // source='intro'、seed=书名（书籍页血缘直取通道）、pending → generatePendingPages
 // 自动生成聚合页。失败仅记日志，绝不影响入库主流程。
 func insertIntroKeywords(title string, words []string) int {
-	if len(words) == 0 {
-		return 0
-	}
-	entries := make([]kwEntry, 0, len(words))
-	for _, w := range words {
-		kw := sanitizeKeyword(w)
-		if kw == "" {
-			continue
-		}
-		entries = append(entries, kwEntry{Word: kw, Engine: "intro"})
-	}
-	if len(entries) == 0 {
-		return 0
-	}
-	added, err := insertKeywords(entries, introWordsPerBook, title)
-	if err != nil {
-		log.Printf("[backend-go-intro] 《%s》简介长尾词入库失败: %v", truncateRunes(title, 30), err)
-		return 0
-	}
-	return added
+        if len(words) == 0 {
+                return 0
+        }
+        entries := make([]kwEntry, 0, len(words))
+        for _, w := range words {
+                kw := sanitizeKeyword(w)
+                if kw == "" {
+                        continue
+                }
+                entries = append(entries, kwEntry{Word: kw, Engine: "intro"})
+        }
+        if len(entries) == 0 {
+                return 0
+        }
+        added, err := insertKeywords(entries, introWordsPerBook, title)
+        if err != nil {
+                log.Printf("[backend-go-intro] 《%s》简介长尾词入库失败: %v", truncateRunes(title, 30), err)
+                return 0
+        }
+        return added
 }
 
 // backfillNovelIntroClean 存量简介清洗回填（getDB once 回调内调用，幂等）：
@@ -281,62 +358,62 @@ func insertIntroKeywords(title string, words []string) int {
 // 全程用传入的局部 db 句柄；唯一约束 PseoKeyword_keyword_key 兜底并发/重复。
 // 清洗幂等保证二次启动零写放大：已清洗行 cleanNovelIntro 原样返回不触发 UPDATE。
 func backfillNovelIntroClean(db *sql.DB) error {
-	rows, err := db.Query(`SELECT "id","title","description" FROM "Novel" WHERE "description" != ''`)
-	if err != nil {
-		return err
-	}
-	type introFix struct {
-		id    int64
-		title string
-		desc  string
-		words []string
-	}
-	fixes := make([]introFix, 0, 8)
-	for rows.Next() {
-		var id int64
-		var title, desc string
-		if err := rows.Scan(&id, &title, &desc); err != nil {
-			rows.Close()
-			return err
-		}
-		cleaned, words := cleanNovelIntro(desc)
-		if cleaned == desc {
-			continue // 无噪声（或幂等已清洗），零写放大
-		}
-		fixes = append(fixes, introFix{id: id, title: title, desc: cleaned, words: words})
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	rows.Close()
+        rows, err := db.Query(`SELECT "id","title","description" FROM "Novel" WHERE "description" != ''`)
+        if err != nil {
+                return err
+        }
+        type introFix struct {
+                id    int64
+                title string
+                desc  string
+                words []string
+        }
+        fixes := make([]introFix, 0, 8)
+        for rows.Next() {
+                var id int64
+                var title, desc string
+                if err := rows.Scan(&id, &title, &desc); err != nil {
+                        rows.Close()
+                        return err
+                }
+                cleaned, words := cleanNovelIntro(desc)
+                if cleaned == desc {
+                        continue // 无噪声（或幂等已清洗），零写放大
+                }
+                fixes = append(fixes, introFix{id: id, title: title, desc: cleaned, words: words})
+        }
+        if err := rows.Err(); err != nil {
+                rows.Close()
+                return err
+        }
+        rows.Close()
 
-	changed, kwAdded := 0, 0
-	for _, f := range fixes {
-		if _, err := db.Exec(`UPDATE "Novel" SET "description" = ?, "updatedAt" = ? WHERE "id" = ?`,
-			f.desc, nowMillis(), f.id); err != nil {
-			return err
-		}
-		changed++
-		for _, w := range f.words {
-			kw := sanitizeKeyword(w)
-			if kw == "" {
-				continue
-			}
-			res, err := db.Exec(
-				`INSERT OR IGNORE INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm","seed") VALUES (?,'intro','pending',?,?,?,?)`,
-				kw, nowMillis(), nowMillis(), kwNormalize(kw), truncateRunes(f.title, 100))
-			_ = res
-			if err != nil && !isUniqueConflict(err) {
-				return err
-			}
-			if err == nil {
-				kwAdded++
-			}
-		}
-	}
-	if changed > 0 {
-		log.Printf("[db] 简介噪声清洗回填：%d 行修正，pSEO 提取 +%d 词", changed, kwAdded)
-	}
-	return nil
+        changed, kwAdded := 0, 0
+        for _, f := range fixes {
+                if _, err := db.Exec(`UPDATE "Novel" SET "description" = ?, "updatedAt" = ? WHERE "id" = ?`,
+                        f.desc, nowMillis(), f.id); err != nil {
+                        return err
+                }
+                changed++
+                for _, w := range f.words {
+                        kw := sanitizeKeyword(w)
+                        if kw == "" {
+                                continue
+                        }
+                        res, err := db.Exec(
+                                `INSERT OR IGNORE INTO "PseoKeyword" ("keyword","source","status","createdAt","updatedAt","kwNorm","seed") VALUES (?,'intro','pending',?,?,?,?)`,
+                                kw, nowMillis(), nowMillis(), kwNormalize(kw), truncateRunes(f.title, 100))
+                        _ = res
+                        if err != nil && !isUniqueConflict(err) {
+                                return err
+                        }
+                        if err == nil {
+                                kwAdded++
+                        }
+                }
+        }
+        if changed > 0 {
+                log.Printf("[db] 简介噪声清洗回填：%d 行修正，pSEO 提取 +%d 词", changed, kwAdded)
+        }
+        return nil
 }

@@ -5962,3 +5962,22 @@ Stage Summary:
 - R173 终局落定：TRANSLATE_LLM_FALLBACK_OFF=1 经 run.sh export 生效（三连坑存档：循环体/匹配模式/拉起者），ja 双跳 E2E 零回退实证——翻译栈进入 libre-only 终局态
 - 69shuba 复测闭环（需住宅 IP，判定维持）+ PAT 第 24 次首次清偿（R156~R185 全量上库）+ 四站观测快照（17/20）
 - 移交下一轮：①任务 23 sto55 采集完成度观测（962 章长跑，免费口间歇 CONNECT abort 由亲和+轮换+proxywatch 换血+任务级重试四层兜住）②sto55 章节分页形态核验（长章 _N.html 分页是否有——首章单页 3254 字未见分页链，观察任务期首本全目录章节量 vs 站点书页宣称）③四站窗口态持续观测④worklog R170~R179 段落永久丢失已由 R185 补记部分覆盖，后续如需全量重建仍可从 git 提交信息反推
+
+---
+Task ID: R187
+Agent: Z.ai Code (main)
+Task: 用户主诉「简介这块错了吧」——书 769《盗墓笔记》简介区渲染出 .mdi-* 全套 CSS 源码（aijjxs 模板族污染），附实证文本。
+
+Work Log:
+- 【根因定位】goquery .Text() 是 textContent 语义，连 <style> 块内 CSS 文本一并取走——aijjxs/77shuku 模板族书页把 .mdi-* 全套样式 <style> 内嵌在简介容器里，**132 本存量简介头部拼入 ~1000 字符 CSS**（131 aijjxs + 1 77shuku，诡秘之主/大奉打更人/宿命之环全中）；truncateStr(2000) 拦腰斩断另留残臂（书 955「ze:12px;opacity:1}」实证）。
+- 【三级并行污染普查（全库实证）】①简介 CSS 132 本 ②章节标题词间零宽字符 17 行（万相之王/满门忠烈等 9 本，U+200B/200C/200D 源站反爬指纹——词中间位置，行首 trim 清洗链原有覆盖不到）③黄金屋目录页推荐位「《书名》作者：X」被采成章节，**2161 行零内容串书章节**（36 本/书，指向其他书页面正文恒采不回）。
+- 【R187 六刀双侧闭环——引擎侧（scraper-go）】①extractBookBudgeted 入口 root.Find("script,style,noscript").Remove() DOM 级根治（章节页 nextUrlFromScripts 独立 doc 不受影响）②cleanDescription 加 reDescCssBlock（选择器段含空格逗号连缀形态）/reDescCssStub（≥2 组 ASCII词:值 连缀残臂）/reDescZeroWidth 三刀 ③collapse() 前置全位置零宽剥除——引擎所有文本提取路径（章节标题/列表/字段/正文）公共入口单点拦截 ④extractChapterRefs 循环加 reBookAuthorLink（《书名》作者：形态推荐位排除；正常章节「第185章《科利奥兰纳斯》」书名号居中且无作者标签永不误伤）。
+- 【R187 编排侧（backend-go）】introx.go 六刀：introZeroWidthRE（链首防锚点干扰）/introCssBlockRE/introCssStubRE/introMetaStatRE（「2024完结417.93万字616万总推荐」站点统计段剥除）/introAnnexListRE（769 附件目录 txt 清单截断）/introTailTagsRE（尾部「标签：随身流」行剥除）；worker normalizeRefs 加 reBookAuthorLink 兜底；db.go once 链三回填——backfillChapterTitleClean（零宽 17 行）/purgeCrossBookChapters（双闸删除：形态+content 空，CASCADE 级联清 ChapterContent）。
+- 【实证回填日志】简介噪声清洗回填 143 行修正（>132 因另有标签/元数据刀命中）；章节标题零宽 17+8 行（8=重启间隙旧引擎新采遗留，下轮应为 0）；串书章节清理 2264 行删除（>2161 同因半角冒号变体+新采）。
+- 【零宽之谜双层解】页面渲染文本复制带零宽 = obfuscate.go Task 45-a 渲染层对抗**有意功能**（防关键词判定），非数据污染；DB 直读层零宽才是真污染（采集源站指纹），已清洗。混淆功能与复制体验的权衡维持现状（可经 seo 配置关）。
+- 【验证链】双侧全量 test 绿（backend 62.7s/scraper 54.2s，含 collapse 公共路径改动全量回归）；二段式重启两轮（ps lstart 对 bin mtime 核验）；DB 终检 CSS=0/零宽=0/串书=0；agent-browser 书页 769 简介以「五十年前」叙事正文起头渲染正常、toc 814 无假链接、页面零错误、移动端 390 视口正常；home/book/toc 三路由 200。
+
+Stage Summary:
+- 用户主诉闭环：简介 CSS 污染 132 本根修（DOM 剥除 + 清洗兜底双侧）+ 顺带清偿同族三污染（章节标题零宽 17 行、黄金屋串书 2264 行、站点元数据/附件/标签噪声）
+- 六条常设指令落实：遗留问题清零（本轮三类污染清偿）、代码精简（清洗链复用既有架构零新增文件）、翻译能力不受扰（DB 层零宽清洗利好分词）
+- 移交下一轮：①sto55 任务 23 采集完成度观测（R186 移交延续）②四站窗口态观测（101kks failStreak=3 等）③正文行中零宽字符扫描（txtdir 文件面，本轮只清了标题/简介/章节链接路径的 DB 面）④collapse 全位置零宽剥除后新采集正文自动干净，存量正文（txt 文件）待评估

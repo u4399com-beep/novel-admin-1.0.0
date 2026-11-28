@@ -6,8 +6,8 @@
 package main
 
 import (
-	"regexp"
-	"strings"
+        "regexp"
+        "strings"
 )
 
 // reJSWhitespace 等价 JS /\s+/（含 Unicode 空白全集）
@@ -15,21 +15,28 @@ var reJSWhitespace = regexp.MustCompile(`[\t\n\v\f\r \x{00a0}\x{1680}\x{2000}-\x
 
 // trimJSSpace 等价 JS String.prototype.trim()
 func trimJSSpace(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool {
-		switch r {
-		case '\t', '\n', '\v', '\f', '\r', ' ', 0x0085, 0x00a0, 0x1680, 0x2028, 0x2029,
-			0x202f, 0x205f, 0x3000, 0xfeff:
-			return true
-		}
-		return r >= 0x2000 && r <= 0x200a
-	})
+        return strings.TrimFunc(s, func(r rune) bool {
+                switch r {
+                case '\t', '\n', '\v', '\f', '\r', ' ', 0x0085, 0x00a0, 0x1680, 0x2028, 0x2029,
+                        0x202f, 0x205f, 0x3000, 0xfeff:
+                        return true
+                }
+                return r >= 0x2000 && r <= 0x200a
+        })
 }
 
 // collapse 等价 selectors.ts collapse：NBSP→空格、JS 空白折叠、trim
 // （Task 46-a 清理：旧实现折叠后还做一次 NBSP ReplaceAll——reJSWhitespace 字符类已含
 // U+00A0，折叠产物中不可能残留 NBSP，该次替换为无操作，39-a 留档项本轮落地移除）
+// R186: 前置全位置零宽字符剥除——源站反爬指纹（U+200B/200C/200D/U+FEFF/SHY）混入
+// 章节标题/字段文本（17 章节标题实证「第849章 克洛诺斯（一）」词间 U+200C）。
+// collapse 是引擎所有文本提取路径（章节标题/列表项/字段/正文）的公共入口，此处
+// 剥除即引擎级全量拦截；零宽字符在任何文本语境都是噪声，与 backend
+// backfillChapterTitleClean 存量回填同族双侧闭环。行首缩进场景原本只 trim 行首，
+// 词中间零宽此前漏网，本轮全位置补齐。
 func collapse(s string) string {
-	return trimJSSpace(reJSWhitespace.ReplaceAllString(s, " "))
+        s = reDescZeroWidth.ReplaceAllString(s, "")
+        return trimJSSpace(reJSWhitespace.ReplaceAllString(s, " "))
 }
 
 // runeLen JS String.length 语义（UTF-16 code unit 数）：BMP 内等于字符数，
@@ -37,35 +44,35 @@ func collapse(s string) string {
 // 旧实现按 code point 计——含星面字符的文本被少计，近空判定/行长闸/标题长度闸在
 // 该形态页面上与 TS 口径漂移。纯函数（表驱动测试见 audit49_test.go）。
 func runeLen(s string) int {
-	n := 0
-	for _, r := range s {
-		n++
-		if r > 0xFFFF {
-			n++ // 代理对低半区
-		}
-	}
-	return n
+        n := 0
+        for _, r := range s {
+                n++
+                if r > 0xFFFF {
+                        n++ // 代理对低半区
+                }
+        }
+        return n
 }
 
 // splitJSSpace 等价 JS s.split(/\s+/)（先 trim 语义由调用方保证：空 token 由调用方过滤）
 func splitJSSpace(s string) []string {
-	parts := reJSWhitespace.Split(s, -1)
-	out := parts[:0]
-	for _, p := range parts {
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
+        parts := reJSWhitespace.Split(s, -1)
+        out := parts[:0]
+        for _, p := range parts {
+                if p != "" {
+                        out = append(out, p)
+                }
+        }
+        return out
 }
 
 // normalizeNewlines \r\n / \r → \n
 func normalizeNewlines(s string) string {
-	if !strings.ContainsRune(s, '\r') {
-		return s
-	}
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	return strings.ReplaceAll(s, "\r", "\n")
+        if !strings.ContainsRune(s, '\r') {
+                return s
+        }
+        s = strings.ReplaceAll(s, "\r\n", "\n")
+        return strings.ReplaceAll(s, "\r", "\n")
 }
 
 // splitLines 按 \n 切行
