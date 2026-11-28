@@ -720,19 +720,12 @@ var LLM_MIN_ATTEMPT_MS = 8000;
 var MAX_ITEMS = 300;
 var MAX_ITEM_CHARS = 1e4;
 var MAX_TOTAL_CHARS = 120000;
-var LT_URL = globalThis.process ? globalThis.process?.env?.LT_URL || "http://127.0.0.1:5000" : "http://127.0.0.1:5000";
-var LT_BATCH_TIMEOUT_MS = 90000;
-var LT_COOLDOWN_MS = 5 * 60000;
-var LT_MAX_FAILS = 3;
-var LT_TARGETS = { en: "en", ja: "ja", ko: "ko" };
-var LT_SOURCE = "zh-Hans";
-var libreState = { fails: 0, downUntil: 0, probing: false, lastProbe: 0 };
 var TARGETS = {
   "zh-Hant": { label: "\u7E41\u9AD4\u4E2D\u6587\uFF08\u53F0\u7063\u6B63\u9AD4\uFF09", engine: "opencc", conv: "s2twp" },
   "zh-HK": { label: "\u7E41\u9AD4\u4E2D\u6587\uFF08\u9999\u6E2F\uFF09", engine: "opencc", conv: "s2hk" },
-  en: { label: "English", engine: "llm", lang: "English", namesHint: "transliterate character names in pinyin" },
-  ja: { label: "\u65E5\u672C\u8A9E", engine: "llm", lang: "Japanese", namesHint: "keep character names in kanji (Chinese characters), do not transliterate them" },
-  ko: { label: "\uD55C\uAD6D\uC5B4", engine: "llm", lang: "Korean", namesHint: "render character names consistently using the Sino-Korean (hanja) reading, or keep Chinese pinyin \u2014 pick ONE convention and apply it throughout the whole passage" }
+  en: { label: "English", engine: "libre", libreTarget: "en", lang: "English", namesHint: "transliterate character names in pinyin" },
+  ja: { label: "\u65E5\u672C\u8A9E", engine: "libre", libreTarget: "ja", lang: "Japanese", namesHint: "keep character names in kanji (Chinese characters), do not transliterate them" },
+  ko: { label: "\uD55C\uAD6D\uC5B4", engine: "libre", libreTarget: "ko", lang: "Korean", namesHint: "render character names consistently using the Sino-Korean (hanja) reading, or keep Chinese pinyin \u2014 pick ONE convention and apply it throughout the whole passage" }
 };
 var openccConv = null;
 try {
@@ -756,76 +749,6 @@ async function getLLM() {
     console.log("[translate] LLM init FAIL:", e2 instanceof Error ? e2.message : e2);
   }
   return zai;
-}
-function libreAvailable() {
-  if (Date.now() < libreState.downUntil) {
-    const now = Date.now();
-    if (!libreState.probing && now - libreState.lastProbe > 60000) {
-      libreState.probing = true;
-      libreState.lastProbe = now;
-      fetch(LT_URL + "/languages", { signal: AbortSignal.timeout(5000) }).then((r2) => {
-        libreState.probing = false;
-        if (r2.ok) {
-          console.log("[translate] libre probe OK \u2192 \u89E3\u9664\u7194\u65AD");
-          libreMarkOk();
-        }
-      }).catch(() => {
-        libreState.probing = false;
-      });
-    }
-    return false;
-  }
-  return true;
-}
-function libreMarkFail() {
-  libreState.fails++;
-  if (libreState.fails >= LT_MAX_FAILS) {
-    libreState.downUntil = Date.now() + LT_COOLDOWN_MS;
-    console.log(`[translate] libre DOWN\uFF08${LT_MAX_FAILS} \u8FDE\u8D25\uFF09\u2192 \u51B7\u5374 5min`);
-  }
-}
-function libreMarkOk() {
-  if (libreState.fails > 0 || libreState.downUntil > 0) {
-    console.log("[translate] libre recovered");
-  }
-  libreState.fails = 0;
-  libreState.downUntil = 0;
-}
-async function translateLibre(items, target) {
-  const ltTarget = LT_TARGETS[target];
-  if (!ltTarget || !libreAvailable())
-    return null;
-  const ctrl = new AbortController;
-  const timer = setTimeout(() => ctrl.abort(), LT_BATCH_TIMEOUT_MS);
-  try {
-    const resp = await fetch(LT_URL + "/translate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ q: items, source: LT_SOURCE, target: ltTarget, format: "text" }),
-      signal: ctrl.signal
-    });
-    if (!resp.ok) {
-      libreMarkFail();
-      console.log(`[translate] libre HTTP ${resp.status} (${LT_URL})`);
-      return null;
-    }
-    const data = await resp.json();
-    const out = data?.translatedText;
-    const arr = Array.isArray(out) ? out : typeof out === "string" ? [out] : [];
-    if (arr.length !== items.length) {
-      libreMarkFail();
-      console.log(`[translate] libre length mismatch: want ${items.length} got ${arr.length}`);
-      return null;
-    }
-    libreMarkOk();
-    return arr.map((s2) => typeof s2 === "string" && s2.trim() ? s2 : "");
-  } catch (e2) {
-    libreMarkFail();
-    console.log("[translate] libre FAIL:", e2 instanceof Error ? e2.message : e2);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 var cache = new Map;
 function cacheKey(target, text) {
@@ -978,13 +901,111 @@ async function translateLLM(items, lang, namesHint, context, deadlineMs) {
   await runPool(tasks);
   return { results, failed };
 }
+var LIBRE_URL = "http://127.0.0.1:5000";
+var LIBRE_BATCH = 6;
+var LIBRE_HOP_TIMEOUT_MS = 45000;
+var LIBRE_PROBE_TIMEOUT_MS = 6000;
+var LIBRE_COOLDOWN_MS = 60000;
+var LLM_FALLBACK_OFF = process.env.TRANSLATE_LLM_FALLBACK_OFF === "1";
+var libreUp = false;
+var libreLastProbe = 0;
+var libreStats = { libreCalls: 0, libreSegs: 0, libreFails: 0, llmFallbacks: 0 };
+async function libreProbe() {
+  if (Date.now() - libreLastProbe < LIBRE_COOLDOWN_MS)
+    return libreUp;
+  libreLastProbe = Date.now();
+  try {
+    const res = await fetch(LIBRE_URL + "/languages", {
+      signal: AbortSignal.timeout(LIBRE_PROBE_TIMEOUT_MS)
+    });
+    libreUp = res.ok;
+  } catch {
+    libreUp = false;
+  }
+  return libreUp;
+}
+async function libreHop(texts, source, target) {
+  const res = await fetch(LIBRE_URL + "/translate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ q: texts, source, target, format: "text" }),
+    signal: AbortSignal.timeout(LIBRE_HOP_TIMEOUT_MS)
+  });
+  if (!res.ok)
+    throw new Error(`libre /translate ${res.status}`);
+  const d2 = await res.json();
+  const out = d2.translatedText;
+  const arr = Array.isArray(out) ? out : out != null ? [out] : [];
+  if (arr.length !== texts.length) {
+    throw new Error(`libre segment count mismatch: ${arr.length}/${texts.length}`);
+  }
+  return arr.map((s2) => typeof s2 === "string" && s2.trim() ? s2 : "");
+}
+async function translateLibre(items, libreTarget) {
+  const n2 = items.length;
+  const en = new Array(n2).fill("");
+  const failed = [];
+  for (let i2 = 0;i2 < n2; i2 += LIBRE_BATCH) {
+    const idxs = Array.from({ length: Math.min(LIBRE_BATCH, n2 - i2) }, (_2, k2) => i2 + k2);
+    const texts = idxs.map((k2) => items[k2]);
+    let enTexts;
+    try {
+      enTexts = await libreHop(texts, "zh", "en");
+    } catch (e2) {
+      console.log(`[translate] libre hop1@${i2} FAIL:`, e2 instanceof Error ? e2.message : e2);
+      for (const k2 of idxs)
+        failed.push(k2);
+      continue;
+    }
+    if (libreTarget === "en") {
+      for (let k2 = 0;k2 < idxs.length; k2++) {
+        if (enTexts[k2])
+          en[idxs[k2]] = enTexts[k2];
+        else
+          failed.push(idxs[k2]);
+      }
+      continue;
+    }
+    const validPos = [];
+    const validTexts = [];
+    for (let k2 = 0;k2 < idxs.length; k2++) {
+      if (enTexts[k2]) {
+        validPos.push(k2);
+        validTexts.push(enTexts[k2]);
+      }
+    }
+    if (validTexts.length === 0) {
+      for (const k2 of idxs)
+        failed.push(k2);
+      continue;
+    }
+    try {
+      const out = await libreHop(validTexts, "en", libreTarget);
+      for (let k2 = 0;k2 < validPos.length; k2++) {
+        if (out[k2])
+          en[idxs[validPos[k2]]] = out[k2];
+        else
+          failed.push(idxs[validPos[k2]]);
+      }
+      for (let k2 = 0;k2 < idxs.length; k2++) {
+        if (!enTexts[k2])
+          failed.push(idxs[k2]);
+      }
+    } catch (e2) {
+      console.log(`[translate] libre hop2@${i2} FAIL:`, e2 instanceof Error ? e2.message : e2);
+      for (const k2 of idxs)
+        failed.push(k2);
+    }
+  }
+  return { results: en, failed };
+}
 function json(w2, code, body) {
   return new Response(JSON.stringify(body), {
     status: code,
     headers: { "Content-Type": "application/json; charset=utf-8" }
   });
 }
-var stats = { reqTotal: 0, llmCalls: 0, cacheHits: 0, libreCalls: 0, libreFallbacks: 0 };
+var stats = { reqTotal: 0, llmCalls: 0, cacheHits: 0, ...libreStats };
 Bun.serve({
   port: PORT,
   idleTimeout: 255,
@@ -996,10 +1017,8 @@ Bun.serve({
         ok: true,
         service: "translate-service",
         opencc: openccConv != null,
+        libre: libreUp,
         llm: llmTried ? zai != null : true,
-        libre: libreAvailable(),
-        libreUrl: LT_URL,
-        engine: "auto=llm-first+libre-fallback, libre, llm (POST body.engine)",
         targets: Object.keys(TARGETS),
         cacheSize: cache.size,
         stats,
@@ -1018,7 +1037,6 @@ Bun.serve({
       if (!conf) {
         return json(null, 400, { ok: false, error: `unsupported target: ${target} (supported: ${Object.keys(TARGETS).join(",")})` });
       }
-      const engine = body.engine === "libre" || body.engine === "llm" ? body.engine : "auto";
       const items = body.items;
       if (!Array.isArray(items) || items.length === 0 || items.length > MAX_ITEMS) {
         return json(null, 400, { ok: false, error: `items must be a non-empty array (max ${MAX_ITEMS})` });
@@ -1056,75 +1074,97 @@ Bun.serve({
           missIdx.push(i2);
         }
       }
-      if (missIdx.length > 0) {
-        try {
-          if (conf.engine === "opencc") {
-            if (!openccConv)
-              throw new Error("opencc not initialized");
-            for (const i2 of missIdx) {
-              const out = openccConv(texts[i2]) || texts[i2];
-              results[i2] = out;
-              cacheSet(cacheKey(target, texts[i2]), out);
-            }
-          } else {
-            if (engine === "libre" && LT_TARGETS[target]) {
-              const libreOut = await translateLibre(missIdx.map((i2) => texts[i2]), target);
+      try {
+        if (missIdx.length > 0) {
+          let libreDone = false;
+          if (conf.engine === "libre" && await libreProbe()) {
+            try {
+              const { results: tr, failed } = await translateLibre(missIdx.map((i2) => texts[i2]), conf.libreTarget ?? target);
+              libreDone = true;
               stats.libreCalls++;
-              if (libreOut === null) {
-                return json(null, 503, {
-                  ok: false,
-                  error: `libre engine unavailable (probe down or LibreTranslate not reachable at ${LT_URL})`
-                });
-              }
+              const okCount = missIdx.length - failed.length;
+              stats.libreSegs += Math.max(0, okCount);
+              if (failed.length > 0)
+                stats.libreFails += failed.length;
               for (let k2 = 0;k2 < missIdx.length; k2++) {
-                results[missIdx[k2]] = libreOut[k2] || "";
+                const gi = missIdx[k2];
+                if (tr[k2]) {
+                  results[gi] = tr[k2];
+                  cacheSet(cacheKey(target, texts[gi]), tr[k2]);
+                }
               }
-            } else {
-              const client = await getLLM();
-              if (!client) {
-                if (engine === "auto" && LT_TARGETS[target] && libreAvailable()) {
-                  const libreOut = await translateLibre(missIdx.map((i2) => texts[i2]), target);
-                  stats.libreFallbacks++;
-                  if (libreOut === null) {
-                    return json(null, 503, { ok: false, error: "LLM unavailable and libre fallback failed (LibreTranslate at " + LT_URL + ")" });
-                  }
-                  for (let k2 = 0;k2 < missIdx.length; k2++) {
-                    results[missIdx[k2]] = libreOut[k2] || "";
-                  }
+              if (failed.length > 0) {
+                if (LLM_FALLBACK_OFF) {
+                  console.log("[translate] LLM \u515C\u5E95\u5DF2\u5173\uFF08TRANSLATE_LLM_FALLBACK_OFF=1\uFF09\uFF0C\u5931\u8D25\u6BB5\u7559\u7A7A n=", failed.length);
                 } else {
-                  return json(null, 503, { ok: false, error: "LLM backend unavailable: z-ai-web-dev-sdk not installed in this deployment" });
-                }
-              } else {
-                const { results: translated, failed } = await translateLLM(missIdx.map((i2) => texts[i2]), conf.lang ?? "English", conf.namesHint, body.context, body.deadlineMs);
-                stats.llmCalls += Math.ceil(missIdx.length / LLM_BATCH);
-                for (let k2 = 0;k2 < missIdx.length; k2++) {
-                  const gi = missIdx[k2];
-                  if (translated[k2]) {
-                    results[gi] = translated[k2];
-                    cacheSet(cacheKey(target, texts[gi]), translated[k2]);
-                  } else {
-                    results[gi] = "";
-                  }
-                }
-                if (engine === "auto" && LT_TARGETS[target]) {
-                  const failedIdx = missIdx.filter((gi) => results[gi] === "");
-                  if (failedIdx.length > 0 && libreAvailable()) {
-                    const libreOut = await translateLibre(failedIdx.map((i2) => texts[i2]), target);
-                    stats.libreFallbacks++;
-                    if (libreOut) {
-                      for (let k2 = 0;k2 < failedIdx.length; k2++) {
-                        if (libreOut[k2])
-                          results[failedIdx[k2]] = libreOut[k2];
+                  stats.llmFallbacks += failed.length;
+                  const client = await getLLM();
+                  if (client) {
+                    try {
+                      const fb = await translateLLM(failed.map((k2) => texts[missIdx[k2]]), conf.lang ?? "English", conf.namesHint, body.context, body.deadlineMs);
+                      for (let k2 = 0;k2 < failed.length; k2++) {
+                        const gi = missIdx[failed[k2]];
+                        if (fb.results[k2]) {
+                          results[gi] = fb.results[k2];
+                          cacheSet(cacheKey(target, texts[gi]), fb.results[k2]);
+                        }
                       }
+                    } catch (e2) {
+                      console.log("[translate] libre\u2192llm \u515C\u5E95 FAIL:", e2 instanceof Error ? e2.message : e2);
                     }
                   }
                 }
               }
+            } catch (e2) {
+              libreDone = false;
+              libreUp = false;
+              console.log("[translate] libre \u4E3B\u6D41\u7A0B FAIL\uFF0C\u6574\u6279\u515C\u5E95 LLM:", e2 instanceof Error ? e2.message : e2);
             }
           }
-        } catch (e2) {
-          return json(null, 502, { ok: false, error: e2 instanceof Error ? e2.message : String(e2) });
+          if (!libreDone) {
+            if (conf.engine === "opencc") {
+              if (!openccConv)
+                throw new Error("opencc not initialized");
+              for (const i2 of missIdx) {
+                const out = openccConv(texts[i2]) || texts[i2];
+                results[i2] = out;
+                cacheSet(cacheKey(target, texts[i2]), out);
+              }
+            } else {
+              if (LLM_FALLBACK_OFF) {
+                console.log("[translate] LLM \u515C\u5E95\u5DF2\u5173\uFF08TRANSLATE_LLM_FALLBACK_OFF=1\uFF09\uFF0C\u6574\u6279\u7559\u7A7A n=", missIdx.length);
+                return json(null, 200, {
+                  ok: true,
+                  target,
+                  results,
+                  cached,
+                  translated: missIdx.length,
+                  failedCount: missIdx.length,
+                  note: "llm fallback disabled (TRANSLATE_LLM_FALLBACK_OFF=1)"
+                });
+              }
+              if (libreDone === false && conf.engine === "libre")
+                stats.llmFallbacks += missIdx.length;
+              const client = await getLLM();
+              if (!client) {
+                return json(null, 503, { ok: false, error: "translation engines unavailable: libre breaker open + LLM backend not installed" });
+              }
+              const { results: translated, failed } = await translateLLM(missIdx.map((i2) => texts[i2]), conf.lang ?? "English", conf.namesHint, body.context, body.deadlineMs);
+              stats.llmCalls += Math.ceil(missIdx.length / LLM_BATCH);
+              for (let k2 = 0;k2 < missIdx.length; k2++) {
+                const gi = missIdx[k2];
+                if (translated[k2]) {
+                  results[gi] = translated[k2];
+                  cacheSet(cacheKey(target, texts[gi]), translated[k2]);
+                } else {
+                  results[gi] = "";
+                }
+              }
+            }
+          }
         }
+      } catch (e2) {
+        return json(null, 502, { ok: false, error: e2 instanceof Error ? e2.message : String(e2) });
       }
       return json(null, 200, {
         ok: true,
