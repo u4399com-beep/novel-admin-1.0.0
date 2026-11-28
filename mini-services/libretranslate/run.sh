@@ -5,7 +5,7 @@ set -u
 cd "$(dirname "$0")"
 
 exec 9>/tmp/libretranslate.lock
-if ! flock -n 9; then
+if ! flock -w 20 9; then
   echo "[libretranslate] 已有实例在运行（flock 持有），退出" >&2
   exit 0
 fi
